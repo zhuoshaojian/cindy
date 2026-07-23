@@ -169,6 +169,16 @@ import {
   type AgentBinaryKind,
   type PrepareResult,
 } from './agent-binaries';
+import {
+  createEnsureBinariesReady,
+  getLinuxInstallSignal,
+} from './agent-binaries/ensure-ready.js';
+import {
+  isHeadlessMode,
+  runHeadlessStartup,
+  shouldCreateMainWindow,
+  shouldQuitWhenAllWindowsClosed,
+} from './headless-startup.js';
 import { RendererBootGuard } from './renderer-boot-guard';
 import yaml from 'js-yaml';
 import matter from 'gray-matter';
@@ -793,7 +803,7 @@ async function waitForCurrentAccountProviderModelsReady(): Promise<void> {
  * 都满足时尝试启动"，幂等性由 startScheduler 自己保证；切账号场景 `resetScheduler()`
  * 把 `_scheduler` 置 null，下次进来自然会重新启动。
  *
- * IPC 注册模型(重构):maker:schedule:* handler 在 registerMakerIpcsAfterSplash 内
+ * IPC 注册模型(重构):maker:schedule:* handler 在 ensureMakerReady 内
  * 通过 `registerScheduleHandlers()` 提前一次性注册,**不依赖 scheduler 实例**;
  * 本函数拿到 scheduler 后只调 `attachSchedulerEventListeners(scheduler, storage)`
  * 把 scheduler.on 挂上 + setSchedulerReady 喂入实例 + broadcast 'ready'。
@@ -804,7 +814,7 @@ async function waitForCurrentAccountProviderModelsReady(): Promise<void> {
  */
 async function attemptStartScheduler(): Promise<void> {
   // 两个前置条件必须满足才能启动：
-  //   1. maker 单例已构造 (splash check-environment 完成 → registerMakerIpcsAfterSplash)
+  //   1. maker 单例已构造 (splash check-environment 完成 → ensureMakerReady)
   //   2. DbClient 已 smoke 通过 (user login → renderer 触发 'local-db:ensure-ready' IPC)
   // 任一未满足时 getMakerCore() / getDbClient() 抛错，整体 try/catch 兜住，等下次触发。
   let maker: Maker;
@@ -826,10 +836,10 @@ async function attemptStartScheduler(): Promise<void> {
     );
     return;
   }
-  // 若本调用是 getMakerCore() 的首次调用（onReady 在 registerMakerIpcsAfterSplash 之前
+  // 若本调用是 getMakerCore() 的首次调用（onReady 在 ensureMakerReady 之前
   // 触发时可能发生），_initialCustomMcpRefresh 刚启动但尚未落地；在 startScheduler 前
   // await，确保第一个 scheduler tick 能看到用户已保存的自定义 MCP 配置。
-  // 若 Maker 已被 registerMakerIpcsAfterSplash 构造过，promise 早已 resolve，no-op。
+  // 若 Maker 已被 ensureMakerReady 构造过，promise 早已 resolve，no-op。
   await waitForInitialCustomMcpRefresh();
   const automationGitBaselineHooks = createAutomationUserTurnGitBaselineHooks();
   try {
@@ -1031,6 +1041,8 @@ const safeStorageReadLog = createLogger('safe-storage:read');
 const rendererConsoleLog = createLogger('renderer-console');
 const updatePresentationLog = createLogger('update-presentation');
 const voicePowerBroadcastLog = createLogger('voice-input-power');
+const headlessStartupLog = createLogger('headless-startup');
+const headlessMode = isHeadlessMode(process.argv);
 let rendererBootGuard: RendererBootGuard | null = null;
 
 const lifecycleDbClientManager = createLifecycleDbClientManager({
@@ -2933,6 +2945,22 @@ function syncDefaultPluginsForActiveOwner(): void {
   });
 }
 
+let ensureMakerReadyImpl: (() => Promise<void>) | null = null;
+
+/**
+ * Ensure the Maker singleton and its main-process services are ready.
+ *
+ * The implementation is installed while main IPC handlers are registered,
+ * but this entry point itself has no renderer dependency and can also be
+ * called by another main-process bootstrap path.
+ */
+export async function ensureMakerReady(): Promise<void> {
+  if (ensureMakerReadyImpl == null) {
+    throw new Error('Maker readiness initializer has not been installed');
+  }
+  await ensureMakerReadyImpl();
+}
+
 const registerIpcHandlers = () => {
   // Find the primary app window, skipping transient utility BrowserWindows like
   // the voice-input overlay (minimizable:false, maximizable:false). Electron's
@@ -4619,9 +4647,10 @@ const registerIpcHandlers = () => {
       platform,
     };
   });
+  ensureMakerReadyImpl = registerMakerIpcsAfterSplash;
 
   // Codex 元 IPC (auth/binary/usage) 已升级到 maker:* 命名空间, 详见
-  // maker-ipc/auth.ts / status.ts / usage.ts, 注册于 registerMakerIpcsAfterSplash 内。
+  // maker-ipc/auth.ts / status.ts / usage.ts, 注册于 ensureMakerReady 内。
 
   const allowedSystemSettingsUrls = new Set([
     'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
@@ -6327,6 +6356,9 @@ app.on('ready', async () => {
     await runSmokeTest(smoke.userId, smoke.pluginStorage, smoke.resultFile);
     return;
   }
+  if (headlessMode) {
+    headlessStartupLog.info('headless mode enabled; window creation will be skipped');
+  }
 
   // WebAuthn 是 app/session 级能力：在任何 RSB guest 或 popup WebContents 创建
   // 之前装账户选择回调；正式签名的 macOS 包同时启用 Touch ID 平台认证器。
@@ -6810,12 +6842,14 @@ app.on('ready', async () => {
   // log-upload:settings-get 决定入口可用性;更重要的是崩溃即时路径要在
   // onFatalShutdown 上就位,否则 createWindow 之后立刻崩的那一次拿不到标记。
   initLogUploadService();
-  startupWindowCreationAllowed = true;
-  createWindow();
-  // 预热仅服务 dev macOS，延迟执行避免和启动关键路径争用 CPU；失败由入口内部吞掉。
-  setTimeout(() => {
-    prewarmMacComputerPermissionGuideHelper();
-  }, 3_000);
+  if (shouldCreateMainWindow(headlessMode)) {
+    startupWindowCreationAllowed = true;
+    createWindow();
+    // 预热仅服务 dev macOS，延迟执行避免和启动关键路径争用 CPU；失败由入口内部吞掉。
+    setTimeout(() => {
+      prewarmMacComputerPermissionGuideHelper();
+    }, 3_000);
+  }
   initUpdateService();
   // 在线人数心跳:App 启动即上报,内部走 deviceId / userId 兜底,登录前后都活
   initHeartbeatService();
@@ -6846,9 +6880,30 @@ app.on('ready', async () => {
       }
     })
     .catch(() => undefined);
+  if (headlessMode) {
+    const platform = process.platform as 'darwin' | 'win32' | 'linux';
+    const ensureBinariesReady = createEnsureBinariesReady(platform, {
+      peekNeedsDownload: binaryPeekNeedsDownload,
+      prepare: binaryPrepare,
+      broadcastResetForStep2: (kind) => binaryBroadcastResetForStep(kind, 2, 2),
+    });
+    const linuxInstallSignal = getLinuxInstallSignal(
+      platform,
+      app.isPackaged,
+      LINUX_AGENT_INSTALL_STARTUP_DEADLINE_MS,
+    );
+    const started = await runHeadlessStartup({
+      ensureBinariesReady,
+      linuxInstallSignal,
+      ensureMakerReady,
+      logger: headlessStartupLog,
+      exit: (code) => app.exit(code),
+    });
+    if (!started) return;
+  }
   // 注:invoke-capture 自检(assertCaptureHealthy)不在这里——maker:create-session / maker:send
-  // 由 splash 后的 registerMakerIpcsAfterSplash 延迟注册,此刻尚未注册。自检已挪到该函数末尾
-  // (见上方),那里所有 sentinel 都已就位,结果才准确。
+  // 由 GUI splash 或 headless 就绪路径触发的 ensureMakerReady 注册,此刻尚未注册。
+  // 自检已挪到该函数末尾(见上方),那里所有 sentinel 都已就位,结果才准确。
 
   // 睡醒白屏取证:suspend/resume/lock/unlock 全部落日志,给 renderer 侧
   // render-watchdog 的漂移/无帧日志提供时间锚点。
@@ -7011,9 +7066,7 @@ onQuit('local-db-close', () => localDbCloseDb(), 'post-async');
 installQuitHandler(6000);
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (shouldQuitWhenAllWindowsClosed(headlessMode, process.platform)) app.quit();
 });
 
 app.on('activate', () => {
@@ -7031,7 +7084,7 @@ app.on('activate', () => {
   // focusMainWindow() 在 hide-on-close 模式下天然把藏起来的窗口 show 回来,
   // renderer 不重载;返回 false 表示主窗口真没了(异常或首次启动),才 createWindow。
   // 端点清单阻断期间禁止建窗(同 second-instance,防绕过阻断门 + preload 白屏)。
-  if (startupWindowCreationAllowed && !focusMainWindow()) {
+  if (!headlessMode && startupWindowCreationAllowed && !focusMainWindow()) {
     createWindow();
   }
 });

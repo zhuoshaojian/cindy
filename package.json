@@ -94,6 +94,7 @@
     "postinstall": "node scripts/ensure-agent-binaries.mjs --best-effort && node scripts/fix-node-pty-perms.mjs && pnpm --filter @cindy/model-access-protocol build",
     "dev:desktop": "node scripts/ensure-deps.mjs && node scripts/ensure-dev-runtime-assets.mjs && pnpm --filter desktop dev",
     "dev:desktop:remote": "node scripts/ensure-deps.mjs && node scripts/ensure-dev-runtime-assets.mjs && pnpm --filter desktop dev:remote",
+    "dev:desktop:headless:remote": "node scripts/ensure-deps.mjs && node scripts/ensure-dev-runtime-assets.mjs && pnpm --filter desktop dev:headless:remote",
     "restart:desktop:remote": "node scripts/desktop-restart-runner.mjs --wait-ready",
     "restart:desktop:local": "node scripts/desktop-restart-runner.mjs --local --wait-ready",
     "desktop:whoami": "node scripts/desktop-whoami.mjs",
