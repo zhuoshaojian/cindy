@@ -51,6 +51,11 @@ function hardwareLabel(deviceInfo: DeviceLinkDeviceInfo | null | undefined): str
   return label || null;
 }
 
+/** 云端实例(relay 透传 deviceInfo.kind):列表置底、禁止重命名。 */
+function isCloudDevice(device: DeviceLinkDeviceView | null | undefined): boolean {
+  return device?.deviceInfo?.kind === 'cloud';
+}
+
 function memoryLabel(memoryGb: number | null | undefined): string | null {
   if (typeof memoryGb !== 'number' || !Number.isFinite(memoryGb) || memoryGb <= 0) return null;
   const formatted = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(memoryGb);
@@ -148,7 +153,10 @@ export function MyDevicesPanel({
   const self = (s.devices ?? []).find((d) => d.isSelf);
   // 与切换栏同一排序规则:按稳定身份(名字 → deviceId),不跟服务端的「在线/lastSeen 倒序」——
   // 短期上下线 / 心跳不再让顺序跳动,设备只在原位改在线点。本机单独置顶(下面单独渲染)。
-  const others = (s.devices ?? []).filter((d) => !d.isSelf).sort(compareDevicesByName);
+  const others = (s.devices ?? [])
+    .filter((d) => !d.isSelf)
+    // 云端实例整体置底(防误点),桶内沿用稳定身份排序(与切换栏一致)。
+    .sort((a, b) => Number(isCloudDevice(a)) - Number(isCloudDevice(b)) || compareDevicesByName(a, b));
   const revokedControllers = new Set(s.revokedControllers);
   const controlling = new Set(s.controlledBy.map((c) => c.deviceId));
 
@@ -163,10 +171,11 @@ export function MyDevicesPanel({
         : 'var(--remote-status-disconnected)';
 
   const handleRename = async (deviceId: string) => {
+    const target =
+      self?.deviceId === deviceId ? self : others.find((d) => d.deviceId === deviceId);
+    if (isCloudDevice(target)) return; // 云端实例不可重命名(名字跟随本地化 selfName)
     const name = editingName.trim();
-    const currentName =
-      (self?.deviceId === deviceId ? self : others.find((d) => d.deviceId === deviceId))
-        ?.name.trim() ?? '';
+    const currentName = target?.name.trim() ?? '';
     setEditingId(null);
     if (name && name === currentName) return;
     await s.rename(deviceId, name || null);
@@ -224,7 +233,7 @@ export function MyDevicesPanel({
               aria-hidden
             />
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              {self && editingId === self.deviceId ? (
+              {self && editingId === self.deviceId && !isCloudDevice(self) ? (
                 <div className="flex items-center gap-1.5">
                   <input
                     value={editingName}
@@ -277,7 +286,7 @@ export function MyDevicesPanel({
                 </span>
               ) : null}
             </div>
-            {self && editingId !== self.deviceId ? (
+            {self && editingId !== self.deviceId && !isCloudDevice(self) ? (
               <button
                 type="button"
                 onClick={() => {
@@ -341,7 +350,7 @@ export function MyDevicesPanel({
                     aria-hidden
                   />
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    {editingId === d.deviceId ? (
+                    {editingId === d.deviceId && !isCloudDevice(d) ? (
                       <div className="flex items-center gap-1.5">
                         <input
                           value={editingName}
@@ -382,17 +391,19 @@ export function MyDevicesPanel({
                   </div>
                   {editingId !== d.deviceId && (
                     <div className="flex shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingId(d.deviceId);
-                          setEditingName(d.name);
-                        }}
-                        aria-label={t('settings.devices.rename')}
-                        className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-                      >
-                        <Pencil size={13} />
-                      </button>
+                      {!isCloudDevice(d) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingId(d.deviceId);
+                            setEditingName(d.name);
+                          }}
+                          aria-label={t('settings.devices.rename')}
+                          className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => void handleDelete(d.deviceId)}

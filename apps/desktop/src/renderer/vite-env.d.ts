@@ -108,6 +108,8 @@ interface DeviceLinkDeviceInfo {
   memoryGb?: number;
   osVersion?: string;
   modelLabel?: string;
+  /** 云端实例标记,与 shared DeviceLinkDeviceInfo 保持同步。 */
+  kind?: 'cloud';
 }
 
 interface DeviceLinkDeviceView {

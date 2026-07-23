@@ -118,6 +118,9 @@ import {
   OPEN_LINK_OBSERVATION_CHANNEL,
   type DeviceResponsivenessTracker,
 } from './responsivenessTracker';
+import { getResolvedMainLocale } from '../i18n';
+import { hasPodProvisioningInput } from '../pod-provisioning.js';
+import { resolveDeviceLinkDeviceName } from './pod-defaults.js';
 
 // register.ts 从 device-link/index 导入 setBusyProbe;改用 busyReporter 后在此 re-export 保持其导入不变。
 export { setBusyProbe };
@@ -345,14 +348,27 @@ function recoverFromRelayAuthFailure(): void {
     });
 }
 
-/** Windows 历史主机名可能带尾部空白/全大写,统一 trim;空值兜底 'Unknown Device' */
+/**
+ * Windows 历史主机名可能带尾部空白/全大写,统一 trim;空值兜底
+ * 'Unknown Device'。普通实例沿用主机名;provisioned Pod 上报四语「云端」
+ * 默认 selfName。
+ *
+ * relay 的 manual name 优先于 selfName,所以用户改名不会被后续 hello 覆盖。
+ */
 function deviceName(): string {
-  const name = os.hostname().trim();
-  return name || 'Unknown Device';
+  return resolveDeviceLinkDeviceName({
+    podMode: hasPodProvisioningInput(process.env),
+    locale: getResolvedMainLocale(),
+    hostname: os.hostname(),
+  });
 }
 
 function buildDeviceInfo(): DeviceInfo {
   const info: DeviceInfo = {};
+  if (hasPodProvisioningInput(process.env)) {
+    // Protocol marker lets mobile distinguish a cloud Pod without trusting its name.
+    info.kind = 'cloud';
+  }
   const cpuLabel = normalizeDeviceInfoText(os.cpus()[0]?.model);
   if (cpuLabel) info.cpuLabel = cpuLabel;
 

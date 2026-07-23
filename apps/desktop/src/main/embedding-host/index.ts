@@ -98,6 +98,10 @@ export async function stopEmbeddingHost(): Promise<void> {
   _client = null;
 }
 
+export function getEmbeddingServiceIfInitialized(): EmbeddingService | null {
+  return _service;
+}
+
 export function getEmbeddingService(): EmbeddingService {
   if (!_service) {
     throw new Error('embedding-host not started: call startEmbeddingHost() first');

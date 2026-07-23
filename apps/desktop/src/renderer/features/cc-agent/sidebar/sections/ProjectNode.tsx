@@ -57,6 +57,7 @@ import { RemoteProjectIcon } from '../RemoteProjectIcon';
 import { isDeviceLinkWriteBlocked } from '../../lib/remoteSessionWriteGuard';
 import { projectBulkArchiveActionForStatus } from '../../lib/projectBulkArchiveAction';
 import { getRemoteProjectMachineIdentity } from '../../lib/remoteProjectIdentity';
+import { useCloudDeviceIds } from '@/features/device-link/useCloudDeviceIds';
 
 const log = createLogger('ProjectNode');
 
@@ -145,6 +146,7 @@ export function ProjectNode({
   onArchiveAll,
 }: ProjectNodeProps) {
   const { t } = useTranslation();
+  const cloudDeviceIds = useCloudDeviceIds();
   // remote 项目复用本地专属入口（在文件管理器打开 / 复制深链 / 同步 Codex）会按本机
   // 路径误操作或丢失 host 身份，故这些入口对 remote 一律隐藏；host-aware 版本后续单独迭代。
   const isRemote = project.scope === 'remote';
@@ -331,6 +333,7 @@ export function ProjectNode({
             <Tip text={remoteIdentity?.displayLabel ?? project.deviceLinkDeviceId ?? ''}>
               <RemoteProjectIcon
                 kind="device-link"
+                cloud={project.deviceLinkDeviceId ? cloudDeviceIds.has(project.deviceLinkDeviceId) : false}
                 connectionStatus={project.deviceLinkConnectionStatus}
                 className="text-[var(--folder-item-icon)]"
               />

@@ -153,5 +153,6 @@ function deviceInfoEqual(
   return (a?.cpuLabel ?? null) === (b?.cpuLabel ?? null)
     && (a?.memoryGb ?? null) === (b?.memoryGb ?? null)
     && (a?.osVersion ?? null) === (b?.osVersion ?? null)
-    && (a?.modelLabel ?? null) === (b?.modelLabel ?? null);
+    && (a?.modelLabel ?? null) === (b?.modelLabel ?? null)
+    && (a?.kind ?? null) === (b?.kind ?? null);
 }

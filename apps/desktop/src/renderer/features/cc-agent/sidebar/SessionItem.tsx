@@ -91,6 +91,7 @@ import { prefetchDirtyWorktreeForRemoval } from '@/lib/worktreeRemovalWarning';
 import { useSessionAttentionKind } from '@/lib/sessionAttentionStore';
 import { useSessionAttentionUrgency } from '../contexts/SessionAttentionUrgencyContext';
 import { useRemoteSessionActivity } from '@/features/device-link/remoteSessionActivityStore';
+import { useCloudDeviceIds } from '@/features/device-link/useCloudDeviceIds';
 import { resolveSidebarRightStatus } from './sidebarRightStatus';
 import { AutomationTimerIcon } from './AutomationTimerIcon';
 import { SidebarRightStatusIndicator } from './SidebarRightStatusIndicator';
@@ -311,6 +312,7 @@ export const SessionItem = memo(function SessionItem({
   insideAutomationGroup = false,
 }: SessionItemProps) {
   const { t } = useTranslation();
+  const cloudDeviceIds = useCloudDeviceIds();
   const prRefs = usePrRefsForSession(session.id);
   // mod+1..9 序号徽标:模块 store 按 sessionId 精准订阅(性能不变量第 2 条),
   // 非按住态恒为 null,不惊动 memo。
@@ -958,6 +960,7 @@ export const SessionItem = memo(function SessionItem({
           {remoteIconKind && (
             <RemoteProjectIcon
               kind={remoteIconKind}
+              cloud={session.deviceLinkDeviceId ? cloudDeviceIds.has(session.deviceLinkDeviceId) : false}
               size={12}
               strokeWidth={1.8}
               connectionStatus={remoteIconConnectionStatus}

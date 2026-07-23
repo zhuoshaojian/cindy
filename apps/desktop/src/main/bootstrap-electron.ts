@@ -179,6 +179,12 @@ import {
   shouldCreateMainWindow,
   shouldQuitWhenAllWindowsClosed,
 } from './headless-startup.js';
+import {
+  bootstrapPodProvisioning,
+  createNodeFetchAdapter,
+  hasPodProvisioningInput,
+  resolvePodDeviceIdOverride,
+} from './pod-provisioning.js';
 import { RendererBootGuard } from './renderer-boot-guard';
 import yaml from 'js-yaml';
 import matter from 'gray-matter';
@@ -307,6 +313,7 @@ import {
   stopEmbeddingHost,
   isEmbeddingHostStarted,
   getEmbeddingService,
+  getEmbeddingServiceIfInitialized,
   isPluginVectorConsumerActive,
   registerEmbeddingHostLazyStart,
   type EmbeddingService,
@@ -372,15 +379,23 @@ import { WindowManualDragController } from './windowManualDrag';
 // 设备互联(跨设备远程控制): relay 连接 host + 开关/设备列表 IPC
 import {
   initDeviceLinkService,
+  getDeviceLinkStatus,
   releaseDeviceLinkOwnershipBeforeLogout,
   handleDeviceLinkSystemResume,
+  setRemoteControlEnabled,
 } from './device-link';
+import { initializePodDeviceLink } from './device-link/pod-defaults.js';
+import { readDeviceLinkSettings } from './device-link/settings-store.js';
 import {
   getUpdateRelaunchControllers,
   hasInFlightRemoteInvokes,
   pushSessionActivityToController,
   setSessionsSubscribedListener,
 } from './device-link/dispatch';
+import {
+  getControlControllers,
+  getSubscribedControllers,
+} from './device-link/subscriptions.js';
 import {
   registerDeviceLinkIpc,
   defaultDeps as deviceLinkIpcDeps,
@@ -498,6 +513,7 @@ import {
   clearDeferredCodexRestartForOwnerBoundary,
   collectAgentInputQueueScanTexts,
   createAutomationUserTurnGitBaselineHooks,
+  getMakerInputActivitySnapshot,
   registerMakerIpc as registerMakerCoreIpc,
   isSessionTurnPendingCompletion,
   stopOrcaIdleWatcher,
@@ -649,6 +665,81 @@ import {
 } from './windowsTrayLifecycle.js';
 import { createWindowsClosePromptFallbackController } from './windowsClosePromptFallback.js';
 import {
+  collectCloudRuntimeActivity,
+  createCloudRuntimeController,
+  createCloudStatusStore,
+  type CloudRuntimeController,
+  type CloudReadinessComponents,
+} from './cloud-runtime/index.js';
+
+const CLOUD_RUNTIME_HEARTBEAT_INTERVAL_MS = 5_000;
+const CLOUD_RUNTIME_ACTIVITY_STALE_AFTER_MS = 15_000;
+const CLOUD_RUNTIME_IDLE_AFTER_MS = 10 * 60_000;
+const CLOUD_RUNTIME_SCHEDULER_WAKE_GUARD_MS = 60_000;
+let cloudRuntimeController: CloudRuntimeController | null = null;
+
+async function startPodCloudRuntimeController(): Promise<void> {
+  if (cloudRuntimeController) return;
+  const membershipId = authManager.readProvisionedMembershipId();
+  const instanceId = resolvePodDeviceIdOverride(process.env);
+  if (!membershipId || !instanceId) {
+    throw new Error('Pod cloud runtime identity is incomplete');
+  }
+  const statusFile =
+    process.env.CINDY_CLOUD_STATUS_FILE?.trim() ||
+    path.join(app.getPath('userData'), 'cloud-runtime', 'status.json');
+  const getReadiness = async (): Promise<CloudReadinessComponents> => {
+    const state = authManager.getAuthState();
+    const maker = getMakerIfReady();
+    const deviceLinkReady =
+      readDeviceLinkSettings().remoteControlEnabled && getDeviceLinkStatus() === 'online';
+    return {
+      auth: state.isAuthenticated && state.user?.id === membershipId ? 'ready' : 'not-ready',
+      database: getDbClient() ? 'ready' : 'not-ready',
+      binaries: maker ? 'ready' : 'not-ready',
+      maker: maker ? 'ready' : 'not-ready',
+      deviceLink: deviceLinkReady ? 'ready' : 'not-ready',
+    };
+  };
+
+  cloudRuntimeController = createCloudRuntimeController({
+    instanceId,
+    membershipId,
+    policy: {
+      staleAfterMs: CLOUD_RUNTIME_ACTIVITY_STALE_AFTER_MS,
+      idleAfterMs: CLOUD_RUNTIME_IDLE_AFTER_MS,
+      schedulerWakeGuardMs: CLOUD_RUNTIME_SCHEDULER_WAKE_GUARD_MS,
+    },
+    heartbeatIntervalMs: CLOUD_RUNTIME_HEARTBEAT_INTERVAL_MS,
+    collectActivity: () =>
+      collectCloudRuntimeActivity({
+        getMaker: getMakerIfReady,
+        getInputActivity: () => getMakerInputActivitySnapshot(getMakerIfReady()),
+        getScheduler: getSchedulerIfInitialized,
+        getEmbeddingActivity: async () => {
+          const service = getEmbeddingServiceIfInitialized();
+          // embedding host 按 chat-embedding 设置开关启动;未启动 = 确定没有
+          // embedding 任务(known zero),不是 unknown,否则 Pod 永远 degraded。
+          if (!service) return { pendingCount: 0, runningCount: 0 };
+          return service.getStatus();
+        },
+        getDeviceLinkActivity: () => ({
+          controllers: getControlControllers().length,
+          subscriptions: getSubscribedControllers().length,
+        }),
+        getKeepAwake: () => readDeviceLinkSettings().keepAwake,
+        now: Date.now,
+      }),
+    collectReadiness: getReadiness,
+    statusStore: createCloudStatusStore(statusFile),
+    now: Date.now,
+    schedule: (callback, delayMs) => setTimeout(callback, delayMs),
+    cancelSchedule: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    logger: createLogger('cloud-runtime'),
+  });
+  await cloudRuntimeController.start();
+}
+import {
   isWindowsCloseBehavior,
   WINDOW_BEHAVIOR_GET_WINDOWS_CLOSE_BEHAVIOR_CHANNEL,
   WINDOW_BEHAVIOR_SET_SWALLOW_ACTIVATION_CLICK_CHANNEL,
@@ -759,6 +850,7 @@ import { pickNativeAtResource } from './nativeAtResourcePicker.js';
 import {
   startScheduler,
   resetScheduler,
+  getSchedulerIfInitialized,
   getScheduleStorage,
   getScheduleStorageIfInitialized,
   getProjectAutomationLoader,
@@ -6855,13 +6947,18 @@ app.on('ready', async () => {
   initHeartbeatService();
   // 设备互联(跨设备远程控制):登录后连 relay,登出即断;开关与设备列表 IPC 一并注册
   let updateRelaunchRemoteBusy = false;
-  initDeviceLinkService({
-    onUpdateRelaunchBusyChanged: (busy) => {
-      const transition = decideUpdateRelaunchBusyTransition(updateRelaunchRemoteBusy, busy);
-      updateRelaunchRemoteBusy = transition.nextBusy;
-      if (transition.shouldNotify) notifyUpdateAutoRelaunchBusyStateChanged();
-    },
-  });
+  const startDeviceLinkService = () => {
+    initDeviceLinkService({
+      onUpdateRelaunchBusyChanged: (busy) => {
+        const transition = decideUpdateRelaunchBusyTransition(
+          updateRelaunchRemoteBusy,
+          busy,
+        );
+        updateRelaunchRemoteBusy = transition.nextBusy;
+        if (transition.shouldNotify) notifyUpdateAutoRelaunchBusyStateChanged();
+      },
+    });
+  };
   // 上次登出时没删干净的远程会话镜像缓存(文件锁 / 权限占用),开机再清一次。
   // 不阻塞启动关键路径,失败留在队列里等下一次(见 mirrorCachePurgeQueue)。
   // 但**缓存读**要等它落定:否则 renderer 的 hydrate 可能读到正在被删的那份明文,
@@ -6880,6 +6977,9 @@ app.on('ready', async () => {
       }
     })
     .catch(() => undefined);
+  const podProvisioningMode = hasPodProvisioningInput(process.env);
+  const deferDeviceLink = headlessMode && podProvisioningMode;
+  if (!deferDeviceLink) startDeviceLinkService();
   if (headlessMode) {
     const platform = process.platform as 'darwin' | 'win32' | 'linux';
     const ensureBinariesReady = createEnsureBinariesReady(platform, {
@@ -6893,6 +6993,43 @@ app.on('ready', async () => {
       LINUX_AGENT_INSTALL_STARTUP_DEADLINE_MS,
     );
     const started = await runHeadlessStartup({
+      provisionSession: async () => {
+        const provisioned = await bootstrapPodProvisioning({
+          env: process.env,
+          getAuthBaseUrl: () => getClientEndpoint('authApiBaseUrl'),
+          authRegion: import.meta.env.VITE_CINDY_AUTH_REGION === 'global' ? 'global' : 'cn',
+          // Electron net.fetch can stall before sending when no BrowserWindow
+          // exists. Node fetch uses undici and has no Electron session dependency.
+          fetch: createNodeFetchAdapter(),
+          logger: headlessStartupLog,
+          readPersistedAccountRefreshToken: authManager.readProvisionedAccountRefreshToken,
+          readPersistedMembershipId: authManager.readProvisionedMembershipId,
+          persistAccountRefreshToken: authManager.persistProvisionedAccountRefreshToken,
+          persistMembershipId: authManager.persistProvisionedMembershipId,
+          installSession: authManager.installProvisionedSession,
+        });
+        if (!provisioned) return false;
+
+        const userId = authManager.getCurrentUserId();
+        if (!userId) {
+          throw new Error('Pod provisioning installed no authenticated user');
+        }
+        const localDbResult = await localDbEnsureReady(userId);
+        if (!localDbResult.ready) {
+          throw new Error(
+            `Pod provisioning localDb failed (${localDbResult.error.code}): ${localDbResult.error.message}`,
+          );
+        }
+        const dbClientTakeover = await ensureLifecycleDbClient(userId);
+        if (dbClientTakeover.mode === 'failed' || dbClientTakeover.mode === 'skipped') {
+          throw new Error(`Pod provisioning DbClient unavailable (${dbClientTakeover.mode})`);
+        }
+        if (dbClientTakeover.shouldReleaseMainDb && process.env.XDT_DB_INPROC !== 'true') {
+          localDbCloseDb({ preserveSchemaMigrationLease: true });
+          dbClientLog.info('[DbClient] main-side _db released after headless Pod takeover');
+        }
+        return true;
+      },
       ensureBinariesReady,
       linuxInstallSignal,
       ensureMakerReady,
@@ -6900,6 +7037,24 @@ app.on('ready', async () => {
       exit: (code) => app.exit(code),
     });
     if (!started) return;
+    if (deferDeviceLink) {
+      try {
+        await initializePodDeviceLink(podProvisioningMode, {
+          initDeviceLinkService: startDeviceLinkService,
+          readRemoteControlEnabled: () =>
+            readDeviceLinkSettings().remoteControlEnabled,
+          setRemoteControlEnabled,
+          logger: headlessStartupLog,
+        });
+        await startPodCloudRuntimeController();
+      } catch (err) {
+        headlessStartupLog.error('Pod device-link initialization failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        app.exit(1);
+        return;
+      }
+    }
   }
   // 注:invoke-capture 自检(assertCaptureHealthy)不在这里——maker:create-session / maker:send
   // 由 GUI splash 或 headless 就绪路径触发的 ensureMakerReady 注册,此刻尚未注册。
@@ -7025,6 +7180,11 @@ onQuit(
 //                           codex 子进程之后, 这里并发跑最坏是 log noise。
 // (clean-exit-snapshot 已移除 — 退出时不再做 db.backup, 容灾改由 SQLite WAL crash
 //  recovery 兜底, 详见 localDb/index.ts 文件头 ADR-FE7 修订说明。)
+onQuit('cloud-runtime', async () => {
+  if (!cloudRuntimeController) return;
+  await cloudRuntimeController.stop();
+  cloudRuntimeController = null;
+}, 'async');
 onQuit('shutdown-maker', shutdownMaker, 'async');
 onQuit('review-artifact-snapshots', cleanupActiveReviewArtifactSnapshots, 'async');
 onQuit('orca-idle-watcher', () => stopOrcaIdleWatcher(), 'sync');

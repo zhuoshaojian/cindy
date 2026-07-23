@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { DeviceView } from '@cindy/device-link';
+import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import {
   deviceAccessState,
   isControllableDevice,
@@ -24,6 +27,33 @@ function device(patch: Partial<DeviceView> = {}): DeviceView {
 }
 
 describe('mobile controllable device filter', () => {
+  it('places cloud Pods after ordinary devices without changing stable order', () => {
+    expect(sortCloudDevicesLast([
+      { id: 'normal-a' },
+      { id: 'cloud-a', kind: 'cloud' as const },
+      { id: 'normal-b' },
+      { id: 'cloud-b', kind: 'cloud' as const },
+    ])).toEqual([
+      { id: 'normal-a' },
+      { id: 'normal-b' },
+      { id: 'cloud-a', kind: 'cloud' },
+      { id: 'cloud-b', kind: 'cloud' },
+    ]);
+  });
+
+  it('does not expose rename for cloud devices in the home device menu', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
+    expect(source).toContain(
+      'item.deviceId && !cloudDeviceIds.has(item.deviceId)',
+    );
+  });
+
+  it('does not render a cloud icon in the home device menu', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
+    expect(source).not.toContain('deviceMenuIconSlot');
+    expect(source).not.toContain('<Cloud');
+  });
+
   it('requires online, remoteControlEnabled and not self', () => {
     expect(isControllableDevice(device())).toBe(true);
     expect(isControllableDevice(device({ busy: true }))).toBe(true);

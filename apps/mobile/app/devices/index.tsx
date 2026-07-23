@@ -63,6 +63,7 @@ import {
   saveDeviceIdentityCache,
 } from '@/device-link/deviceIdentityStore';
 import { toDeviceListItems } from '@/device-link/devices';
+import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import {
   collectFreshPresenceDeviceIds,
   createPresenceFreshnessTracker,
@@ -840,11 +841,16 @@ export default function HomeScreen() {
   const deviceModels = useMemo(() => deviceRows.map((item) => ({
     canOpen: item.canOpen,
     deviceId: item.device.deviceId,
+    kind: item.device.deviceInfo?.kind,
     name: item.device.name,
     state: item.state,
     statusDetail: item.statusDetail,
     statusLabel: item.statusLabel,
   })), [deviceRows]);
+  const cloudDeviceIds = useMemo(
+    () => new Set(deviceModels.filter((item) => item.kind === 'cloud').map((item) => item.deviceId)),
+    [deviceModels],
+  );
   const revokedTipDeviceName = useMemo(
     () => revokedTipDeviceId
       ? deviceModels.find((item) => item.deviceId === revokedTipDeviceId)?.name ?? t('devices.list.thisComputer')
@@ -966,7 +972,11 @@ export default function HomeScreen() {
   const newSessionDeviceOptions = useMemo(
     () => deviceModels
       .filter((item) => item.canOpen)
-      .map((item) => ({ deviceId: item.deviceId, name: item.name })),
+      .map((item) => ({
+        deviceId: item.deviceId,
+        name: item.name,
+        ...(item.kind === 'cloud' ? { kind: 'cloud' as const } : {}),
+      })),
     [deviceModels],
   );
   const selectedDeviceLabel = useMemo(() => {
@@ -1533,6 +1543,7 @@ export default function HomeScreen() {
         }}
       />
       <DeviceMenuModal
+        cloudDeviceIds={cloudDeviceIds}
         connectionStates={deviceConnectionStates}
         filters={home.deviceFilters}
         groupByProject={groupByProject}
@@ -1615,6 +1626,7 @@ function HomeInitialLoadingState({ style }: { style?: StyleProp<ViewStyle> }) {
 }
 
 function DeviceMenuModal({
+  cloudDeviceIds,
   connectionStates,
   filters,
   groupByProject,
@@ -1627,6 +1639,7 @@ function DeviceMenuModal({
   topOffset,
   visible,
 }: {
+  cloudDeviceIds: ReadonlySet<string>;
   connectionStates: Record<string, HomeDeviceConnectionState>;
   filters: readonly MobileHomeDeviceFilterItem[];
   groupByProject: boolean;
@@ -1656,7 +1669,17 @@ function DeviceMenuModal({
     onClosed,
   });
   const allFilter = filters.find((item) => item.deviceId === null) ?? null;
-  const deviceFilters = filters.filter((item) => item.deviceId !== null);
+  // 首页菜单不显示云图标(和常规机器一致留空),但云端仍整体置底防误点:
+  // filters 本身不带 kind,按 cloudDeviceIds 打标记后交 sortCloudDevicesLast 排序。
+  const deviceFilters = sortCloudDevicesLast(
+    filters
+      .filter((item) => item.deviceId !== null)
+      .map((item) =>
+        item.deviceId && cloudDeviceIds.has(item.deviceId)
+          ? { ...item, kind: 'cloud' as const }
+          : item,
+      ),
+  );
   return (
     <Modal animationType="none" onShow={onShowStartIn} transparent visible={mounted} onRequestClose={onClose}>
       <AnimatedPressable style={[styles.deviceMenuBackdrop, { paddingTop: topOffset, opacity: progress }]} onPress={onClose} testID="home.deviceMenu.backdrop">
@@ -1681,7 +1704,11 @@ function DeviceMenuModal({
                 label={item.label}
                 onLongPress={item.deviceId ? () => onOpenDevice(item) : undefined}
                 onPress={() => onSelect(item)}
-                onRename={item.deviceId ? () => onRenameDevice(item) : undefined}
+                onRename={
+                  item.deviceId && !cloudDeviceIds.has(item.deviceId)
+                    ? () => onRenameDevice(item)
+                    : undefined
+                }
                 selected={item.selected}
                 status={deviceMenuStatus(item)}
                 testID={item.deviceId ? `home.deviceChip.${sanitizeDeviceChipTestId(item.deviceId)}` : undefined}
@@ -1760,20 +1787,26 @@ function DeviceMenuItem({
           {connectionState === 'failed' ? <View style={styles.deviceConnectionFailedRing} /> : null}
         </View>
       ) : null}
-      {onRename ? (
-        <Pressable
-          accessibilityLabel={t('devices.list.a11y.renameDevice', { label })}
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={(event) => {
-            event.stopPropagation();
-            onRename();
-          }}
-          style={({ pressed }) => [styles.deviceMenuRenameButton, pressed && styles.pressed]}
-          testID={testID ? `${testID}.rename` : undefined}
-        >
-          <Pencil color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.regular} />
-        </Pressable>
+      {/* 尾列固定宽槽:有重命名(常规设备)渲染铅笔,无重命名(云端等)留空,
+          保证状态点在各行同一水平位置、不因缺少铅笔而右移错位。 */}
+      {status || onRename ? (
+        <View style={styles.deviceMenuRenameSlot}>
+          {onRename ? (
+            <Pressable
+              accessibilityLabel={t('devices.list.a11y.renameDevice', { label })}
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={(event) => {
+                event.stopPropagation();
+                onRename();
+              }}
+              style={({ pressed }) => [styles.deviceMenuRenameButton, pressed && styles.pressed]}
+              testID={testID ? `${testID}.rename` : undefined}
+            >
+              <Pencil color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.regular} />
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
     </Pressable>
   );
@@ -2961,6 +2994,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   deviceMenuRenameButton: {
     alignItems: 'center',
     borderRadius: radius.pill,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  // 尾列固定宽槽(与重命名按钮同宽):云端等无重命名的行留空占位,状态点跨行对齐。
+  deviceMenuRenameSlot: {
+    alignItems: 'center',
     height: 34,
     justifyContent: 'center',
     width: 34,

@@ -82,6 +82,7 @@ import { SessionBranchTreeDialog } from './SessionBranchTreeDialog';
 import { useRemoteProjectSessions } from '@/features/device-link/remoteProjectsStore';
 import { isRemoteSessionWriteBlocked } from './lib/remoteSessionWriteGuard';
 import { Tip } from '@/components/ui/tooltip';
+import { useCloudDeviceIds } from '@/features/device-link/useCloudDeviceIds';
 
 const log = createLogger('SessionContentHeader');
 
@@ -126,6 +127,7 @@ export function SessionContentHeader({
   remoteSessionUnavailable = false,
 }: SessionContentHeaderProps) {
   const { t } = useTranslation();
+  const cloudDeviceIds = useCloudDeviceIds();
   const { sessions, patchLocal } = useCCSessions();
   const remoteProjectSessions = useRemoteProjectSessions();
   const routeSessionById = useMemo(
@@ -597,6 +599,7 @@ export function SessionContentHeader({
         <Tip text={session.deviceLinkDeviceName ?? session.deviceLinkDeviceId ?? session.remoteHostId ?? ''}>
           <RemoteProjectIcon
             kind={remoteIconKind}
+            cloud={session.deviceLinkDeviceId ? cloudDeviceIds.has(session.deviceLinkDeviceId) : false}
             connectionStatus={remoteIconConnectionStatus}
             className="mr-1 text-[var(--cmd-palette-item-meta)]"
           />

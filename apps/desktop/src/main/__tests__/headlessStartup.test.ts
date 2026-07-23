@@ -72,6 +72,43 @@ describe('runHeadlessStartup', () => {
     expect(d.exit).not.toHaveBeenCalled();
   });
 
+  it('provisions the session before binaries and Maker', async () => {
+    const calls: string[] = [];
+    const d = deps({
+      provisionSession: async () => {
+        calls.push('provision');
+        return true;
+      },
+      ensureBinariesReady: async () => {
+        calls.push('binaries');
+        return ready;
+      },
+      ensureMakerReady: async () => {
+        calls.push('maker');
+      },
+    });
+
+    await expect(runHeadlessStartup(d)).resolves.toBe(true);
+    expect(calls).toEqual(['provision', 'binaries', 'maker']);
+  });
+
+  it('exits on provisioning failure without preparing binaries or Maker', async () => {
+    const ensureBinariesReady = vi.fn(async () => ready);
+    const ensureMakerReady = vi.fn(async () => {});
+    const d = deps({
+      provisionSession: async () => {
+        throw new Error('invalid provision token');
+      },
+      ensureBinariesReady,
+      ensureMakerReady,
+    });
+
+    await expect(runHeadlessStartup(d)).resolves.toBe(false);
+    expect(ensureBinariesReady).not.toHaveBeenCalled();
+    expect(ensureMakerReady).not.toHaveBeenCalled();
+    expect(d.exit).toHaveBeenCalledWith(1);
+  });
+
   it('exits without constructing Maker when binaries fail', async () => {
     const ensureMakerReady = vi.fn(async () => {});
     const d = deps({
@@ -87,5 +124,4 @@ describe('runHeadlessStartup', () => {
     expect(ensureMakerReady).not.toHaveBeenCalled();
     expect(d.exit).toHaveBeenCalledWith(1);
   });
-
 });

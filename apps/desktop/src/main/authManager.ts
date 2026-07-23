@@ -140,6 +140,8 @@ function authServerUrl(realm: AuthRegion = activeAuthRealm): string {
 const AUTH_SESSION_KEY = 'cindy_auth_session_v1';
 const LEGACY_RESOURCE_REFRESH_TOKEN_KEY = 'cindy_auth_refresh_token';
 const ACCOUNT_DELETION_RECEIPT_KEY = 'cindy_auth_account_deletion_receipt';
+const POD_ACCOUNT_REFRESH_TOKEN_KEY = 'cindy_pod_account_refresh_token';
+const POD_MEMBERSHIP_ID_KEY = 'cindy_pod_membership_id';
 const LEGACY_ACCOUNT_REFRESH_TOKEN_KEY = 'cindy_auth_account_refresh_token';
 const LEGACY_REFRESH_TOKEN_KEY = 'refresh_token';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
@@ -1476,6 +1478,8 @@ function clearAuth(
     } else {
       removeSafe(AUTH_SESSION_KEY);
       removeSafe(LEGACY_RESOURCE_REFRESH_TOKEN_KEY);
+      removeSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);
+      removeSafe(POD_MEMBERSHIP_ID_KEY);
       removeSafe(LEGACY_ACCOUNT_REFRESH_TOKEN_KEY);
       removeSafe(LEGACY_REFRESH_TOKEN_KEY);
     }
@@ -1636,6 +1640,73 @@ export function getDeviceId(): string {
 }
 
 export function getAuthState(): AuthState {
+  return snapshotAuthState();
+}
+
+/** Read the latest rotated account refresh token for headless Pod provisioning. */
+export function readProvisionedAccountRefreshToken(): string | null {
+  return readSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);
+}
+
+/**
+ * Persist an account refresh rotation before provisioning continues. Losing
+ * this write would make the injected predecessor unusable on the next start.
+ */
+export function persistProvisionedAccountRefreshToken(accountRefreshToken: string): void {
+  if (!accountRefreshToken || !writeSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY, accountRefreshToken)) {
+    throw new Error('failed to persist Pod account refresh token');
+  }
+}
+
+/** Read the last validated Pod membership selection from encrypted storage. */
+export function readProvisionedMembershipId(): string | null {
+  return readSafe(POD_MEMBERSHIP_ID_KEY);
+}
+
+/** Persist only a membership id returned by the authenticated account listing. */
+export function persistProvisionedMembershipId(membershipId: string): void {
+  if (!membershipId || !writeSafe(POD_MEMBERSHIP_ID_KEY, membershipId)) {
+    throw new Error('failed to persist Pod membership id');
+  }
+}
+
+/**
+ * Install a provisioned resource session through the same auth persistence
+ * and notification boundary as an interactive login.
+ */
+export function installProvisionedSession(
+  input: AuthTokenPair & { deviceId: string },
+): AuthState {
+  if (input.deviceId !== deviceId) {
+    throw new Error('provisioned session deviceId does not match this desktop instance');
+  }
+  if (!input.accessToken || !input.refreshToken) {
+    throw new Error('provisioned resource session is incomplete');
+  }
+  if (!writeSafe(REFRESH_TOKEN_KEY, input.refreshToken)) {
+    throw new Error('failed to persist provisioned resource refresh token');
+  }
+
+  const loginEpoch = ++authStateEpoch;
+  resetLoginFlowState();
+  accessToken = input.accessToken;
+  persistedRefreshTokenNeedsIdentityCheck = false;
+  clearReplacementIntegrationReloadTimers();
+  removeSafe(LEGACY_ACCOUNT_REFRESH_TOKEN_KEY);
+  removeSafe(LEGACY_REFRESH_TOKEN_KEY);
+  lastAcceptedRefreshToken = input.refreshToken;
+  clearReloginFlag();
+  currentUser = mapMembershipToAuthUser(input.membership);
+  commitActiveAppSession('cloud', currentUser.id);
+  scheduleCanaryFlagSync({
+    token: input.accessToken,
+    expectedAuthEpoch: loginEpoch,
+    expectedUserId: currentUser.id,
+  });
+  scheduleRefresh(input.accessToken);
+  getProviderSecretStore().reconcileOwner(input.membership.id);
+  notifyRenderer();
+  notifyAuthListeners();
   return snapshotAuthState();
 }
 

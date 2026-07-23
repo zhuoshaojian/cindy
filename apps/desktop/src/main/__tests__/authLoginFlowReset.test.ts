@@ -43,7 +43,15 @@ describe('auth login-flow reset', () => {
     const completeEnd = source.indexOf('\n}\n\nasync function acceptLoginOutcome', completeStart);
     const completeBody = source.slice(completeStart, completeEnd);
     expect(completeBody).toContain('if (authStateEpoch !== loginEpoch)');
-    expect(completeBody).toContain('notifyRenderer();');
+    expect(completeBody).toContain('applyAuthenticatedSession(outcome, {');
+    const applyStart = source.indexOf('function applyAuthenticatedSession(');
+    const applyEnd = source.indexOf(
+      '\n}\n\nasync function reloadPerAccountIntegrationsFromDisk',
+      applyStart,
+    );
+    const applyBody = source.slice(applyStart, applyEnd);
+    expect(applyBody).toContain('notifyRenderer();');
+    expect(applyBody).toContain('notifyAuthListeners();');
     // 防复活:主机飞书 token 链已随 refresh-feishu 退役(2026-07-17),
     // authManager 不得再接 FeishuTokenManager(飞书授权归 xd-feishu 意识
     // 的 OAuth broker 通道)。

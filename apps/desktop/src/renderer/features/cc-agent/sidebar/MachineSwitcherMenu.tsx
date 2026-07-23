@@ -44,6 +44,7 @@ import {
   Ban,
   Check,
   ChevronDown,
+  Cloud,
   EllipsisVertical,
   Loader2,
   Monitor,
@@ -208,7 +209,13 @@ export function MachineSwitcherMenu(): ReactNode {
           return (
             <MachineMenuItem
               key={device.deviceId}
-              icon={<MonitorSmartphone size={14} strokeWidth={2} />}
+              icon={
+                device.kind === 'cloud' ? (
+                  <Cloud size={14} strokeWidth={2} />
+                ) : (
+                  <MonitorSmartphone size={14} strokeWidth={2} />
+                )
+              }
               label={device.name}
               selected={isMachineSelected(selectedDeviceId, device.deviceId)}
               shimmer={connecting}

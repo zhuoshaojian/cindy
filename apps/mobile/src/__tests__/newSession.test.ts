@@ -1286,6 +1286,7 @@ describe('new session model', () => {
   it('serializes device candidates for new-session route params', () => {
     const encoded = serializeNewSessionDeviceOptions([
       { deviceId: ' pc ', name: ' PC ' },
+      { deviceId: 'pod', name: 'Cloud Cindy', kind: 'cloud' },
       { deviceId: 'mac', name: '' },
       { deviceId: 'pc', name: 'Duplicate' },
     ]);
@@ -1293,6 +1294,7 @@ describe('new session model', () => {
     expect(parseNewSessionDeviceOptions(encoded)).toEqual([
       { deviceId: 'pc', name: 'PC' },
       { deviceId: 'mac', name: 'mac' },
+      { deviceId: 'pod', name: 'Cloud Cindy', kind: 'cloud' },
     ]);
   });
 

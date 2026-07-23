@@ -88,6 +88,7 @@ import {
   shouldStartSplitGroupDrag,
   writeSplitGroupSessionDragData,
 } from '../splitGroupDnd';
+import { useCloudDeviceIds } from '@/features/device-link/useCloudDeviceIds';
 
 const log = createLogger('SessionCard');
 
@@ -143,6 +144,7 @@ export function SessionCard({
   hideBottomDivider = false,
 }: SessionCardProps) {
   const { t } = useTranslation();
+  const cloudDeviceIds = useCloudDeviceIds();
   const navigate = useNavigate();
   // mod+1..9 序号徽标:模块 store 按 sessionId 精准订阅,非按住态恒为 null。
   const ordinalBadgeLabel = useSessionOrdinalBadge(session.id);
@@ -739,6 +741,7 @@ export function SessionCard({
                   {remoteIconKind && (
                     <RemoteProjectIcon
                       kind={remoteIconKind}
+                      cloud={session.deviceLinkDeviceId ? cloudDeviceIds.has(session.deviceLinkDeviceId) : false}
                       size={11}
                       strokeWidth={1.8}
                       connectionStatus={remoteIconConnectionStatus}
@@ -958,6 +961,7 @@ export function SessionCard({
           {remoteIconKind && (
             <RemoteProjectIcon
               kind={remoteIconKind}
+              cloud={session.deviceLinkDeviceId ? cloudDeviceIds.has(session.deviceLinkDeviceId) : false}
               size={11}
               strokeWidth={1.8}
               connectionStatus={remoteIconConnectionStatus}

@@ -243,6 +243,26 @@ describe('机器选择持久化(serialize / parse 往返)', () => {
 });
 
 describe('buildSwitcherDevices', () => {
+  it('透传 cloud marker 并将云端设备稳定置底', () => {
+    const result = buildSwitcherDevices({
+      fullList: [
+        mkDevice('cloud-b', { name: 'Cloud B', deviceInfo: { kind: 'cloud' } }),
+        mkDevice('normal-a', { name: 'Normal A' }),
+        mkDevice('cloud-a', { name: 'Cloud A', deviceInfo: { kind: 'cloud' } }),
+        mkDevice('normal-b', { name: 'Normal B' }),
+      ],
+      syncedDevices: [],
+      revoked: new Set(),
+    });
+
+    expect(result.map(({ deviceId, kind }) => ({ deviceId, kind }))).toEqual([
+      { deviceId: 'normal-a', kind: undefined },
+      { deviceId: 'normal-b', kind: undefined },
+      { deviceId: 'cloud-a', kind: 'cloud' },
+      { deviceId: 'cloud-b', kind: 'cloud' },
+    ]);
+  });
+
   it('已连接(已同步)/ 连接中(在线可控未同步)/ 被拒(已撤销)三态分类', () => {
     const result = buildSwitcherDevices({
       fullList: [mkDevice('dev-connected'), mkDevice('dev-connecting'), mkDevice('dev-rejected')],
