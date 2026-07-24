@@ -16,6 +16,7 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw, Pencil, Trash2, Check, X } from 'lucide-react';
+import { CLOUD_DEVICE_NAME_SENTINEL, deviceDisplayName } from '@lizi/maker-shared/device-list';
 
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
@@ -54,6 +55,15 @@ function hardwareLabel(deviceInfo: DeviceLinkDeviceInfo | null | undefined): str
 /** 云端实例(relay 透传 deviceInfo.kind):列表置底、禁止重命名。 */
 function isCloudDevice(device: DeviceLinkDeviceView | null | undefined): boolean {
   return device?.deviceInfo?.kind === 'cloud';
+}
+
+function displayDeviceName(
+  device: DeviceLinkDeviceView | null | undefined,
+  t: (key: string) => string,
+): string {
+  if (!device) return '';
+  const name = deviceDisplayName(device);
+  return name === CLOUD_DEVICE_NAME_SENTINEL ? t('settings.devices.cloudDeviceName') : name;
 }
 
 function memoryLabel(memoryGb: number | null | undefined): string | null {
@@ -265,7 +275,7 @@ export function MyDevicesPanel({
                 </div>
               ) : (
                 <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                  {self?.name || t('settings.devices.thisDevice')}
+                  {displayDeviceName(self, t) || t('settings.devices.thisDevice')}
                 </span>
               )}
               <span className="text-11 text-[var(--text-tertiary)]">
@@ -382,7 +392,7 @@ export function MyDevicesPanel({
                       </div>
                     ) : (
                       <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                        {d.name}
+                        {displayDeviceName(d, t)}
                       </span>
                     )}
                     <span className="truncate text-11 text-[var(--text-tertiary)]">
@@ -430,7 +440,7 @@ export function MyDevicesPanel({
                         checked={control.checked}
                         onCheckedChange={(v) => void s.setDeviceControlEnabled(d.deviceId, v)}
                         aria-label={t('settings.remoteControl.deviceControlToggleAria', {
-                          name: d.name,
+                          name: displayDeviceName(d, t),
                         })}
                       />
                     </ControlRow>
@@ -446,7 +456,7 @@ export function MyDevicesPanel({
                       disabled={inbound.disabled}
                       onCheckedChange={(v) => void onInboundChange(d.deviceId, v)}
                       aria-label={t('settings.remoteControl.myDevices.allowInboundAria', {
-                        name: d.name,
+                        name: displayDeviceName(d, t),
                       })}
                     />
                   </ControlRow>

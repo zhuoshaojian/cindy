@@ -54,6 +54,7 @@ import {
   readDeviceLinkSettings,
   readLastKnownDeviceNames,
   rememberLastKnownDeviceName,
+  forgetLastKnownDeviceName,
   setDeviceControlEnabled,
 } from './settings-store';
 import { activeOwnerScopeKey, ownerScopedUserDataPath } from '../appSessionState';
@@ -106,6 +107,7 @@ export interface DeviceLinkIpcDeps {
   broadcast(channel: string, payload: unknown): void;
   readLastKnownDeviceNames(): Record<string, string>;
   rememberLastKnownDeviceName(deviceId: string, name: string): Promise<boolean>;
+  forgetLastKnownDeviceName(deviceId: string): Promise<boolean>;
   /**
    * 出方向附件改写:把消息里的本机附件上传 OSS、替换成引用串(仅 send/steer/enqueue 生效)。
    * 可选 —— 测试可不注入(跳过改写,行为同旧版纯透传)。
@@ -150,6 +152,7 @@ export function defaultDeps(): DeviceLinkIpcDeps {
     broadcast,
     readLastKnownDeviceNames,
     rememberLastKnownDeviceName,
+    forgetLastKnownDeviceName,
     rewriteOutboundMedia,
     rewriteOutboundSessionReferences,
   };
@@ -306,7 +309,9 @@ function reconcileDeviceNames(
   result: { devices: DeviceLinkServerDeviceView[] },
   deps: Pick<
     DeviceLinkIpcDeps,
-    'getState' | 'readLastKnownDeviceNames' | 'rememberLastKnownDeviceName'
+    | 'getState'
+    | 'readLastKnownDeviceNames'
+    | 'rememberLastKnownDeviceName'
   >,
 ): { devices: DeviceLinkDeviceView[] } {
   const cachedNames = deps.readLastKnownDeviceNames();
@@ -375,10 +380,14 @@ export async function handleDeleteDevice(
     throwIpcError('INVALID_PARAMS', 'deviceId is required');
   }
   try {
-    return await deps.apiFetch<{ deviceId: string; deleted: boolean }>(
+    const result = await deps.apiFetch<{ deviceId: string; deleted: boolean }>(
       `/api/device-link/devices/${encodeURIComponent(deviceId)}`,
       { method: 'DELETE' },
     );
+    if (result.deleted) {
+      void deps.forgetLastKnownDeviceName(deviceId);
+    }
+    return result;
   } catch (err) {
     rethrowServerError(err);
   }

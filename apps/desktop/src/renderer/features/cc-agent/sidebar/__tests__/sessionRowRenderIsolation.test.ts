@@ -38,6 +38,14 @@ const sessionStatusIconSource = readFileSync(
   resolve(__dirname, '..', 'SessionStatusIcon.tsx'),
   'utf8',
 );
+const deviceLinkMock = {
+  listDevices: vi.fn(
+    () => new Promise<{ devices: never[] }>(() => {}),
+  ),
+  onPresenceChanged: vi.fn(() => () => {}),
+  onStatusChanged: vi.fn(() => () => {}),
+  onControlTargetChanged: vi.fn(() => () => {}),
+};
 
 vi.mock('../SessionStatusIcon', () => ({
   SessionStatusIcon: ({ session }: { session: { id: string } }) => {
@@ -146,6 +154,11 @@ const BOTH = [sessionA, sessionB] as const;
 
 beforeEach(() => {
   renderCounts.clear();
+  vi.stubGlobal('window', { electronAPI: { deviceLink: deviceLinkMock } });
+  deviceLinkMock.listDevices.mockClear();
+  deviceLinkMock.onPresenceChanged.mockClear();
+  deviceLinkMock.onStatusChanged.mockClear();
+  deviceLinkMock.onControlTargetChanged.mockClear();
 });
 
 afterEach(() => {

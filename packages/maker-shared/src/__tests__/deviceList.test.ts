@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDeviceListPresentation,
+  CLOUD_DEVICE_NAME_SENTINEL,
   deviceAccessState,
+  deviceDisplayName,
   isControllableDevice,
   platformLabel,
   toDeviceListItems,
@@ -32,6 +34,18 @@ describe('shared device list presentation model', () => {
     expect(isControllableDevice(device({ isSelf: true }))).toBe(false);
     expect(isControllableDevice(device({ platform: 'ios' }))).toBe(false);
     expect(isControllableDevice(device({ platform: 'android' }))).toBe(false);
+  });
+
+  it('uses a display sentinel only for an unrenamed cloud device', () => {
+    const cloud = device({
+      name: 'Cloud',
+      selfName: 'Cloud',
+      deviceInfo: { kind: 'cloud' },
+    });
+    expect(deviceDisplayName(cloud)).toBe(CLOUD_DEVICE_NAME_SENTINEL);
+    expect(deviceDisplayName({ ...cloud, name: 'My Pod' })).toBe('My Pod');
+    expect(deviceDisplayName({ ...cloud, deviceInfo: null })).toBe('Cloud');
+    expect(deviceDisplayName({ ...cloud, selfName: null })).toBe('Cloud');
   });
 
   it('uses user-facing platform labels', () => {

@@ -1,5 +1,3 @@
-import type { SupportedLocale } from '../../shared/locale.js';
-
 /**
  * Pod-specific device-link startup defaults.
  *
@@ -34,28 +32,18 @@ export async function initializePodDeviceLink(
   return true;
 }
 
-/**
- * Localized self-name sent in hello as the device's default name.
- *
- * The relay stores this as selfName and keeps a user-selected manual name
- * authoritative, so reconnects never overwrite an account owner's rename.
- */
-export const POD_DEVICE_NAME_BY_LOCALE: Record<SupportedLocale, string> = {
-  'zh-CN': '云端',
-  en: 'Cloud',
-  ja: 'クラウド',
-  ko: '클라우드',
-};
-
 export interface DeviceNameOptions {
   podMode: boolean;
-  locale: SupportedLocale;
   hostname: string;
 }
 
-/** Resolve the hello self-name without changing ordinary instances. */
+/**
+ * Resolve the hello self-name without changing ordinary instances.
+ * Pod names are deliberately locale-neutral: clients translate the unchanged
+ * `name === selfName` sentinel for each viewer, while manual names stay raw.
+ */
 export function resolveDeviceLinkDeviceName(options: DeviceNameOptions): string {
-  if (options.podMode) return POD_DEVICE_NAME_BY_LOCALE[options.locale];
+  if (options.podMode) return 'Cloud';
   const hostname = options.hostname.trim();
   return hostname || 'Unknown Device';
 }

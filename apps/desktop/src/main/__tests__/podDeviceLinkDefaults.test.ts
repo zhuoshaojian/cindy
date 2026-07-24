@@ -66,33 +66,25 @@ describe('Pod device-link startup defaults', () => {
 });
 
 describe('Pod device-link default name', () => {
-  it.each([
-    ['zh-CN', '云端'],
-    ['en', 'Cloud'],
-    ['ja', 'クラウド'],
-    ['ko', '클라우드'],
-  ] as const)('uses the %s localized Pod name', (locale, expected) => {
+  it('uses one locale-neutral self name for every viewer locale', () => {
     expect(
       resolveDeviceLinkDeviceName({
         podMode: true,
-        locale,
         hostname: 'host-name-ignored',
       }),
-    ).toBe(expected);
+    ).toBe('Cloud');
   });
 
   it('keeps ordinary hostname behavior and its empty fallback', () => {
     expect(
       resolveDeviceLinkDeviceName({
         podMode: false,
-        locale: 'zh-CN',
         hostname: '  SiriusMac.local  ',
       }),
     ).toBe('SiriusMac.local');
     expect(
       resolveDeviceLinkDeviceName({
         podMode: false,
-        locale: 'en',
         hostname: '   ',
       }),
     ).toBe('Unknown Device');

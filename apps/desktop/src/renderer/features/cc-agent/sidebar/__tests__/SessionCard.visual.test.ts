@@ -16,6 +16,14 @@ const mocks = vi.hoisted(() => ({
   pendingPluginSetupSessionIds: new Set<string>(),
   attentionKindBySession: new Map<string, 'done' | 'awaiting' | 'error'>(),
   ensureInitialMessages: vi.fn(),
+  deviceLink: {
+    listDevices: vi.fn(
+      () => new Promise<{ devices: never[] }>(() => {}),
+    ),
+    onPresenceChanged: vi.fn(() => () => {}),
+    onStatusChanged: vi.fn(() => () => {}),
+    onControlTargetChanged: vi.fn(() => () => {}),
+  },
 }));
 
 vi.mock('react-router-dom', () => ({
@@ -184,6 +192,7 @@ function renderCase(caseId: string) {
 
 describe('SessionCard visual cases', () => {
   beforeEach(() => {
+    vi.stubGlobal('window', { electronAPI: { deviceLink: mocks.deviceLink } });
     mocks.navigate.mockReset();
     mocks.boundSchedulesBySession.clear();
     mocks.worktreeSessionIds.clear();
@@ -191,6 +200,10 @@ describe('SessionCard visual cases', () => {
     mocks.pendingPluginSetupSessionIds.clear();
     mocks.attentionKindBySession.clear();
     mocks.ensureInitialMessages.mockReset();
+    mocks.deviceLink.listDevices.mockClear();
+    mocks.deviceLink.onPresenceChanged.mockClear();
+    mocks.deviceLink.onStatusChanged.mockClear();
+    mocks.deviceLink.onControlTargetChanged.mockClear();
   });
 
   afterEach(() => {

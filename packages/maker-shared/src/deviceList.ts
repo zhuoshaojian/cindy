@@ -3,12 +3,35 @@ export type DeviceAccessState = 'ready' | 'busy' | 'offline' | 'remote_disabled'
 export interface DeviceListDeviceLike {
   busy: boolean;
   deviceId: string;
+  deviceInfo?: {
+    kind?: 'cloud';
+  } | null;
   isSelf: boolean;
   lastSeenAt: string | null;
   name: string;
   online: boolean;
   platform: string | null;
   remoteControlEnabled: boolean;
+  selfName?: string | null;
+}
+
+/**
+ * Display-model sentinel for a cloud Pod that still has its self-reported name.
+ * Clients translate this sentinel with their own viewer-locale i18n; raw `name`
+ * remains the authoritative value used for rename/reset requests.
+ */
+export const CLOUD_DEVICE_NAME_SENTINEL = '__cindy_cloud_device_name__';
+
+/**
+ * A cloud device is still on its relay-provided self name when `name` matches
+ * `selfName`. A different name is a user-selected manual name and must win.
+ */
+export function deviceDisplayName(device: Pick<DeviceListDeviceLike, 'name' | 'selfName' | 'deviceInfo'>): string {
+  return device.deviceInfo?.kind === 'cloud'
+    && device.selfName != null
+    && device.name === device.selfName
+    ? CLOUD_DEVICE_NAME_SENTINEL
+    : device.name;
 }
 
 export interface DeviceListItem<TDevice extends DeviceListDeviceLike = DeviceListDeviceLike> {

@@ -3072,6 +3072,7 @@
       "refresh": "새로고침",
       "empty": "아직 다른 기기가 없습니다. 다른 컴퓨터에서 같은 계정으로 {{appName}}에 로그인하면 여기에 표시됩니다.",
       "thisDevice": "이 기기",
+      "cloudDeviceName": "클라우드",
       "status": {
         "online": "온라인",
         "busy": "작업 중"

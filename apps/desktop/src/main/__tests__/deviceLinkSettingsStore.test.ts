@@ -248,6 +248,17 @@ describe('writeDeviceLinkSetting', () => {
     await expect(rememberLastKnownDeviceName('dev-1', 'MacBook')).resolves.toBe(true);
   });
 
+  it('forgetLastKnownDeviceName 只删除指定设备并保留其它离线设备缓存', async () => {
+    h.seed(
+      SETTINGS_PATH,
+      JSON.stringify({ lastKnownDeviceNames: { 'dev-1': 'MacBook', 'dev-2': 'Removed' } }),
+    );
+    const { readDeviceLinkSettings, forgetLastKnownDeviceName } = await load();
+
+    await expect(forgetLastKnownDeviceName('dev-1')).resolves.toBe(true);
+    expect(readDeviceLinkSettings().lastKnownDeviceNames).toEqual({ 'dev-2': 'Removed' });
+  });
+
   it('setDeviceControlEnabled 维护本机关闭控制的目标设备列表', async () => {
     const { readDeviceLinkSettings, setDeviceControlEnabled } = await load();
 

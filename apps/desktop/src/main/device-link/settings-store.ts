@@ -281,6 +281,32 @@ export function writeLastKnownDeviceNames(names: Record<string, string>): Promis
   return writeDeviceLinkSetting('lastKnownDeviceNames', { ...names });
 }
 
+/**
+ * Forget one explicitly deleted device's cached name. The update is performed
+ * under the existing settings write lock so concurrent name updates are not lost.
+ */
+export async function forgetLastKnownDeviceName(deviceId: string): Promise<boolean> {
+  const normalizedDeviceId = deviceId.trim();
+  if (!normalizedDeviceId) return false;
+  const current = readDeviceLinkSettings().lastKnownDeviceNames;
+  if (!(normalizedDeviceId in current)) return false;
+  try {
+    await updateDeviceLinkSetting('lastKnownDeviceNames', (latest) => {
+      if (!(normalizedDeviceId in latest)) return latest;
+      const next = { ...latest };
+      delete next[normalizedDeviceId];
+      return next;
+    });
+    return true;
+  } catch (err) {
+    log.warn('forget last-known device name failed, continuing without cache update', {
+      deviceId: normalizedDeviceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
 export async function setDeviceControlEnabled(
   deviceId: string,
   enabled: boolean,

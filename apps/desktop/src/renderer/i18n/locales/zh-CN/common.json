@@ -3068,6 +3068,7 @@
       "refresh": "刷新",
       "empty": "暂无其它设备。在另一台电脑上用同一账号登录 {{appName}} 后，这里会显示该设备。",
       "thisDevice": "本机",
+      "cloudDeviceName": "云端",
       "status": {
         "online": "在线",
         "busy": "忙碌中"

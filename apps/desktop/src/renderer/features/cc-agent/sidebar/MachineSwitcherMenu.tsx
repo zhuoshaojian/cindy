@@ -55,6 +55,7 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
+import { CLOUD_DEVICE_NAME_SENTINEL } from '@lizi/maker-shared/device-list';
 import { useActiveMainView } from '@/hooks/useActiveMainView';
 import {
   DropdownMenu,
@@ -111,6 +112,8 @@ export function MachineSwitcherMenu(): ReactNode {
     toggle(id);
     ensureConversationListVisible();
   };
+  const displayDeviceName = (name: string): string =>
+    name === CLOUD_DEVICE_NAME_SENTINEL ? t('settings.devices.cloudDeviceName') : name;
 
   // 无任何相关远程机器、也没有需要逃生的悬空远端选择 → 不渲染入口。
   if (!hasRemote) return null;
@@ -125,7 +128,7 @@ export function MachineSwitcherMenu(): ReactNode {
       triggerText =
         only === MACHINE_LOCAL
           ? t('ccAgent.sidebar.machineSwitcher.localMachine')
-          : (devices.find((device) => device.deviceId === only)?.name ?? triggerLabel);
+          : displayDeviceName(devices.find((device) => device.deviceId === only)?.name ?? triggerLabel);
     } else {
       triggerText = t('ccAgent.sidebar.machineSwitcher.selectedCount', {
         count: selectedDeviceId.length,
@@ -216,7 +219,7 @@ export function MachineSwitcherMenu(): ReactNode {
                   <MonitorSmartphone size={14} strokeWidth={2} />
                 )
               }
-              label={device.name}
+              label={displayDeviceName(device.name)}
               selected={isMachineSelected(selectedDeviceId, device.deviceId)}
               shimmer={connecting}
               rejected={rejected}

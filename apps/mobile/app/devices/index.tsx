@@ -1,4 +1,5 @@
 import { useFocusEffect } from 'expo-router';
+import { getLocales } from 'expo-localization';
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -63,7 +64,7 @@ import {
   saveDeviceIdentityCache,
 } from '@/device-link/deviceIdentityStore';
 import { toDeviceListItems } from '@/device-link/devices';
-import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
+import { resolveMobileDeviceDisplayName, sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import {
   collectFreshPresenceDeviceIds,
   createPresenceFreshnessTracker,
@@ -265,6 +266,7 @@ export default function HomeScreen() {
   }, [rawDeviceConnectionStates, unresponsiveDevices]);
   const [scheduleIndex, setScheduleIndex] = useState<Map<string, RemoteSessionScheduleInfo>>(() => new Map());
   const scheduleMirrorInvalidations = useRemoteScheduleMirrorInvalidations();
+  const viewerLanguageCode = useMemo(() => getLocales()[0]?.languageCode, []);
 
   const updateDeviceConnectionState = useCallback((deviceId: string, state: HomeDeviceConnectionState) => {
     setDeviceConnectionStates((current) => updateHomeDeviceConnectionState(current, deviceId, state));
@@ -818,9 +820,16 @@ export default function HomeScreen() {
     }
   }, [apiFetch, loadHome, reconcileDeviceViews, renameDraft, renameSaving, renameTarget]);
 
+  const displayDevices = useMemo(
+    () => devices.map((device) => ({
+      ...device,
+      name: resolveMobileDeviceDisplayName(device, viewerLanguageCode),
+    })),
+    [devices, viewerLanguageCode],
+  );
   const deviceRows = useMemo(
-    () => toDeviceListItems(devices, Date.now(), revokedDevices),
-    [devices, revokedDevices],
+    () => toDeviceListItems(displayDevices, Date.now(), revokedDevices),
+    [displayDevices, revokedDevices],
   );
 
   useEffect(() => {

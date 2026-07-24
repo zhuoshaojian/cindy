@@ -350,15 +350,14 @@ function recoverFromRelayAuthFailure(): void {
 
 /**
  * Windows 历史主机名可能带尾部空白/全大写,统一 trim;空值兜底
- * 'Unknown Device'。普通实例沿用主机名;provisioned Pod 上报四语「云端」
- * 默认 selfName。
+ * 'Unknown Device'。普通实例沿用主机名;provisioned Pod 上报
+ * locale-neutral 的稳定默认 selfName。
  *
  * relay 的 manual name 优先于 selfName,所以用户改名不会被后续 hello 覆盖。
  */
 function deviceName(): string {
   return resolveDeviceLinkDeviceName({
     podMode: hasPodProvisioningInput(process.env),
-    locale: getResolvedMainLocale(),
     hostname: os.hostname(),
   });
 }

@@ -3072,6 +3072,7 @@
       "refresh": "更新",
       "empty": "他のデバイスはまだありません。別のパソコンで同じアカウントで {{appName}} にログインすると、ここに表示されます。",
       "thisDevice": "このデバイス",
+      "cloudDeviceName": "クラウド",
       "status": {
         "online": "オンライン",
         "busy": "作業中"

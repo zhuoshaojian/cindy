@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Folder, FolderSymlink, ChevronLeft, RotateCw } from 'lucide-react';
+import { CLOUD_DEVICE_NAME_SENTINEL } from '@lizi/maker-shared/device-list';
 
 import { cn } from '@/lib/utils';
 import type { MakerVendor } from '@/lib/ccAgent.types';
@@ -49,7 +50,7 @@ export type RemoteProjectTarget =
 /** 下拉里的一个可选远程目标(SSH 主机 / 被控设备)。 */
 type RemoteTarget =
   | { key: string; kind: 'ssh'; hostId: string; label: string }
-  | { key: string; kind: 'device'; deviceId: string; deviceName: string; label: string };
+  | { key: string; kind: 'device'; deviceId: string; deviceName: string; label: string; cloud?: boolean };
 
 interface Props {
   open: boolean;
@@ -105,14 +106,20 @@ export function AddRemoteProjectDialog({
       key: `device:${d.deviceId}`,
       kind: 'device',
       deviceId: d.deviceId,
-      deviceName: d.name,
-      label: d.name,
+      deviceName: d.name === CLOUD_DEVICE_NAME_SENTINEL ? t('settings.devices.cloudDeviceName') : d.name,
+      label: d.name === CLOUD_DEVICE_NAME_SENTINEL ? t('settings.devices.cloudDeviceName') : d.name,
+      ...(d.kind === 'cloud' ? { cloud: true } : {}),
     }));
     return [...ssh, ...dev];
-  }, [excludeSsh, sshHosts, devices]);
+  }, [excludeSsh, sshHosts, devices, t]);
 
   const sshTargets = useMemo(() => targets.filter((tg) => tg.kind === 'ssh'), [targets]);
-  const deviceTargets = useMemo(() => targets.filter((tg) => tg.kind === 'device'), [targets]);
+  const deviceTargets = useMemo(
+    () => targets
+      .filter((tg): tg is Extract<RemoteTarget, { kind: 'device' }> => tg.kind === 'device')
+      .sort((a, b) => Number(a.cloud === true) - Number(b.cloud === true)),
+    [targets],
+  );
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selectedTarget = useMemo(

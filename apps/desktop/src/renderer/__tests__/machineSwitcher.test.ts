@@ -24,6 +24,7 @@ import {
 import { buildSwitcherDevices, selectableDeviceIds } from '@/features/device-link/switcherDevices';
 import { compareDevicesByName } from '@/features/device-link/deviceSort';
 import { applyDeviceRename } from '@/features/device-link/useDeviceLinkDeviceList';
+import { CLOUD_DEVICE_NAME_SENTINEL } from '@lizi/maker-shared/device-list';
 
 /** 构造最小设备视图(只填 buildSwitcherDevices 关心的字段)。 */
 function mkDevice(
@@ -372,6 +373,28 @@ describe('buildSwitcherDevices', () => {
       revoked: new Set(),
     });
     expect(result).toEqual([{ deviceId: 'dev-a', name: '新名', status: 'connected' }]);
+  });
+
+  it('同步分片不会把未改名 cloud 的 viewer-locale sentinel 覆盖回 Pod selfName', () => {
+    const result = buildSwitcherDevices({
+      fullList: [
+        mkDevice('cloud', {
+          name: 'Cloud',
+          selfName: 'Cloud',
+          deviceInfo: { kind: 'cloud' },
+        }),
+      ],
+      syncedDevices: [{ deviceId: 'cloud', deviceName: 'Cloud', sessionCount: 1, connected: true }],
+      revoked: new Set(),
+    });
+    expect(result).toEqual([
+      {
+        deviceId: 'cloud',
+        name: CLOUD_DEVICE_NAME_SENTINEL,
+        kind: 'cloud',
+        status: 'connected',
+      },
+    ]);
   });
 
   it('同步分片名为空 → 回退 fullList 既有名(不被空名覆盖)', () => {
