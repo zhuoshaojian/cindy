@@ -4,7 +4,12 @@ import {
   type CloudActivitySnapshot,
   type CloudIdlePolicy,
 } from './activity.js';
-import type { CloudReadinessComponents, CloudRuntimeStatus, CloudStatusStore } from './status.js';
+import {
+  CLOUD_BLOCKING_READINESS_COMPONENTS,
+  type CloudReadinessComponents,
+  type CloudRuntimeStatus,
+  type CloudStatusStore,
+} from './status.js';
 
 export interface CloudRuntimeLogger {
   info(message: string, context?: unknown): void;
@@ -39,6 +44,7 @@ const UNKNOWN_READINESS: CloudReadinessComponents = {
   binaries: 'unknown',
   maker: 'unknown',
   deviceLink: 'unknown',
+  modelAccess: 'unknown',
 };
 
 /**
@@ -99,21 +105,23 @@ export function createCloudRuntimeController(
       policy: deps.policy,
     });
     lastBusyAtMs = idle.lastBusyAtMs;
-    const allReady = Object.values(readiness).every((value) => value === 'ready');
-    const statusBlockers = allReady
+    const allBlockingComponentsReady = CLOUD_BLOCKING_READINESS_COMPONENTS.every(
+      (component) => readiness[component] === 'ready',
+    );
+    const statusBlockers = allBlockingComponentsReady
       ? idle.blockers
       : Array.from(new Set(['runtime-not-ready' as const, ...idle.blockers]));
     const status: CloudRuntimeStatus = {
       version: 1,
       instanceId: deps.instanceId,
       membershipId: deps.membershipId,
-      phase: allReady && !activityFailed ? 'ready' : 'degraded',
+      phase: allBlockingComponentsReady && !activityFailed ? 'ready' : 'degraded',
       startedAtMs,
       heartbeatAtMs: nowMs,
       draining: false,
       readiness,
       idle: {
-        maySuspend: allReady && idle.maySuspend,
+        maySuspend: allBlockingComponentsReady && idle.maySuspend,
         blockers: statusBlockers,
         lastBusyAtMs: idle.lastBusyAtMs,
         nextWakeAtMs: idle.nextWakeAtMs,

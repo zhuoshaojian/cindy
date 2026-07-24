@@ -27,7 +27,7 @@ export type ModelAccessCredentialSource = 'server' | 'manual';
 
 export interface ModelAccessStatus {
   state: ModelAccessSyncState;
-  /** state='failed' 时的错误码(ServerApiError code / 'SAFE_STORAGE_UNAVAILABLE')。 */
+  /** 诊断子码(ServerApiError code / 'SAFE_STORAGE_UNAVAILABLE')，不得包含凭据。 */
   errorCode?: string;
   /** 当前生效凭据的来源标记。 */
   source: ModelAccessCredentialSource | null;

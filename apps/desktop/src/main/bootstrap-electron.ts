@@ -668,6 +668,8 @@ import {
   collectCloudRuntimeActivity,
   createCloudRuntimeController,
   createCloudStatusStore,
+  initializePodUserServices,
+  modelAccessReadiness,
   type CloudRuntimeController,
   type CloudReadinessComponents,
 } from './cloud-runtime/index.js';
@@ -699,6 +701,7 @@ async function startPodCloudRuntimeController(): Promise<void> {
       binaries: maker ? 'ready' : 'not-ready',
       maker: maker ? 'ready' : 'not-ready',
       deviceLink: deviceLinkReady ? 'ready' : 'not-ready',
+      modelAccess: modelAccessReadiness(getModelAccessStatus()),
     };
   };
 
@@ -787,6 +790,7 @@ import {
 } from './appearance-settings-ipc.js';
 import { registerBillingIpc } from './billing/index.js';
 import {
+  getModelAccessStatus,
   initModelAccess,
   noteManualXdKeySaved,
   noteManualXdKeyRemoved,
@@ -7037,6 +7041,14 @@ app.on('ready', async () => {
       exit: (code) => app.exit(code),
     });
     if (!started) return;
+    if (podProvisioningMode) {
+      await initializePodUserServices({
+        refreshCustomProviders: refreshCustomProvidersIntoCatalog,
+        startEmbeddingHost: attemptStartEmbeddingHost,
+        prewarmModelPricing,
+        logger: headlessStartupLog,
+      });
+    }
     if (deferDeviceLink) {
       try {
         await initializePodDeviceLink(podProvisioningMode, {

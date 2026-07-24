@@ -22,6 +22,7 @@ function status(heartbeatAtMs = 10_000): CloudRuntimeStatus {
       binaries: 'ready',
       maker: 'ready',
       deviceLink: 'ready',
+      modelAccess: 'ready',
     },
     idle: {
       maySuspend: false,
@@ -88,6 +89,32 @@ describe('cloud runtime status', () => {
       ready: false,
       reason: 'runtime-not-ready',
       notReadyComponents: ['maker'],
+    });
+  });
+
+  it('treats modelAccess as observation-only and defaults old documents to unknown', async () => {
+    const observed = status();
+    observed.readiness.modelAccess = 'not-ready';
+    expect(
+      evaluateCloudReadiness(
+        { kind: 'ok', status: observed },
+        { nowMs: 10_001, staleAfterMs: 5_000 },
+      ),
+    ).toEqual({ ready: true, reason: 'ready', notReadyComponents: [] });
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-cloud-status-'));
+    dirs.push(dir);
+    const filePath = path.join(dir, 'status.json');
+    const legacy = status();
+    const raw = JSON.parse(JSON.stringify(legacy)) as {
+      readiness: Record<string, unknown>;
+    };
+    delete raw.readiness.modelAccess;
+    fs.writeFileSync(filePath, JSON.stringify(raw), 'utf8');
+    const store = createCloudStatusStore(filePath);
+    await expect(store.read()).resolves.toMatchObject({
+      kind: 'ok',
+      status: { readiness: { modelAccess: 'unknown' } },
     });
   });
 });

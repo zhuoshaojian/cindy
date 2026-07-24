@@ -79,8 +79,8 @@ export interface CredentialsSyncDeps {
   retryDelaysMs?: number[];
   sleep?(ms: number): Promise<void>;
   log?: {
-    info(msg: string): void;
-    warn(msg: string): void;
+    info(msg: string, context?: unknown): void;
+    warn(msg: string, context?: unknown): void;
   };
 }
 
@@ -158,29 +158,50 @@ export function createCredentialsSync(deps: CredentialsSyncDeps): CredentialsSyn
     return setStatus(state, errorCode);
   }
 
-  /** 单次拉取 + 落盘。返回终局状态;'retryable' 可退避重试;'stale' = 世代已过期。 */
-  async function attemptOnce(myEpoch: number): Promise<ModelAccessStatus | 'retryable' | 'stale'> {
+  /** 单次拉取 + 落盘。可重试结果保留服务端子码，最终状态与日志不丢诊断信息。 */
+  async function attemptOnce(
+    myEpoch: number,
+  ): Promise<ModelAccessStatus | { kind: 'retryable'; errorCode: string } | 'stale'> {
     let payload: CredentialsPayload;
     try {
       payload = await deps.fetchCredentials();
     } catch (err) {
       if (myEpoch !== epoch) return 'stale';
       const e = asFetchError(err);
-      if (e.statusCode === 503 || e.code === 'MODEL_ACCESS_DISABLED') {
-        deps.log?.info('model-access disabled on server, falling back to manual key flow');
-        return setStatusIfFresh(myEpoch, 'disabled');
+      if (e.code === 'MODEL_ACCESS_DISABLED') {
+        deps.log?.info('model-access disabled on server, falling back to manual key flow', {
+          code: e.code,
+          statusCode: e.statusCode,
+        });
+        return setStatusIfFresh(myEpoch, 'disabled', e.code);
       }
-      if (e.statusCode === 403 || e.code === 'ORG_NOT_SUPPORTED') {
-        deps.log?.info('org not supported by model-access, xd provider unavailable');
-        return setStatusIfFresh(myEpoch, 'unsupported');
+      if (e.code === 'ORG_NOT_SUPPORTED') {
+        deps.log?.info('org not supported by model-access, xd provider unavailable', {
+          code: e.code,
+          statusCode: e.statusCode,
+        });
+        return setStatusIfFresh(myEpoch, 'unsupported', e.code);
       }
-      deps.log?.warn(`model-access credentials fetch failed: ${e.code} (${e.statusCode})`);
-      return 'retryable';
+      if (e.code === 'AD_ACCOUNT_MISSING') {
+        deps.log?.warn('model-access credentials unavailable because adAccount is missing', {
+          code: e.code,
+          statusCode: e.statusCode,
+        });
+        return setStatusIfFresh(myEpoch, 'failed', e.code);
+      }
+      deps.log?.warn('model-access credentials fetch failed', {
+        code: e.code,
+        statusCode: e.statusCode,
+      });
+      return { kind: 'retryable', errorCode: e.code };
     }
     if (myEpoch !== epoch) return 'stale'; // 响应归属旧账号,丢弃
     if (!isValidCredentialsPayload(payload)) {
-      deps.log?.warn('model-access credentials response invalid (empty key / bad endpoint), kept local');
-      return 'retryable';
+      deps.log?.warn(
+        'model-access credentials response invalid (empty key / bad endpoint), kept local',
+        { code: 'INVALID_RESPONSE' },
+      );
+      return { kind: 'retryable', errorCode: 'INVALID_RESPONSE' };
     }
     return applyPayload(payload, myEpoch);
   }
@@ -210,9 +231,9 @@ export function createCredentialsSync(deps: CredentialsSyncDeps): CredentialsSyn
     for (let attempt = 0; ; attempt++) {
       const result = await attemptOnce(myEpoch);
       if (result === 'stale' || myEpoch !== epoch) return status; // 登出/换账号,放弃本轮
-      if (result !== 'retryable') return result;
+      if (!('kind' in result)) return result;
       if (attempt >= retryDelays.length) {
-        return setStatusIfFresh(myEpoch, 'failed', 'SYNC_FAILED');
+        return setStatusIfFresh(myEpoch, 'failed', result.errorCode);
       }
       await sleep(retryDelays[attempt]);
       if (myEpoch !== epoch) return status;

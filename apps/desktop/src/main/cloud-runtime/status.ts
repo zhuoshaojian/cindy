@@ -5,12 +5,32 @@ import { CLOUD_IDLE_BLOCKERS } from './activity.js';
 
 const readinessValueSchema = z.enum(['ready', 'not-ready', 'unknown']);
 
+/**
+ * Runtime components that define Pod liveness/readiness. Model access is
+ * intentionally excluded: it is an operational observation because personal
+ * accounts, disabled deployments, and manual-key fallback can all be healthy
+ * without server-managed model credentials.
+ */
+export const CLOUD_BLOCKING_READINESS_COMPONENTS = [
+  'auth',
+  'database',
+  'binaries',
+  'maker',
+  'deviceLink',
+] as const;
+
+export type CloudBlockingReadinessComponent =
+  (typeof CLOUD_BLOCKING_READINESS_COMPONENTS)[number];
+
 export const cloudReadinessComponentsSchema = z.object({
   auth: readinessValueSchema,
   database: readinessValueSchema,
   binaries: readinessValueSchema,
   maker: readinessValueSchema,
   deviceLink: readinessValueSchema,
+  // Observation-only. Default preserves compatibility with status documents
+  // written just before this field was introduced.
+  modelAccess: readinessValueSchema.default('unknown'),
 });
 
 export type CloudReadinessComponents = z.infer<typeof cloudReadinessComponentsSchema>;
