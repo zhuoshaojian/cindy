@@ -25,11 +25,13 @@ function joinIdentity(label: string, detail: string | null): string {
 export function resolveRemoteProjectMachineIdentity(
   project: Omit<RemoteProjectIdentitySource, 'remoteMachineIdentity'>,
   sshHosts: readonly RemoteHostSnapshot[],
+  resolveDeviceName: (name: string) => string = (name) => name,
 ): RemoteProjectMachineIdentity | null {
   if (project.scope !== 'remote') return null;
 
   if (project.deviceLinkDeviceId) {
-    const name = project.deviceLinkDeviceName?.trim() || project.deviceLinkDeviceId;
+    const rawName = project.deviceLinkDeviceName?.trim() || project.deviceLinkDeviceId;
+    const name = resolveDeviceName(rawName);
     const detail = name === project.deviceLinkDeviceId ? null : project.deviceLinkDeviceId;
     return {
       kind: 'device-link',

@@ -9,11 +9,13 @@
  */
 
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type { Session } from '@/lib/ccAgent.types';
 import { useRemoteSshHosts } from '@/hooks/useRemoteSshHosts';
 import { groupSessions, type ProjectGroupsResult } from '../lib/projectGrouping';
 import { resolveRemoteProjectMachineIdentity } from '../lib/remoteProjectIdentity';
+import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
 
 export function useProjectGroups(
   sessions: readonly Session[],
@@ -21,6 +23,7 @@ export function useProjectGroups(
   includePinnedInProjects: boolean = false,
 ): ProjectGroupsResult {
   const sshHosts = useRemoteSshHosts();
+  const { t } = useTranslation();
 
   return useMemo(() => {
     const groups = groupSessions(sessions, { projectAliases, includePinnedInProjects });
@@ -28,8 +31,12 @@ export function useProjectGroups(
       ...groups,
       projects: groups.projects.map((project) => ({
         ...project,
-        remoteMachineIdentity: resolveRemoteProjectMachineIdentity(project, sshHosts),
+        remoteMachineIdentity: resolveRemoteProjectMachineIdentity(
+          project,
+          sshHosts,
+          (name) => resolveDesktopCloudDeviceName(name, t),
+        ),
       })),
     };
-  }, [sessions, projectAliases, includePinnedInProjects, sshHosts]);
+  }, [sessions, projectAliases, includePinnedInProjects, sshHosts, t]);
 }

@@ -404,6 +404,7 @@ import {
 } from './device-link/ipc';
 import { getMirrorCache, MirrorCachePurgeError } from './device-link/mirrorCacheStore';
 import { drainPurgeQueue, enqueuePurge } from './device-link/mirrorCachePurgeQueue';
+import { registerCloudInstanceIpc } from './cloud-instance/ipc.js';
 import { assertCaptureHealthy } from './device-link/invoke-registry';
 // worktree-parallel-sessions: IPC 注册 + close-session 内的 fire-and-forget 删除钩子
 import {
@@ -6950,6 +6951,8 @@ app.on('ready', async () => {
   // 在线人数心跳:App 启动即上报,内部走 deviceId / userId 兜底,登录前后都活
   initHeartbeatService();
   // 设备互联(跨设备远程控制):登录后连 relay,登出即断;开关与设备列表 IPC 一并注册
+  // 云端实例控制面:独立账号级 HTTP API;不经 device-link 远程 invoke allowlist。
+  registerCloudInstanceIpc();
   let updateRelaunchRemoteBusy = false;
   const startDeviceLinkService = () => {
     initDeviceLinkService({

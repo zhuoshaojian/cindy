@@ -119,7 +119,7 @@ import {
   type DeviceResponsivenessTracker,
 } from './responsivenessTracker';
 import { getResolvedMainLocale } from '../i18n';
-import { hasPodProvisioningInput } from '../pod-provisioning.js';
+import { hasPodProvisioningInput, POD_DEVICE_NAME_ENV } from '../pod-provisioning.js';
 import { resolveDeviceLinkDeviceName } from './pod-defaults.js';
 
 // register.ts 从 device-link/index 导入 setBusyProbe;改用 busyReporter 后在此 re-export 保持其导入不变。
@@ -359,6 +359,7 @@ function deviceName(): string {
   return resolveDeviceLinkDeviceName({
     podMode: hasPodProvisioningInput(process.env),
     hostname: os.hostname(),
+    provisionedName: process.env[POD_DEVICE_NAME_ENV],
   });
 }
 

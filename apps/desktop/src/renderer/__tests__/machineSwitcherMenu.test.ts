@@ -156,7 +156,8 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
   it('云端设备使用 Cloud 图标', () => {
     expect(menuSource).toContain("import {");
     expect(menuSource).toContain('Cloud,');
-    expect(menuSource).toContain("device.kind === 'cloud'");
+    expect(menuSource).toContain("devices.filter((device) => device.kind !== 'cloud')");
+    expect(menuSource).toContain('cloud.instances.map');
     expect(menuSource).toContain('<Cloud size={14} strokeWidth={2} />');
   });
 
@@ -234,11 +235,31 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
   });
 
   it('MachineSwitcherMenu 保留门控 / 设备选择 / 远程设置入口', () => {
-    expect(menuSource).toContain('if (!hasRemote) return null');
+    // 2026-07-25 云端唤醒入口并入本菜单后,门控放宽:云端控制面可用(cloudReady)时
+    // 即使没有任何远程设备也显示 —— 「0 实例首次唤醒」的入口在本菜单里。
+    expect(menuSource).toContain('if (!hasRemote && !cloudReady) return null');
     expect(menuSource).toContain('MACHINE_ALL');
     expect(menuSource).toContain('MACHINE_LOCAL');
     expect(menuSource).toContain("navigate('/settings?tab=remote-control')");
     expect(menuSource).toContain('useMachineSwitcher');
+  });
+
+  it('云端唤醒项并入机器菜单(0 实例首次唤醒 + offline 实例再唤醒,不独立占行)', () => {
+    const cloudHookSource = read('features', 'cloud-instance', 'useCloudInstances.ts');
+    expect(menuSource).toContain('useCloudInstances');
+    expect(menuSource).toContain('cloud.instances.map');
+    expect(menuSource).toContain("devices.filter((device) => device.kind !== 'cloud')");
+    expect(menuSource).toContain('wakeCloud(instance.instanceId, instance.deviceId)');
+    expect(menuSource).toContain('wakeFirstCloud');
+    expect(menuSource).toContain('applySelect([result.deviceId])');
+    expect(menuSource).toContain('const selectedCloud = cloud.instances.find');
+    expect(menuSource).toContain("status={online ? 'online' : 'offline'}");
+    expect(menuSource).toContain('onToggle={online ? () => applyToggle(instance.deviceId) : undefined}');
+    expect(menuSource).not.toContain('CloudWakeMenuItem');
+    expect(cloudHookSource).toContain('pendingRef.current');
+    expect(cloudHookSource).toContain('return result');
+    // 唤醒失败不许静默,必须有用户可见反馈。
+    expect(menuSource).toContain("t('ccAgent.sidebar.cloud.wakeFailed')");
   });
 
   it('非会话视图选机器时切回会话视图(与新建 / 搜索行同惯例,Codex P2)', () => {

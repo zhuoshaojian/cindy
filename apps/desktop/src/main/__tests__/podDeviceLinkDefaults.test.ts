@@ -72,7 +72,24 @@ describe('Pod device-link default name', () => {
         podMode: true,
         hostname: 'host-name-ignored',
       }),
-    ).toBe('Cloud');
+    ).toBe('__cindy_cloud_device_name__');
+  });
+
+  it('preserves a provisioned cloud ordinal in the locale-neutral self name', () => {
+    expect(
+      resolveDeviceLinkDeviceName({
+        podMode: true,
+        hostname: 'host-name-ignored',
+        provisionedName: '__cindy_cloud_device_name__:3',
+      }),
+    ).toBe('__cindy_cloud_device_name__:3');
+    expect(
+      resolveDeviceLinkDeviceName({
+        podMode: true,
+        hostname: 'host-name-ignored',
+        provisionedName: '__cindy_cloud_device_name__:abc',
+      }),
+    ).toBe('__cindy_cloud_device_name__');
   });
 
   it('keeps ordinary hostname behavior and its empty fallback', () => {

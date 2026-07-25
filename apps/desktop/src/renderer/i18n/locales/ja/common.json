@@ -3087,6 +3087,24 @@
       "renameCancel": "キャンセル",
       "delete": "削除",
       "deleteOnlineHint": "オンラインのデバイスは削除できません",
+      "cloudInstance": {
+        "stop": "インスタンスをスリープ",
+        "stopping": "スリープ中…",
+        "delete": "インスタンスを削除",
+        "deleting": "削除中…",
+        "deleteConfirm": {
+          "title": "クラウドインスタンスを削除しますか？",
+          "description": "クラウド上のデータは削除され、元に戻せません。対応するデバイスも削除されます。",
+          "confirm": "インスタンスを削除",
+          "cancel": "キャンセル"
+        },
+        "toast": {
+          "stopped": "クラウドインスタンスをスリープしました",
+          "deleted": "クラウドインスタンスを削除しました",
+          "stopFailed": "クラウドインスタンスのスリープに失敗しました。しばらくしてからもう一度お試しください。",
+          "deleteFailed": "クラウドインスタンスの削除に失敗しました。しばらくしてからもう一度お試しください。"
+        }
+      },
       "error": {
         "unavailable": "デバイス連携サービスは現在利用できません(サーバー未対応またはネットワークエラー)",
         "listFailed": "デバイス一覧の取得に失敗しました"
@@ -6890,6 +6908,11 @@
       "notFound": "セッションが見つかりません"
     },
     "sidebar": {
+      "cloud": {
+        "wake": "クラウドを起動",
+        "waking": "起動中…",
+        "wakeFailed": "クラウドの起動に失敗しました。しばらくしてからもう一度お試しください。"
+      },
       "machineSwitcher": {
         "allMachines": "すべて",
         "localMachine": "このデバイス",

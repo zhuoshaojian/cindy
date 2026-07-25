@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { resolveMobileDeviceDisplayName, sortCloudDevicesLast } from '@/device-link/devicePresentation';
+import { formatCloudDeviceName } from '@cindy/maker-shared/device-list';
 
 const cloud = {
   busy: false,
@@ -27,6 +28,16 @@ describe('mobile cloud device presentation', () => {
 
   it('keeps a manually renamed cloud device unchanged', () => {
     expect(resolveMobileDeviceDisplayName({ ...cloud, name: '工作 Pod' }, 'zh-CN')).toBe('工作 Pod');
+  });
+
+  it.each([
+    ['zh-CN', '云端'],
+    ['en-US', 'Cloud'],
+    ['ja-JP', 'クラウド'],
+    ['ko-KR', '클라우드'],
+  ])('ignores a cloud ordinal when localizing for %s viewers', (languageCode, expected) => {
+    const name = formatCloudDeviceName(3);
+    expect(resolveMobileDeviceDisplayName({ ...cloud, name, selfName: name }, languageCode)).toBe(expected);
   });
 
   it('keeps ordinary devices unchanged', () => {

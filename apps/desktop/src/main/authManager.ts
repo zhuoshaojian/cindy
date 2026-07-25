@@ -1398,6 +1398,53 @@ function resetActiveAuthRealmToBuild(): void {
   resetClientEndpointRealm();
 }
 
+/**
+ * Commit the shared authenticated-session state for interactive and
+ * provisioned login paths. Callers retain ownership of any surrounding
+ * account-switch boundary and path-specific login-flow state.
+ */
+function applyAuthenticatedSession(
+  pair: AuthTokenPair,
+  options: {
+    authEpoch?: number;
+    realm?: AuthRegion;
+    refreshTokenAlreadyPersisted?: boolean;
+    user?: CurrentUser;
+    beforeNotify?: () => void;
+    notify?: boolean;
+  } = {},
+): void {
+  const loginEpoch = options.authEpoch ?? ++authStateEpoch;
+  const realm = options.realm ?? activeAuthRealm;
+  accessToken = pair.accessToken;
+  persistedRefreshTokenNeedsIdentityCheck = false;
+  clearReplacementIntegrationReloadTimers();
+  activateClientEndpointRealm(realm);
+  activeAuthRealm = realm;
+  if (!options.refreshTokenAlreadyPersisted) {
+    writePersistedAuthSession(pair.refreshToken, realm);
+  }
+  removeSafe(LEGACY_REFRESH_TOKEN_KEY);
+  lastAcceptedRefreshToken = pair.refreshToken;
+  clearReloginFlag();
+  passiveLocalSignOut = false;
+  const nextUser = options.user ?? mapMembershipToAuthUser(pair.membership);
+  currentUser = nextUser;
+  commitActiveAppSession('cloud', nextUser.id);
+  scheduleCanaryFlagSync({
+    token: pair.accessToken,
+    expectedAuthEpoch: loginEpoch,
+    expectedUserId: nextUser.id,
+  });
+  scheduleRefresh(pair.accessToken);
+  getProviderSecretStore().reconcileOwner(pair.membership.id);
+  options.beforeNotify?.();
+  if (options.notify !== false) {
+    notifyRenderer();
+    notifyAuthListeners();
+  }
+}
+
 async function reloadPerAccountIntegrationsFromDisk(_accessToken: string | null): Promise<void> {
   void _accessToken;
   // 登录账号级集成清单当前为空(见 clearPerAccountIntegrations 顶注)。
@@ -1683,30 +1730,16 @@ export function installProvisionedSession(
   if (!input.accessToken || !input.refreshToken) {
     throw new Error('provisioned resource session is incomplete');
   }
-  if (!writeSafe(REFRESH_TOKEN_KEY, input.refreshToken)) {
+  if (!writePersistedAuthSession(input.refreshToken, AUTH_REGION)) {
     throw new Error('failed to persist provisioned resource refresh token');
   }
 
-  const loginEpoch = ++authStateEpoch;
   resetLoginFlowState();
-  accessToken = input.accessToken;
-  persistedRefreshTokenNeedsIdentityCheck = false;
-  clearReplacementIntegrationReloadTimers();
   removeSafe(LEGACY_ACCOUNT_REFRESH_TOKEN_KEY);
-  removeSafe(LEGACY_REFRESH_TOKEN_KEY);
-  lastAcceptedRefreshToken = input.refreshToken;
-  clearReloginFlag();
-  currentUser = mapMembershipToAuthUser(input.membership);
-  commitActiveAppSession('cloud', currentUser.id);
-  scheduleCanaryFlagSync({
-    token: input.accessToken,
-    expectedAuthEpoch: loginEpoch,
-    expectedUserId: currentUser.id,
+  applyAuthenticatedSession(input, {
+    realm: AUTH_REGION,
+    refreshTokenAlreadyPersisted: true,
   });
-  scheduleRefresh(input.accessToken);
-  getProviderSecretStore().reconcileOwner(input.membership.id);
-  notifyRenderer();
-  notifyAuthListeners();
   return snapshotAuthState();
 }
 
@@ -2495,40 +2528,28 @@ async function completeLogin(
   try {
     pendingAccountToken = null;
     pendingAccountDeletionRestored = false;
-    accessToken = outcome.accessToken;
-    persistedRefreshTokenNeedsIdentityCheck = false;
-    clearReplacementIntegrationReloadTimers();
     const committedRealm = pendingAuthRealm ?? AUTH_REGION;
-    activateClientEndpointRealm(committedRealm);
-    activeAuthRealm = committedRealm;
-    writePersistedAuthSession(outcome.refreshToken, committedRealm);
-    removeSafe(LEGACY_REFRESH_TOKEN_KEY);
-    lastAcceptedRefreshToken = outcome.refreshToken;
     removeSafe(ACCOUNT_DELETION_RECEIPT_KEY);
     accountDeletionRestoredNoticePending = deletionWasRestored;
-    clearReloginFlag();
-    // 显式登录解除 passive 本地登出墓碑(见 passiveLocalSignOut)。
-    passiveLocalSignOut = false;
-    currentUser = nextUser;
-    commitActiveAppSession('cloud', currentUser.id);
-    pendingAuthRealm = null;
+    applyAuthenticatedSession(outcome, {
+      authEpoch: loginEpoch,
+      realm: committedRealm,
+      user: nextUser,
+      notify: false,
+      beforeNotify: () => {
+        pendingLoginTicket = null;
+        pendingBindTicket = null;
+        pendingSsoVerificationTicket = null;
+        pendingAuthRealm = null;
+        loginFlowState = reduceAuthFlow(loginFlowState, { type: 'outcome', outcome });
+      },
+    });
   } finally {
     releaseBoundary?.();
   }
-  scheduleCanaryFlagSync({
-    token: outcome.accessToken,
-    expectedAuthEpoch: loginEpoch,
-    expectedUserId: currentUser.id,
-  });
-  scheduleRefresh(outcome.accessToken);
-  getProviderSecretStore().reconcileOwner(outcome.membership.id);
-  pendingLoginTicket = null;
-  pendingBindTicket = null;
-  pendingSsoVerificationTicket = null;
-  loginFlowState = reduceAuthFlow(loginFlowState, { type: 'outcome', outcome });
   notifyRenderer();
   notifyAuthListeners();
-  return loginFlowState;
+  return loginFlowState!;
 }
 
 async function acceptLoginOutcome(outcome: LoginOutcome): Promise<AuthFlowState> {

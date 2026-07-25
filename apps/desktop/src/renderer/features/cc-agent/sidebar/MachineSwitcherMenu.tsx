@@ -7,8 +7,11 @@
  * 下拉 **hover 自动展开**(移上即开、移开即收,点击也可开且不误关,见 useHoverOpenMenu;
  * 2026-07-12 产品定稿恢复,推翻 d5a8d77c9 按 Codex P2 改的「点击展开」)。
  *
- * 本机有 ≥1 台相关远程机器(已连接 / 连接中 / 被拒)时显示;若断网导致设备目录
- * 与远端分片都清空,但 raw 选择仍指向远端,也必须保留入口让用户切回本机。
+ * 可见性:本机有 ≥1 台相关远程机器(已连接 / 连接中 / 被拒),**或云端控制面可用
+ * (cloudReady)** 时显示;两者皆无才 return null。云端唤醒入口收在本菜单里
+ * (2026-07-25 用户定稿,单实例阶段不独立占行),cloudReady 时即使没有任何远程
+ * 设备也要显示 —— 「0 实例首次唤醒」靠本行承载。若断网导致设备目录与远端
+ * 分片都清空,但 raw 选择仍指向远端,也必须保留入口让用户切回本机。
  *
  * 机器选择:**默认单选、多选框另走多选**(2026-07 用户定稿):
  *   - 「所有」→ 重置回默认(本机 + 全部远程),菜单关闭;
@@ -55,7 +58,12 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { CLOUD_DEVICE_NAME_SENTINEL } from '@lizi/maker-shared/device-list';
+import { describeCloudInstanceName } from '@cindy/maker-shared/cloud-instance';
+import { useCloudInstances, type CloudInstanceView } from '@/features/cloud-instance/useCloudInstances';
+import {
+  resolveDesktopCloudDeviceName,
+  translateDesktopCloudInstanceName,
+} from '@/features/cloud-instance/cloudDeviceName';
 import { useActiveMainView } from '@/hooks/useActiveMainView';
 import {
   DropdownMenu,
@@ -83,6 +91,9 @@ export function MachineSwitcherMenu(): ReactNode {
   // 机器栏是远程任务读取状态的固定承载点。后台 bootstrap 时只更新这一行，
   // 不再把 loading 提示插入下方会话列表，避免列表整体上下跳动。
   const remoteSessionBootstrapLoading = useRemoteSessionBootstrapLoading(selectedDeviceId);
+  // 云端实例由控制面列表统一驱动,再以 stable deviceId join relay presence。
+  // device-link 的 cloud 项仅作 presence 来源,不直接渲染,避免 online/offline 双行。
+  const cloud = useCloudInstances();
   // 「鼠标移上去就展开」:hover 触发行即开、移开即关(受控开合,详见 useHoverOpenMenu;
   // 2026-07-12 产品确认要 hover 展开,恢复 d5a8d77c9 之前的交互)。
   const { open, onOpenChange, triggerRef, triggerProps, contentProps } = useHoverOpenMenu();
@@ -113,10 +124,35 @@ export function MachineSwitcherMenu(): ReactNode {
     ensureConversationListVisible();
   };
   const displayDeviceName = (name: string): string =>
-    name === CLOUD_DEVICE_NAME_SENTINEL ? t('settings.devices.cloudDeviceName') : name;
+    resolveDesktopCloudDeviceName(name, t);
 
-  // 无任何相关远程机器、也没有需要逃生的悬空远端选择 → 不渲染入口。
-  if (!hasRemote) return null;
+  const cloudReady = cloud.loadState === 'ready';
+  // 云端命名:custom 直显;default 用序号插值;fallback 用通用「云端」名。
+  const cloudNameOf = (instance: CloudInstanceView): string => {
+    const descriptor = describeCloudInstanceName({
+      customLabel: instance.customLabel,
+      nameSequence: instance.nameSequence,
+    });
+    return translateDesktopCloudInstanceName(descriptor, t);
+  };
+  const onWakeFailed = (): void => {
+    toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
+  };
+  const wakeCloud = (instanceId: string, deviceId: string): void => {
+    const wake = cloud.wake(instanceId);
+    // 离线实例与在线设备同一心智:先切过滤,不等待 Pod 上线。
+    applySelect([deviceId]);
+    void wake.catch(onWakeFailed);
+  };
+  const wakeFirstCloud = (): void => {
+    void cloud.wake().then((result) => {
+      if (result) applySelect([result.deviceId]);
+    }).catch(onWakeFailed);
+  };
+
+  // 无任何相关远程机器且无云端能力 → 不渲染入口(可见性门控)。云端控制面可用时
+  // 即使还没有任何远程设备也要显示 —— 「0 实例首次唤醒」的入口在本菜单里。
+  if (!hasRemote && !cloudReady) return null;
 
   const triggerLabel = t('ccAgent.sidebar.machineSwitcher.menuTrigger');
   // trigger 文案 = 当前范围摘要(手机版首页表头同款「文字 + 下拉箭头」口径):
@@ -125,10 +161,13 @@ export function MachineSwitcherMenu(): ReactNode {
   if (selectedDeviceId !== MACHINE_ALL) {
     if (selectedDeviceId.length === 1) {
       const only = selectedDeviceId[0];
+      const selectedCloud = cloud.instances.find((instance) => instance.deviceId === only);
       triggerText =
         only === MACHINE_LOCAL
           ? t('ccAgent.sidebar.machineSwitcher.localMachine')
-          : displayDeviceName(devices.find((device) => device.deviceId === only)?.name ?? triggerLabel);
+          : selectedCloud
+            ? cloudNameOf(selectedCloud)
+            : displayDeviceName(devices.find((device) => device.deviceId === only)?.name ?? triggerLabel);
     } else {
       triggerText = t('ccAgent.sidebar.machineSwitcher.selectedCount', {
         count: selectedDeviceId.length,
@@ -206,19 +245,13 @@ export function MachineSwitcherMenu(): ReactNode {
           onSelect={() => applySelect([MACHINE_LOCAL])}
           onToggle={() => applyToggle(MACHINE_LOCAL)}
         />
-        {devices.map((device) => {
+        {devices.filter((device) => device.kind !== 'cloud').map((device) => {
           const rejected = device.status === 'rejected';
           const connecting = device.status === 'connecting';
           return (
             <MachineMenuItem
               key={device.deviceId}
-              icon={
-                device.kind === 'cloud' ? (
-                  <Cloud size={14} strokeWidth={2} />
-                ) : (
-                  <MonitorSmartphone size={14} strokeWidth={2} />
-                )
-              }
+              icon={<MonitorSmartphone size={14} strokeWidth={2} />}
               label={displayDeviceName(device.name)}
               selected={isMachineSelected(selectedDeviceId, device.deviceId)}
               shimmer={connecting}
@@ -231,6 +264,40 @@ export function MachineSwitcherMenu(): ReactNode {
                   : () => applySelect([device.deviceId])
               }
               onToggle={rejected ? undefined : () => applyToggle(device.deviceId)}
+            />
+          );
+        })}
+        {/* 云端实例统一机器行:online 直接选择/多选;offline 同行点击即唤醒并立即切过滤。
+            0 实例仍是一行首次唤醒,成功响应拿 deviceId 后切到新实例。 */}
+        {cloudReady && cloud.instances.length === 0 && (
+          <MachineMenuItem
+            icon={<Cloud size={14} strokeWidth={2} />}
+            label={cloud.pending?.action === 'wake' ? t('ccAgent.sidebar.cloud.waking') : t('ccAgent.sidebar.cloud.wake')}
+            selected={false}
+            shimmer={cloud.pending?.action === 'wake'}
+            disabled={cloud.pending !== null}
+            onSelect={wakeFirstCloud}
+          />
+        )}
+        {cloudReady && cloud.instances.map((instance) => {
+          const online = cloud.onlineDeviceIds.has(instance.deviceId);
+          const waking =
+            cloud.pending?.target === instance.instanceId && cloud.pending.action === 'wake';
+          return (
+            <MachineMenuItem
+              key={instance.instanceId}
+              icon={<Cloud size={14} strokeWidth={2} />}
+              label={waking ? t('ccAgent.sidebar.cloud.waking') : cloudNameOf(instance)}
+              selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
+              shimmer={waking}
+              status={online ? 'online' : 'offline'}
+              disabled={!online && cloud.pending !== null}
+              onSelect={
+                online
+                  ? () => applySelect([instance.deviceId])
+                  : () => wakeCloud(instance.instanceId, instance.deviceId)
+              }
+              onToggle={online ? () => applyToggle(instance.deviceId) : undefined}
             />
           );
         })}
@@ -267,6 +334,8 @@ function MachineMenuItem({
   onToggle,
   shimmer = false,
   rejected = false,
+  disabled = false,
+  status,
 }: {
   icon?: ReactNode;
   label: string;
@@ -276,6 +345,8 @@ function MachineMenuItem({
   onToggle?: () => void;
   shimmer?: boolean;
   rejected?: boolean;
+  disabled?: boolean;
+  status?: 'online' | 'offline';
 }): ReactNode {
   const { t } = useTranslation();
   // Radix 的 onSelect 自定义事件不携带修饰键信息,且键盘 Enter/Space 会合成一次
@@ -288,8 +359,9 @@ function MachineMenuItem({
       className={cn(
         MENU_ITEM_CLASS,
         'group/machine-item',
-        rejected && 'text-[var(--text-tertiary)]',
+        (rejected || disabled) && 'text-[var(--text-tertiary)]',
       )}
+      disabled={disabled}
       onClick={(event) => {
         if (event.isTrusted) modifierHeldRef.current = event.metaKey || event.ctrlKey;
       }}
@@ -319,6 +391,17 @@ function MachineMenuItem({
       {icon && (
         <span className="relative inline-flex shrink-0 items-center justify-center">
           <span className={cn(shimmer && 'animate-pulse', rejected && 'opacity-50')}>{icon}</span>
+          {status && (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full"
+              style={{
+                backgroundColor:
+                  status === 'online'
+                    ? 'var(--remote-status-ready)'
+                    : 'var(--remote-status-disconnected)',
+              }}
+            />
+          )}
           {rejected && <Ban size={14} strokeWidth={2} className="absolute inset-0 m-auto" />}
         </span>
       )}

@@ -3088,6 +3088,24 @@
       "renameCancel": "Cancel",
       "delete": "Delete",
       "deleteOnlineHint": "Online devices cannot be deleted",
+      "cloudInstance": {
+        "stop": "Sleep Instance",
+        "stopping": "Sleeping…",
+        "delete": "Delete Instance",
+        "deleting": "Deleting…",
+        "deleteConfirm": {
+          "title": "Delete Cloud Instance?",
+          "description": "The cloud data will be deleted and cannot be recovered. The corresponding device will also be removed.",
+          "confirm": "Delete Instance",
+          "cancel": "Cancel"
+        },
+        "toast": {
+          "stopped": "Cloud instance is sleeping",
+          "deleted": "Cloud instance deleted",
+          "stopFailed": "Failed to sleep the cloud instance. Try again.",
+          "deleteFailed": "Failed to delete the cloud instance. Try again."
+        }
+      },
       "error": {
         "unavailable": "Device Link service is unavailable (not enabled on server or network error)",
         "listFailed": "Failed to load device list"
@@ -6902,6 +6920,11 @@
       "notFound": "Session not found"
     },
     "sidebar": {
+      "cloud": {
+        "wake": "Wake Cloud",
+        "waking": "Waking…",
+        "wakeFailed": "Failed to wake the cloud instance. Try again."
+      },
       "machineSwitcher": {
         "allMachines": "All",
         "localMachine": "This device",

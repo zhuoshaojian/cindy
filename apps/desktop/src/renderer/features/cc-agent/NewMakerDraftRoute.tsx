@@ -133,6 +133,7 @@ import { resolveCollabEntryPolicy } from './collabEntryPolicy';
 import { useCollabProjectPolicy } from './hooks/useCollabProjectPolicy';
 import { CrossAgentConvertDialog } from '@/components/ui/cross-agent-convert-dialog';
 import type { MakerVendor } from '@/lib/ccAgent.types';
+import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
 import {
   ChevronDown,
   Code2,
@@ -798,6 +799,9 @@ export function NewMakerDraftRoute() {
     if (!availableAgentsLoaded) return [];
     return (['cc', 'codex', 'pi'] as const).filter((vendor) => !availableVendors.has(vendor));
   }, [availableAgentsLoaded, availableVendors]);
+  const effectiveDeviceLinkDisplayName = effectiveDeviceLinkDeviceName
+    ? resolveDesktopCloudDeviceName(effectiveDeviceLinkDeviceName, t)
+    : null;
   /**
    * 「这份草稿要建到对端设备上」—— 只看 deviceId,**不再要求 workingDir**(#807)。
    *
@@ -4548,6 +4552,26 @@ export function NewMakerDraftRoute() {
               <div
                 className={cn('flex w-full flex-col items-start gap-0', isDraftNarrow && 'order-3')}
               >
+                {/* device-link:为远程设备项目新建对话时的明显标识。让用户清楚这条对话会建在
+                    被控设备上、属于那台机器的项目,而不是本机。 */}
+                {isDeviceLinkDraft && (
+                  <div className="mb-3 flex max-w-full items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--surface-chip)] px-3 py-1 text-xs text-[var(--text-secondary)]">
+                    <MonitorSmartphone
+                      size={14}
+                      strokeWidth={2}
+                      className="shrink-0 text-[var(--folder-item-icon)]"
+                    />
+                    <span className="min-w-0 truncate">
+                      {t('ccAgent.draft.remoteProjectBanner', {
+                        device: effectiveDeviceLinkDisplayName ?? effectiveDeviceLinkDeviceId ?? '',
+                        project:
+                          effectiveWorkingDir?.split(/[\\/]/).filter(Boolean).pop() ??
+                          effectiveWorkingDir ??
+                          '',
+                      })}
+                    </span>
+                  </div>
+                )}
                 <div className="w-full">
                   <ChatInput
                     onSend={handleSend}

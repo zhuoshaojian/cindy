@@ -74,6 +74,20 @@ describe('resolveRemoteProjectMachineIdentity', () => {
     });
   });
 
+  it('resolves a cloud marker before building user-facing project identity', () => {
+    const identity = resolveRemoteProjectMachineIdentity(
+      {
+        scope: 'remote',
+        remoteHostId: null,
+        deviceLinkDeviceId: 'cloud-device-3',
+        deviceLinkDeviceName: '__cindy_cloud_device_name__:3',
+      },
+      [],
+      (name) => name === '__cindy_cloud_device_name__:3' ? '云端' : name,
+    );
+    expect(identity?.displayLabel).toBe('云端 · cloud-device-3');
+  });
+
   it('does not add a machine identity to local projects', () => {
     expect(
       resolveRemoteProjectMachineIdentity(

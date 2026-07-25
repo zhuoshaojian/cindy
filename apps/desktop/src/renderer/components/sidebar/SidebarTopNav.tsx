@@ -126,8 +126,9 @@ export function SidebarTopNav(): React.ReactElement {
         onSearchActive={ensureConversationView}
       />
 
-      {/* 5. 远程机器 —— 同款行样式的文字下拉(过滤下方会话列表的机器范围);
-          无相关远程机器时组件自身 return null,不占行。 */}
+      {/* 5. 远程机器 —— 同款行样式的文字下拉(过滤下方会话列表的机器范围),
+          云端实例的唤醒入口也收在这个菜单里(单实例阶段不独立占行);
+          无相关远程机器且无云端能力时组件自身 return null,不占行。 */}
       <MachineSwitcherMenu />
     </div>
   );

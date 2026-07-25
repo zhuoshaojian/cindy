@@ -20,7 +20,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Folder, FolderSymlink, ChevronLeft, RotateCw } from 'lucide-react';
-import { CLOUD_DEVICE_NAME_SENTINEL } from '@lizi/maker-shared/device-list';
 
 import { cn } from '@/lib/utils';
 import type { MakerVendor } from '@/lib/ccAgent.types';
@@ -29,6 +28,7 @@ import { toast } from '@/lib/toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { mapIpcErrorToI18nKey } from '@/utils/ipcError';
 import { useControllableDevices } from '@/hooks/useControllableDevices';
+import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
 import { useCCSessions } from '@/hooks/useCCSessions';
 import {
   sshBrowseAdapter,
@@ -102,14 +102,17 @@ export function AddRemoteProjectDialog({
           hostId: h.config.id,
           label: `${h.config.id} (${h.config.user}@${h.config.hostname})`,
         }));
-    const dev: RemoteTarget[] = devices.map((d) => ({
-      key: `device:${d.deviceId}`,
-      kind: 'device',
-      deviceId: d.deviceId,
-      deviceName: d.name === CLOUD_DEVICE_NAME_SENTINEL ? t('settings.devices.cloudDeviceName') : d.name,
-      label: d.name === CLOUD_DEVICE_NAME_SENTINEL ? t('settings.devices.cloudDeviceName') : d.name,
-      ...(d.kind === 'cloud' ? { cloud: true } : {}),
-    }));
+    const dev: RemoteTarget[] = devices.map((d) => {
+      const displayName = resolveDesktopCloudDeviceName(d.name, t);
+      return {
+        key: `device:${d.deviceId}`,
+        kind: 'device',
+        deviceId: d.deviceId,
+        deviceName: displayName,
+        label: displayName,
+        ...(d.kind === 'cloud' ? { cloud: true } : {}),
+      };
+    });
     return [...ssh, ...dev];
   }, [excludeSsh, sshHosts, devices, t]);
 

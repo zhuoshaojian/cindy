@@ -43,15 +43,36 @@ describe('mobile controllable device filter', () => {
 
   it('does not expose rename for cloud devices in the home device menu', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
-    expect(source).toContain(
-      'item.deviceId && !cloudDeviceIds.has(item.deviceId)',
-    );
+    // 云端行由 cloudItems 独立渲染且不传 onRename;deviceFilters 已把 cloud 项
+    // 整体排除,普通设备行的 onRename 无需再按 cloudDeviceIds 二次判断。
+    expect(source).toContain('onRename={item.deviceId ? () => onRenameDevice(item) : undefined}');
+    expect(source).toContain('!cloudDeviceIds.has(item.deviceId)');
   });
 
   it('does not render a cloud icon in the home device menu', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
     expect(source).not.toContain('deviceMenuIconSlot');
-    expect(source).not.toContain('<Cloud');
+    // 只防 JSX 图标(<Cloud ... />),不误伤 Pick<CloudInstanceView> 这类类型标注。
+    expect(source).not.toMatch(/<Cloud[\s/>]/);
+  });
+
+  it('renders each cloud instance once and wakes offline rows before switching filters', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
+    expect(source).toContain('const cloudInstanceDeviceIds = useMemo');
+    expect(source).toContain('const cloudItems = useMemo');
+    expect(source).toContain('!cloudInstanceDeviceIds.has(item.deviceId)');
+    expect(source).toContain('onSelect(item.filter)');
+    expect(source).toContain('const wake = cloud.wake(item.instance.instanceId)');
+    expect(source).toContain('onSelect(buildCloudFilterItem(result');
+    expect(source).toContain('const selectedCloudExists = cloudInstances.instances.some');
+    expect(source).toContain('disabled={!item.online && cloud.pending !== null}');
+    expect(source).toContain("status={item.online ? 'online' : 'offline'}");
+    expect(source).toContain('onManageCloudInstance={openCloudInstanceActions}');
+    expect(source).toContain('onLongPress={');
+    expect(source).toContain('cloudInstances.stopInstance');
+    expect(source).toContain('cloudInstances.deleteInstance');
+    expect(source).toContain('messages.deleteConfirmDescription');
+    expect(source).not.toContain('cloudWakeItems');
   });
 
   it('requires online, remoteControlEnabled and not self', () => {

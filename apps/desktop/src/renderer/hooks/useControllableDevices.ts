@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { deviceDisplayName } from '@lizi/maker-shared/device-list';
+import { deviceDisplayName } from '@cindy/maker-shared/device-list';
 
 export interface ControllableDevice {
   deviceId: string;

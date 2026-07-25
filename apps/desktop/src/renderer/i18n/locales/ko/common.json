@@ -3087,6 +3087,24 @@
       "renameCancel": "취소",
       "delete": "삭제",
       "deleteOnlineHint": "온라인 기기는 삭제할 수 없습니다",
+      "cloudInstance": {
+        "stop": "인스턴스 절전",
+        "stopping": "절전 중…",
+        "delete": "인스턴스 삭제",
+        "deleting": "삭제 중…",
+        "deleteConfirm": {
+          "title": "클라우드 인스턴스를 삭제할까요?",
+          "description": "클라우드 데이터가 삭제되며 복구할 수 없습니다. 해당 기기도 함께 제거됩니다.",
+          "confirm": "인스턴스 삭제",
+          "cancel": "취소"
+        },
+        "toast": {
+          "stopped": "클라우드 인스턴스가 절전 상태입니다",
+          "deleted": "클라우드 인스턴스를 삭제했습니다",
+          "stopFailed": "클라우드 인스턴스를 절전 상태로 전환하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+          "deleteFailed": "클라우드 인스턴스를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요."
+        }
+      },
       "error": {
         "unavailable": "기기 연동 서비스를 사용할 수 없습니다(서버 미지원 또는 네트워크 오류)",
         "listFailed": "기기 목록을 불러오지 못했습니다"
@@ -6890,6 +6908,11 @@
       "notFound": "세션을 찾을 수 없습니다"
     },
     "sidebar": {
+      "cloud": {
+        "wake": "클라우드 깨우기",
+        "waking": "깨우는 중…",
+        "wakeFailed": "클라우드 깨우기에 실패했습니다. 잠시 후 다시 시도해 주세요."
+      },
       "machineSwitcher": {
         "allMachines": "전체",
         "localMachine": "이 기기",

@@ -3071,6 +3071,7 @@
       "refresh": "重新整理",
       "empty": "暫無其它裝置。在另一臺電腦上用同一帳號登入 {{appName}} 後，這裡會顯示該裝置。",
       "thisDevice": "本機",
+      "cloudDeviceName": "雲端",
       "status": {
         "online": "線上",
         "busy": "忙碌中"
@@ -3085,6 +3086,48 @@
       "renameCancel": "取消",
       "delete": "刪除",
       "deleteOnlineHint": "線上裝置無法刪除",
+      "cloudInstance": {
+        "stop": "休眠實例",
+        "stopping": "休眠中…",
+        "wake": "喚醒實例",
+        "waking": "喚醒中…",
+        "updateAvailable": "有可用更新",
+        "updateAvailableTag": "有可用更新 · {{tag}}",
+        "currentVersion": "目前版本 {{version}}",
+        "currentVersionUpToDate": "目前版本 {{version}} · 已是最新版本",
+        "update": "更新雲端",
+        "updating": "更新中…",
+        "autoUpdate": "空閒時自動更新",
+        "autoUpdateHint": "有新版本時，雲端實例會在空閒或休眠時自動更新。",
+        "updateRolledBack": "上次更新失敗，已自動回滾。",
+        "updateConfirm": {
+          "title": "更新雲端實例？",
+          "description": "更新會重新啟動雲端實例，並中斷正在執行的任務。",
+          "confirm": "更新雲端實例",
+          "cancel": "取消"
+        },
+        "delete": "刪除實例",
+        "deleting": "刪除中…",
+        "deleteConfirm": {
+          "title": "刪除雲端實例？",
+          "description": "刪除後，雲端資料將被刪除且無法復原，同時會移除對應裝置。",
+          "confirm": "刪除實例",
+          "cancel": "取消"
+        },
+        "toast": {
+          "stopped": "雲端實例已休眠",
+          "deleted": "雲端實例已刪除",
+          "stopFailed": "休眠雲端實例失敗，請稍後重試",
+          "deleteFailed": "刪除雲端實例失敗，請稍後重試",
+          "woke": "雲端實例正在喚醒",
+          "wakeFailed": "喚醒雲端實例失敗，請稍後重試",
+          "updateStarted": "雲端實例已開始更新",
+          "updateFailed": "無法開始更新雲端實例，請稍後重試",
+          "autoUpdateFailed": "無法儲存雲端實例的自動更新設定，請稍後重試",
+          "noReleaseAvailable": "目前沒有可用的正式版，請重新整理後稍後重試"
+        },
+        "modelAccessStale": "雲端模型憑證需要重新整理，雲端模型可能暫時無法使用"
+      },
       "error": {
         "unavailable": "裝置互聯服務暫不可用(服務端未啟用或網路異常)",
         "listFailed": "裝置列表獲取失敗"
@@ -6888,6 +6931,12 @@
       "notFound": "未找到該任務"
     },
     "sidebar": {
+      "cloud": {
+        "wake": "喚醒雲端",
+        "waking": "喚醒中…",
+        "wakeFailed": "喚醒雲端失敗，請稍後重試",
+        "updateAvailable": "有可用更新"
+      },
       "machineSwitcher": {
         "allMachines": "所有",
         "localMachine": "本機",

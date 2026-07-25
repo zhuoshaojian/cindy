@@ -6,6 +6,11 @@
  * remote control is safe for this mode only. Ordinary desktop/headless
  * instances keep the explicit opt-in default.
  */
+import {
+  formatCloudDeviceName,
+  parseCloudDeviceName,
+} from '@cindy/maker-shared/device-list';
+
 export interface PodDeviceLinkStartupDeps {
   initDeviceLinkService: () => void;
   readRemoteControlEnabled: () => boolean;
@@ -35,6 +40,8 @@ export async function initializePodDeviceLink(
 export interface DeviceNameOptions {
   podMode: boolean;
   hostname: string;
+  /** Locale-neutral self-name provisioned by the cloud control plane. */
+  provisionedName?: string;
 }
 
 /**
@@ -43,7 +50,10 @@ export interface DeviceNameOptions {
  * `name === selfName` sentinel for each viewer, while manual names stay raw.
  */
 export function resolveDeviceLinkDeviceName(options: DeviceNameOptions): string {
-  if (options.podMode) return 'Cloud';
+  if (options.podMode) {
+    const marker = parseCloudDeviceName(options.provisionedName?.trim() ?? '');
+    return formatCloudDeviceName(marker?.sequence);
+  }
   const hostname = options.hostname.trim();
   return hostname || 'Unknown Device';
 }
