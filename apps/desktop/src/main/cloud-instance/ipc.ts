@@ -99,10 +99,16 @@ function rethrowCloudInstanceError(error: unknown): never {
     }
     if (error.statusCode === 401 || error.statusCode === 403) {
       throwIpcError(
-        error.code === 'CLOUD_PROVIDER_DISABLED' ? 'UNSUPPORTED_CAPABILITY' : 'PERMISSION_DENIED',
+        error.code === 'CLOUD_PROVIDER_DISABLED'
+          ? 'UNSUPPORTED_CAPABILITY'
+          : error.code === 'CLOUD_INSTANCE_DISABLED'
+            ? 'CLOUD_INSTANCE_DISABLED'
+            : 'PERMISSION_DENIED',
         error.code === 'CLOUD_PROVIDER_DISABLED'
           ? 'cloud instance control is unavailable'
-          : 'cloud instance request is not authorized',
+          : error.code === 'CLOUD_INSTANCE_DISABLED'
+            ? 'cloud instance control is disabled for this account'
+            : 'cloud instance request is not authorized',
       );
     }
     if (error.statusCode === 404) {

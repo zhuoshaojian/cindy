@@ -3091,6 +3091,8 @@
       "cloudInstance": {
         "stop": "Sleep Instance",
         "stopping": "Sleeping…",
+        "wake": "Wake Instance",
+        "waking": "Waking…",
         "delete": "Delete Instance",
         "deleting": "Deleting…",
         "deleteConfirm": {
@@ -3103,7 +3105,9 @@
           "stopped": "Cloud instance is sleeping",
           "deleted": "Cloud instance deleted",
           "stopFailed": "Failed to sleep the cloud instance. Try again.",
-          "deleteFailed": "Failed to delete the cloud instance. Try again."
+          "deleteFailed": "Failed to delete the cloud instance. Try again.",
+          "woke": "Cloud instance is waking up.",
+          "wakeFailed": "Failed to wake the cloud instance. Try again."
         }
       },
       "error": {
@@ -6913,7 +6917,10 @@
       "worktreeRepoHint": "Try picking the working directory again, and retry once the folder badge at the bottom right refreshes",
       "sessionInactive": "Session is no longer active",
       "remoteProjectBanner": "New session in {{project}} on {{device}}",
-      "remoteDialogueBanner": "New chat on {{device}} (no project)"
+      "remoteDialogueBanner": "New chat on {{device}} (no project)",
+      "runInCloud": "Run this chat in the cloud",
+      "cloudOnline": "Cloud · Online",
+      "wakeCloud": "Wake the cloud"
     },
     "jumpSession": {
       "emptyId": "Enter a sessionId to jump to",

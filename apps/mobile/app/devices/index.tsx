@@ -44,6 +44,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useAuth } from '@/auth/AuthContext';
+import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@/cloud-instance/cloudInstanceWake';
 import { getCloudInstanceMessages } from '@/cloud-instance/messages';
 import { useCloudInstances, type UseCloudInstances } from '@/cloud-instance/useCloudInstances';
 import type { CloudInstanceView } from '@/api/cloudInstance';
@@ -94,6 +95,7 @@ import {
 import {
   buildMobileHomePresentation,
   excludeOrcaWorkerSessions,
+  selectMobileHomeSources,
   type MobileHomeDeviceFilterItem,
   type MobileHomeProjectGroup,
 } from '@/session/mobileHome';
@@ -900,15 +902,30 @@ export default function HomeScreen() {
     };
   }, [deviceRows, hydrateDeviceSessions]);
 
-  const deviceModels = useMemo(() => deviceRows.map((item) => ({
-    canOpen: item.canOpen,
-    deviceId: item.device.deviceId,
-    kind: item.device.deviceInfo?.kind,
-    name: item.device.name,
-    state: item.state,
-    statusDetail: item.statusDetail,
-    statusLabel: item.statusLabel,
-  })), [deviceRows]);
+  const rawDeviceModels = useMemo(
+    () =>
+      deviceRows.map((item) => ({
+        canOpen: item.canOpen,
+        deviceId: item.device.deviceId,
+        kind: item.device.deviceInfo?.kind,
+        name: item.device.name,
+        state: item.state,
+        statusDetail: item.statusDetail,
+        statusLabel: item.statusLabel,
+      })),
+    [deviceRows],
+  );
+  const homeSources = useMemo(
+    () =>
+      selectMobileHomeSources(
+        rawDeviceModels,
+        sessions,
+        cloudInstances.loadState === 'unsupported',
+      ),
+    [cloudInstances.loadState, rawDeviceModels, sessions],
+  );
+  const deviceModels = homeSources.devices;
+  const visibleSessions = homeSources.sessions;
   const cloudDeviceIds = useMemo(
     () => new Set(deviceModels.filter((item) => item.kind === 'cloud').map((item) => item.deviceId)),
     [deviceModels],
@@ -917,6 +934,22 @@ export default function HomeScreen() {
     () => new Set(displayDevices.filter((device) => device.online).map((device) => device.deviceId)),
     [displayDevices],
   );
+  // 云端唤醒 wake-watch:唤醒受理后到 Pod presence 上线之间有约一分钟空窗,此时
+  // cloudInstances.pending 已清、设备仍离线,「唤醒中」态若只看 pending 会提前回落成
+  // 可再次点击。受理成功时记下 deviceId,presence 上线或超时兜底后解除;引导卡与
+  // 设备菜单两个唤醒入口共用这一份状态。
+  const [cloudWakeWatchDeviceId, setCloudWakeWatchDeviceId] = useState<string | null>(null);
+  useEffect(() => {
+    if (cloudWakeWatchDeviceId === null) return;
+    const timer = setTimeout(() => setCloudWakeWatchDeviceId(null), CLOUD_WAKE_WATCH_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [cloudWakeWatchDeviceId]);
+  useEffect(() => {
+    if (cloudWakeWatchDeviceId !== null && onlineDeviceIds.has(cloudWakeWatchDeviceId)) {
+      setCloudWakeWatchDeviceId(null);
+    }
+  }, [cloudWakeWatchDeviceId, onlineDeviceIds]);
+  const cloudWaking = cloudInstances.pending?.action === 'wake' || cloudWakeWatchDeviceId !== null;
   const revokedTipDeviceName = useMemo(
     () => revokedTipDeviceId
       ? deviceModels.find((item) => item.deviceId === revokedTipDeviceId)?.name ?? t('devices.list.thisComputer')
@@ -929,29 +962,32 @@ export default function HomeScreen() {
   // 旧引用,下游 useMemo 依赖即可短路;内容真变(某会话预览/交互数/活动态变化)照常穿透。
   const messagePreviewIndexRaw = useMemo(
     () => buildSessionMessagePreviewIndex(
-      sessions.map((session) => session.id),
+      visibleSessions.map((session) => session.id),
       (sessionId) => remoteSessionStore.getMessages(sessionId),
     ),
-    [messageVersion, sessions],
+    [messageVersion, visibleSessions],
   );
   const messagePreviewIndex = useStableValue(messagePreviewIndexRaw, mapContentEqual);
   const pendingInteractionIndexRaw = useMemo(() => new Map(
-    sessions
+    visibleSessions
       .map((session) => [session.id, remoteSessionStore.getPendingInteractions(session.id).length] as const)
       .filter(([, count]) => count > 0),
-  ), [sessions, storeVersion]);
+  ), [storeVersion, visibleSessions]);
   const pendingInteractionIndex = useStableValue(pendingInteractionIndexRaw, mapContentEqual);
   const liveActivityIndexRaw = useMemo(() => {
     const entries: Array<[string, RemoteSessionLiveActivity]> = [];
-    for (const session of sessions) {
+    for (const session of visibleSessions) {
       const liveActivity = remoteSessionStore.getSessionLiveActivity(session.id);
       if (liveActivity) entries.push([session.id, liveActivity]);
     }
     return new Map(entries);
-  }, [sessions, storeVersion]);
+  }, [storeVersion, visibleSessions]);
   const liveActivityIndex = useStableValue(liveActivityIndexRaw, mapContentEqual);
   // 列表隐藏 Orca worker 子会话(本期不支持进 worker 聊天);Lead + 普通会话保留。仅 mobile 侧过滤。
-  const homeSessions = useMemo(() => excludeOrcaWorkerSessions(sessions), [sessions]);
+  const homeSessions = useMemo(
+    () => excludeOrcaWorkerSessions(visibleSessions),
+    [visibleSessions],
+  );
   const home = useMemo(
     () => buildMobileHomePresentation({
       devices: deviceModels,
@@ -1030,12 +1066,22 @@ export default function HomeScreen() {
   // 引导态下首页没有可筛选的对话:表头「所有对话 ▾」退化为纯品牌标题、新建 FAB 隐藏,
   // 避免在产品说明页上摆一堆无意义的入口。
   const homeListItemCount = sections.reduce((count, section) => count + section.data.length, 0);
-  const showRemoteGuide = homeListItemCount === 0
+  // loading/error 都不能冒充「能力未开放」:loading 保留读取态,error 回落普通无设备空态;
+  // 等控制面明确 ready/unsupported 后再展示对应的云端行动卡/筹备中预告。
+  const remoteGuideCloudState = cloudInstances.loadState === 'ready'
+    || cloudInstances.loadState === 'unsupported'
+    ? cloudInstances.loadState
+    : null;
+  const remoteGuideBaseVisible = homeListItemCount === 0
     && !initialHomeLoading
     && !initialHomeError
     && home.pinned.length === 0
     && home.emptyKind === 'noDevice'
     && home.emptyNoDevice !== null;
+  const showRemoteGuide = remoteGuideBaseVisible && remoteGuideCloudState !== null;
+  const showRemoteGuideLoading = remoteGuideBaseVisible
+    && cloudInstances.loadState === 'loading';
+  const showRemoteGuideSurface = showRemoteGuide || showRemoteGuideLoading;
   const retryRevokedGuideDevices = useCallback(() => {
     const revoked = home.emptyNoDevice?.reason === 'accessRevoked' ? home.emptyNoDevice.devices : [];
     for (const device of revoked) void retryRevokedDevice(device.deviceId);
@@ -1454,7 +1500,7 @@ export default function HomeScreen() {
         style={styles.homeHeader}
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
       >
-        {showRemoteGuide ? (
+        {showRemoteGuideSurface ? (
           // 引导态(无可控制电脑)没有可筛选的对话:表头退化为纯品牌标题,不挂下拉菜单。
           <View style={styles.headerDropdown} testID="devices.title">
             <Text style={styles.headerTitle} numberOfLines={1}>Cindy</Text>
@@ -1567,13 +1613,38 @@ export default function HomeScreen() {
                 padding: windowLayout.emptyPadding,
               }}
             />
+          ) : showRemoteGuideLoading ? (
+            <HomeListLoadingState
+              label={t('devices.list.loading')}
+              testID="home.cloudLoading"
+              style={{
+                marginTop: spacing.xxl,
+                minHeight: windowLayout.emptyMinHeight,
+                padding: windowLayout.emptyPadding,
+              }}
+            />
           ) : home.pinned.length > 0 ? (
             // 仅剩置顶且被收起时 item 数为 0,但用户并非"无对话",不显示空状态插画。
             null
-          ) : showRemoteGuide && home.emptyNoDevice ? (
+          ) : showRemoteGuide && home.emptyNoDevice && remoteGuideCloudState !== null ? (
             // 无可控制电脑是「首次使用 / 产品模式说明」级空态:按 reason 渲染远程访问引导
             // (首跑三步 / 离线设备卡 / 精确开关 / 重试访问 + 云端 Cindy 预告),而非一句话空态。
             <RemoteAccessGuide
+              // 桌面全离线时这是唯一的云端唤醒入口:能力 ready 即给行动卡(0 实例
+              // 首唤醒由 wake() 原子创建),仅 unsupported 显示「筹备中」预告。
+              cloud={{
+                state: remoteGuideCloudState,
+                waking: cloudWaking,
+                onWake: () => {
+                  if (cloudInstances.pending !== null || cloudWakeWatchDeviceId !== null) return;
+                  void cloudInstances
+                    .wake(cloudInstances.instances[0]?.instanceId)
+                    .then((result) => {
+                      if (result) setCloudWakeWatchDeviceId(result.deviceId);
+                      return loadHome({ visible: true });
+                    });
+                },
+              }}
               context={home.emptyNoDevice}
               copy={emptyStateCopy}
               onRecheck={() => void loadHome({ visible: true })}
@@ -1605,7 +1676,7 @@ export default function HomeScreen() {
         renderItem={renderHomeRow}
       />
 
-      {showRemoteGuide ? null : (
+      {showRemoteGuideSurface ? null : (
         // 引导态(无可控制电脑)下没有可发起对话的设备,置灰 FAB 也是噪音,直接不渲染。
         <Pressable
           accessibilityLabel={t('devices.list.a11y.newRemoteConversation')}
@@ -1636,6 +1707,8 @@ export default function HomeScreen() {
       <DeviceMenuModal
         cloud={cloudInstances}
         cloudDeviceIds={cloudDeviceIds}
+        cloudWakingDeviceId={cloudWakeWatchDeviceId}
+        onCloudWakeAccepted={setCloudWakeWatchDeviceId}
         connectionStates={deviceConnectionStates}
         filters={home.deviceFilters}
         groupByProject={groupByProject}
@@ -1724,11 +1797,13 @@ function HomeInitialLoadingState({ style }: { style?: StyleProp<ViewStyle> }) {
 function DeviceMenuModal({
   cloud,
   cloudDeviceIds,
+  cloudWakingDeviceId,
   connectionStates,
   filters,
   groupByProject,
   onClose,
   onClosed,
+  onCloudWakeAccepted,
   onManageCloudInstance,
   onOpenDevice,
   onRenameDevice,
@@ -1742,12 +1817,16 @@ function DeviceMenuModal({
 }: {
   cloud: UseCloudInstances;
   cloudDeviceIds: ReadonlySet<string>;
+  /** wake-watch:唤醒已受理、Pod 尚未上线的实例 deviceId(父级维护,超时/上线后解除)。 */
+  cloudWakingDeviceId: string | null;
   connectionStates: Record<string, HomeDeviceConnectionState>;
   filters: readonly MobileHomeDeviceFilterItem[];
   groupByProject: boolean;
   onClose(): void;
   /** 淡出动画完成、Modal 真正卸载后触发;父级用它把「打开第二个 Modal」延后到菜单卸载之后。 */
   onClosed?(): void;
+  /** 唤醒请求被控制面受理后回报 deviceId,父级据此开始 wake-watch。 */
+  onCloudWakeAccepted(deviceId: string): void;
   onManageCloudInstance(instance: CloudInstanceView): void;
   onOpenDevice(item: MobileHomeDeviceFilterItem): void;
   onRenameDevice(item: MobileHomeDeviceFilterItem): void;
@@ -1874,7 +1953,9 @@ function DeviceMenuModal({
               />
             ))}
             {cloudItems.map((item) => {
-              const busy = cloud.pending?.target === item.pendingKey;
+              // watch 命中 = 唤醒已受理、Pod 尚未上线:pending 已清仍要显示「唤醒中」。
+              const waking = cloudWakingDeviceId === item.instance.deviceId && !item.online;
+              const busy = cloud.pending?.target === item.pendingKey || waking;
               const busyLabel = cloud.pending?.action === 'stop'
                 ? cloudMessages.stopping
                 : cloud.pending?.action === 'delete'
@@ -1897,9 +1978,13 @@ function DeviceMenuModal({
                       return;
                     }
                     // 发起唤醒后立即切过滤,不等待 Pod 上线;presence 回来后状态点自然变绿。
-                    const wake = cloud.wake(item.instance.instanceId);
+                    // waking 空窗内重复点击只切过滤,不重复发唤醒请求。
+                    if (!waking) {
+                      void cloud.wake(item.instance.instanceId).then((result) => {
+                        if (result) onCloudWakeAccepted(result.deviceId);
+                      });
+                    }
                     onSelect(item.filter);
-                    void wake;
                   }}
                   selected={item.filter.selected}
                   status={item.online ? 'online' : 'offline'}
@@ -1923,6 +2008,7 @@ function DeviceMenuModal({
                 onPress={() => {
                   void cloud.wake().then((result) => {
                     if (!result) return;
+                    onCloudWakeAccepted(result.deviceId);
                     onSelect(buildCloudFilterItem(result, { online: false, selected: true }));
                   });
                 }}

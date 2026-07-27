@@ -48,6 +48,7 @@ import {
   Check,
   ChevronDown,
   Cloud,
+  CloudOff,
   EllipsisVertical,
   Loader2,
   Monitor,
@@ -269,38 +270,43 @@ export function MachineSwitcherMenu(): ReactNode {
         })}
         {/* 云端实例统一机器行:online 直接选择/多选;offline 同行点击即唤醒并立即切过滤。
             0 实例仍是一行首次唤醒,成功响应拿 deviceId 后切到新实例。 */}
-        {cloudReady && cloud.instances.length === 0 && (
-          <MachineMenuItem
-            icon={<Cloud size={14} strokeWidth={2} />}
-            label={cloud.pending?.action === 'wake' ? t('ccAgent.sidebar.cloud.waking') : t('ccAgent.sidebar.cloud.wake')}
-            selected={false}
-            shimmer={cloud.pending?.action === 'wake'}
-            disabled={cloud.pending !== null}
-            onSelect={wakeFirstCloud}
-          />
-        )}
-        {cloudReady && cloud.instances.map((instance) => {
-          const online = cloud.onlineDeviceIds.has(instance.deviceId);
-          const waking =
-            cloud.pending?.target === instance.instanceId && cloud.pending.action === 'wake';
-          return (
-            <MachineMenuItem
-              key={instance.instanceId}
-              icon={<Cloud size={14} strokeWidth={2} />}
-              label={waking ? t('ccAgent.sidebar.cloud.waking') : cloudNameOf(instance)}
-              selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
-              shimmer={waking}
-              status={online ? 'online' : 'offline'}
-              disabled={!online && cloud.pending !== null}
-              onSelect={
-                online
-                  ? () => applySelect([instance.deviceId])
-                  : () => wakeCloud(instance.instanceId, instance.deviceId)
-              }
-              onToggle={online ? () => applyToggle(instance.deviceId) : undefined}
-            />
-          );
-        })}
+        {/* 机器列表只列在线云端实例;离线实例不以「一台机器」出现(选不了过滤目标),
+            统一折叠成一行「唤醒云端」动作(CloudOff),0 实例与休眠实例同一入口。 */}
+        {cloudReady &&
+          cloud.instances
+            .filter((instance) => cloud.onlineDeviceIds.has(instance.deviceId))
+            .map((instance) => (
+              <MachineMenuItem
+                key={instance.instanceId}
+                icon={<Cloud size={14} strokeWidth={2} />}
+                label={cloudNameOf(instance)}
+                selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
+                onSelect={() => applySelect([instance.deviceId])}
+                onToggle={() => applyToggle(instance.deviceId)}
+              />
+            ))}
+        {cloudReady &&
+          (() => {
+            const offlineInstance = cloud.instances.find(
+              (instance) => !cloud.onlineDeviceIds.has(instance.deviceId),
+            );
+            if (!offlineInstance && cloud.instances.length > 0) return null;
+            const waking = cloud.pending?.action === 'wake';
+            return (
+              <MachineMenuItem
+                icon={<CloudOff size={14} strokeWidth={2} />}
+                label={waking ? t('ccAgent.sidebar.cloud.waking') : t('ccAgent.sidebar.cloud.wake')}
+                selected={false}
+                shimmer={waking}
+                disabled={cloud.pending !== null}
+                onSelect={
+                  offlineInstance
+                    ? () => wakeCloud(offlineInstance.instanceId, offlineInstance.deviceId)
+                    : wakeFirstCloud
+                }
+              />
+            );
+          })()}
         <DropdownMenuSeparator className={MENU_SEPARATOR_CLASS} />
         <DropdownMenuItem
           className={MENU_ITEM_CLASS}
@@ -335,7 +341,6 @@ function MachineMenuItem({
   shimmer = false,
   rejected = false,
   disabled = false,
-  status,
 }: {
   icon?: ReactNode;
   label: string;
@@ -346,7 +351,6 @@ function MachineMenuItem({
   shimmer?: boolean;
   rejected?: boolean;
   disabled?: boolean;
-  status?: 'online' | 'offline';
 }): ReactNode {
   const { t } = useTranslation();
   // Radix 的 onSelect 自定义事件不携带修饰键信息,且键盘 Enter/Space 会合成一次
@@ -391,17 +395,6 @@ function MachineMenuItem({
       {icon && (
         <span className="relative inline-flex shrink-0 items-center justify-center">
           <span className={cn(shimmer && 'animate-pulse', rejected && 'opacity-50')}>{icon}</span>
-          {status && (
-            <span
-              className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full"
-              style={{
-                backgroundColor:
-                  status === 'online'
-                    ? 'var(--remote-status-ready)'
-                    : 'var(--remote-status-disconnected)',
-              }}
-            />
-          )}
           {rejected && <Ban size={14} strokeWidth={2} className="absolute inset-0 m-auto" />}
         </span>
       )}

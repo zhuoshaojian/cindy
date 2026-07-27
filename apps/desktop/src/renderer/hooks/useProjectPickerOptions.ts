@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import type { FolderPickerOption } from '@/components/new-chat/FolderPickerPopover';
 import { extractDisplayName } from '@/features/cc-agent/lib/projectGrouping';
 import { useRecentWorkdirs } from '@/hooks/useRecentWorkdirs';
+import type { Session } from '@/lib/ccAgent.types';
 
 export type ProjectPickerEmptyLabelMode = 'generic' | 'dialogue';
 
@@ -32,6 +33,45 @@ export function useProjectPickerOptions(): FolderPickerOption[] {
       };
     });
   }, [entries]);
+}
+
+/**
+ * 从某台 device-link 设备的镜像会话反推最近项目。
+ *
+ * 与手机 buildRecentWorkspaceOptions 同口径：只看未删除的 project 会话、按目录去重，
+ * 以最近活动时间倒序；控制端不把远端目录写进本机 recent_workdirs。
+ */
+export function buildRemoteProjectPickerOptions(
+  sessions: readonly Session[],
+  deviceId: string,
+  limit = 6,
+): FolderPickerOption[] {
+  const latestByPath = new Map<string, string>();
+  for (const session of sessions) {
+    if (session.deviceLinkDeviceId !== deviceId) continue;
+    if (session.status === 'deleted' || session.workspaceKind !== 'project') continue;
+    const path = session.workingDir?.trim();
+    if (!path) continue;
+    const activityAt = session.userSendAt ?? session.updatedAt ?? session.createdAt ?? '';
+    const current = latestByPath.get(path);
+    if (current == null || activityAt.localeCompare(current) > 0) {
+      latestByPath.set(path, activityAt);
+    }
+  }
+
+  const paths = [...latestByPath.keys()];
+  return paths
+    .sort(
+      (a, b) =>
+        (latestByPath.get(b) ?? '').localeCompare(latestByPath.get(a) ?? '') ||
+        a.localeCompare(b),
+    )
+    .slice(0, Math.max(0, limit))
+    .map((path) => {
+      const posix = toPosixPath(path);
+      const { name } = extractDisplayName(posix, paths.map(toPosixPath));
+      return { path, name, description: posix };
+    });
 }
 
 export function getProjectPickerDisplayName(

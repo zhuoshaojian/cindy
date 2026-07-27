@@ -29,9 +29,21 @@ import {
  *
  * hero 标题与导语文案来自 maker-shared 的 mobileHomeEmptyState(单一来源,已按 reason 分文案),
  * eyebrow、步骤、卡片与云端预告属于引导态自身的展示细节,收在本组件内。
+ *
+ * 云端卡按能力分态:功能未启用(unsupported)才显示「筹备中」预告;已启用时这里就是
+ * 「桌面全离线也能用」的主入口——渲染可点击的「唤醒云端」行动卡,唤醒后 presence 上线,
+ * 首页自然脱离无设备引导态。
  */
 
+export interface RemoteAccessGuideCloud {
+  /** 'ready' = 云端能力已启用(有无实例都算,0 实例首唤醒即创建);其余显示预告。 */
+  state: 'ready' | 'unsupported';
+  waking?: boolean;
+  onWake?(): void;
+}
+
 export function RemoteAccessGuide({
+  cloud,
   context,
   copy,
   onRecheck,
@@ -42,6 +54,7 @@ export function RemoteAccessGuide({
   testID,
   title,
 }: {
+  cloud: RemoteAccessGuideCloud;
   context: MobileHomeNoDeviceContext;
   copy: string;
   /** offline / remoteDisabled:手动触发一轮设备同步(与下拉刷新同源)。 */
@@ -146,13 +159,38 @@ export function RemoteAccessGuide({
         ) : null}
       </View>
 
-      <View style={styles.teaserCard}>
-        <Cloud color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
-        <View style={styles.teaserBody}>
-          <Text style={styles.teaserTitle}>{t('deviceLink.cloudTeaserTitle')}</Text>
-          <Text style={styles.teaserCopy}>{t('deviceLink.cloudTeaserCopy')}</Text>
+      {cloud.state === 'ready' ? (
+        // 云端已启用:预告卡升级为行动卡。桌面全离线场景下这是手机唯一的唤醒入口。
+        <View style={styles.teaserCard} testID="home.remoteGuide.cloudReady">
+          <Cloud color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+          <View style={styles.teaserBody}>
+            <Text style={styles.teaserTitle}>{t('deviceLink.cloudReadyTitle')}</Text>
+            <Text style={styles.teaserCopy}>{t('deviceLink.cloudReadyCopy')}</Text>
+            {cloud.onWake ? (
+              <MainWindowActionButton
+                action={{
+                  busy: cloud.waking === true,
+                  label: cloud.waking === true
+                    ? t('deviceLink.cloudWaking')
+                    : t('deviceLink.cloudWake'),
+                  onPress: cloud.onWake,
+                  testID: 'home.remoteGuide.wakeCloud',
+                  tone: 'primary',
+                }}
+                style={styles.teaserButton}
+              />
+            ) : null}
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={styles.teaserCard} testID="home.remoteGuide.cloudTeaser">
+          <Cloud color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+          <View style={styles.teaserBody}>
+            <Text style={styles.teaserTitle}>{t('deviceLink.cloudTeaserTitle')}</Text>
+            <Text style={styles.teaserCopy}>{t('deviceLink.cloudTeaserCopy')}</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -256,6 +294,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   teaserBody: {
     flex: 1,
     gap: spacing.xs,
+  },
+  teaserButton: {
+    marginTop: spacing.sm,
+    minHeight: 44,
   },
   teaserTitle: {
     ...textStyles.footnote,

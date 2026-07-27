@@ -157,7 +157,8 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     expect(menuSource).toContain("import {");
     expect(menuSource).toContain('Cloud,');
     expect(menuSource).toContain("devices.filter((device) => device.kind !== 'cloud')");
-    expect(menuSource).toContain('cloud.instances.map');
+    // 机器列表只渲染在线云端实例;离线实例折叠进「唤醒云端」动作行。
+    expect(menuSource).toContain('.filter((instance) => cloud.onlineDeviceIds.has(instance.deviceId))');
     expect(menuSource).toContain('<Cloud size={14} strokeWidth={2} />');
   });
 
@@ -244,17 +245,27 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     expect(menuSource).toContain('useMachineSwitcher');
   });
 
+  it('服务端禁用云端时沿用 unsupported 门控，菜单不渲染云端入口', () => {
+    const cloudHookSource = read('features', 'cloud-instance', 'useCloudInstances.ts');
+    expect(cloudHookSource).toContain("ipcError?.code === 'CLOUD_INSTANCE_DISABLED'");
+    expect(menuSource).toContain('const cloudReady = cloud.loadState === \'ready\'');
+    expect(menuSource).toContain('if (!hasRemote && !cloudReady) return null');
+  });
+
   it('云端唤醒项并入机器菜单(0 实例首次唤醒 + offline 实例再唤醒,不独立占行)', () => {
     const cloudHookSource = read('features', 'cloud-instance', 'useCloudInstances.ts');
     expect(menuSource).toContain('useCloudInstances');
-    expect(menuSource).toContain('cloud.instances.map');
     expect(menuSource).toContain("devices.filter((device) => device.kind !== 'cloud')");
-    expect(menuSource).toContain('wakeCloud(instance.instanceId, instance.deviceId)');
+    // 离线实例不以「一台机器」出现:折叠为「唤醒云端」动作行,目标取第一个离线实例。
+    expect(menuSource).toContain('wakeCloud(offlineInstance.instanceId, offlineInstance.deviceId)');
     expect(menuSource).toContain('wakeFirstCloud');
     expect(menuSource).toContain('applySelect([result.deviceId])');
     expect(menuSource).toContain('const selectedCloud = cloud.instances.find');
-    expect(menuSource).toContain("status={online ? 'online' : 'offline'}");
-    expect(menuSource).toContain('onToggle={online ? () => applyToggle(instance.deviceId) : undefined}');
+    // 在线/离线由图标本体表达(Cloud / CloudOff),云端行不再叠 StatusDot 双信号。
+    expect(menuSource).toContain('<CloudOff size={14} strokeWidth={2} />');
+    expect(menuSource).not.toContain("status={online ? 'online' : 'offline'}");
+    // 在线实例行恒可多选;离线折叠行是动作项,无 toggle。
+    expect(menuSource).toContain('onToggle={() => applyToggle(instance.deviceId)}');
     expect(menuSource).not.toContain('CloudWakeMenuItem');
     expect(cloudHookSource).toContain('pendingRef.current');
     expect(cloudHookSource).toContain('return result');

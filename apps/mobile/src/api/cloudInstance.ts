@@ -148,6 +148,9 @@ async function requestCloudInstances<T>(
     return { kind: 'ok', value: await request(baseUrl) };
   } catch (error) {
     if (error instanceof ApiError) {
+      if (error.code === 'CLOUD_INSTANCE_DISABLED') {
+        return { kind: 'unsupported' };
+      }
       return {
         kind: 'error',
         error: {

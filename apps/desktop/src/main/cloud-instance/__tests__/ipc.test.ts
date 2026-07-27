@@ -132,6 +132,7 @@ describe('cloud instance IPC handlers', () => {
     [new ServerApiError('NETWORK_ERROR', 0, 'offline'), 'CLOUD_INSTANCE_UNAVAILABLE'],
     [new ServerApiError('UPSTREAM', 503, 'unavailable'), 'CLOUD_INSTANCE_UNAVAILABLE'],
     [new ServerApiError('CLOUD_PROVIDER_DISABLED', 403, 'disabled'), 'UNSUPPORTED_CAPABILITY'],
+    [new ServerApiError('CLOUD_INSTANCE_DISABLED', 403, 'disabled'), 'CLOUD_INSTANCE_DISABLED'],
     [new ServerApiError('FORBIDDEN', 403, 'forbidden'), 'PERMISSION_DENIED'],
     [new ServerApiError('CLOUD_INSTANCE_NOT_FOUND', 404, 'missing'), 'NOT_FOUND'],
     [new ServerApiError('MULTIPLE_INSTANCES_REQUIRE_ID', 400, 'ambiguous'), 'INVALID_PARAMS'],

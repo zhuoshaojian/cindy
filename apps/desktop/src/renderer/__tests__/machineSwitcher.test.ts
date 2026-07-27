@@ -3,16 +3,25 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Session } from '@/lib/ccAgent.types';
 import {
   canonicalizeMachineEntries,
+  getSelectedMachineId,
   machineSelectionEquals,
   MACHINE_ALL,
   MACHINE_LOCAL,
   normalizeSelectedMachineId,
   parseMachineSelection,
+  removeCloudMachineSelection,
   selectVisibleSessions,
   serializeMachineSelection,
+  setSelectedMachineId,
+  setSelectedMachineOwner,
+  setSelectedMachineIdTransient,
   toggleMachineSelection,
 } from '@/features/device-link/selectedMachineStore';
-import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
+import { sidebarOwnerStorageKey } from '@/lib/sidebarOwnerStorage';
+import {
+  filterRemoteSessionsForCloudCapability,
+  remoteProjectsStore,
+} from '@/features/device-link/remoteProjectsStore';
 import {
   resolveSelectableIdsForNormalize,
   selectRemoteSessionBootstrapFailures,
@@ -146,6 +155,76 @@ describe('断网后远端选择的逃生路径', () => {
         { deviceId: 'dev-a', name: 'Mac A', status: 'connecting' },
       ]),
     ).toBe(true);
+  });
+});
+
+describe('cloud capability disablement', () => {
+  it('transiently falls back from cloud selection without overwriting persisted intent', () => {
+    const ownerId = 'machine-switcher-cloud-test';
+    const values = new Map<string, string>([
+      [
+        sidebarOwnerStorageKey('cc-agent.sidebar.selectedMachines', ownerId),
+        serializeMachineSelection(MACHINE_ALL),
+      ],
+    ]);
+    const storage: Storage = {
+      get length() {
+        return values.size;
+      },
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      key: (index: number) => [...values.keys()][index] ?? null,
+      removeItem: (key: string) => {
+        values.delete(key);
+      },
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+    };
+    const originalStorage = globalThis.localStorage;
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: storage,
+    });
+    try {
+      setSelectedMachineOwner(ownerId);
+      setSelectedMachineId(['cloud-device']);
+      const persisted = [...values.values()][0];
+      setSelectedMachineIdTransient(
+        removeCloudMachineSelection(getSelectedMachineId(), new Set(['cloud-device'])),
+      );
+      expect(getSelectedMachineId()).toBe(MACHINE_ALL);
+      expect([...values.values()][0]).toBe(persisted);
+      expect(persisted).toBe('["cloud-device"]');
+    } finally {
+      setSelectedMachineId(MACHINE_ALL);
+      setSelectedMachineOwner(null);
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: originalStorage,
+      });
+    }
+  });
+
+  it('filters only cloud mirror sessions while unsupported', () => {
+    const localRemote = mkSession('regular', 'regular-device');
+    const cloudRemote = mkSession('cloud', 'cloud-device');
+    expect(
+      filterRemoteSessionsForCloudCapability([localRemote, cloudRemote], {
+        unsupported: true,
+        cloudDeviceIds: new Set(['cloud-device']),
+      }).map((session) => session.id),
+    ).toEqual(['regular']);
+  });
+
+  it('keeps cloud mirror sessions when the capability is enabled', () => {
+    const cloudRemote = mkSession('cloud', 'cloud-device');
+    expect(
+      filterRemoteSessionsForCloudCapability([cloudRemote], {
+        unsupported: false,
+        cloudDeviceIds: new Set(['cloud-device']),
+      }),
+    ).toEqual([cloudRemote]);
   });
 });
 

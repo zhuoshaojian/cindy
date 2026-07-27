@@ -15,7 +15,7 @@
 
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, Pencil, Trash2, Check, X, Moon } from 'lucide-react';
+import { RefreshCw, Pencil, Trash2, Check, X, Moon, Sun } from 'lucide-react';
 import { deviceDisplayName } from '@cindy/maker-shared/device-list';
 
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
@@ -173,6 +173,8 @@ export function MyDevicesPanel({
   // 短期上下线 / 心跳不再让顺序跳动,设备只在原位改在线点。本机单独置顶(下面单独渲染)。
   const others = (s.devices ?? [])
     .filter((d) => !d.isSelf)
+    // 云端能力未配置或被服务端禁用时，relay 里残留的 cloud 设备也不应露出。
+    .filter((d) => cloud.loadState === 'ready' || !isCloudDevice(d))
     // 云端实例整体置底(防误点),桶内沿用稳定身份排序(与切换栏一致)。
     .sort((a, b) => Number(isCloudDevice(a)) - Number(isCloudDevice(b)) || compareDevicesByName(a, b));
   const revokedControllers = new Set(s.revokedControllers);
@@ -223,6 +225,18 @@ export function MyDevicesPanel({
       toast.success(t('settings.devices.cloudInstance.toast.stopped'));
     } catch {
       toast.error(t('settings.devices.cloudInstance.toast.stopFailed'));
+    }
+  };
+
+  // 休眠实例的第一动作位变成「唤醒实例」;presence 上线由 relay 推送刷新设备列表,
+  // 这里只负责发起唤醒并提示,不等待上线终态。
+  const handleCloudWake = async (instanceId: string) => {
+    try {
+      await cloud.wake(instanceId);
+      void s.refresh(true);
+      toast.success(t('settings.devices.cloudInstance.toast.woke'));
+    } catch {
+      toast.error(t('settings.devices.cloudInstance.toast.wakeFailed'));
     }
   };
 
@@ -444,25 +458,48 @@ export function MyDevicesPanel({
                       {isCloudDevice(d) ? (
                         cloudInstance ? (
                           <>
-                            <button
-                              type="button"
-                              onClick={() => void handleCloudStop(cloudInstance.instanceId)}
-                              disabled={cloud.pending !== null}
-                              className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Spinner
-                                icon={Moon}
-                                size={12}
-                                spinning={
-                                  cloud.pending?.target === cloudInstance.instanceId
-                                  && cloud.pending.action === 'stop'
-                                }
-                              />
-                              {cloud.pending?.target === cloudInstance.instanceId
-                              && cloud.pending.action === 'stop'
-                                ? t('settings.devices.cloudInstance.stopping')
-                                : t('settings.devices.cloudInstance.stop')}
-                            </button>
+                            {/* 第一动作位随在线态切换:在线可休眠;休眠中变唤醒(不再提供无效的休眠)。 */}
+                            {d.online ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleCloudStop(cloudInstance.instanceId)}
+                                disabled={cloud.pending !== null}
+                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Spinner
+                                  icon={Moon}
+                                  size={12}
+                                  spinning={
+                                    cloud.pending?.target === cloudInstance.instanceId
+                                    && cloud.pending.action === 'stop'
+                                  }
+                                />
+                                {cloud.pending?.target === cloudInstance.instanceId
+                                && cloud.pending.action === 'stop'
+                                  ? t('settings.devices.cloudInstance.stopping')
+                                  : t('settings.devices.cloudInstance.stop')}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => void handleCloudWake(cloudInstance.instanceId)}
+                                disabled={cloud.pending !== null}
+                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Spinner
+                                  icon={Sun}
+                                  size={12}
+                                  spinning={
+                                    cloud.pending?.target === cloudInstance.instanceId
+                                    && cloud.pending.action === 'wake'
+                                  }
+                                />
+                                {cloud.pending?.target === cloudInstance.instanceId
+                                && cloud.pending.action === 'wake'
+                                  ? t('settings.devices.cloudInstance.waking')
+                                  : t('settings.devices.cloudInstance.wake')}
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => void handleCloudDelete(cloudInstance.instanceId)}

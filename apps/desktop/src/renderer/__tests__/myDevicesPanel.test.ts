@@ -45,4 +45,15 @@ describe('MyDevicesPanel rename guards', () => {
       "description: t('settings.devices.cloudInstance.deleteConfirm.description')",
     );
   });
+
+  it('hides relay cloud cards when the cloud capability is not ready', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/settings/MyDevicesPanel.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain(
+      'cloud.loadState === \'ready\' || !isCloudDevice(d)',
+    );
+  });
 });

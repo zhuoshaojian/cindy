@@ -13,6 +13,7 @@ import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDev
 import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { removeRemoteSessionActivityForDevice } from '@/features/device-link/remoteSessionActivityStore';
+import { setCloudCapability } from '@/features/device-link/cloudCapability';
 
 /** 控制面列出的一个实例(展示模型)。由 electronAPI 返回类型推导,避免跨层类型 import。 */
 export type CloudInstanceView = Awaited<
@@ -32,6 +33,12 @@ export type CloudInstancePendingState = {
   target: string | 'new';
   action: CloudInstanceAction;
 } | null;
+
+/** Endpoint absence and server-side capability disablement both hide cloud UI. */
+export function isCloudInstancesUnsupportedError(error: unknown): boolean {
+  const ipcError = extractIpcError(error);
+  return ipcError?.code === 'UNSUPPORTED_CAPABILITY' || ipcError?.code === 'CLOUD_INSTANCE_DISABLED';
+}
 
 export interface UseCloudInstances {
   instances: CloudInstanceView[];
@@ -59,8 +66,12 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
       setInstances(next);
       setLoadState('ready');
     } catch (error) {
-      const ipcError = extractIpcError(error);
-      setLoadState(ipcError?.code === 'UNSUPPORTED_CAPABILITY' ? 'unsupported' : 'error');
+      if (isCloudInstancesUnsupportedError(error)) {
+        setInstances([]);
+        setLoadState('unsupported');
+      } else {
+        setLoadState('error');
+      }
     }
   }, [enabled]);
 
@@ -72,6 +83,20 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
     () => new Set((deviceList ?? []).filter((device) => device.online).map((device) => device.deviceId)),
     [deviceList],
   );
+  useEffect(() => {
+    if (loadState === 'unsupported') {
+      setCloudCapability(
+        true,
+        new Set(
+          (deviceList ?? [])
+            .filter((device) => device.deviceInfo?.kind === 'cloud')
+            .map((device) => device.deviceId),
+        ),
+      );
+    } else if (loadState === 'ready') {
+      setCloudCapability(false);
+    }
+  }, [deviceList, loadState]);
 
   // 统一动作骨架:防重(pending 期间拒绝新动作)→ 执行 → 成功后刷新列表 → 清 pending。
   // 判重用 ref 而非 state:setState 异步,同一 render tick 内连点两次会读到未更新的

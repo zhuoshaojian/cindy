@@ -56,6 +56,7 @@ import {
   AddRemoteProjectDialog,
   type RemoteProjectTarget,
 } from '@/components/new-chat/AddRemoteProjectDialog';
+import { COLLABORATION_TOGGLE_ACTIVE_CLASS } from '@/components/new-chat/CollaborationModeToggle';
 import { useHasAnyRemoteTarget } from '@/hooks/useHasAnyReadyRemoteHost';
 import { useSelectableDevices } from '@/hooks/useControllableDevices';
 import { useProviderOnboarding } from '@/hooks/useProviderOnboarding';
@@ -133,9 +134,22 @@ import { resolveCollabEntryPolicy } from './collabEntryPolicy';
 import { useCollabProjectPolicy } from './hooks/useCollabProjectPolicy';
 import { CrossAgentConvertDialog } from '@/components/ui/cross-agent-convert-dialog';
 import type { MakerVendor } from '@/lib/ccAgent.types';
-import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
+import {
+  resolveDesktopCloudDeviceName,
+  translateDesktopCloudInstanceName,
+} from '@/features/cloud-instance/cloudDeviceName';
+import { useCloudInstances } from '@/features/cloud-instance/useCloudInstances';
+import {
+  deriveCloudDraftToggleState,
+  getSingleSelectedCloudInstance,
+  resolveCloudDraftInstance,
+} from '@/features/cloud-instance/cloudDraftTarget';
+import { useSelectedMachineId } from '@/features/device-link/selectedMachineStore';
+import { describeCloudInstanceName } from '@cindy/maker-shared/cloud-instance';
 import {
   ChevronDown,
+  Cloud,
+  CloudOff,
   Code2,
   Hammer,
   MessageSquare,
@@ -241,6 +255,8 @@ import {
 import { resolveNewMakerDraftEffort } from './newMakerDraftModelPrefs';
 import { closeAllTabs as closeRightSidebarTabs } from '@/features/right-sidebar/store';
 import { revealOrcaWorkersTab } from '@/features/right-sidebar/plugins/orca-workers/actions';
+import { Spinner } from '@/components/ui/spinner';
+import { Tooltip } from '@/components/ui/tooltip';
 
 const log = createLogger('NewMakerDraftRoute');
 const IS_MAC_PLATFORM = typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin';
@@ -291,6 +307,9 @@ function isWorktreeBranchPreferenceChannelUnsupported(error: unknown): boolean {
   return error instanceof Error
     && /\[(?:DEVICE_LINK_)?CHANNEL_NOT_ALLOWED\]/.test(error.message);
 }
+// 云端唤醒后等待 presence 上线的最长时间;本地 Docker 首启(重建 prebundle)约 90s,
+// 生产镜像更快,3 分钟覆盖慢路径后仍未上线视为唤醒失败。
+const WAKE_ACTIVATION_TIMEOUT_MS = 180_000;
 // F-COLLAB (2026-05): 老的 vendor='orca' 入口已退役,OrcaHeaderStrip 组件随之
 // 删除(它是给 isOrca 分支的 ChatInput.topSlot 用的)。Lead/Worker 协作组合现在
 // 由 ChatInput「+」菜单里的协同模式项控制,Lead 是当前 vendor 本身,
@@ -571,6 +590,15 @@ export function NewMakerDraftRoute() {
   const { dataOwnerId } = useAuth();
   const draft = useNewMakerDraft();
   const location = useLocation();
+  const cloud = useCloudInstances();
+  const selectedMachineId = useSelectedMachineId();
+  // 用户在本次草稿手动切回本机后，不再被全局机器单选自动点亮；离开草稿页即重置。
+  const [manualLocalOverride, setManualLocalOverride] = useState(false);
+  // wake API 成功到 relay presence online 之间保留目标意图；期间不提前把离线设备写进草稿。
+  const [wakeActivation, setWakeActivation] = useState<{
+    deviceId: string;
+    deviceName: string;
+  } | null>(null);
   const navigate = useNavigate();
   const dialogueTargetRequest = useMemo(
     () => readNewMakerDialogueTargetRequest(location.state),
@@ -1046,6 +1074,44 @@ export function NewMakerDraftRoute() {
       activeProjectOptions,
       effectiveDeviceLinkDeviceId,
     ) ?? t('newChat.folderPicker.dialogue');
+  const cloudNameOf = useCallback(
+    (instance: { customLabel: string | null; nameSequence: number }): string =>
+      translateDesktopCloudInstanceName(
+        describeCloudInstanceName({
+          customLabel: instance.customLabel,
+          nameSequence: instance.nameSequence,
+        }),
+        t,
+      ),
+    [t],
+  );
+  const selectedFilterCloudInstance = useMemo(
+    () => getSingleSelectedCloudInstance(cloud.instances, selectedMachineId),
+    [cloud.instances, selectedMachineId],
+  );
+  const cloudDraftInstance = useMemo(
+    () =>
+      resolveCloudDraftInstance(
+        cloud.instances,
+        effectiveDeviceLinkDeviceId,
+        selectedMachineId,
+      ),
+    [cloud.instances, effectiveDeviceLinkDeviceId, selectedMachineId],
+  );
+  const cloudToggleState = deriveCloudDraftToggleState({
+    loadState: cloud.loadState,
+    instance: cloudDraftInstance,
+    draftDeviceId: effectiveDeviceLinkDeviceId,
+    onlineDeviceIds: cloud.onlineDeviceIds,
+    pending: cloud.pending,
+    wakingDeviceId: wakeActivation?.deviceId ?? null,
+  });
+  const cloudToggleTooltip =
+    cloudToggleState === 'online'
+      ? t('ccAgent.draft.cloudOnline')
+      : cloudToggleState === 'local'
+        ? t('ccAgent.draft.runInCloud')
+        : t('ccAgent.draft.wakeCloud');
   const draftRightSidebar = useMemo(
     () =>
       resolveNewMakerDraftRightSidebar({
@@ -2095,6 +2161,102 @@ export function NewMakerDraftRoute() {
       state: consumeNewMakerDialogueTargetRequest(location.state),
     });
   }, [applyDraftTarget, dialogueTargetRequest, location, navigate]);
+  const activateCloudDevice = useCallback(
+    (deviceId: string, deviceName: string) => {
+      setManualLocalOverride(false);
+      setWakeActivation(null);
+      if (effectiveDeviceLinkDeviceId === deviceId) {
+        if (effectiveDeviceLinkDeviceName !== deviceName) {
+          patchDraft({ deviceLinkDeviceName: deviceName });
+        }
+        return;
+      }
+      // 本机目录不能直接投射到云端；切设备先落 dialogue，随后用户可从云端最近项目选目录。
+      applyDraftTarget({ deviceId, deviceName, workingDir: null });
+    },
+    [applyDraftTarget, effectiveDeviceLinkDeviceId, effectiveDeviceLinkDeviceName],
+  );
+
+  // 全局机器过滤若恰好单选一台在线云端设备，沿用它作为隐式默认。
+  // 手动切回本机优先，且离线实例不提前写入草稿，避免把不可达设备当成可创建目标。
+  useEffect(() => {
+    if (manualLocalOverride || effectiveDeviceLinkDeviceId || !selectedFilterCloudInstance) return;
+    if (!cloud.onlineDeviceIds.has(selectedFilterCloudInstance.deviceId)) return;
+    activateCloudDevice(
+      selectedFilterCloudInstance.deviceId,
+      cloudNameOf(selectedFilterCloudInstance),
+    );
+  }, [
+    activateCloudDevice,
+    cloud.onlineDeviceIds,
+    cloudNameOf,
+    effectiveDeviceLinkDeviceId,
+    manualLocalOverride,
+    selectedFilterCloudInstance,
+  ]);
+
+  // 唤醒先走控制面，presence 真正 online 后才切草稿目标；缓存会话与项目列表在此期间保持原样。
+  useEffect(() => {
+    if (!wakeActivation || !cloud.onlineDeviceIds.has(wakeActivation.deviceId)) return;
+    activateCloudDevice(wakeActivation.deviceId, wakeActivation.deviceName);
+  }, [activateCloudDevice, cloud.onlineDeviceIds, wakeActivation]);
+
+  // 兜底:wake 已受理但 Pod 迟迟未上线(容器启动失败等)时,超时放弃 waking 态,
+  // 按钮回落 offline 允许重试,避免永久卡在 spinner 不可点。
+  useEffect(() => {
+    if (!wakeActivation) return;
+    const timer = window.setTimeout(() => {
+      setWakeActivation(null);
+      toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
+    }, WAKE_ACTIVATION_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [t, wakeActivation]);
+
+  const handleCloudToggle = useCallback(() => {
+    if (cloud.pending || sendInFlightRef.current) return;
+    if (
+      cloudToggleState === 'online' &&
+      cloudDraftInstance &&
+      effectiveDeviceLinkDeviceId === cloudDraftInstance.deviceId
+    ) {
+      setManualLocalOverride(true);
+      setWakeActivation(null);
+      applyDraftTarget({ deviceId: null, deviceName: null, workingDir: null });
+      return;
+    }
+    if (
+      cloudToggleState === 'local' &&
+      cloudDraftInstance &&
+      cloud.onlineDeviceIds.has(cloudDraftInstance.deviceId)
+    ) {
+      activateCloudDevice(cloudDraftInstance.deviceId, cloudNameOf(cloudDraftInstance));
+      return;
+    }
+    if (cloudToggleState !== 'offline') return;
+
+    void cloud
+      .wake(cloudDraftInstance?.instanceId)
+      .then((result) => {
+        if (!result) return;
+        setWakeActivation({
+          deviceId: result.deviceId,
+          deviceName: cloudNameOf(result),
+        });
+      })
+      .catch(() => {
+        setWakeActivation(null);
+        toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
+      });
+  }, [
+    activateCloudDevice,
+    applyDraftTarget,
+    cloud,
+    cloudDraftInstance,
+    cloudNameOf,
+    cloudToggleState,
+    effectiveDeviceLinkDeviceId,
+    t,
+  ]);
 
   // 弹窗确认添加后的落点:SSH 立即建会话 + navigate;device-link 把当前草稿指向被控端项目,
   // 首条消息发出时走既有 create-on-send 链路(见下方 isDeviceLinkDraft 分支)。
@@ -2574,6 +2736,8 @@ export function NewMakerDraftRoute() {
       // 下面会剥 mention chip、丢路径型附件并清 workingDir / extraDirs —— 重选同一设备时执行这些,
       // 等于用户点一下就静默丢掉已选的项目、附件和部分已写好的消息。必须先早返回。
       if (deviceId === (effectiveDeviceLinkDeviceId ?? null)) return;
+      if (deviceId == null) setManualLocalOverride(true);
+      setWakeActivation(null);
       // 换完停在这台设备的「对话」(workingDir=null):上一台的项目路径在新机器上基本不存在,
       // 留着会让用户以为项目跟过来了、发送时才在被控端 path guard 上失败。与 mobile 切设备后
       // 工作区回落的行为一致。其余连带清理全部由 applyDraftTarget 按「设备变了」推导。
@@ -4467,6 +4631,49 @@ export function NewMakerDraftRoute() {
                     : 'absolute right-0 top-[22px] z-10',
                 )}
               >
+                {cloudToggleState !== 'hidden' && (
+                  <Tooltip.Provider>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <button
+                          type="button"
+                          data-testid="create-agent-cloud-toggle"
+                          data-state={cloudToggleState}
+                          aria-label={cloudToggleTooltip}
+                          aria-pressed={cloudToggleState === 'online'}
+                          disabled={
+                            cloud.pending !== null ||
+                            cloudToggleState === 'waking' ||
+                            wtCreating ||
+                            sendInFlight
+                          }
+                          onClick={handleCloudToggle}
+                          className={cn(
+                            'relative inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full',
+                            'border border-[var(--create-agent-control-border)] bg-[var(--create-agent-control-bg)]',
+                            'text-[var(--create-agent-control-icon)] transition-colors',
+                            'hover:bg-[var(--create-agent-control-bg-hover)] active:bg-[var(--create-agent-control-bg-pressed)]',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--create-agent-focus-ring)]',
+                            'disabled:cursor-not-allowed disabled:opacity-60',
+                            cloudToggleState === 'online' && COLLABORATION_TOGGLE_ACTIVE_CLASS,
+                            cloudToggleState === 'local' && 'text-[var(--text-primary)]',
+                            (cloudToggleState === 'offline' || cloudToggleState === 'waking') &&
+                              'text-[var(--text-secondary)]',
+                          )}
+                        >
+                          {cloudToggleState === 'waking' ? (
+                            <Spinner size={14} strokeWidth={2} />
+                          ) : cloudToggleState === 'offline' ? (
+                            <CloudOff size={14} strokeWidth={2} />
+                          ) : (
+                            <Cloud size={14} strokeWidth={2} />
+                          )}
+                        </button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Content side="bottom">{cloudToggleTooltip}</Tooltip.Content>
+                    </Tooltip.Root>
+                  </Tooltip.Provider>
+                )}
                 {/* 设备切换器(#807):设备是一级维度,排在 mode pill 左边;没有对端设备时
                     组件自己返回 null —— 只有本机的用户看不到任何新增控件。 */}
                 <DeviceSwitcherPill

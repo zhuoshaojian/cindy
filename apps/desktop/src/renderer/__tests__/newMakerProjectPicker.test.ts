@@ -69,6 +69,8 @@ const newGoalDialogSource = readSource('components', 'new-chat', 'NewGoalDialog.
 
 const chatInputSource = readSource('components', 'new-chat', 'ChatInput.tsx');
 
+const extraDirsButtonSource = readSource('components', 'new-chat', 'ExtraDirsButton.tsx');
+
 const sidebarUpperSource = readSource('features', 'cc-agent', 'CCAgentSidebarUpper.tsx');
 
 describe('Shared create project picker', () => {
@@ -1571,6 +1573,19 @@ describe('Shared create project picker', () => {
     expect(newMakerDraftRouteSource).not.toContain(
       'isDeviceLinkDraft\n    ? (deviceLinkInitial?.providerId ?? null)',
     );
+  });
+
+  it('云按钮把在线状态与选中状态正交表达，并复用协同按钮的选中视觉', () => {
+    expect(newMakerDraftRouteSource).toContain('CloudOff');
+    expect(newMakerDraftRouteSource).toContain('COLLABORATION_TOGGLE_ACTIVE_CLASS');
+    expect(collaborationModeToggleSource).toContain(
+      'export const COLLABORATION_TOGGLE_ACTIVE_CLASS',
+    );
+    expect(collaborationModeToggleSource).toContain('COLLABORATION_TOGGLE_ACTIVE_CLASS /* ON 态');
+    expect(newMakerDraftRouteSource).toContain(
+      "cloudToggleState === 'local' && 'text-[var(--text-primary)]'",
+    );
+    expect(newMakerDraftRouteSource).not.toContain('bg-[var(--remote-status-ready)]');
   });
 
   it('keeps recent-folder storage out of project-option selection', () => {

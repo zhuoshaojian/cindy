@@ -3086,6 +3086,8 @@
       "cloudInstance": {
         "stop": "休眠实例",
         "stopping": "休眠中…",
+        "wake": "唤醒实例",
+        "waking": "唤醒中…",
         "delete": "删除实例",
         "deleting": "删除中…",
         "deleteConfirm": {
@@ -3098,7 +3100,9 @@
           "stopped": "云端实例已休眠",
           "deleted": "云端实例已删除",
           "stopFailed": "休眠云端实例失败，请稍后重试",
-          "deleteFailed": "删除云端实例失败，请稍后重试"
+          "deleteFailed": "删除云端实例失败，请稍后重试",
+          "woke": "云端实例正在唤醒",
+          "wakeFailed": "唤醒云端实例失败，请稍后重试"
         }
       },
       "error": {
@@ -6897,7 +6901,10 @@
       "worktreeRepoHint": "可尝试重新选一次工作目录，等右下角文件夹标识刷新后再试",
       "sessionInactive": "任务已不再处于活跃状态",
       "remoteProjectBanner": "在 {{device}} 的 {{project}} 中新建任务",
-      "remoteDialogueBanner": "在 {{device}} 上新建对话（不绑定项目）"
+      "remoteDialogueBanner": "在 {{device}} 上新建对话（不绑定项目）",
+      "runInCloud": "在云端运行此对话",
+      "cloudOnline": "云端 · 在线",
+      "wakeCloud": "点击唤醒云端"
     },
     "jumpSession": {
       "emptyId": "请输入要跳转的任务 ID",

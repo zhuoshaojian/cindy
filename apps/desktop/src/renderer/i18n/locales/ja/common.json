@@ -3090,6 +3090,8 @@
       "cloudInstance": {
         "stop": "インスタンスをスリープ",
         "stopping": "スリープ中…",
+        "wake": "インスタンスを起動",
+        "waking": "起動中…",
         "delete": "インスタンスを削除",
         "deleting": "削除中…",
         "deleteConfirm": {
@@ -3102,7 +3104,9 @@
           "stopped": "クラウドインスタンスをスリープしました",
           "deleted": "クラウドインスタンスを削除しました",
           "stopFailed": "クラウドインスタンスのスリープに失敗しました。しばらくしてからもう一度お試しください。",
-          "deleteFailed": "クラウドインスタンスの削除に失敗しました。しばらくしてからもう一度お試しください。"
+          "deleteFailed": "クラウドインスタンスの削除に失敗しました。しばらくしてからもう一度お試しください。",
+          "woke": "クラウドインスタンスを起動しています。",
+          "wakeFailed": "クラウドインスタンスの起動に失敗しました。しばらくしてからもう一度お試しください。"
         }
       },
       "error": {
@@ -6901,7 +6905,10 @@
       "worktreeRepoHint": "作業ディレクトリを選び直し、右下のフォルダー表示が更新されてから再試行してください",
       "sessionInactive": "セッションはすでにアクティブではありません",
       "remoteProjectBanner": "{{device}} の {{project}} で新しいセッションを作成",
-      "remoteDialogueBanner": "{{device}} で新しい対話（プロジェクトなし）"
+      "remoteDialogueBanner": "{{device}} で新しい対話（プロジェクトなし）",
+      "runInCloud": "この対話をクラウドで実行",
+      "cloudOnline": "クラウド · オンライン",
+      "wakeCloud": "クラウドを起動"
     },
     "jumpSession": {
       "emptyId": "移動先の sessionId を入力してください",

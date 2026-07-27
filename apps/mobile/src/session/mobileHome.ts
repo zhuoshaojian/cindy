@@ -1,4 +1,5 @@
 import type { RemoteSession } from '@/session/types';
+import { parseCloudDeviceName } from '@cindy/maker-shared/device-list';
 
 export * from '@cindy/maker-shared/mobile-home';
 
@@ -10,4 +11,37 @@ export function excludeOrcaWorkerSessions<T extends Pick<RemoteSession, 'orcaRol
   sessions: readonly T[],
 ): T[] {
   return sessions.filter((session) => session.orcaRole !== 'worker');
+}
+
+export interface MobileHomeSourceDevice {
+  deviceId: string;
+  kind?: string;
+}
+
+/**
+ * Cloud capability is applied once at the mobile Home aggregation boundary.
+ * Downstream device filters, session groups, recent projects, and new-session
+ * options all consume these same sources, so unsupported cloud data cannot
+ * leak through a separately rendered path.
+ */
+export function selectMobileHomeSources<
+  TDevice extends MobileHomeSourceDevice,
+  TSession extends Pick<RemoteSession, 'deviceLinkDeviceId' | 'deviceLinkDeviceName'>,
+>(
+  devices: TDevice[],
+  sessions: TSession[],
+  cloudUnsupported: boolean,
+): { devices: TDevice[]; sessions: TSession[] } {
+  if (!cloudUnsupported) return { devices, sessions };
+  const cloudDeviceIds = new Set(
+    devices.filter((device) => device.kind === 'cloud').map((device) => device.deviceId),
+  );
+  return {
+    devices: devices.filter((device) => device.kind !== 'cloud'),
+    sessions: sessions.filter(
+      (session) =>
+        !cloudDeviceIds.has(session.deviceLinkDeviceId ?? '')
+        && parseCloudDeviceName(session.deviceLinkDeviceName ?? '') === null,
+    ),
+  };
 }

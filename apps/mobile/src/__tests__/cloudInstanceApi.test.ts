@@ -150,6 +150,23 @@ describe('mobile cloud-instance API', () => {
     });
   });
 
+  it('maps server-side cloud disablement to unsupported without exposing the disabled UI state', async () => {
+    const { ApiError, listCloudInstances } = await loadCloudInstanceApi(
+      'https://cloud.example.invalid',
+    );
+    const apiFetch = vi.fn(async () => {
+      throw new ApiError(
+        'CLOUD_INSTANCE_DISABLED',
+        403,
+        'cloud instances are not enabled for this membership',
+      );
+    });
+
+    await expect(
+      listCloudInstances({ apiFetch: apiFetch as unknown as CloudInstanceApiFetch }),
+    ).resolves.toEqual({ kind: 'unsupported' });
+  });
+
   it('maps malformed responses to INVALID_RESPONSE', async () => {
     const { listCloudInstances } = await loadCloudInstanceApi('https://cloud.example.invalid');
     const apiFetch = vi.fn(async () => ({ instances: [{ instanceId: 'missing-fields' }] }));

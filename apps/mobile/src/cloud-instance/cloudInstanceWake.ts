@@ -4,6 +4,13 @@ import type {
 } from '@/api/cloudInstance';
 
 export type CloudInstanceAction = 'wake' | 'stop' | 'delete';
+
+/**
+ * 唤醒受理(控制面返回)到 Pod presence 上线之间有约一分钟空窗,此时 pending 已清
+ * 但设备仍离线;消费端用 wake-watch 在这段时间维持「唤醒中」态,超过此时限视为
+ * 唤醒失败并解除,避免异常时入口永久卡死。与桌面端 WAKE_ACTIVATION_TIMEOUT_MS 对齐。
+ */
+export const CLOUD_WAKE_WATCH_TIMEOUT_MS = 180_000;
 export type CloudInstancePending = {
   target: string | 'new';
   action: CloudInstanceAction;
