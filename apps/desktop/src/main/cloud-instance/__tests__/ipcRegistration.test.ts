@@ -6,6 +6,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getAppPath: vi.fn(() => process.cwd()),
+    getPath: vi.fn(() => process.cwd()),
+  },
   ipcMain: {
     handle: vi.fn(
       (channel: string, handler: (event: unknown, input?: unknown) => unknown) => {

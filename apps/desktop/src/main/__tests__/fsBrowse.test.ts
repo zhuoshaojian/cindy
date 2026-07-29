@@ -23,7 +23,17 @@ vi.mock('node:fs', () => ({
 }));
 vi.mock('node:os', () => ({ homedir: h.homedir }));
 
-import { expandHome, listDir, statPath, mkdirP } from '../fsBrowse/ipc.js';
+import {
+  expandHome,
+  listDir,
+  statPath,
+  mkdirP,
+  resolveFsBrowseRoot,
+} from '../fsBrowse/ipc.js';
+import {
+  HEADLESS_POD_RUNTIME_ENV,
+  POD_WORKSPACES_DIR_ENV,
+} from '../headless-startup.js';
 
 /** 造一个 Dirent-ish。 */
 function dirent(name: string, kind: 'dir' | 'file' | 'symlink') {
@@ -45,6 +55,21 @@ describe('expandHome', () => {
     expect(expandHome('')).toBe(HOME);
     expect(expandHome('~/Code')).toBe(homePath('Code'));
     expect(expandHome('/tmp/../var')).toBe(path.resolve('/tmp/../var'));
+  });
+
+  it('strict Pod 把持久 workspaces 作为远程项目浏览根,普通 Desktop 仍用 HOME', () => {
+    const workspaces = path.resolve('/var/lib/cindy/workspaces');
+    const podEnv = {
+      [HEADLESS_POD_RUNTIME_ENV]: '1',
+      [POD_WORKSPACES_DIR_ENV]: workspaces,
+    };
+
+    expect(resolveFsBrowseRoot(podEnv, HOME)).toBe(workspaces);
+    expect(expandHome('~', podEnv, HOME)).toBe(workspaces);
+    expect(expandHome('~/project-a', podEnv, HOME)).toBe(
+      path.join(workspaces, 'project-a'),
+    );
+    expect(resolveFsBrowseRoot({}, HOME)).toBe(HOME);
   });
 });
 

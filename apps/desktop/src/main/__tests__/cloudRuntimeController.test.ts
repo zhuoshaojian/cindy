@@ -91,6 +91,43 @@ describe('cloud runtime controller', () => {
     await controller.stop();
   });
 
+  it('logs one readiness warning per failure streak and reports recovery', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    let readinessFailure: Error | null = new Error('DbClient not ready');
+    const controller = createCloudRuntimeController({
+      instanceId: 'pod-readiness-log',
+      membershipId: 'membership-readiness-log',
+      policy: { staleAfterMs: 10_000, idleAfterMs: 0, schedulerWakeGuardMs: 10_000 },
+      heartbeatIntervalMs: 5_000,
+      collectActivity: async () => idleActivity(100_000),
+      collectReadiness: async () => {
+        if (readinessFailure) throw readinessFailure;
+        return READY;
+      },
+      statusStore: { write: vi.fn(async () => undefined) },
+      now: () => 100_000,
+      schedule: () => Symbol('timer'),
+      cancelSchedule: vi.fn(),
+      logger,
+    });
+
+    await controller.start();
+    await controller.sampleNow();
+    await controller.sampleNow();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+
+    readinessFailure = null;
+    await controller.sampleNow();
+    expect(logger.info).toHaveBeenCalledWith(
+      'cloud runtime readiness collection recovered',
+    );
+
+    readinessFailure = new Error('DbClient unavailable again');
+    await controller.sampleNow();
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    await controller.stop();
+  });
+
   it.each(['unknown', 'not-ready'] as const)(
     'keeps modelAccess=%s observation out of phase and suspend gates',
     async (modelAccess) => {

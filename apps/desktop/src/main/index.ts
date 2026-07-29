@@ -10,19 +10,70 @@ import { resolveRegionUserDataDirName } from './regionUserData.js';
 import { createLogger, initLogger } from './logger.js';
 import { beginDesktopDevInstance, type DesktopDevMode } from './devStartupStatus.js';
 import { ensureSystemBinPathForMachineId } from './deviceId.js';
+import {
+  HEADLESS_POD_RUNTIME_ENV,
+  ensurePodWorkspacesDir,
+  hasHeadlessPodRuntimeInput,
+  resolvePodDeviceIdOverride,
+  resolvePodUserDataDir,
+  shouldRefreshShellPath,
+} from './headless-startup.js';
+import {
+  resolveDevCliFlags,
+  shouldEnforcePassiveMigrationCompatibility,
+} from './devCliFlags.js';
+import {
+  KEYCHAIN_IDENTITY_MARKER_FILE,
+  resolveDevKeychainDecision,
+} from './devKeychainName.js';
+import { createKeychainMarkerIo } from './devKeychainMarkerIo.js';
 
 // 同机双装(cn/global):global 构建把 userData 切到区域目录(CindyGlobal),
 // 与 cn 版(productName 默认 'Cindy')彻底分库;数据库 / 登录态 / 单实例锁 /
 // sessionData 随 userData 目录天然隔离。必须在 initLogger()(packaged 日志
 // 目录)、crashReporter、单实例锁与一切 userData 读取之前执行。cn 构建与
 // dev 返回 null,零行为变化(dev 隔离语义由下方 devCliFlags 的 --isolated 承载)。
+const headlessPodRuntimeInput = hasHeadlessPodRuntimeInput(process.argv, process.env);
+process.env[HEADLESS_POD_RUNTIME_ENV] = headlessPodRuntimeInput ? '1' : '0';
+ensurePodWorkspacesDir(headlessPodRuntimeInput, process.env);
+const podDeviceIdOverride = resolvePodDeviceIdOverride(process.env);
+if (podDeviceIdOverride) {
+  // authManager reads this once at module evaluation; install the Pod identity
+  // before bootstrap-electron loads authManager and device-link.
+  process.env.XDT_DEVICE_ID_OVERRIDE = podDeviceIdOverride;
+}
+const defaultUserDataDir = app.getPath('userData');
+const devFlags = resolveDevCliFlags({
+  argv: process.argv,
+  isPackaged: app.isPackaged,
+  envUserDataDir: process.env.XDT_USER_DATA_DIR,
+  defaultUserDataDir,
+  envIsolated: process.env.XDT_ISOLATED,
+  envIsolationName: process.env.XDT_ISOLATED_NAME,
+  envUserDataDirEpoch: process.env.XDT_USER_DATA_DIR_EPOCH,
+  envDeviceIdOverride: process.env.XDT_DEVICE_ID_OVERRIDE,
+  envSchedulerPassive: process.env.XDT_SCHEDULER_PASSIVE,
+  envEndpointsCdn: process.env.XDT_ENDPOINTS_CDN,
+});
+const podUserDataDir = resolvePodUserDataDir(headlessPodRuntimeInput, process.env);
 const regionUserDataDirName = resolveRegionUserDataDirName({
   isPackaged: app.isPackaged,
   region: CURRENT_CINDY_REGION,
   argv: process.argv,
 });
-if (regionUserDataDirName) {
-  app.setPath('userData', path.join(app.getPath('appData'), regionUserDataDirName));
+const userDataDirOverride =
+  podUserDataDir ??
+  devFlags.userDataDirOverride ??
+  (regionUserDataDirName
+    ? path.join(app.getPath('appData'), regionUserDataDirName)
+    : null);
+if (userDataDirOverride) {
+  app.setPath('userData', userDataDirOverride);
+}
+if (podUserDataDir || devFlags.userDataDirOverride) {
+  // Keep diagnostics and legacy migration guards aligned with the path that
+  // was actually selected, including the packaged Pod override.
+  process.env.XDT_USER_DATA_DIR = userDataDirOverride!;
 }
 
 // Node happy-eyeballs(autoSelectFamily)默认每个地址只给 250ms 完成 TCP 握手,
@@ -35,7 +86,11 @@ setDefaultAutoSelectFamilyAttemptTimeout(2500);
 initLogger();
 const log = createLogger('fix-path');
 log.debug(`[fix-path] before PATH=${process.env.PATH ?? ''}`);
-fixPath();
+if (shouldRefreshShellPath(headlessPodRuntimeInput)) {
+  fixPath();
+} else {
+  log.info('[fix-path] kept image-owned PATH for headless Pod runtime');
+}
 log.debug(`[fix-path] after PATH=${process.env.PATH ?? ''}`);
 
 // Guarantee /usr/sbin:/sbin are on PATH before anything resolves the device id.
@@ -79,36 +134,6 @@ installInvokeCapture();
 //   - --passive / XDT_SCHEDULER_PASSIVE:定时任务自动触发让位给同机另一实例。
 // 必须在 app 'ready' 前调用。仅 dev(非 packaged)生效,生产忽略,零线上影响。
 import { machineIdSync } from 'node-machine-id';
-import {
-  resolveDevCliFlags,
-  shouldEnforcePassiveMigrationCompatibility,
-} from './devCliFlags.js';
-import {
-  KEYCHAIN_IDENTITY_MARKER_FILE,
-  resolveDevKeychainDecision,
-} from './devKeychainName.js';
-import { createKeychainMarkerIo } from './devKeychainMarkerIo.js';
-import { resolvePodDeviceIdOverride } from './pod-provisioning.js';
-
-const podDeviceIdOverride = resolvePodDeviceIdOverride(process.env);
-if (podDeviceIdOverride) {
-  // authManager reads this once at module evaluation; install the Pod identity
-  // before bootstrap-electron loads authManager and device-link. dispatch()
-  // uses a dynamic import, so this block runs before authManager is evaluated.
-  process.env.XDT_DEVICE_ID_OVERRIDE = podDeviceIdOverride;
-}
-const devFlags = resolveDevCliFlags({
-  argv: process.argv,
-  isPackaged: app.isPackaged,
-  envUserDataDir: process.env.XDT_USER_DATA_DIR,
-  defaultUserDataDir: app.getPath('userData'),
-  envIsolated: process.env.XDT_ISOLATED,
-  envIsolationName: process.env.XDT_ISOLATED_NAME,
-  envUserDataDirEpoch: process.env.XDT_USER_DATA_DIR_EPOCH,
-  envDeviceIdOverride: process.env.XDT_DEVICE_ID_OVERRIDE,
-  envSchedulerPassive: process.env.XDT_SCHEDULER_PASSIVE,
-  envEndpointsCdn: process.env.XDT_ENDPOINTS_CDN,
-});
 if (devFlags.schedulerPassive) {
   // 统一收敛到 env:scheduler-host 只认 XDT_SCHEDULER_PASSIVE,不重复解析 argv。
   process.env.XDT_SCHEDULER_PASSIVE = '1';
@@ -132,9 +157,6 @@ if (devFlags.endpointsCdn) {
   stderr.write('[cindy] dev endpoints via CDN (--endpoints-cdn)\n');
 }
 if (devFlags.userDataDirOverride) {
-  // 同步回 env,让读 env 的下游(日志、诊断)与实际生效目录一致。
-  process.env.XDT_USER_DATA_DIR = devFlags.userDataDirOverride;
-  app.setPath('userData', devFlags.userDataDirOverride);
   stderr.write(`[cindy] dev userData override → ${devFlags.userDataDirOverride}\n`);
   // 隔离 dev 独立钥匙串条目(#871 候选 B 收窄):userData 已在上一行显式 pin,
   // 改名只影响 safeStorage 服务名(`<app.name> Safe Storage`)与 dev-only 派生

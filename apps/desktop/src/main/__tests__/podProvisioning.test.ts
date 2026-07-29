@@ -7,9 +7,18 @@ import {
   POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV,
   POD_DEVICE_ID_ENV,
   POD_MEMBERSHIP_ID_ENV,
+  POD_USER_DATA_DIR_ENV,
+  hasHeadlessPodRuntimeInput,
   resolvePodProvisioningConfig,
   resolvePodDeviceIdOverride,
+  shouldUseBasicSafeStorage,
 } from '../pod-provisioning.js';
+import {
+  DEFAULT_POD_WORKSPACES_DIR,
+  POD_WORKSPACES_DIR_ENV,
+  ensurePodWorkspacesDir,
+  resolvePodUserDataDir,
+} from '../headless-startup.js';
 import type { AuthFetch, AuthFetchResponse } from '@cindy/auth-client';
 
 const membership = (id: string, kind: 'personal' | 'org') => ({
@@ -29,6 +38,182 @@ function response(body: unknown, ok = true, status = 200): AuthFetchResponse {
 }
 
 describe('Pod provisioning bootstrap', () => {
+  it('scopes the packaged userData override to the complete headless Pod contract', () => {
+    const podEnv = {
+      [POD_DEVICE_ID_ENV]: 'pod-user-data',
+      [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+      [POD_USER_DATA_DIR_ENV]: ' /var/lib/cindy/user-data ',
+    };
+
+    expect(hasHeadlessPodRuntimeInput(['electron', '--headless'], podEnv)).toBe(true);
+    expect(
+      resolvePodUserDataDir(true, podEnv),
+    ).toBe('/var/lib/cindy/user-data');
+
+    // A normal packaged GUI remains on Electron's default directory even when
+    // every cloud environment variable is ambiently present.
+    expect(resolvePodUserDataDir(false, podEnv)).toBeNull();
+    expect(
+      resolvePodUserDataDir(
+        hasHeadlessPodRuntimeInput(['electron', '--headless'], {
+          ...podEnv,
+          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '',
+        }),
+        podEnv,
+      ),
+    ).toBeNull();
+    expect(
+      resolvePodUserDataDir(
+        hasHeadlessPodRuntimeInput(['electron', '--headless'], {
+          ...podEnv,
+          [POD_DEVICE_ID_ENV]: '',
+        }),
+        podEnv,
+      ),
+    ).toBeNull();
+    expect(
+      resolvePodUserDataDir(true, {
+        ...podEnv,
+        [POD_USER_DATA_DIR_ENV]: 'relative/user-data',
+      }),
+    ).toBeNull();
+  });
+
+  it('creates and exports the persistent workspace root only for a strict Pod runtime', () => {
+    const ensureDirectory = vi.fn();
+    const defaultEnv: NodeJS.ProcessEnv = {};
+    expect(
+      ensurePodWorkspacesDir(true, defaultEnv, ensureDirectory),
+    ).toBe(DEFAULT_POD_WORKSPACES_DIR);
+    expect(ensureDirectory).toHaveBeenCalledWith(DEFAULT_POD_WORKSPACES_DIR);
+    expect(defaultEnv[POD_WORKSPACES_DIR_ENV]).toBe(DEFAULT_POD_WORKSPACES_DIR);
+
+    const desktopEnv: NodeJS.ProcessEnv = {
+      [POD_WORKSPACES_DIR_ENV]: '/should/not/be/used',
+    };
+    expect(ensurePodWorkspacesDir(false, desktopEnv, ensureDirectory)).toBeNull();
+    expect(ensureDirectory).toHaveBeenCalledTimes(1);
+
+    expect(() =>
+      ensurePodWorkspacesDir(
+        true,
+        { [POD_WORKSPACES_DIR_ENV]: 'relative/workspaces' },
+        ensureDirectory,
+      ),
+    ).toThrow(`${POD_WORKSPACES_DIR_ENV} must be an absolute path`);
+  });
+
+  it('allows basic safeStorage only for Linux dev or the strict packaged Pod runtime', () => {
+    const podEnv = {
+      XDT_DEV_SAFE_STORAGE_BASIC: '1',
+      [POD_DEVICE_ID_ENV]: 'pod-safe-storage',
+      [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+    };
+    expect(
+      shouldUseBasicSafeStorage(podEnv, {
+        isPackaged: true,
+        platform: 'linux',
+        headlessPodRuntime: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldUseBasicSafeStorage(podEnv, {
+        isPackaged: true,
+        platform: 'linux',
+        headlessPodRuntime: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseBasicSafeStorage({
+        ...podEnv,
+        [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '',
+      }, {
+        isPackaged: true,
+        platform: 'linux',
+        headlessPodRuntime: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseBasicSafeStorage({ XDT_DEV_SAFE_STORAGE_BASIC: '1' }, {
+        isPackaged: false,
+        platform: 'linux',
+        headlessPodRuntime: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldUseBasicSafeStorage(podEnv, {
+        isPackaged: true,
+        platform: 'darwin',
+        headlessPodRuntime: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not consume the mounted token when a validated local session is ready', async () => {
+    const fetch = vi.fn();
+    const readSecretFile = vi.fn();
+    const logger = { info: vi.fn() };
+
+    await expect(
+      bootstrapPodProvisioning({
+        env: {
+          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+          [POD_DEVICE_ID_ENV]: 'pod-restored',
+        },
+        getAuthBaseUrl: () => 'http://localhost:3344',
+        authRegion: 'cn',
+        fetch,
+        logger,
+        readPersistedAccountRefreshToken: vi.fn(),
+        readPersistedMembershipId: vi.fn(),
+        readSecretFile,
+        persistAccountRefreshToken: vi.fn(),
+        persistMembershipId: vi.fn(),
+        installSession: vi.fn(),
+        hasLocalSession: () => true,
+      }),
+    ).resolves.toBe(true);
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(readSecretFile).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      'Pod provisioning skipped; validated local session is ready',
+    );
+  });
+
+  it('continues when provisioning fails after a local session becomes available', async () => {
+    let localSessionReady = false;
+    const logger = { info: vi.fn() };
+    const fetch = vi.fn(async () => {
+      localSessionReady = true;
+      throw new Error('mounted predecessor was already consumed');
+    });
+
+    await expect(
+      bootstrapPodProvisioning({
+        env: {
+          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+          [POD_DEVICE_ID_ENV]: 'pod-raced-recovery',
+        },
+        getAuthBaseUrl: () => 'http://localhost:3344',
+        authRegion: 'cn',
+        fetch,
+        logger,
+        readPersistedAccountRefreshToken: () => null,
+        readPersistedMembershipId: () => null,
+        readSecretFile: () => 'stale-mounted-token',
+        persistAccountRefreshToken: vi.fn(),
+        persistMembershipId: vi.fn(),
+        installSession: vi.fn(),
+        hasLocalSession: () => localSessionReady,
+      }),
+    ).resolves.toBe(true);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      'Pod provisioning failed after local session recovery; continuing',
+    );
+  });
+
   it('refreshes, lists memberships, exchanges, then installs the personal session', async () => {
     const calls: Array<{
       path: string;
@@ -490,6 +675,7 @@ describe('Pod provisioning bootstrap', () => {
   });
 
   it('preserves structured auth-server errors', async () => {
+    const clearPersistedAccountRefreshToken = vi.fn();
     await expect(
       bootstrapPodProvisioning({
         env: {
@@ -514,6 +700,7 @@ describe('Pod provisioning bootstrap', () => {
         readPersistedAccountRefreshToken: () => null,
         readPersistedMembershipId: () => null,
         persistAccountRefreshToken: vi.fn(),
+        clearPersistedAccountRefreshToken,
         persistMembershipId: vi.fn(),
         installSession: vi.fn(),
       }),
@@ -523,5 +710,100 @@ describe('Pod provisioning bootstrap', () => {
       statusCode: 401,
       message: 'Refresh token is invalid',
     });
+    expect(clearPersistedAccountRefreshToken).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a persisted account token after a transient refresh failure', async () => {
+    const clearPersistedAccountRefreshToken = vi.fn();
+    await expect(
+      bootstrapPodProvisioning({
+        env: {
+          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+          [POD_DEVICE_ID_ENV]: 'pod-transient',
+        },
+        getAuthBaseUrl: () => 'http://localhost:3344',
+        authRegion: 'cn',
+        fetch: vi.fn(async () => {
+          throw new Error('connection reset');
+        }),
+        logger: { info: vi.fn() },
+        readPersistedAccountRefreshToken: () => 'persisted-token',
+        readPersistedMembershipId: () => null,
+        readSecretFile: () => 'mounted-token',
+        persistAccountRefreshToken: vi.fn(),
+        clearPersistedAccountRefreshToken,
+        persistMembershipId: vi.fn(),
+        installSession: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      name: 'AuthApiError',
+      code: 'NETWORK_ERROR',
+    });
+    expect(clearPersistedAccountRefreshToken).not.toHaveBeenCalled();
+  });
+
+  it('re-reads a refreshed mounted Secret after the persisted rotation is rejected', async () => {
+    let persistedToken: string | null = 'rejected-persisted-token';
+    let mountedToken = 'stale-mounted-token';
+    const refreshTokens: string[] = [];
+    const fetch = vi.fn(async (input: string, init?: Parameters<AuthFetch>[1]) => {
+      const requestPath = new URL(input).pathname;
+      if (requestPath.endsWith('/refresh')) {
+        const token = JSON.parse(init?.body ?? '{}').accountRefreshToken as string;
+        refreshTokens.push(token);
+        if (token === 'rejected-persisted-token') {
+          return response(
+            { error: { code: 'INVALID_REFRESH_TOKEN', message: 'expired' } },
+            false,
+            401,
+          );
+        }
+        return response({
+          accountToken: 'account-access',
+          accountRefreshToken: 'next-persisted-token',
+        });
+      }
+      if (requestPath.endsWith('/account')) {
+        return response({ memberships: [membership('personal', 'personal')] });
+      }
+      return response({
+        accessToken: 'resource-access',
+        refreshToken: 'resource-refresh',
+        membership: membership('personal', 'personal'),
+      });
+    });
+    const deps = {
+      env: {
+        [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+        [POD_DEVICE_ID_ENV]: 'pod-secret-retry',
+      },
+      getAuthBaseUrl: () => 'http://localhost:3344',
+      authRegion: 'cn' as const,
+      fetch,
+      logger: { info: vi.fn() },
+      readPersistedAccountRefreshToken: () => persistedToken,
+      readPersistedMembershipId: () => null,
+      readSecretFile: () => mountedToken,
+      persistAccountRefreshToken: (token: string) => {
+        persistedToken = token;
+      },
+      clearPersistedAccountRefreshToken: () => {
+        persistedToken = null;
+      },
+      persistMembershipId: vi.fn(),
+      installSession: vi.fn(),
+    };
+
+    await expect(bootstrapPodProvisioning(deps)).rejects.toMatchObject({
+      code: 'INVALID_REFRESH_TOKEN',
+    });
+    mountedToken = 'fresh-mounted-token';
+    await expect(bootstrapPodProvisioning(deps)).resolves.toBe(true);
+
+    expect(refreshTokens).toEqual([
+      'rejected-persisted-token',
+      'fresh-mounted-token',
+    ]);
+    expect(persistedToken).toBe('next-persisted-token');
   });
 });

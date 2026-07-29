@@ -52,11 +52,13 @@ const LINUX_AGENT_INSTALL_STARTUP_DEADLINE_MS = 5 * 60_000;
 // 整个 Cindy 一直停在启动页；到期后取消本次下载并禁用本次 Pi。
 const PI_AGENT_INSTALL_STARTUP_DEADLINE_MS = 60_000;
 
-if (
-  process.platform === 'linux' &&
-  !app.isPackaged &&
-  process.env.XDT_DEV_SAFE_STORAGE_BASIC === '1'
-) {
+const headlessPodRuntimeInput = process.env[HEADLESS_POD_RUNTIME_ENV] === '1';
+const allowBasicSafeStorage = shouldUseBasicSafeStorage(process.env, {
+  isPackaged: app.isPackaged,
+  platform: process.platform,
+  headlessPodRuntime: headlessPodRuntimeInput,
+});
+if (allowBasicSafeStorage) {
   app.commandLine.appendSwitch('password-store', 'basic');
   safeStorage.setUsePlainTextEncryption(true);
 }
@@ -174,6 +176,7 @@ import {
   getLinuxInstallSignal,
 } from './agent-binaries/ensure-ready.js';
 import {
+  HEADLESS_POD_RUNTIME_ENV,
   isHeadlessMode,
   runHeadlessStartup,
   shouldCreateMainWindow,
@@ -183,7 +186,9 @@ import {
   bootstrapPodProvisioning,
   createNodeFetchAdapter,
   hasPodProvisioningInput,
+  POD_MEMBERSHIP_ID_ENV,
   resolvePodDeviceIdOverride,
+  shouldUseBasicSafeStorage,
 } from './pod-provisioning.js';
 import { RendererBootGuard } from './renderer-boot-guard';
 import yaml from 'js-yaml';
@@ -394,7 +399,7 @@ import {
 } from './device-link/dispatch';
 import {
   getControlControllers,
-  getSubscribedControllers,
+  getControllerIds,
 } from './device-link/subscriptions.js';
 import {
   registerDeviceLinkIpc,
@@ -679,11 +684,16 @@ const CLOUD_RUNTIME_HEARTBEAT_INTERVAL_MS = 5_000;
 const CLOUD_RUNTIME_ACTIVITY_STALE_AFTER_MS = 15_000;
 const CLOUD_RUNTIME_IDLE_AFTER_MS = 10 * 60_000;
 const CLOUD_RUNTIME_SCHEDULER_WAKE_GUARD_MS = 60_000;
+const POD_STARTUP_RETRY_INITIAL_MS = 5_000;
+const POD_STARTUP_RETRY_MAX_MS = 5 * 60_000;
 let cloudRuntimeController: CloudRuntimeController | null = null;
 
 async function startPodCloudRuntimeController(): Promise<void> {
   if (cloudRuntimeController) return;
-  const membershipId = authManager.readProvisionedMembershipId();
+  const membershipId =
+    authManager.readProvisionedMembershipId() ||
+    process.env[POD_MEMBERSHIP_ID_ENV]?.trim() ||
+    null;
   const instanceId = resolvePodDeviceIdOverride(process.env);
   if (!membershipId || !instanceId) {
     throw new Error('Pod cloud runtime identity is incomplete');
@@ -729,7 +739,7 @@ async function startPodCloudRuntimeController(): Promise<void> {
         },
         getDeviceLinkActivity: () => ({
           controllers: getControlControllers().length,
-          subscriptions: getSubscribedControllers().length,
+          subscriptions: getControllerIds().length,
         }),
         getKeepAwake: () => readDeviceLinkSettings().keepAwake,
         now: Date.now,
@@ -3043,6 +3053,7 @@ function syncDefaultPluginsForActiveOwner(): void {
 }
 
 let ensureMakerReadyImpl: (() => Promise<void>) | null = null;
+let piDisabledForLaunch = false;
 
 /**
  * Ensure the Maker singleton and its main-process services are ready.
@@ -4353,7 +4364,6 @@ const registerIpcHandlers = () => {
   let makerIpcsRegistered = false;
   // Pi 是“本次启动可选”的能力：一旦首次准备失败，就算后续清单/CDN恢复，
   // 也不再把 Pi 动态塞回已经构造好的 Maker，避免返回状态与实际能力不一致。
-  let piDisabledForLaunch = false;
   const registerMakerIpcsAfterSplash = async (): Promise<void> => {
     if (makerIpcsRegistered) return;
     // 模型供应商目录(providers.json)按「OSS 真源 / bundled 兜底」加载一次存内存:必须在第一次
@@ -6988,19 +6998,80 @@ app.on('ready', async () => {
   const deferDeviceLink = headlessMode && podProvisioningMode;
   if (!deferDeviceLink) startDeviceLinkService();
   if (headlessMode) {
+    if (headlessPodRuntimeInput && process.platform === 'linux') {
+      headlessStartupLog.info('headless Pod safeStorage backend selected', {
+        basicAllowed: allowBasicSafeStorage,
+        backend: safeStorage.getSelectedStorageBackend(),
+      });
+    }
     const platform = process.platform as 'darwin' | 'win32' | 'linux';
     const ensureBinariesReady = createEnsureBinariesReady(platform, {
       peekNeedsDownload: binaryPeekNeedsDownload,
       prepare: binaryPrepare,
-      broadcastResetForStep2: (kind) => binaryBroadcastResetForStep(kind, 2, 2),
+      broadcastResetForStep: binaryBroadcastResetForStep,
+      getPiInstallSignal: () =>
+        app.isPackaged
+          ? AbortSignal.timeout(PI_AGENT_INSTALL_STARTUP_DEADLINE_MS)
+          : undefined,
+      isPiDisabledForLaunch: () => piDisabledForLaunch,
+      onPiPrepareFailed: (error) => {
+        piDisabledForLaunch = true;
+        console.warn(
+          `[bootstrap-electron] pi binary prepare failed (non-fatal, pi disabled for this launch): ${error}`,
+        );
+      },
     });
-    const linuxInstallSignal = getLinuxInstallSignal(
-      platform,
-      app.isPackaged,
-      LINUX_AGENT_INSTALL_STARTUP_DEADLINE_MS,
-    );
+    // Pod retries need a fresh fallback timeout per attempt. The fallback owns
+    // that timeout internally; a single startup signal would remain aborted
+    // forever after its first five-minute deadline.
+    const linuxInstallSignal = headlessPodRuntimeInput
+      ? undefined
+      : getLinuxInstallSignal(
+          platform,
+          app.isPackaged,
+          LINUX_AGENT_INSTALL_STARTUP_DEADLINE_MS,
+        );
+    if (headlessPodRuntimeInput) {
+      try {
+        // Start the heartbeat before provisioning. Until auth succeeds its
+        // existing fail-closed projection is phase=degraded,
+        // readiness.auth=not-ready, blocker=runtime-not-ready.
+        await startPodCloudRuntimeController();
+      } catch (err) {
+        headlessStartupLog.error('Pod cloud runtime status initialization failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        app.exit(1);
+        return;
+      }
+    }
     const started = await runHeadlessStartup({
       provisionSession: async () => {
+        const hasValidatedLocalPodSession = (): boolean => {
+          const membershipId = authManager.readProvisionedMembershipId();
+          const state = authManager.getAuthState();
+          return Boolean(
+            membershipId &&
+            state.isAuthenticated &&
+            state.user?.id === membershipId,
+          );
+        };
+
+        // A resource refresh token persisted on the PVC is the authoritative
+        // restart path. Finish its cold-start refresh before considering the
+        // mounted one-shot account token, otherwise a normal restart can
+        // consume an already-rotated predecessor unnecessarily.
+        let pendingRestore: Promise<authManager.AuthState> | null = null;
+        const restored = await authManager.initialize({
+          onColdStartPending: (completion) => {
+            pendingRestore = completion;
+          },
+        });
+        if (pendingRestore) await pendingRestore;
+        if (restored.isAuthenticated || hasValidatedLocalPodSession()) {
+          headlessStartupLog.info('headless Pod validated local session restored');
+        }
+
         const provisioned = await bootstrapPodProvisioning({
           env: process.env,
           getAuthBaseUrl: () => getClientEndpoint('authApiBaseUrl'),
@@ -7012,8 +7083,11 @@ app.on('ready', async () => {
           readPersistedAccountRefreshToken: authManager.readProvisionedAccountRefreshToken,
           readPersistedMembershipId: authManager.readProvisionedMembershipId,
           persistAccountRefreshToken: authManager.persistProvisionedAccountRefreshToken,
+          clearPersistedAccountRefreshToken:
+            authManager.clearProvisionedAccountRefreshToken,
           persistMembershipId: authManager.persistProvisionedMembershipId,
           installSession: authManager.installProvisionedSession,
+          hasLocalSession: hasValidatedLocalPodSession,
         });
         if (!provisioned) return false;
 
@@ -7037,7 +7111,25 @@ app.on('ready', async () => {
         }
         return true;
       },
+      provisionRetry: headlessPodRuntimeInput
+        ? {
+            initialDelayMs: POD_STARTUP_RETRY_INITIAL_MS,
+            maxDelayMs: POD_STARTUP_RETRY_MAX_MS,
+            onFailure: async () => {
+              await cloudRuntimeController?.sampleNow();
+            },
+          }
+        : undefined,
       ensureBinariesReady,
+      binaryRetry: headlessPodRuntimeInput
+        ? {
+            initialDelayMs: POD_STARTUP_RETRY_INITIAL_MS,
+            maxDelayMs: POD_STARTUP_RETRY_MAX_MS,
+            onFailure: async () => {
+              await cloudRuntimeController?.sampleNow();
+            },
+          }
+        : undefined,
       linuxInstallSignal,
       ensureMakerReady,
       logger: headlessStartupLog,

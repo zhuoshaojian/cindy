@@ -25,7 +25,17 @@ apps/desktop/out
 apps/desktop/build
 apps/*/node_modules
 .claude
+# Host agent binaries stay out of the context except the linux-x64 pins: the
+# cloud image needs exactly those, and carrying host-prefetched copies lets the
+# in-container ensure steps skip large downloads on flaky networks (they still
+# hash-validate; missing copies fall back to downloading as before).
 apps/claude-code-bin
+!apps/claude-code-bin/linux-x64
 apps/codex-bin
+!apps/codex-bin/linux-x64
 apps/ripgrep-bin
+!apps/ripgrep-bin/linux-x64
+apps/pi-bin
+!apps/pi-bin/linux-x64
+!apps/pi-bin/linux-x64/**
 apps/android-platform-tools-bin

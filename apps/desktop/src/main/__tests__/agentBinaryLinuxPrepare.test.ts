@@ -65,6 +65,7 @@ describe('packaged Linux agent binary prepare', () => {
   });
 
   it('reuses an existing runtime binary without private install or CDN work', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     prepareLinuxRuntimeFallback.mockResolvedValueOnce({
       ready: true,
       binaryPath: '/usr/local/bin/claude',
@@ -84,6 +85,10 @@ describe('packaged Linux agent binary prepare', () => {
       onProgress: expect.any(Function),
     });
     expect(createBinaryProvisioner).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith(
+      '[agent-binaries/claude-code] packaged Linux fallback source=system: /usr/local/bin/claude',
+    );
+    info.mockRestore();
   });
 
   it('goes directly to the runtime fallback without creating or probing the CDN provisioner', async () => {

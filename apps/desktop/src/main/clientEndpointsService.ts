@@ -33,6 +33,9 @@
  *  - packaged / dev + --endpoints-cdn:从当前构建区域的烘焙自举基址
  *    ENDPOINT_MANIFEST_BASE_URL 直连拉取；另一物理区域的基址也在构建期注入，
  *    只用于组织区域发现和已绑定会话恢复；
+ *  - packaged headless Pod + XDT_ENDPOINT_MANIFEST_FILE:读控制面挂载的绝对路径
+ *    实例清单；只有 --headless + device id + refresh-token file 三项契约齐全
+ *    才能打开该路径，普通 packaged GUI 即使带同名 env 也仍强制 CDN；
  *  - dev 默认:读仓内 `config/endpoint.json`(XDT_ENDPOINT_MANIFEST_FILE 可
  *    指定其它文件,restart:desktop:local 用它指到 config/endpoint.local.json),
  *    同一条阻断循环,文件缺失 / 非法同样弹框——配置错要炸出来,不静默猜测;
@@ -85,6 +88,7 @@ import {
 import { createLogger, getLogDir } from './logger';
 import { ENDPOINT_MANIFEST_BASE_URL, ENDPOINT_MANIFEST_PEER_BASE_URL } from '../shared/endpoints';
 import { resolvePreferredSystemLocale } from '../shared/locale';
+import { HEADLESS_POD_RUNTIME_ENV } from './headless-startup';
 
 const log = createLogger('clientEndpoints');
 
@@ -145,6 +149,8 @@ const AUTO_RETRY_DELAYS_MS: readonly number[] = [800, 2400];
 const DIAGNOSIS_TOTAL_BUDGET_MS = 15_000;
 
 export const CLIENT_ENDPOINTS_SYNC_CHANNEL = 'client-endpoints:get-sync';
+const ENDPOINTS_CDN_ENV = 'XDT_ENDPOINTS_CDN';
+const ENDPOINT_MANIFEST_FILE_ENV = 'XDT_ENDPOINT_MANIFEST_FILE';
 
 // ── 清单来源解析(纯函数,规则 14:内存 harness 可测) ─────────────────────
 
@@ -152,25 +158,31 @@ export type EndpointSource = { kind: 'cdn' } | { kind: 'file'; filePath: string 
 
 export interface ResolveEndpointSourceInput {
   isPackaged: boolean;
+  headlessPodRuntime?: boolean;
   env: {
     /** '1' = dev 也走完整 CDN 拉取(index.ts 已把 --endpoints-cdn 收敛到该 env)。 */
-    XDT_ENDPOINTS_CDN?: string;
+    [ENDPOINTS_CDN_ENV]?: string;
     /** dev 本地清单文件覆盖(restart:desktop:local 指到 endpoint.local.json)。 */
-    XDT_ENDPOINT_MANIFEST_FILE?: string;
+    [ENDPOINT_MANIFEST_FILE_ENV]?: string;
   };
   /** 仓库根(dev 下 app.getAppPath() = apps/desktop,向上两级)。 */
   repoRoot: string;
 }
 
 /**
- * 决定清单从哪来:packaged 恒 CDN;dev 默认读仓内 config/endpoint.json,
- * XDT_ENDPOINT_MANIFEST_FILE 覆盖文件路径(相对路径以仓根为基准),
+ * 决定清单从哪来:packaged 默认恒 CDN，只有完整 headless Pod runtime contract
+ * 接受绝对路径的 XDT_ENDPOINT_MANIFEST_FILE；dev 默认读仓内
+ * config/endpoint.json，XDT_ENDPOINT_MANIFEST_FILE 覆盖文件路径
+ * (相对路径以仓根为基准)，
  * XDT_ENDPOINTS_CDN='1' 切回完整 CDN 链路。
  */
 export function resolveEndpointSource(input: ResolveEndpointSourceInput): EndpointSource {
-  if (input.isPackaged) return { kind: 'cdn' };
-  if (input.env.XDT_ENDPOINTS_CDN === '1') return { kind: 'cdn' };
-  const override = input.env.XDT_ENDPOINT_MANIFEST_FILE?.trim();
+  const override = input.env[ENDPOINT_MANIFEST_FILE_ENV]?.trim();
+  const packagedPodOverride =
+    input.headlessPodRuntime === true &&
+    Boolean(override && path.isAbsolute(override));
+  if (input.isPackaged && !packagedPodOverride) return { kind: 'cdn' };
+  if (input.env[ENDPOINTS_CDN_ENV] === '1') return { kind: 'cdn' };
   const filePath = override
     ? path.resolve(input.repoRoot, override)
     : path.join(input.repoRoot, 'config', MANIFEST_FILE_NAME);
@@ -1083,9 +1095,10 @@ function cacheResolvedManifest(manifestUrl: string, manifestText: string): void 
 export async function initClientEndpoints(): Promise<boolean> {
   const source = resolveEndpointSource({
     isPackaged: app.isPackaged,
+    headlessPodRuntime: process.env[HEADLESS_POD_RUNTIME_ENV] === '1',
     env: {
-      XDT_ENDPOINTS_CDN: process.env.XDT_ENDPOINTS_CDN,
-      XDT_ENDPOINT_MANIFEST_FILE: process.env.XDT_ENDPOINT_MANIFEST_FILE,
+      [ENDPOINTS_CDN_ENV]: process.env[ENDPOINTS_CDN_ENV],
+      [ENDPOINT_MANIFEST_FILE_ENV]: process.env[ENDPOINT_MANIFEST_FILE_ENV],
     },
     // dev 下 app.getAppPath() = apps/desktop;packaged 不走 file 分支,该值无消费。
     repoRoot: path.resolve(app.getAppPath(), '..', '..'),

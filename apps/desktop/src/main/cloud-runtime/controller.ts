@@ -61,6 +61,7 @@ export function createCloudRuntimeController(
   let timer: unknown = null;
   let stopped = false;
   let inFlight: Promise<CloudRuntimeStatus> | null = null;
+  let readinessFailureLogged = false;
 
   const scheduleNext = (): void => {
     if (stopped || timer !== null) return;
@@ -92,11 +93,18 @@ export function createCloudRuntimeController(
     let readiness: CloudReadinessComponents;
     try {
       readiness = await deps.collectReadiness();
+      if (readinessFailureLogged) {
+        readinessFailureLogged = false;
+        deps.logger.info('cloud runtime readiness collection recovered');
+      }
     } catch (error) {
       readiness = UNKNOWN_READINESS;
-      deps.logger.warn('cloud runtime readiness collection failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (!readinessFailureLogged) {
+        readinessFailureLogged = true;
+        deps.logger.warn('cloud runtime readiness collection failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     const idle = evaluateCloudIdle(activity, {

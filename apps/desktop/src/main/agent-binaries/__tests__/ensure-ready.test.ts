@@ -7,6 +7,7 @@ import {
   getLinuxInstallSignal,
   type AgentBinaryReadiness,
 } from '../ensure-ready.js';
+import type { AgentBinaryKind } from '../index.js';
 
 class MemoryIpcHarness {
   private readonly handlers = new Map<string, () => Promise<unknown>>();
@@ -26,18 +27,18 @@ function deps(overrides: Partial<Parameters<typeof ensureAgentBinariesReady>[0]>
   return {
     platform: 'linux' as const,
     peekNeedsDownload: vi.fn(async () => false),
-    prepare: vi.fn(async (kind: 'claude-code' | 'codex') => ({
+    prepare: vi.fn(async (kind: AgentBinaryKind) => ({
       ready: true,
       path: `/tmp/${kind}`,
       downloaded: false,
     })),
-    broadcastResetForStep2: vi.fn(),
+    broadcastResetForStep: vi.fn(),
     ...overrides,
   };
 }
 
 describe('ensureAgentBinariesReady', () => {
-  it('provisions Claude before Codex and returns both paths', async () => {
+  it('provisions Claude, Codex, then optional Pi and returns their paths', async () => {
     const callOrder: string[] = [];
     const d = deps({
       peekNeedsDownload: vi.fn(async (kind) => {
@@ -53,14 +54,17 @@ describe('ensureAgentBinariesReady', () => {
     await expect(ensureAgentBinariesReady(d)).resolves.toEqual({
       claudeCode: { status: 'passed', path: '/tmp/claude-code' },
       codex: { status: 'passed', path: '/tmp/codex' },
+      pi: { status: 'passed', path: '/tmp/pi' },
       allPassed: true,
       platform: 'linux',
     });
     expect(callOrder).toEqual([
       'peek:claude-code',
       'peek:codex',
+      'peek:pi',
       'prepare:claude-code',
       'prepare:codex',
+      'prepare:pi',
     ]);
   });
 
@@ -74,12 +78,13 @@ describe('ensureAgentBinariesReady', () => {
     await expect(ensureAgentBinariesReady(d)).resolves.toMatchObject({
       claudeCode: { status: 'failed', error: 'install failed' },
       codex: { status: 'skipped' },
+      pi: { status: 'skipped' },
       allPassed: false,
     });
     expect(d.prepare).toHaveBeenCalledTimes(1);
   });
 
-  it('resets progress between two downloads and forwards step options', async () => {
+  it('resets progress between three downloads and forwards step options', async () => {
     const signal = new AbortController().signal;
     const d = deps({
       linuxInstallSignal: signal,
@@ -87,21 +92,47 @@ describe('ensureAgentBinariesReady', () => {
       prepare: vi
         .fn()
         .mockResolvedValueOnce({ ready: true, path: '/tmp/claude', downloaded: true })
-        .mockResolvedValueOnce({ ready: true, path: '/tmp/codex', downloaded: true }),
+        .mockResolvedValueOnce({ ready: true, path: '/tmp/codex', downloaded: true })
+        .mockResolvedValueOnce({ ready: true, path: '/tmp/pi', downloaded: true }),
     });
 
     await expect(ensureAgentBinariesReady(d)).resolves.toMatchObject({ allPassed: true });
-    expect(d.broadcastResetForStep2).toHaveBeenCalledWith('codex');
+    expect(d.broadcastResetForStep).toHaveBeenNthCalledWith(1, 'codex', 2, 3);
+    expect(d.broadcastResetForStep).toHaveBeenNthCalledWith(2, 'pi', 3, 3);
     expect(d.prepare).toHaveBeenNthCalledWith(1, 'claude-code', {
       step: 1,
-      totalSteps: 2,
+      totalSteps: 3,
       signal,
     });
     expect(d.prepare).toHaveBeenNthCalledWith(2, 'codex', {
       step: 2,
-      totalSteps: 2,
+      totalSteps: 3,
       signal,
     });
+    expect(d.prepare).toHaveBeenNthCalledWith(3, 'pi', {
+      step: 3,
+      totalSteps: 3,
+      broadcastFailure: false,
+      signal: undefined,
+    });
+  });
+
+  it('keeps Pi failure non-fatal and disables it through the launch callback', async () => {
+    const onPiPrepareFailed = vi.fn();
+    const d = deps({
+      prepare: vi.fn(async (kind: AgentBinaryKind) =>
+        kind === 'pi'
+          ? { ready: false, error: 'asset missing' }
+          : { ready: true, path: `/tmp/${kind}`, downloaded: false },
+      ),
+      onPiPrepareFailed,
+    });
+
+    await expect(ensureAgentBinariesReady(d)).resolves.toMatchObject({
+      pi: { status: 'failed', error: 'asset missing' },
+      allPassed: true,
+    });
+    expect(onPiPrepareFailed).toHaveBeenCalledWith('asset missing');
   });
 });
 
@@ -118,7 +149,7 @@ describe('binary readiness dependency helpers', () => {
     const ensureReady = createEnsureBinariesReady('linux', {
       peekNeedsDownload: d.peekNeedsDownload,
       prepare: d.prepare,
-      broadcastResetForStep2: d.broadcastResetForStep2,
+      broadcastResetForStep: d.broadcastResetForStep,
     });
 
     await expect(ensureReady(signal)).resolves.toMatchObject({
@@ -127,6 +158,10 @@ describe('binary readiness dependency helpers', () => {
     });
     expect(d.prepare).toHaveBeenNthCalledWith(1, 'claude-code', { signal });
     expect(d.prepare).toHaveBeenNthCalledWith(2, 'codex', { signal });
+    expect(d.prepare).toHaveBeenNthCalledWith(3, 'pi', {
+      broadcastFailure: false,
+      signal: undefined,
+    });
   });
 });
 
@@ -134,6 +169,7 @@ describe('createCheckEnvironmentHandler', () => {
   const passed: AgentBinaryReadiness = {
     claudeCode: { status: 'passed', path: '/tmp/claude' },
     codex: { status: 'passed', path: '/tmp/codex' },
+    pi: { status: 'passed', path: '/tmp/pi' },
     allPassed: true,
     platform: 'linux',
   };
@@ -176,6 +212,7 @@ describe('createCheckEnvironmentHandler', () => {
     const failed: AgentBinaryReadiness = {
       claudeCode: { status: 'failed', error: 'missing' },
       codex: { status: 'skipped' },
+      pi: { status: 'skipped' },
       allPassed: false,
       platform: 'darwin',
     };

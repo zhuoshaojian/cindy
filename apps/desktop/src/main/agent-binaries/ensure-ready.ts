@@ -10,6 +10,10 @@ export interface AgentBinaryReadiness {
     | { status: 'passed'; path: string }
     | { status: 'failed'; error: string }
     | { status: 'skipped' };
+  pi:
+    | { status: 'passed'; path: string }
+    | { status: 'failed'; error: string }
+    | { status: 'skipped' };
   allPassed: boolean;
   platform: 'darwin' | 'win32' | 'linux';
 }
@@ -19,13 +23,23 @@ export interface EnsureAgentBinariesReadyDeps {
   linuxInstallSignal?: AbortSignal;
   peekNeedsDownload: (kind: AgentBinaryKind) => Promise<boolean>;
   prepare: (kind: AgentBinaryKind, opts?: PrepareOpts) => Promise<PrepareResult>;
-  broadcastResetForStep2: (kind: AgentBinaryKind) => void;
+  broadcastResetForStep: (
+    kind: AgentBinaryKind,
+    step: 1 | 2 | 3,
+    totalSteps: 2 | 3,
+  ) => void;
+  getPiInstallSignal?: () => AbortSignal | undefined;
+  isPiDisabledForLaunch?: () => boolean;
+  onPiPrepareFailed?: (error: string) => void;
 }
 
 export interface EnsureBinariesReadyProviderDeps {
   peekNeedsDownload: (kind: AgentBinaryKind) => Promise<boolean>;
   prepare: (kind: AgentBinaryKind, opts?: PrepareOpts) => Promise<PrepareResult>;
-  broadcastResetForStep2: (kind: AgentBinaryKind) => void;
+  broadcastResetForStep: EnsureAgentBinariesReadyDeps['broadcastResetForStep'];
+  getPiInstallSignal?: () => AbortSignal | undefined;
+  isPiDisabledForLaunch?: () => boolean;
+  onPiPrepareFailed?: (error: string) => void;
 }
 
 /** Share one startup deadline across sequential packaged-Linux installs. */
@@ -78,8 +92,9 @@ export function createCheckEnvironmentHandler(
 }
 
 /**
- * Provision both agent binaries in the same order and with the same progress
- * semantics as the renderer splash check. The dependencies are injected so
+ * Provision the required Claude/Codex binaries and optional Pi binary in the
+ * same order and with the same progress semantics as the renderer splash check.
+ * The dependencies are injected so
  * main-side callers (including a future headless bootstrap) can invoke this
  * step without an IPC event or Electron renderer.
  */
@@ -91,39 +106,54 @@ export async function ensureAgentBinariesReady(
     linuxInstallSignal,
     peekNeedsDownload,
     prepare,
-    broadcastResetForStep2,
+    broadcastResetForStep,
+    getPiInstallSignal,
+    isPiDisabledForLaunch,
+    onPiPrepareFailed,
   } = deps;
 
-  // Peek both vendors first so the splash can show a two-step progress label
-  // only when both downloads are actually needed.
-  let claudeNeeds = false;
-  let codexNeeds = false;
-  try {
-    claudeNeeds = await peekNeedsDownload('claude-code');
-  } catch {
-    // A failed peek is handled by prepare() below; conservatively avoid the
-    // two-step label when we cannot prove that both downloads are needed.
+  const needySteps: AgentBinaryKind[] = [];
+  for (const kind of ['claude-code', 'codex', 'pi'] as const) {
+    try {
+      if (await peekNeedsDownload(kind)) needySteps.push(kind);
+    } catch {
+      // prepare() below owns the real error path; failed peeks do not invent a
+      // progress segment that may never download.
+    }
   }
-  try {
-    codexNeeds = await peekNeedsDownload('codex');
-  } catch {
-    // Same fallback as the Claude peek.
-  }
-  const isMultiDownload = claudeNeeds && codexNeeds;
+  const isMultiDownload = needySteps.length >= 2;
+  const totalSteps = Math.min(needySteps.length, 3) as 2 | 3;
+  const stepOptsFor = (
+    kind: AgentBinaryKind,
+  ): { step?: 1 | 2 | 3; totalSteps?: 2 | 3 } =>
+    isMultiDownload && needySteps.includes(kind)
+      ? {
+          step: (needySteps.indexOf(kind) + 1) as 1 | 2 | 3,
+          totalSteps,
+        }
+      : {};
+  const resetBeforeSegment = (
+    kind: AgentBinaryKind,
+    anyPreviousDownloaded: boolean,
+  ): void => {
+    const stepOpts = stepOptsFor(kind);
+    if (anyPreviousDownloaded && stepOpts.step && stepOpts.totalSteps) {
+      broadcastResetForStep(kind, stepOpts.step, stepOpts.totalSteps);
+    }
+  };
 
   let claudeRes: PrepareResult;
   try {
     claudeRes = await prepare(
       'claude-code',
-      isMultiDownload
-        ? { step: 1, totalSteps: 2, signal: linuxInstallSignal }
-        : { signal: linuxInstallSignal },
+      { ...stepOptsFor('claude-code'), signal: linuxInstallSignal },
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return {
       claudeCode: { status: 'failed', error: message },
       codex: { status: 'skipped' },
+      pi: { status: 'skipped' },
       allPassed: false,
       platform,
     };
@@ -136,30 +166,26 @@ export async function ensureAgentBinariesReady(
         error: claudeRes.error ?? 'Claude Code binary not available',
       },
       codex: { status: 'skipped' },
+      pi: { status: 'skipped' },
       allPassed: false,
       platform,
     };
   }
 
-  // Reset the splash progress before beginning codex when both downloads are
-  // active, preserving the existing two-stage visual behavior.
-  if (isMultiDownload && claudeRes.downloaded) {
-    broadcastResetForStep2('codex');
-  }
+  resetBeforeSegment('codex', claudeRes.downloaded === true);
 
   let codexRes: PrepareResult;
   try {
     codexRes = await prepare(
       'codex',
-      isMultiDownload
-        ? { step: 2, totalSteps: 2, signal: linuxInstallSignal }
-        : { signal: linuxInstallSignal },
+      { ...stepOptsFor('codex'), signal: linuxInstallSignal },
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return {
       claudeCode: { status: 'passed', path: claudeRes.path },
       codex: { status: 'failed', error: message },
+      pi: { status: 'skipped' },
       allPassed: false,
       platform,
     };
@@ -172,14 +198,50 @@ export async function ensureAgentBinariesReady(
         status: 'failed',
         error: codexRes.error ?? 'Codex binary not available',
       },
+      pi: { status: 'skipped' },
       allPassed: false,
       platform,
     };
   }
 
+  resetBeforeSegment(
+    'pi',
+    claudeRes.downloaded === true || codexRes.downloaded === true,
+  );
+
+  let piInfo: AgentBinaryReadiness['pi'];
+  if (isPiDisabledForLaunch?.() === true) {
+    piInfo = {
+      status: 'failed',
+      error: 'pi disabled for this launch after an earlier prepare failure',
+    };
+  } else {
+    try {
+      const piRes = await prepare('pi', {
+        ...stepOptsFor('pi'),
+        broadcastFailure: false,
+        signal: getPiInstallSignal?.(),
+      });
+      piInfo =
+        piRes.ready && piRes.path
+          ? { status: 'passed', path: piRes.path }
+          : {
+              status: 'failed',
+              error: piRes.error ?? 'pi binary not available',
+            };
+    } catch (err: unknown) {
+      piInfo = {
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+  if (piInfo.status === 'failed') onPiPrepareFailed?.(piInfo.error);
+
   return {
     claudeCode: { status: 'passed', path: claudeRes.path },
     codex: { status: 'passed', path: codexRes.path },
+    pi: piInfo,
     allPassed: true,
     platform,
   };

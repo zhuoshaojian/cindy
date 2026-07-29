@@ -1419,7 +1419,6 @@ function applyAuthenticatedSession(
   accessToken = pair.accessToken;
   persistedRefreshTokenNeedsIdentityCheck = false;
   clearReplacementIntegrationReloadTimers();
-  activateClientEndpointRealm(realm);
   activeAuthRealm = realm;
   if (!options.refreshTokenAlreadyPersisted) {
     writePersistedAuthSession(pair.refreshToken, realm);
@@ -1703,6 +1702,11 @@ export function persistProvisionedAccountRefreshToken(accountRefreshToken: strin
   if (!accountRefreshToken || !writeSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY, accountRefreshToken)) {
     throw new Error('failed to persist Pod account refresh token');
   }
+}
+
+/** Forget a server-rejected Pod account token so a retry can read a refreshed Secret. */
+export function clearProvisionedAccountRefreshToken(): void {
+  removeSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);
 }
 
 /** Read the last validated Pod membership selection from encrypted storage. */
@@ -2529,6 +2533,7 @@ async function completeLogin(
     pendingAccountToken = null;
     pendingAccountDeletionRestored = false;
     const committedRealm = pendingAuthRealm ?? AUTH_REGION;
+    activateClientEndpointRealm(committedRealm);
     removeSafe(ACCOUNT_DELETION_RECEIPT_KEY);
     accountDeletionRestoredNoticePending = deletionWasRestored;
     applyAuthenticatedSession(outcome, {
