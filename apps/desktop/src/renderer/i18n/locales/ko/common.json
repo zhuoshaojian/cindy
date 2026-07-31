@@ -6905,10 +6905,7 @@
       "worktreeRepoHint": "작업 디렉터리를 다시 선택한 뒤 오른쪽 아래 폴더 표시가 갱신되면 다시 시도하세요",
       "sessionInactive": "세션이 더 이상 활성 상태가 아닙니다",
       "remoteProjectBanner": "{{device}}의 {{project}}에서 새 세션 만들기",
-      "remoteDialogueBanner": "{{device}}에서 새 대화(프로젝트 없음)",
-      "runInCloud": "이 대화를 클라우드에서 실행",
-      "cloudOnline": "클라우드 · 온라인",
-      "wakeCloud": "클라우드 깨우기"
+      "remoteDialogueBanner": "{{device}}에서 새 대화(프로젝트 없음)"
     },
     "jumpSession": {
       "emptyId": "이동할 sessionId를 입력하세요",

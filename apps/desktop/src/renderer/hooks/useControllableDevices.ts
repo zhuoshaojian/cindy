@@ -93,7 +93,13 @@ export function isSelectableDevice(d: DeviceLinkDeviceView): boolean {
 export function toSelectableDevices(list: readonly DeviceLinkDeviceView[]): SelectableDevice[] {
   return list
     .filter(isSelectableDevice)
-    .map((d) => ({ deviceId: d.deviceId, name: d.name, platform: d.platform, online: d.online }));
+    .map((d) => ({
+      deviceId: d.deviceId,
+      name: d.name,
+      platform: d.platform,
+      online: d.online,
+      ...(d.deviceInfo?.kind === 'cloud' ? { kind: 'cloud' as const } : {}),
+    }));
 }
 
 /** 同 sameControllableList,但把 online 也纳入比较(掉线/上线必须触发重渲染)。 */
@@ -107,7 +113,8 @@ export function sameSelectableList(
       a[i].deviceId !== b[i].deviceId ||
       a[i].name !== b[i].name ||
       a[i].platform !== b[i].platform ||
-      a[i].online !== b[i].online
+      a[i].online !== b[i].online ||
+      a[i].kind !== b[i].kind
     ) {
       return false;
     }

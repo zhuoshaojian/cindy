@@ -17,16 +17,23 @@ export type CloudInstanceRuntimeState =
   | 'deleting'
   | 'error';
 
+/** Readiness reason values shared by renderer IPC and runtime assessment. */
+export const CLOUD_INSTANCE_READINESS_REASONS = [
+  'unknown',
+  'missing-status',
+  'corrupt-status',
+  'stale-heartbeat',
+  'runtime-not-ready',
+  'ready',
+] as const;
+
+export type CloudInstanceReadinessReason =
+  (typeof CLOUD_INSTANCE_READINESS_REASONS)[number];
+
 /** Fail-closed runtime readiness summary returned by the control plane. */
 export interface CloudInstanceReadiness {
   ready: boolean;
-  reason:
-    | 'unknown'
-    | 'missing-status'
-    | 'corrupt-status'
-    | 'stale-heartbeat'
-    | 'runtime-not-ready'
-    | 'ready';
+  reason: CloudInstanceReadinessReason;
   blockers: string[];
 }
 

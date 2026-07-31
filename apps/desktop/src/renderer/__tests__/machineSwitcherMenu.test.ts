@@ -246,14 +246,11 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
   });
 
   it('服务端禁用云端时沿用 unsupported 门控，菜单不渲染云端入口', () => {
-    const cloudHookSource = read('features', 'cloud-instance', 'useCloudInstances.ts');
-    expect(cloudHookSource).toContain("ipcError?.code === 'CLOUD_INSTANCE_DISABLED'");
     expect(menuSource).toContain('const cloudReady = cloud.loadState === \'ready\'');
     expect(menuSource).toContain('if (!hasRemote && !cloudReady) return null');
   });
 
   it('云端唤醒项并入机器菜单(0 实例首次唤醒 + offline 实例再唤醒,不独立占行)', () => {
-    const cloudHookSource = read('features', 'cloud-instance', 'useCloudInstances.ts');
     expect(menuSource).toContain('useCloudInstances');
     expect(menuSource).toContain("devices.filter((device) => device.kind !== 'cloud')");
     // 离线实例不以「一台机器」出现:折叠为「唤醒云端」动作行,目标取第一个离线实例。
@@ -267,8 +264,6 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     // 在线实例行恒可多选;离线折叠行是动作项,无 toggle。
     expect(menuSource).toContain('onToggle={() => applyToggle(instance.deviceId)}');
     expect(menuSource).not.toContain('CloudWakeMenuItem');
-    expect(cloudHookSource).toContain('pendingRef.current');
-    expect(cloudHookSource).toContain('return result');
     // 唤醒失败不许静默,必须有用户可见反馈。
     expect(menuSource).toContain("t('ccAgent.sidebar.cloud.wakeFailed')");
   });

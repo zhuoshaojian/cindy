@@ -3,7 +3,16 @@ import path from 'node:path';
 import { z } from 'zod';
 import { CLOUD_IDLE_BLOCKERS } from './activity.js';
 
-const readinessValueSchema = z.enum(['ready', 'not-ready', 'unknown']);
+export const CLOUD_READINESS_VALUES = ['ready', 'not-ready', 'unknown'] as const;
+export const CLOUD_RUNTIME_PHASES = [
+  'starting',
+  'ready',
+  'degraded',
+  'draining',
+  'stopping',
+] as const;
+
+const readinessValueSchema = z.enum(CLOUD_READINESS_VALUES);
 
 /**
  * Runtime components that define Pod liveness/readiness. Model access is
@@ -39,7 +48,7 @@ export const cloudRuntimeStatusSchema = z.object({
   version: z.literal(1),
   instanceId: z.string().min(1).max(128),
   membershipId: z.string().min(1).max(128),
-  phase: z.enum(['starting', 'ready', 'degraded', 'draining', 'stopping']),
+  phase: z.enum(CLOUD_RUNTIME_PHASES),
   startedAtMs: z.number().int().nonnegative(),
   heartbeatAtMs: z.number().int().nonnegative(),
   draining: z.boolean(),

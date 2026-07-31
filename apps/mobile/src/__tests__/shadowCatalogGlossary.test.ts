@@ -91,19 +91,6 @@ function collectEntries(): { locale: string; key: string; value: string }[] {
     }
   }
 
-  // cloud-instance messages: getter 以 viewer language code 选择四语 bucket；
-  // 函数型标题用固定中性实例名求值后纳入同一术语/标点检查。
-  for (const locale of glossary.locales) {
-    const table = getCloudInstanceMessages(locale);
-    for (const [key, value] of Object.entries(table)) {
-      out.push({
-        locale,
-        key: `mobile/cloudInstanceMessages:${key}`,
-        value: typeof value === 'function' ? value('Cloud') : value,
-      });
-    }
-  }
-
   return out;
 }
 

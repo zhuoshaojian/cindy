@@ -42,7 +42,7 @@
  * 颜色全走主题 token(规则 16),文案全走 i18n(规则 18)。
  */
 
-import { useRef, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import {
   Ban,
   Check,
@@ -56,14 +56,14 @@ import {
 } from 'lucide-react';
 import { useMatch, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance';
 
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { describeCloudInstanceName } from '@cindy/maker-shared/cloud-instance';
 import { useCloudInstances, type CloudInstanceView } from '@/features/cloud-instance/useCloudInstances';
 import {
+  desktopCloudInstanceDisplayName,
   resolveDesktopCloudDeviceName,
-  translateDesktopCloudInstanceName,
 } from '@/features/cloud-instance/cloudDeviceName';
 import { useActiveMainView } from '@/hooks/useActiveMainView';
 import {
@@ -129,27 +129,73 @@ export function MachineSwitcherMenu(): ReactNode {
 
   const cloudReady = cloud.loadState === 'ready';
   // 云端命名:custom 直显;default 用序号插值;fallback 用通用「云端」名。
-  const cloudNameOf = (instance: CloudInstanceView): string => {
-    const descriptor = describeCloudInstanceName({
-      customLabel: instance.customLabel,
-      nameSequence: instance.nameSequence,
-    });
-    return translateDesktopCloudInstanceName(descriptor, t);
-  };
-  const onWakeFailed = (): void => {
+  const cloudNameOf = (instance: CloudInstanceView): string =>
+    desktopCloudInstanceDisplayName(instance, t);
+  const [wakeWatch, setWakeWatchState] = useState<{
+    instanceId: string;
+    deviceId: string;
+  } | null>(null);
+  const wakeWatchRef = useRef(wakeWatch);
+  const onlineDeviceIdsRef = useRef(cloud.onlineDeviceIds);
+  onlineDeviceIdsRef.current = cloud.onlineDeviceIds;
+  const setWakeWatch = useCallback((value: typeof wakeWatch) => {
+    wakeWatchRef.current = value;
+    setWakeWatchState(value);
+  }, []);
+  const onWakeFailed = (target?: { instanceId: string; deviceId: string }): void => {
+    if (
+      !target
+      || (
+        wakeWatchRef.current?.instanceId === target.instanceId
+        && wakeWatchRef.current.deviceId === target.deviceId
+      )
+    ) {
+      setWakeWatch(null);
+    }
     toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
   };
   const wakeCloud = (instanceId: string, deviceId: string): void => {
-    const wake = cloud.wake(instanceId);
+    const target = { instanceId, deviceId };
+    const wake = cloud.wake(instanceId).then((result) => {
+      if (result) {
+        setWakeWatch({ instanceId: result.instanceId, deviceId: result.deviceId });
+      }
+    });
     // 离线实例与在线设备同一心智:先切过滤,不等待 Pod 上线。
     applySelect([deviceId]);
-    void wake.catch(onWakeFailed);
+    void wake.catch(() => onWakeFailed(target));
   };
   const wakeFirstCloud = (): void => {
     void cloud.wake().then((result) => {
-      if (result) applySelect([result.deviceId]);
-    }).catch(onWakeFailed);
+      if (!result) return;
+      setWakeWatch({ instanceId: result.instanceId, deviceId: result.deviceId });
+      applySelect([result.deviceId]);
+    }).catch(() => onWakeFailed());
   };
+
+  useEffect(() => {
+    if (wakeWatch && cloud.onlineDeviceIds.has(wakeWatch.deviceId)) {
+      setWakeWatch(null);
+    }
+  }, [cloud.onlineDeviceIds, setWakeWatch, wakeWatch]);
+
+  useEffect(() => {
+    if (!wakeWatch) return undefined;
+    const watched = wakeWatch;
+    const timer = window.setTimeout(() => {
+      const current = wakeWatchRef.current;
+      if (
+        current?.instanceId !== watched.instanceId
+        || current.deviceId !== watched.deviceId
+        || onlineDeviceIdsRef.current.has(watched.deviceId)
+      ) {
+        return;
+      }
+      setWakeWatch(null);
+      toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
+    }, CLOUD_WAKE_WATCH_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [setWakeWatch, t, wakeWatch]);
 
   // 无任何相关远程机器且无云端能力 → 不渲染入口(可见性门控)。云端控制面可用时
   // 即使还没有任何远程设备也要显示 —— 「0 实例首次唤醒」的入口在本菜单里。
@@ -291,14 +337,25 @@ export function MachineSwitcherMenu(): ReactNode {
               (instance) => !cloud.onlineDeviceIds.has(instance.deviceId),
             );
             if (!offlineInstance && cloud.instances.length > 0) return null;
-            const waking = cloud.pending?.action === 'wake';
+            const rowTarget = offlineInstance?.instanceId ?? 'new';
+            const pendingWake = cloud.pending?.action === 'wake'
+              && cloud.pending.target === rowTarget;
+            const watchedWake = offlineInstance
+              ? wakeWatch?.instanceId === offlineInstance.instanceId
+                && wakeWatch.deviceId === offlineInstance.deviceId
+              : cloud.instances.length === 0 && wakeWatch !== null;
+            // 折叠行代表「当前可唤醒的云端」而非一条具名实例行。任一 wake 已受理时都
+            // 必须保持 busy，避免 first-offline 顺序变化后再次点击、重复创建/唤醒资源。
+            const waking = pendingWake || watchedWake
+              || cloud.pending?.action === 'wake'
+              || wakeWatch !== null;
             return (
               <MachineMenuItem
                 icon={<CloudOff size={14} strokeWidth={2} />}
                 label={waking ? t('ccAgent.sidebar.cloud.waking') : t('ccAgent.sidebar.cloud.wake')}
                 selected={false}
                 shimmer={waking}
-                disabled={cloud.pending !== null}
+                disabled={cloud.pending !== null || wakeWatch !== null}
                 onSelect={
                   offlineInstance
                     ? () => wakeCloud(offlineInstance.instanceId, offlineInstance.deviceId)

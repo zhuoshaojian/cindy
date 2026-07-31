@@ -6905,10 +6905,7 @@
       "worktreeRepoHint": "作業ディレクトリを選び直し、右下のフォルダー表示が更新されてから再試行してください",
       "sessionInactive": "セッションはすでにアクティブではありません",
       "remoteProjectBanner": "{{device}} の {{project}} で新しいセッションを作成",
-      "remoteDialogueBanner": "{{device}} で新しい対話（プロジェクトなし）",
-      "runInCloud": "この対話をクラウドで実行",
-      "cloudOnline": "クラウド · オンライン",
-      "wakeCloud": "クラウドを起動"
+      "remoteDialogueBanner": "{{device}} で新しい対話（プロジェクトなし）"
     },
     "jumpSession": {
       "emptyId": "移動先の sessionId を入力してください",

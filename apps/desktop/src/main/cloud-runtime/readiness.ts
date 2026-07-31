@@ -3,9 +3,10 @@ import {
   type CloudBlockingReadinessComponent,
   type CloudStatusReadResult,
 } from './status.js';
+import type { CloudInstanceReadinessReason } from '../../shared/cloudInstanceIpc.js';
 
-export type CloudReadinessReason =
-  'ready' | 'missing-status' | 'corrupt-status' | 'stale-heartbeat' | 'runtime-not-ready';
+/** Runtime-local assessment is always concrete; `unknown` only exists before a control-plane observation. */
+export type CloudReadinessReason = Exclude<CloudInstanceReadinessReason, 'unknown'>;
 
 export interface CloudReadinessAssessment {
   ready: boolean;

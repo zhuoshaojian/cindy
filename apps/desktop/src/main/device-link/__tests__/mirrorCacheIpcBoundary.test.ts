@@ -108,6 +108,7 @@ vi.mock('../settings-store', () => ({
   }),
   readLastKnownDeviceNames: () => ({}),
   rememberLastKnownDeviceName: vi.fn(),
+  forgetLastKnownDeviceName: vi.fn(),
   setDeviceControlEnabled: vi.fn(),
 }));
 vi.mock('../subscriptionRefcount', () => ({

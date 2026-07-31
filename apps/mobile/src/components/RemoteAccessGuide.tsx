@@ -161,26 +161,30 @@ export function RemoteAccessGuide({
 
       {cloud.state === 'ready' ? (
         // 云端已启用:预告卡升级为行动卡。桌面全离线场景下这是手机唯一的唤醒入口。
-        <View style={styles.teaserCard} testID="home.remoteGuide.cloudReady">
-          <Cloud color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
-          <View style={styles.teaserBody}>
-            <Text style={styles.teaserTitle}>{t('deviceLink.cloudReadyTitle')}</Text>
-            <Text style={styles.teaserCopy}>{t('deviceLink.cloudReadyCopy')}</Text>
-            {cloud.onWake ? (
-              <MainWindowActionButton
-                action={{
-                  busy: cloud.waking === true,
-                  label: cloud.waking === true
-                    ? t('deviceLink.cloudWaking')
-                    : t('deviceLink.cloudWake'),
-                  onPress: cloud.onWake,
-                  testID: 'home.remoteGuide.wakeCloud',
-                  tone: 'primary',
-                }}
-                style={styles.teaserButton}
-              />
-            ) : null}
+        // 按钮提到卡片级占满整宽(与上方「重新检查」同口径):嵌在 teaserBody 列里
+        // 会被图标列挤成右偏,视觉上不居中。
+        <View style={[styles.teaserCard, styles.teaserCardStacked]} testID="home.remoteGuide.cloudReady">
+          <View style={styles.teaserHeader}>
+            <Cloud color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+            <View style={styles.teaserBody}>
+              <Text style={styles.teaserTitle}>{t('deviceLink.cloudReadyTitle')}</Text>
+              <Text style={styles.teaserCopy}>{t('deviceLink.cloudReadyCopy')}</Text>
+            </View>
           </View>
+          {cloud.onWake ? (
+            <MainWindowActionButton
+              action={{
+                busy: cloud.waking === true,
+                label: cloud.waking === true
+                  ? t('deviceLink.cloudWaking')
+                  : t('deviceLink.cloudWake'),
+                onPress: cloud.onWake,
+                testID: 'home.remoteGuide.wakeCloud',
+                tone: 'primary',
+              }}
+              style={styles.teaserButton}
+            />
+          ) : null}
         </View>
       ) : (
         <View style={styles.teaserCard} testID="home.remoteGuide.cloudTeaser">
@@ -290,6 +294,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     padding: spacing.lg,
+  },
+  // 行动卡变体:整卡竖排,按钮独立成行占满卡宽,不再被图标列挤偏。
+  teaserCardStacked: {
+    alignItems: 'stretch',
+    flexDirection: 'column',
+  },
+  teaserHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.md,
   },
   teaserBody: {
     flex: 1,

@@ -15,6 +15,8 @@
  * 与「会话内切来源」同一口径,不在本函数重复一套。
  */
 
+import { chatEligibleSourcesForModel, type ProviderView } from '@cindy/model-providers';
+
 import type { AgentCapabilities, AgentKind } from '@/hooks/useAgentCapabilities';
 import type { Effort, PermissionMode } from '@/lib/userPreferences.types';
 
@@ -159,6 +161,41 @@ export function resolveDeviceLinkDraftDefaults(
   const fastMode = Boolean(capabilities.hasFastMode && chosen.supportsFastMode && wantedFast);
 
   return { model: chosen.id, effort, fastMode, permissionMode, providerId };
+}
+
+/**
+ * seed 出的模型对目标设备无「已连接且提供该模型」的来源时,回退到该引擎下首个可路由模型。
+ *
+ * 为什么单独一步而不并进 resolveDeviceLinkDraftDefaults:后者只按 capabilities(引擎能力
+ * 全集)挑模型,是纯 capabilities 职责(见本文件头注 §providerId);而「来源是否已连接且
+ * offer 该模型」要叠加 providers 视图。被控端默认模型(如 opus-5)常在引擎能力集里、却不
+ * 被该设备任何已连接来源提供(如云端 Pod 仅连 xd 网关),此时若不回退,trigger 会显示一个
+ * 注定被发送门(chatEligibleSourcesForModel 零来源)拦下的模型 —— 用户切到该设备就撞墙。
+ *
+ * 判定与 ChatInput 发送门、ModelSelector 置灰同口径(chatEligibleSourcesForModel
+ * onlyConnected)。零已连接来源(rail 空 / 老被控端 unsupported)时不回退:此刻无从判断
+ * 「首个可用」,保持原 seed,交发送门统一处理,避免误换到同样不可用的模型。
+ * 回退命中时用 resolveDeviceLinkDraftDefaults 以新模型重解,让 effort/fast 按新模型校准。
+ */
+export function coerceModelToRoutableSource(
+  selection: DeviceLinkDraftSelection,
+  params: {
+    capabilities: AgentCapabilities;
+    remoteDraft: RemoteDraftDefaults | null;
+    providers: ProviderView[];
+    agentKind: AgentKind;
+  },
+): DeviceLinkDraftSelection {
+  const { capabilities, remoteDraft, providers, agentKind } = params;
+  const routable = (modelId: string): boolean =>
+    chatEligibleSourcesForModel(providers, modelId, agentKind, { onlyConnected: true }).length > 0;
+
+  // 当前 seed 模型已可路由,或该设备当前根本没有任何可路由模型(不 coerce,交发送门)。
+  if (routable(selection.model)) return selection;
+  const firstRoutable = capabilities.availableModels.find((model) => routable(model.id));
+  if (!firstRoutable) return selection;
+
+  return resolveDeviceLinkDraftDefaults(capabilities, remoteDraft, firstRoutable.id, agentKind);
 }
 
 /** 被控端草稿权限档仍在被控端支持列表里则带上,否则 undefined(ChatInput 回落自身默认)。 */

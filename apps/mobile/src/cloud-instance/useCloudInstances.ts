@@ -18,10 +18,16 @@ import {
   type CloudInstanceAction,
   type CloudInstancePending,
 } from '@/cloud-instance/cloudInstanceWake';
-import { getCloudInstanceMessages } from '@/cloud-instance/messages';
+import { i18n } from '@/i18n';
 
 export type CloudInstancesLoadState = 'loading' | 'ready' | 'unsupported' | 'error';
 export type { CloudInstancePending } from '@/cloud-instance/cloudInstanceWake';
+
+export const CLOUD_INSTANCE_ACTION_ERROR_KEYS = {
+  wake: 'deviceLink.cloudInstance.wakeFailed',
+  stop: 'deviceLink.cloudInstance.stopFailed',
+  delete: 'deviceLink.cloudInstance.deleteFailed',
+} as const satisfies Record<CloudInstanceAction, string>;
 
 export interface UseCloudInstances {
   instances: CloudInstanceView[];
@@ -65,20 +71,14 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
         setPending,
         requestWake: (target) => wakeCloudInstance(target, { apiFetch }),
         refresh,
-        onError: () => Alert.alert(getCloudInstanceMessages().wakeFailed),
+        onError: () => Alert.alert(i18n.t('deviceLink.cloudInstance.wakeFailed')),
       });
     },
     [apiFetch, refresh],
   );
 
   const onActionError = useCallback((action: CloudInstanceAction) => {
-    const messages = getCloudInstanceMessages();
-    const message = action === 'stop'
-      ? messages.stopFailed
-      : action === 'delete'
-        ? messages.deleteFailed
-        : messages.wakeFailed;
-    Alert.alert(message);
+    Alert.alert(i18n.t(CLOUD_INSTANCE_ACTION_ERROR_KEYS[action]));
   }, []);
 
   const stopInstance = useCallback(

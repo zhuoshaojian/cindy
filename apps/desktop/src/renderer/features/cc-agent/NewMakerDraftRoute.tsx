@@ -56,7 +56,6 @@ import {
   AddRemoteProjectDialog,
   type RemoteProjectTarget,
 } from '@/components/new-chat/AddRemoteProjectDialog';
-import { COLLABORATION_TOGGLE_ACTIVE_CLASS } from '@/components/new-chat/CollaborationModeToggle';
 import { useHasAnyRemoteTarget } from '@/hooks/useHasAnyReadyRemoteHost';
 import { useSelectableDevices } from '@/hooks/useControllableDevices';
 import { useProviderOnboarding } from '@/hooks/useProviderOnboarding';
@@ -135,21 +134,18 @@ import { useCollabProjectPolicy } from './hooks/useCollabProjectPolicy';
 import { CrossAgentConvertDialog } from '@/components/ui/cross-agent-convert-dialog';
 import type { MakerVendor } from '@/lib/ccAgent.types';
 import {
+  desktopCloudInstanceDisplayName,
   resolveDesktopCloudDeviceName,
-  translateDesktopCloudInstanceName,
 } from '@/features/cloud-instance/cloudDeviceName';
 import { useCloudInstances } from '@/features/cloud-instance/useCloudInstances';
 import {
-  deriveCloudDraftToggleState,
+  buildDraftPillDevices,
   getSingleSelectedCloudInstance,
-  resolveCloudDraftInstance,
 } from '@/features/cloud-instance/cloudDraftTarget';
 import { useSelectedMachineId } from '@/features/device-link/selectedMachineStore';
-import { describeCloudInstanceName } from '@cindy/maker-shared/cloud-instance';
+import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance';
 import {
   ChevronDown,
-  Cloud,
-  CloudOff,
   Code2,
   Hammer,
   MessageSquare,
@@ -241,6 +237,7 @@ import {
 } from '@cindy/model-providers';
 import { isSubscriptionDirectModel } from '../../../shared/subscriptionModels';
 import {
+  coerceModelToRoutableSource,
   resolveDeviceLinkDraftDefaults,
   shouldReseedDeviceLinkDraftDefaults,
   type DeviceLinkDraftSelection,
@@ -255,8 +252,6 @@ import {
 import { resolveNewMakerDraftEffort } from './newMakerDraftModelPrefs';
 import { closeAllTabs as closeRightSidebarTabs } from '@/features/right-sidebar/store';
 import { revealOrcaWorkersTab } from '@/features/right-sidebar/plugins/orca-workers/actions';
-import { Spinner } from '@/components/ui/spinner';
-import { Tooltip } from '@/components/ui/tooltip';
 
 const log = createLogger('NewMakerDraftRoute');
 const IS_MAC_PLATFORM = typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin';
@@ -307,9 +302,9 @@ function isWorktreeBranchPreferenceChannelUnsupported(error: unknown): boolean {
   return error instanceof Error
     && /\[(?:DEVICE_LINK_)?CHANNEL_NOT_ALLOWED\]/.test(error.message);
 }
-// 云端唤醒后等待 presence 上线的最长时间;本地 Docker 首启(重建 prebundle)约 90s,
-// 生产镜像更快,3 分钟覆盖慢路径后仍未上线视为唤醒失败。
-const WAKE_ACTIVATION_TIMEOUT_MS = 180_000;
+// 云端唤醒后等待 presence 上线的最长时间:与手机端 wake-watch 同一常量(共享层),
+// 本地 Docker 首启(重建 prebundle)约 90s,生产镜像更快,3 分钟覆盖慢路径。
+const WAKE_ACTIVATION_TIMEOUT_MS = CLOUD_WAKE_WATCH_TIMEOUT_MS;
 // F-COLLAB (2026-05): 老的 vendor='orca' 入口已退役,OrcaHeaderStrip 组件随之
 // 删除(它是给 isOrca 分支的 ChatInput.topSlot 用的)。Lead/Worker 协作组合现在
 // 由 ChatInput「+」菜单里的协同模式项控制,Lead 是当前 vendor 本身,
@@ -596,6 +591,7 @@ export function NewMakerDraftRoute() {
   const [manualLocalOverride, setManualLocalOverride] = useState(false);
   // wake API 成功到 relay presence online 之间保留目标意图；期间不提前把离线设备写进草稿。
   const [wakeActivation, setWakeActivation] = useState<{
+    instanceId: string;
     deviceId: string;
     deviceName: string;
   } | null>(null);
@@ -809,6 +805,10 @@ export function NewMakerDraftRoute() {
     toast.info(t('newChat.deviceSwitcher.attachmentsDropped', { count: stranded.length }));
   }, [attachmentState, t]);
   const effectiveWorkingDir = draft.workingDir;
+  const effectiveProjectNameCandidate = effectiveWorkingDir?.split(/[\\/]/).filter(Boolean).pop();
+  const effectiveProjectName = effectiveProjectNameCandidate?.trim()
+    ? effectiveProjectNameCandidate
+    : null;
   const effectiveRemoteHostId = draft.remoteHostId;
   const isRemoteProjectDraft = effectiveWorkingDir != null && effectiveRemoteHostId != null;
   // device-link:为远程设备项目新建对话(草稿带 deviceId)。与 SSH remoteHostId 互斥。
@@ -1076,42 +1076,29 @@ export function NewMakerDraftRoute() {
     ) ?? t('newChat.folderPicker.dialogue');
   const cloudNameOf = useCallback(
     (instance: { customLabel: string | null; nameSequence: number }): string =>
-      translateDesktopCloudInstanceName(
-        describeCloudInstanceName({
-          customLabel: instance.customLabel,
-          nameSequence: instance.nameSequence,
-        }),
-        t,
-      ),
+      desktopCloudInstanceDisplayName(instance, t),
     [t],
   );
   const selectedFilterCloudInstance = useMemo(
     () => getSingleSelectedCloudInstance(cloud.instances, selectedMachineId),
     [cloud.instances, selectedMachineId],
   );
-  const cloudDraftInstance = useMemo(
+  // 设备 pill 的云端行以控制面实例列表为唯一数据源;relay 的 cloud 项(含已删实例
+  // 残留的幽灵档案)在这里排除 —— 与机器切换菜单 / 手机端设备菜单同口径。
+  const pillDevices = useMemo(
     () =>
-      resolveCloudDraftInstance(
-        cloud.instances,
-        effectiveDeviceLinkDeviceId,
-        selectedMachineId,
-      ),
-    [cloud.instances, effectiveDeviceLinkDeviceId, selectedMachineId],
+      buildDraftPillDevices(selectableDevices, cloud.instances, cloud.onlineDeviceIds, cloudNameOf),
+    [selectableDevices, cloud.instances, cloud.onlineDeviceIds, cloudNameOf],
   );
-  const cloudToggleState = deriveCloudDraftToggleState({
-    loadState: cloud.loadState,
-    instance: cloudDraftInstance,
-    draftDeviceId: effectiveDeviceLinkDeviceId,
-    onlineDeviceIds: cloud.onlineDeviceIds,
-    pending: cloud.pending,
-    wakingDeviceId: wakeActivation?.deviceId ?? null,
-  });
-  const cloudToggleTooltip =
-    cloudToggleState === 'online'
-      ? t('ccAgent.draft.cloudOnline')
-      : cloudToggleState === 'local'
-        ? t('ccAgent.draft.runInCloud')
-        : t('ccAgent.draft.wakeCloud');
+  /**
+   * 「云端唤醒在途」的唯一派生:pill 的行禁点、waking 表达与 busy 全部由这一对值
+   * 供给。target 以 instanceId 为键(与 pending.target、行上的 cloudInstanceId 同键,
+   * 不再反查 deviceId);busy 同时纳入发送在途——UI 可点性必须覆盖 handler 防重
+   * 判定,否则会出现「行看着可点、点了被静默吞掉」的缝。
+   */
+  const cloudWakeTarget =
+    wakeActivation?.instanceId
+    ?? (cloud.pending?.action === 'wake' ? cloud.pending.target : null);
   const draftRightSidebar = useMemo(
     () =>
       resolveNewMakerDraftRightSidebar({
@@ -1453,6 +1440,10 @@ export function NewMakerDraftRoute() {
     // provider revision 驱逐时 hook 会保留旧快照但标 loading；必须等新代际 ready，不能用 stale
     // capabilities 把 inline handoff 或用户当前选择校准回旧目录。
     if (!capabilities || capabilitiesLoading || remoteDraftState.status !== 'ready') return;
+    // 等被控端 providers 也就绪再 seed:model 可路由回退要按 providers 判定,providers 未到
+    // 就 seed 会误判「无来源」。error / unsupported 不无限等(remoteModelListStatus 只在
+    // loading 时挂起),照常 seed 但跳过回退,交发送门统一处理。
+    if (remoteModelListStatus === 'loading') return;
     const key = `${effectiveDeviceLinkDeviceId}:${capabilityAgentKind}`;
     const newTarget = dlSeedKeyRef.current !== key;
     const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities;
@@ -1491,14 +1482,23 @@ export function NewMakerDraftRoute() {
     dlSeedKeyRef.current = key;
     dlSeedCapabilitiesRef.current = capabilities;
     if (newTarget) dlRuntimeTouchedRef.current = false;
-    setDlSel(
-      resolveDeviceLinkDraftDefaults(
-        capabilities,
-        remoteDraftState.value,
-        undefined,
-        capabilityAgentKind,
-      ),
+    let seeded = resolveDeviceLinkDraftDefaults(
+      capabilities,
+      remoteDraftState.value,
+      undefined,
+      capabilityAgentKind,
     );
+    // 被控端默认模型可能不被该设备任何已连接来源提供(如云端 Pod 仅连 xd 网关,却默认
+    // opus-5)。此时回退到该引擎首个可路由模型,避免 trigger 显示注定被发送门拦下的模型。
+    if (!deviceProvidersUnsupported) {
+      seeded = coerceModelToRoutableSource(seeded, {
+        capabilities,
+        remoteDraft: remoteDraftState.value,
+        providers,
+        agentKind: capabilityAgentKind,
+      });
+    }
+    setDlSel(seeded);
   }, [
     isDeviceLinkDraft,
     effectiveDeviceLinkDeviceId,
@@ -1506,6 +1506,9 @@ export function NewMakerDraftRoute() {
     capabilities,
     capabilitiesLoading,
     remoteDraftState,
+    remoteModelListStatus,
+    deviceProvidersUnsupported,
+    providers,
   ]);
 
   // 远程草稿展示用:已 seed 用 dlSel;seed 完成前(等隧道 / 能力)先用 capabilities 默认占位,
@@ -2202,7 +2205,7 @@ export function NewMakerDraftRoute() {
   }, [activateCloudDevice, cloud.onlineDeviceIds, wakeActivation]);
 
   // 兜底:wake 已受理但 Pod 迟迟未上线(容器启动失败等)时,超时放弃 waking 态,
-  // 按钮回落 offline 允许重试,避免永久卡在 spinner 不可点。
+  // 设备行回落为可唤醒，避免永久卡在「唤醒中」不可点。
   useEffect(() => {
     if (!wakeActivation) return;
     const timer = window.setTimeout(() => {
@@ -2212,51 +2215,26 @@ export function NewMakerDraftRoute() {
     return () => window.clearTimeout(timer);
   }, [t, wakeActivation]);
 
-  const handleCloudToggle = useCallback(() => {
-    if (cloud.pending || sendInFlightRef.current) return;
-    if (
-      cloudToggleState === 'online' &&
-      cloudDraftInstance &&
-      effectiveDeviceLinkDeviceId === cloudDraftInstance.deviceId
-    ) {
-      setManualLocalOverride(true);
-      setWakeActivation(null);
-      applyDraftTarget({ deviceId: null, deviceName: null, workingDir: null });
-      return;
-    }
-    if (
-      cloudToggleState === 'local' &&
-      cloudDraftInstance &&
-      cloud.onlineDeviceIds.has(cloudDraftInstance.deviceId)
-    ) {
-      activateCloudDevice(cloudDraftInstance.deviceId, cloudNameOf(cloudDraftInstance));
-      return;
-    }
-    if (cloudToggleState !== 'offline') return;
-
-    void cloud
-      .wake(cloudDraftInstance?.instanceId)
-      .then((result) => {
-        if (!result) return;
-        setWakeActivation({
-          deviceId: result.deviceId,
-          deviceName: cloudNameOf(result),
+  const handleCloudWake = useCallback(
+    (instanceId?: string) => {
+      if (cloud.pending || wakeActivation || sendInFlightRef.current) return;
+      void cloud
+        .wake(instanceId)
+        .then((result) => {
+          if (!result) return;
+          setWakeActivation({
+            instanceId: result.instanceId,
+            deviceId: result.deviceId,
+            deviceName: cloudNameOf(result),
+          });
+        })
+        .catch(() => {
+          setWakeActivation(null);
+          toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
         });
-      })
-      .catch(() => {
-        setWakeActivation(null);
-        toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
-      });
-  }, [
-    activateCloudDevice,
-    applyDraftTarget,
-    cloud,
-    cloudDraftInstance,
-    cloudNameOf,
-    cloudToggleState,
-    effectiveDeviceLinkDeviceId,
-    t,
-  ]);
+    },
+    [cloud.pending, cloud.wake, cloudNameOf, t, wakeActivation],
+  );
 
   // 弹窗确认添加后的落点:SSH 立即建会话 + navigate;device-link 把当前草稿指向被控端项目,
   // 首条消息发出时走既有 create-on-send 链路(见下方 isDeviceLinkDraft 分支)。
@@ -2709,17 +2687,21 @@ export function NewMakerDraftRoute() {
    *   - 反过来,首帧未就绪或 device-link 不可用(listDevices 抛错)时的空不置 loaded,不作数,
    *     避免一次抖动就把用户刚选好的设备抹掉;
    *   - 离线设备仍留在列表里(见 isSelectableDevice),所以单纯掉线不会误触发这条。
+   *   - 有效目标 = relay 可选列表 ∪ 控制面云端实例:pill 的云端行由控制面驱动
+   *     (buildDraftPillDevices),但两个数据源各有滞后窗口(实例刚建 relay 未列出 /
+   *     控制面列表还在加载),任一侧认得这台设备都不该误收敛。
    */
   useEffect(() => {
     if (!effectiveDeviceLinkDeviceId) return;
     if (!selectableDevicesLoaded) return;
     if (selectableDevices.some((d) => d.deviceId === effectiveDeviceLinkDeviceId)) return;
+    if (cloud.instances.some((instance) => instance.deviceId === effectiveDeviceLinkDeviceId)) return;
     log.warn('[new-maker] selected device is no longer selectable, falling back to local');
     // 回落 = 转移到「本机 + 对话」。这条路径原先要自己重复一遍所有清理,而且历史上正是它漏得最多
     // (chip、附件、worktree 三态都各漏过一次),还隐式依赖 seed effect 的 !isDeviceLinkDraft 分支
     // 去清远程运行配置 —— 能跑,但没人能一眼看出为什么。现在与另三条路径走同一个动作。
     applyDraftTarget({ deviceId: null, deviceName: null, workingDir: null });
-  }, [effectiveDeviceLinkDeviceId, selectableDevices, selectableDevicesLoaded, applyDraftTarget]);
+  }, [effectiveDeviceLinkDeviceId, selectableDevices, selectableDevicesLoaded, cloud.instances, applyDraftTarget]);
 
   /**
    * 换设备(#807)。**一并清掉 workingDir 与 extraDirs** —— 上一台机器的路径在新机器上
@@ -3003,6 +2985,10 @@ export function NewMakerDraftRoute() {
    * state 只负责让「发送在途」能驱动 UI 禁用(ref 变化不触发渲染)。两者一起改,别只动一个。
    */
   const [sendInFlight, setSendInFlight] = useState(false);
+  // busy 纳入发送在途/worktree 创建:UI 可点性必须覆盖 handleCloudWake 的防重判定,
+  // 否则出现「行看着可点、点了被静默吞掉」的缝(pill 的 disabled 与 guard 同源)。
+  const cloudWakeBusy =
+    cloudWakeTarget !== null || cloud.pending !== null || sendInFlight || wtCreating;
   const markSendInFlight = useCallback((value: boolean) => {
     sendInFlightRef.current = value;
     setSendInFlight(value);
@@ -4631,60 +4617,26 @@ export function NewMakerDraftRoute() {
                     : 'absolute right-0 top-[22px] z-10',
                 )}
               >
-                {cloudToggleState !== 'hidden' && (
-                  <Tooltip.Provider>
-                    <Tooltip.Root>
-                      <Tooltip.Trigger asChild>
-                        <button
-                          type="button"
-                          data-testid="create-agent-cloud-toggle"
-                          data-state={cloudToggleState}
-                          aria-label={cloudToggleTooltip}
-                          aria-pressed={cloudToggleState === 'online'}
-                          disabled={
-                            cloud.pending !== null ||
-                            cloudToggleState === 'waking' ||
-                            wtCreating ||
-                            sendInFlight
-                          }
-                          onClick={handleCloudToggle}
-                          className={cn(
-                            'relative inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full',
-                            'border border-[var(--create-agent-control-border)] bg-[var(--create-agent-control-bg)]',
-                            'text-[var(--create-agent-control-icon)] transition-colors',
-                            'hover:bg-[var(--create-agent-control-bg-hover)] active:bg-[var(--create-agent-control-bg-pressed)]',
-                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--create-agent-focus-ring)]',
-                            'disabled:cursor-not-allowed disabled:opacity-60',
-                            cloudToggleState === 'online' && COLLABORATION_TOGGLE_ACTIVE_CLASS,
-                            cloudToggleState === 'local' && 'text-[var(--text-primary)]',
-                            (cloudToggleState === 'offline' || cloudToggleState === 'waking') &&
-                              'text-[var(--text-secondary)]',
-                          )}
-                        >
-                          {cloudToggleState === 'waking' ? (
-                            <Spinner size={14} strokeWidth={2} />
-                          ) : cloudToggleState === 'offline' ? (
-                            <CloudOff size={14} strokeWidth={2} />
-                          ) : (
-                            <Cloud size={14} strokeWidth={2} />
-                          )}
-                        </button>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content side="bottom">{cloudToggleTooltip}</Tooltip.Content>
-                    </Tooltip.Root>
-                  </Tooltip.Provider>
-                )}
                 {/* 设备切换器(#807):设备是一级维度,排在 mode pill 左边;没有对端设备时
-                    组件自己返回 null —— 只有本机的用户看不到任何新增控件。 */}
+                    通常由组件自己返回 null；云端 ready 且 0 实例时保留首次唤醒入口。 */}
                 <DeviceSwitcherPill
-                  devices={selectableDevices}
+                  devices={pillDevices}
                   value={effectiveDeviceLinkDeviceId ?? null}
                   onChange={handleDeviceChange}
                   open={devicePickerOpen}
                   onOpenChange={handleDevicePickerOpenChange}
                   // 窄屏 pill 排会进正常流并 flex-wrap;多台时收成图标 + 状态点少占一行。
-                  compact={isDraftNarrow && selectableDevices.length > 1}
+                  compact={isDraftNarrow && pillDevices.length > 1}
                   disabled={wtCreating || sendInFlight}
+                  cloudWake={
+                    cloud.loadState === 'ready'
+                      ? {
+                          busy: cloudWakeBusy,
+                          wakingTarget: cloudWakeTarget,
+                          onWake: handleCloudWake,
+                        }
+                      : undefined
+                  }
                 />
                 <FolderPickerPopover
                   open={folderPickerOpen}
@@ -4759,26 +4711,6 @@ export function NewMakerDraftRoute() {
               <div
                 className={cn('flex w-full flex-col items-start gap-0', isDraftNarrow && 'order-3')}
               >
-                {/* device-link:为远程设备项目新建对话时的明显标识。让用户清楚这条对话会建在
-                    被控设备上、属于那台机器的项目,而不是本机。 */}
-                {isDeviceLinkDraft && (
-                  <div className="mb-3 flex max-w-full items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--surface-chip)] px-3 py-1 text-xs text-[var(--text-secondary)]">
-                    <MonitorSmartphone
-                      size={14}
-                      strokeWidth={2}
-                      className="shrink-0 text-[var(--folder-item-icon)]"
-                    />
-                    <span className="min-w-0 truncate">
-                      {t('ccAgent.draft.remoteProjectBanner', {
-                        device: effectiveDeviceLinkDisplayName ?? effectiveDeviceLinkDeviceId ?? '',
-                        project:
-                          effectiveWorkingDir?.split(/[\\/]/).filter(Boolean).pop() ??
-                          effectiveWorkingDir ??
-                          '',
-                      })}
-                    </span>
-                  </div>
-                )}
                 <div className="w-full">
                   <ChatInput
                     onSend={handleSend}
@@ -4912,17 +4844,15 @@ export function NewMakerDraftRoute() {
                     <span className="min-w-0 truncate">
                       {/* 有项目走原文案;跨设备纯对话没有 project 可填(#807),原句写死了
                           「的 {{project}} 中」会留个空洞,所以走另一条无项目文案。 */}
-                      {effectiveWorkingDir
+                      {effectiveProjectName
                         ? t('ccAgent.draft.remoteProjectBanner', {
                             device:
-                              effectiveDeviceLinkDeviceName ?? effectiveDeviceLinkDeviceId ?? '',
-                            project:
-                              effectiveWorkingDir.split(/[\\/]/).filter(Boolean).pop() ??
-                              effectiveWorkingDir,
+                              effectiveDeviceLinkDisplayName ?? effectiveDeviceLinkDeviceId ?? '',
+                            project: effectiveProjectName,
                           })
                         : t('ccAgent.draft.remoteDialogueBanner', {
                             device:
-                              effectiveDeviceLinkDeviceName ?? effectiveDeviceLinkDeviceId ?? '',
+                              effectiveDeviceLinkDisplayName ?? effectiveDeviceLinkDeviceId ?? '',
                           })}
                     </span>
                   </div>

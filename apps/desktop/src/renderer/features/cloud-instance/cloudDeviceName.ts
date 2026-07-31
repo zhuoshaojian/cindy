@@ -1,10 +1,25 @@
-import type { CloudInstanceNameDescriptor } from '@cindy/maker-shared/cloud-instance';
+import {
+  describeCloudInstanceName,
+  type CloudInstanceNameDescriptor,
+  type CloudInstanceNameMetadata,
+} from '@cindy/maker-shared/cloud-instance';
 import {
   CLOUD_DEVICE_NAME_SENTINEL,
   parseCloudDeviceName,
 } from '@cindy/maker-shared/device-list';
 
 export type CloudDeviceNameTranslator = (key: string) => string;
+
+/**
+ * 控制面实例 → 展示名的一步到位入口(describe + translate)。
+ * 机器切换菜单与创建页此前各自手拼这两步,收敛到这里。
+ */
+export function desktopCloudInstanceDisplayName(
+  instance: CloudInstanceNameMetadata,
+  translate: CloudDeviceNameTranslator,
+): string {
+  return translateDesktopCloudInstanceName(describeCloudInstanceName(instance), translate);
+}
 
 /** Single desktop i18n endpoint for control-plane and relay cloud names. */
 export function translateDesktopCloudInstanceName(

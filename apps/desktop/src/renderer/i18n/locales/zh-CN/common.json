@@ -6901,10 +6901,7 @@
       "worktreeRepoHint": "可尝试重新选一次工作目录，等右下角文件夹标识刷新后再试",
       "sessionInactive": "任务已不再处于活跃状态",
       "remoteProjectBanner": "在 {{device}} 的 {{project}} 中新建任务",
-      "remoteDialogueBanner": "在 {{device}} 上新建对话（不绑定项目）",
-      "runInCloud": "在云端运行此对话",
-      "cloudOnline": "云端 · 在线",
-      "wakeCloud": "点击唤醒云端"
+      "remoteDialogueBanner": "在 {{device}} 上新建对话（不绑定项目）"
     },
     "jumpSession": {
       "emptyId": "请输入要跳转的任务 ID",

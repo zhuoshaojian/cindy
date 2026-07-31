@@ -72,7 +72,7 @@ describe('mobile controllable device filter', () => {
     expect(source).toContain('onLongPress={');
     expect(source).toContain('cloudInstances.stopInstance');
     expect(source).toContain('cloudInstances.deleteInstance');
-    expect(source).toContain('messages.deleteConfirmDescription');
+    expect(source).toContain("t('deviceLink.cloudInstance.deleteConfirmDescription')");
     expect(source).not.toContain('cloudWakeItems');
   });
 

@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 import { resolveMobileDeviceDisplayName, sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import { formatCloudDeviceName } from '@cindy/maker-shared/device-list';
+import { i18n } from '@/i18n';
 
 const cloud = {
   busy: false,
@@ -16,28 +17,36 @@ const cloud = {
   selfName: 'Cloud',
 };
 
+const previousLanguage = i18n.language;
+
+afterAll(async () => {
+  await i18n.changeLanguage(previousLanguage);
+});
+
 describe('mobile cloud device presentation', () => {
   it.each([
     ['zh-CN', '云端'],
-    ['en-US', 'Cloud'],
-    ['ja-JP', 'クラウド'],
-    ['ko-KR', '클라우드'],
-  ])('localizes the cloud self-name for %s viewers', (languageCode, expected) => {
-    expect(resolveMobileDeviceDisplayName(cloud, languageCode)).toBe(expected);
+    ['en', 'Cloud'],
+    ['ja', 'クラウド'],
+    ['ko', '클라우드'],
+  ])('localizes the cloud self-name for the %s app catalog', async (locale, expected) => {
+    await i18n.changeLanguage(locale);
+    expect(resolveMobileDeviceDisplayName(cloud)).toBe(expected);
   });
 
   it('keeps a manually renamed cloud device unchanged', () => {
-    expect(resolveMobileDeviceDisplayName({ ...cloud, name: '工作 Pod' }, 'zh-CN')).toBe('工作 Pod');
+    expect(resolveMobileDeviceDisplayName({ ...cloud, name: '工作 Pod' })).toBe('工作 Pod');
   });
 
   it.each([
     ['zh-CN', '云端'],
-    ['en-US', 'Cloud'],
-    ['ja-JP', 'クラウド'],
-    ['ko-KR', '클라우드'],
-  ])('ignores a cloud ordinal when localizing for %s viewers', (languageCode, expected) => {
+    ['en', 'Cloud'],
+    ['ja', 'クラウド'],
+    ['ko', '클라우드'],
+  ])('ignores a cloud ordinal for the %s app catalog', async (locale, expected) => {
+    await i18n.changeLanguage(locale);
     const name = formatCloudDeviceName(3);
-    expect(resolveMobileDeviceDisplayName({ ...cloud, name, selfName: name }, languageCode)).toBe(expected);
+    expect(resolveMobileDeviceDisplayName({ ...cloud, name, selfName: name })).toBe(expected);
   });
 
   it('keeps ordinary devices unchanged', () => {

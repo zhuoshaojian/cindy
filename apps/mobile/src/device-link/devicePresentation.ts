@@ -3,50 +3,26 @@ import {
   parseCloudDeviceName,
   type DeviceListDeviceLike,
 } from '@cindy/maker-shared/device-list';
+import { i18n } from '@/i18n';
 
 /** Marker-aware device presentation helpers shared by mobile selectors. */
 export interface CloudMarkedDevice {
   kind?: 'cloud';
 }
 
-export const CLOUD_DEVICE_NAMES = {
-  en: 'Cloud',
-  ja: 'クラウド',
-  ko: '클라우드',
-  zh: '云端',
-} as const;
-
-export type MobileLanguageBucket = keyof typeof CLOUD_DEVICE_NAMES;
-
-/** Render a cloud-device marker with the viewer's mobile language. */
-export function formatMobileCloudDeviceName(
-  languageCode?: string | null,
-): string {
-  return CLOUD_DEVICE_NAMES[resolveMobileLanguageBucket(languageCode)];
-}
-
-/** Fold a BCP-47 language code into mobile's supported translation buckets. */
-export function resolveMobileLanguageBucket(
-  languageCode?: string | null,
-): MobileLanguageBucket {
-  const normalized = languageCode?.toLowerCase() ?? '';
-  if (normalized.startsWith('zh')) return 'zh';
-  if (normalized.startsWith('ja')) return 'ja';
-  if (normalized.startsWith('ko')) return 'ko';
-  return 'en';
+/** Render a cloud-device marker with the app's active language preference. */
+export function formatMobileCloudDeviceName(): string {
+  return i18n.t('deviceLink.cloudInstance.cloud');
 }
 
 type DevicePresentationInput = Pick<DeviceListDeviceLike, 'name' | 'selfName' | 'deviceInfo'>;
 
-/** Resolve the cloud self-name sentinel using the viewer's language code. */
-export function resolveMobileDeviceDisplayName(
-  device: DevicePresentationInput,
-  languageCode?: string | null,
-): string {
+/** Resolve the cloud self-name sentinel using the app's active language preference. */
+export function resolveMobileDeviceDisplayName(device: DevicePresentationInput): string {
   const name = deviceDisplayName(device);
   const marker = parseCloudDeviceName(name);
   return marker
-    ? formatMobileCloudDeviceName(languageCode)
+    ? formatMobileCloudDeviceName()
     : name;
 }
 

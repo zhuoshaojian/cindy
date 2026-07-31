@@ -1,5 +1,4 @@
 import { useFocusEffect } from 'expo-router';
-import { getLocales } from 'expo-localization';
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -45,7 +44,6 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useAuth } from '@/auth/AuthContext';
 import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@/cloud-instance/cloudInstanceWake';
-import { getCloudInstanceMessages } from '@/cloud-instance/messages';
 import { useCloudInstances, type UseCloudInstances } from '@/cloud-instance/useCloudInstances';
 import type { CloudInstanceView } from '@/api/cloudInstance';
 import { configureCollapseAnimation } from '@/utils/collapseAnimation';
@@ -273,8 +271,6 @@ export default function HomeScreen() {
   }, [rawDeviceConnectionStates, unresponsiveDevices]);
   const [scheduleIndex, setScheduleIndex] = useState<Map<string, RemoteSessionScheduleInfo>>(() => new Map());
   const scheduleMirrorInvalidations = useRemoteScheduleMirrorInvalidations();
-  const viewerLanguageCode = useMemo(() => getLocales()[0]?.languageCode, []);
-
   const updateDeviceConnectionState = useCallback((deviceId: string, state: HomeDeviceConnectionState) => {
     setDeviceConnectionStates((current) => updateHomeDeviceConnectionState(current, deviceId, state));
   }, []);
@@ -339,7 +335,7 @@ export default function HomeScreen() {
   }, [invoke]);
 
   const hydrateDeviceSessions = useCallback(async (device: DeviceView): Promise<HydrateDeviceSessionsResult> => {
-    const displayName = resolveMobileDeviceDisplayName(device, viewerLanguageCode);
+    const displayName = resolveMobileDeviceDisplayName(device);
     updateDeviceConnectionState(device.deviceId, 'syncing');
     try {
       const [list, activeSessions, activeSessionSnapshotEpoch] = await withTransientRemoteRetry(async () => {
@@ -398,7 +394,7 @@ export default function HomeScreen() {
         offline,
       };
     }
-  }, [homeCacheUserId, invoke, markDeviceOffline, refreshDeviceScheduleIndex, statusFilter, subscribe, updateDeviceConnectionState, viewerLanguageCode]);
+  }, [homeCacheUserId, invoke, markDeviceOffline, refreshDeviceScheduleIndex, statusFilter, subscribe, t, updateDeviceConnectionState]);
 
   const loadHome = useCallback(async (options: { visible?: boolean } = {}) => {
     if (!deviceIdentityCacheReady) return;
@@ -772,48 +768,57 @@ export default function HomeScreen() {
     const result = await cloudInstances.stopInstance(instance.instanceId);
     if (!result) return;
     void loadHome({ visible: false });
-    Alert.alert(getCloudInstanceMessages(viewerLanguageCode).stopped);
-  }, [cloudInstances, loadHome, viewerLanguageCode]);
+    Alert.alert(t('deviceLink.cloudInstance.stopped'));
+  }, [cloudInstances, loadHome, t]);
 
   const runCloudDelete = useCallback(async (instance: CloudInstanceView) => {
     const result = await cloudInstances.deleteInstance(instance.instanceId);
     if (!result) return;
     void loadHome({ visible: false });
-    Alert.alert(getCloudInstanceMessages(viewerLanguageCode).deleted);
-  }, [cloudInstances, loadHome, viewerLanguageCode]);
+    Alert.alert(t('deviceLink.cloudInstance.deleted'));
+  }, [cloudInstances, loadHome, t]);
 
   const confirmCloudDelete = useCallback((instance: CloudInstanceView) => {
-    const messages = getCloudInstanceMessages(viewerLanguageCode);
-    Alert.alert(messages.deleteConfirmTitle, messages.deleteConfirmDescription, [
-      { style: 'cancel', text: messages.cancel },
-      {
-        onPress: () => void runCloudDelete(instance),
-        style: 'destructive',
-        text: messages.deleteConfirm,
-      },
-    ]);
-  }, [runCloudDelete, viewerLanguageCode]);
+    Alert.alert(
+      t('deviceLink.cloudInstance.deleteConfirmTitle'),
+      t('deviceLink.cloudInstance.deleteConfirmDescription'),
+      [
+        { style: 'cancel', text: t('devices.common.cancel') },
+        {
+          onPress: () => void runCloudDelete(instance),
+          style: 'destructive',
+          text: t('deviceLink.cloudInstance.deleteConfirm'),
+        },
+      ],
+    );
+  }, [runCloudDelete, t]);
 
   const openCloudInstanceActions = useCallback((instance: CloudInstanceView) => {
     const descriptor = describeCloudInstanceName(instance);
-    const messages = getCloudInstanceMessages(viewerLanguageCode);
     const name = descriptor.kind === 'custom'
       ? descriptor.label
-      : messages.cloud;
+      : t('deviceLink.cloudInstance.cloud');
     // DeviceMenuModal 关闭后再弹系统 Alert,与重命名/撤销提示共用同一兄弟 Modal 时序。
     pendingMenuActionRef.current = () => {
-      Alert.alert(messages.manageTitle(name), messages.manageDescription, [
-        { style: 'cancel', text: messages.cancel },
-        { onPress: () => void runCloudStop(instance), text: messages.stop },
-        {
-          onPress: () => confirmCloudDelete(instance),
-          style: 'destructive',
-          text: messages.delete,
-        },
-      ]);
+      Alert.alert(
+        t('deviceLink.cloudInstance.manageTitle', { name }),
+        t('deviceLink.cloudInstance.manageDescription'),
+        [
+          { style: 'cancel', text: t('devices.common.cancel') },
+          {
+            onPress: () => void runCloudStop(instance),
+            text: t('deviceLink.cloudInstance.stop'),
+          },
+          {
+            onPress: () => confirmCloudDelete(instance),
+            style: 'destructive',
+            text: t('deviceLink.cloudInstance.delete'),
+          },
+        ],
+      );
     };
     setDeviceMenuOpen(false);
-  }, [confirmCloudDelete, runCloudStop, viewerLanguageCode]);
+  }, [confirmCloudDelete, runCloudStop, t]);
 
   // 菜单 Modal 完全关闭(淡出结束 + 卸载)后,执行延后的弹窗动作。
   const handleDeviceMenuClosed = useCallback(() => {
@@ -878,9 +883,9 @@ export default function HomeScreen() {
   const displayDevices = useMemo(
     () => devices.map((device) => ({
       ...device,
-      name: resolveMobileDeviceDisplayName(device, viewerLanguageCode),
+      name: resolveMobileDeviceDisplayName(device),
     })),
-    [devices, viewerLanguageCode],
+    [devices, t],
   );
   const deviceRows = useMemo(
     () => toDeviceListItems(displayDevices, Date.now(), revokedDevices),
@@ -1106,10 +1111,9 @@ export default function HomeScreen() {
       (instance) => instance.deviceId === selectedDeviceId,
     );
     if (cloudInstance) {
-      const messages = getCloudInstanceMessages(viewerLanguageCode);
       const descriptor = describeCloudInstanceName(cloudInstance);
       if (descriptor.kind === 'custom') return descriptor.label;
-      return messages.cloud;
+      return t('deviceLink.cloudInstance.cloud');
     }
     // 设备列表尚未同步回来时,用偏好里存的设备名兜底,避免冷启动表头闪占位文案。
     return home.deviceFilters.find((item) => item.deviceId === selectedDeviceId)?.label
@@ -1121,7 +1125,6 @@ export default function HomeScreen() {
     restoredDeviceName,
     selectedDeviceId,
     t,
-    viewerLanguageCode,
   ]);
   const avatarLabel = useMemo(() => {
     const trimmed = user?.name?.trim() || user?.email?.trim() || 'D';
@@ -1751,7 +1754,6 @@ export default function HomeScreen() {
           void saveHomeViewPreferences({ groupByProject: next });
         }}
         topOffset={insets.top + (headerHeight ?? HOME_HEADER_MIN_HEIGHT)}
-        viewerLanguageCode={viewerLanguageCode}
         visible={deviceMenuOpen}
       />
       <RenameDeviceModal
@@ -1812,7 +1814,6 @@ function DeviceMenuModal({
   onlineDeviceIds,
   selectedDeviceId,
   topOffset,
-  viewerLanguageCode,
   visible,
 }: {
   cloud: UseCloudInstances;
@@ -1835,7 +1836,6 @@ function DeviceMenuModal({
   onlineDeviceIds: ReadonlySet<string>;
   selectedDeviceId: string | null;
   topOffset: number;
-  viewerLanguageCode: string | null | undefined;
   visible: boolean;
 }) {
   const styles = useThemedStyles(makeStyles);
@@ -1873,10 +1873,16 @@ function DeviceMenuModal({
     [filters, cloudDeviceIds, cloudInstanceDeviceIds],
   );
   // 本组件随父级每次渲染执行(visible 只控制原生 Modal 显隐),云端派生全部 memo,
-  // 让开销只随数据变化而不是随父级重渲染频率。语言码由父级算好传入,不重复查系统 locale。
+  // 让开销只随数据变化而不是随父级重渲染频率。文案跟随 app 内当前语言偏好。
   const cloudMessages = useMemo(
-    () => getCloudInstanceMessages(viewerLanguageCode),
-    [viewerLanguageCode],
+    () => ({
+      cloud: t('deviceLink.cloudInstance.cloud'),
+      deleting: t('deviceLink.cloudInstance.deleting'),
+      stopping: t('deviceLink.cloudInstance.stopping'),
+      wake: t('deviceLink.cloudWake'),
+      waking: t('deviceLink.cloudWaking'),
+    }),
+    [t],
   );
   // 云端命名与 filter DTO 构造各自单一来源:cloudItems 与「首次唤醒成功」分支共用,
   // MobileHomeDeviceFilterItem 加字段时只需改这一处。

@@ -1,17 +1,50 @@
-/**
- * New Maker 云端目标按钮的纯状态机。
- *
- * 控制面实例列表负责稳定身份，relay presence 只负责 online 判定；这里不发请求，
- * 只把草稿目标、机器过滤和云端 pending 收敛为 renderer 可直接消费的四态。
- */
-import type {
-  CloudInstancePendingState,
-  CloudInstancesLoadState,
-  CloudInstanceView,
-} from './useCloudInstances';
+/** New Maker 设备 pill 的云端数据投影。 */
+import type { CloudInstanceView } from './useCloudInstances';
 import { MACHINE_ALL, type MachineSelection } from '@/features/device-link/selectedMachineStore';
+import type { SelectableDevice } from '@/hooks/useControllableDevices';
 
-export type CloudDraftToggleState = 'hidden' | 'local' | 'online' | 'offline' | 'waking';
+/**
+ * 设备 pill 的行模型:判别联合让「是云端」⟺「必带 instanceId」在类型上成立,
+ * 消费端 `kind === 'cloud'` 收窄后即可直接取 cloudInstanceId 发起精确唤醒,
+ * 不必再运行时判空(那正是误把普通离线行接上唤醒回调的温床)。
+ */
+export type DraftPillDevice =
+  | (SelectableDevice & { kind?: undefined; cloudInstanceId?: undefined })
+  | (SelectableDevice & { kind: 'cloud'; cloudInstanceId: string });
+
+/**
+ * 创建页设备 pill 的设备列表:云端行以**控制面实例列表**为唯一数据源;relay 列表
+ * 中的 cloud 项(含已删实例残留的幽灵档案)全部排除,防止幽灵行或同一实例双行。
+ * 与手机端设备菜单同口径的双集合排除,各防一种不一致窗口:kind 标记按 relay 的
+ * `kind==='cloud'` 排(控制面列表未返回/延迟时兜底),实例 deviceId 集按控制面排
+ * (relay 侧 kind 标记缺失或尚未上报时兜底)。
+ *
+ * 每个实例恰好一行:online 由 relay presence 决定；offline 云端行仍可点击，
+ * DeviceSwitcherPill 用 cloudInstanceId 发起唤醒。普通离线设备仍保持禁用。
+ */
+export function buildDraftPillDevices(
+  selectable: readonly SelectableDevice[],
+  instances: readonly CloudInstanceView[],
+  onlineDeviceIds: ReadonlySet<string>,
+  cloudNameOf: (instance: CloudInstanceView) => string,
+): DraftPillDevice[] {
+  const instanceDeviceIds = new Set(instances.map((instance) => instance.deviceId));
+  const rows: DraftPillDevice[] = selectable.filter(
+    (device): device is SelectableDevice & { kind?: undefined } =>
+      device.kind !== 'cloud' && !instanceDeviceIds.has(device.deviceId),
+  );
+  for (const instance of instances) {
+    rows.push({
+      deviceId: instance.deviceId,
+      name: cloudNameOf(instance),
+      platform: null,
+      online: onlineDeviceIds.has(instance.deviceId),
+      kind: 'cloud',
+      cloudInstanceId: instance.instanceId,
+    });
+  }
+  return rows;
+}
 
 /** 机器过滤恰好单选一台云端设备时，返回对应实例；多选 / 本机 / 所有均不隐式选云端。 */
 export function getSingleSelectedCloudInstance(
@@ -20,44 +53,4 @@ export function getSingleSelectedCloudInstance(
 ): CloudInstanceView | null {
   if (selection === MACHINE_ALL || selection.length !== 1) return null;
   return instances.find((instance) => instance.deviceId === selection[0]) ?? null;
-}
-
-/**
- * 按“草稿当前目标 → 机器过滤单选 → 控制面首实例”的优先级选按钮所代表的实例。
- * 单实例阶段通常只有最后一条路径；前两条确保草稿与全局过滤不会被列表顺序覆盖。
- */
-export function resolveCloudDraftInstance(
-  instances: readonly CloudInstanceView[],
-  draftDeviceId: string | null | undefined,
-  selection: MachineSelection,
-): CloudInstanceView | null {
-  if (draftDeviceId) {
-    const current = instances.find((instance) => instance.deviceId === draftDeviceId);
-    if (current) return current;
-  }
-  return getSingleSelectedCloudInstance(instances, selection) ?? instances[0] ?? null;
-}
-
-export function deriveCloudDraftToggleState(input: {
-  loadState: CloudInstancesLoadState;
-  instance: CloudInstanceView | null;
-  draftDeviceId: string | null | undefined;
-  onlineDeviceIds: ReadonlySet<string>;
-  pending: CloudInstancePendingState;
-  /** wake 请求已受理但 presence 尚未上线的目标设备;IPC 返回后到 online 之间靠它维持 waking。 */
-  wakingDeviceId?: string | null;
-}): CloudDraftToggleState {
-  if (input.loadState !== 'ready') return 'hidden';
-
-  const waking =
-    (input.pending?.action === 'wake' &&
-      (input.pending.target === 'new' ||
-        (input.instance != null && input.pending.target === input.instance.instanceId))) ||
-    (input.wakingDeviceId != null && !input.onlineDeviceIds.has(input.wakingDeviceId));
-  if (waking) return 'waking';
-
-  // 0 实例仍保留首次唤醒入口；视觉与休眠实例同为“点击唤醒”。
-  if (!input.instance) return 'offline';
-  if (!input.onlineDeviceIds.has(input.instance.deviceId)) return 'offline';
-  return input.draftDeviceId === input.instance.deviceId ? 'online' : 'local';
 }
