@@ -22,6 +22,8 @@
     "updateAvailableOpenDetails": "{{label}}にアップデートがあります。詳細を開く",
     "updateAvailableTag": "アップデートあり · {{tag}}",
     "updateSectionTitle": "アップデート",
+    "currentVersion": "現在のバージョン {{version}}",
+    "currentVersionUpToDate": "現在のバージョン {{version}} · 最新版です",
     "upToDate": "最新版です",
     "updateRolledBack": "前回のアップデートに失敗し、自動的にロールバックされました。",
     "update": "クラウドをアップデート",

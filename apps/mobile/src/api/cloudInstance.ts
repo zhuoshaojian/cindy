@@ -13,6 +13,7 @@ export interface CloudInstanceUpgradeStatus {
 
 /** Client-facing status fields used by the mobile cloud controls. */
 export interface CloudInstanceStatus {
+  image: string | null;
   updateAvailable: boolean;
   latestReleaseTag: string | null;
   lastFailedUpgradeImage: string | null;
@@ -249,6 +250,10 @@ function parseCloudInstanceStatus(value: unknown): CloudInstanceStatus {
     rawState === 'verifying' || rawState === 'rolled-back' ? rawState : 'idle';
   return {
     ...value,
+    image:
+      typeof value.image === 'string' && value.image.trim()
+        ? value.image.trim()
+        : null,
     updateAvailable: value.updateAvailable === true,
     latestReleaseTag:
       typeof value.latestReleaseTag === 'string' && value.latestReleaseTag.trim()

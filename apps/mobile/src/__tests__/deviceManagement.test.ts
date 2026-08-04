@@ -55,6 +55,9 @@ describe('device management route and cloud action state', () => {
     expect(source).toContain('void refreshCloudInstances();');
     expect(source).toContain('cloud.instances.find((item) => item.deviceId === deviceId)');
     expect(source).toContain("t('deviceLink.cloudInstance.updateConfirmDescription')");
+    expect(source).toContain('parseCloudInstanceImageTag(status?.image ?? fallbackImage)');
+    expect(source).toContain('testID="deviceManagement.cloudCurrentVersion"');
+    expect(source).toContain("t('deviceLink.cloudInstance.currentVersionUpToDate'");
     expect(source).toContain("t('deviceLink.cloudInstance.deleteConfirmDescription')");
     expect(source).toContain("testID: 'deviceManagement.cloudUpdate'");
     expect(source).toContain("testID: 'deviceManagement.cloudDelete'");
@@ -72,6 +75,7 @@ describe('device management route and cloud action state', () => {
         instanceId: 'cloud-instance-a',
         nameSequence: 1,
         status: {
+          image: 'registry.example/cindy-cloud:0.1.6@sha256:abc',
           lastFailedUpgradeImage: null,
           latestReleaseTag: '0.1.6',
           updateAvailable: true,
@@ -87,6 +91,7 @@ describe('device management route and cloud action state', () => {
       cloudInstanceId: 'cloud-instance-a',
       cpuLabel: 'Xeon',
       deviceId: 'cloud-device-a',
+      image: 'registry.example/cindy-cloud:0.1.6@sha256:abc',
       kind: 'cloud',
       latestReleaseTag: '0.1.6',
       memoryGb: '4',

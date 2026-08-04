@@ -9,6 +9,7 @@ export default function DeviceManagementRoute() {
     online?: string;
     cloudInstanceId?: string;
     cpuLabel?: string;
+    image?: string;
     kind?: string;
     latestReleaseTag?: string;
     lastFailedUpgradeImage?: string;
@@ -24,6 +25,7 @@ export default function DeviceManagementRoute() {
       cloudInstanceId={readRouteString(params.cloudInstanceId) ?? undefined}
       cpuLabel={readRouteString(params.cpuLabel) ?? undefined}
       deviceId={readRouteString(params.deviceId) ?? ''}
+      image={readRouteString(params.image) ?? undefined}
       kind={readRouteString(params.kind) ?? undefined}
       latestReleaseTag={readRouteString(params.latestReleaseTag) ?? undefined}
       lastFailedUpgradeImage={readRouteString(params.lastFailedUpgradeImage) ?? undefined}

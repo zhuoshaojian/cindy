@@ -11,6 +11,22 @@ export type CloudInstancePending = {
   action: CloudInstanceAction;
 } | null;
 
+/** Whether the selected cloud device should replace cached tasks with a waking placeholder. */
+export function isSelectedCloudInstanceWaking(input: {
+  deviceId: string | null;
+  instanceId: string | null;
+  online: boolean;
+  pending: CloudInstancePending;
+  wakeWatchDeviceId: string | null;
+}): boolean {
+  if (!input.deviceId || !input.instanceId || input.online) return false;
+  return input.wakeWatchDeviceId === input.deviceId
+    || (
+      input.pending?.action === 'wake'
+      && input.pending.target === input.instanceId
+    );
+}
+
 interface PendingRef {
   current: CloudInstancePending;
 }

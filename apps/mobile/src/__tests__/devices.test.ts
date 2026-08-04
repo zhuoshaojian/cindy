@@ -190,6 +190,7 @@ describe('mobile controllable device filter', () => {
       instanceId: 'cloud-instance',
       nameSequence: 1,
       status: {
+        image: 'registry.example/cindy-cloud:0.1.6',
         lastFailedUpgradeImage: null,
         latestReleaseTag: '0.1.6',
         updateAvailable: true,

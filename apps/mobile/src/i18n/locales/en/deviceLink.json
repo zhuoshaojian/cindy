@@ -22,6 +22,8 @@
     "updateAvailableOpenDetails": "Update available for {{label}}. Open details.",
     "updateAvailableTag": "Update Available · {{tag}}",
     "updateSectionTitle": "Updates",
+    "currentVersion": "Current version {{version}}",
+    "currentVersionUpToDate": "Current version {{version}} · Up to date",
     "upToDate": "Up to date",
     "updateRolledBack": "The last update failed and was rolled back automatically.",
     "update": "Update Cloud",

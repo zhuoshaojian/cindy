@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  isSelectedCloudInstanceWaking,
   runCloudInstanceAction,
   runCloudInstanceWake,
   type CloudInstancePending,
 } from '@/cloud-instance/cloudInstanceWake';
 
 const cloudStatus = {
+  image: null,
   updateAvailable: false,
   latestReleaseTag: null,
   lastFailedUpgradeImage: null,
@@ -17,6 +19,40 @@ const cloudStatus = {
     deadlineAtMs: null,
   },
 };
+
+describe('selected cloud waking placeholder', () => {
+  const base = {
+    deviceId: 'device-1',
+    instanceId: 'instance-1',
+    online: false,
+    pending: null,
+    wakeWatchDeviceId: null,
+  } as const;
+
+  it('covers the matching wake request and accepted wake-watch window', () => {
+    expect(isSelectedCloudInstanceWaking({
+      ...base,
+      pending: { action: 'wake', target: 'instance-1' },
+    })).toBe(true);
+    expect(isSelectedCloudInstanceWaking({
+      ...base,
+      wakeWatchDeviceId: 'device-1',
+    })).toBe(true);
+  });
+
+  it('does not hide tasks for online, unrelated, or idle cloud devices', () => {
+    expect(isSelectedCloudInstanceWaking({
+      ...base,
+      online: true,
+      wakeWatchDeviceId: 'device-1',
+    })).toBe(false);
+    expect(isSelectedCloudInstanceWaking({
+      ...base,
+      pending: { action: 'wake', target: 'instance-2' },
+    })).toBe(false);
+    expect(isSelectedCloudInstanceWaking(base)).toBe(false);
+  });
+});
 
 describe('runCloudInstanceWake', () => {
   it('blocks duplicate wake taps while pending and refreshes after success', async () => {

@@ -4,6 +4,7 @@ import type { CloudInstanceApiFetch } from '@/api/cloudInstance';
 function normalizedStatus(patch: Record<string, unknown> = {}) {
   return {
     ...patch,
+    image: typeof patch.image === 'string' && patch.image.trim() ? patch.image.trim() : null,
     updateAvailable: patch.updateAvailable === true,
     latestReleaseTag: typeof patch.latestReleaseTag === 'string' ? patch.latestReleaseTag : null,
     lastFailedUpgradeImage:
@@ -44,7 +45,10 @@ describe('mobile cloud-instance API', () => {
           deviceId: 'device-1',
           nameSequence: 2,
           customLabel: null,
-          status: { runtimeState: 'stopped' },
+          status: {
+            image: ' registry.example/public/cindy-cloud:0.1.7@sha256:abc ',
+            runtimeState: 'stopped',
+          },
         },
       ],
     }));
@@ -60,7 +64,10 @@ describe('mobile cloud-instance API', () => {
             deviceId: 'device-1',
             nameSequence: 2,
             customLabel: null,
-            status: normalizedStatus({ runtimeState: 'stopped' }),
+            status: normalizedStatus({
+              image: 'registry.example/public/cindy-cloud:0.1.7@sha256:abc',
+              runtimeState: 'stopped',
+            }),
           },
         ],
       },

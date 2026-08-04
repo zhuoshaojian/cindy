@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { parseCloudInstanceImageTag } from '@cindy/maker-shared/cloud-instance';
 
 import { Text, TextInput } from '@/components/AppText';
 import {
@@ -34,6 +35,7 @@ export interface DeviceManagementScreenProps {
   online: boolean;
   cloudInstanceId?: string;
   cpuLabel?: string;
+  image?: string;
   kind?: string;
   latestReleaseTag?: string;
   lastFailedUpgradeImage?: string;
@@ -199,6 +201,7 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
 
 function CloudInstanceManagement({
   deviceId,
+  image: fallbackImage,
   initialInstanceId,
   latestReleaseTag: fallbackLatestReleaseTag,
   lastFailedUpgradeImage: fallbackLastFailedUpgradeImage,
@@ -221,6 +224,7 @@ function CloudInstanceManagement({
     ?? cloud.instances.find((item) => item.deviceId === deviceId);
   const instanceId = instance?.instanceId ?? initialInstanceId ?? null;
   const status = instance?.status;
+  const currentVersion = parseCloudInstanceImageTag(status?.image ?? fallbackImage);
   const updateAvailable = status?.updateAvailable ?? fallbackUpdateAvailable;
   const latestReleaseTag = instance
     ? status?.latestReleaseTag ?? null
@@ -324,6 +328,11 @@ function CloudInstanceManagement({
     <>
       <View style={styles.card} testID="deviceManagement.cloudUpdateSection">
         <Text style={styles.sectionTitle}>{t('deviceLink.cloudInstance.updateSectionTitle')}</Text>
+        {currentVersion && (updateAvailable || actionState.updateBusy) ? (
+          <Text style={styles.sectionDescription} testID="deviceManagement.cloudCurrentVersion">
+            {t('deviceLink.cloudInstance.currentVersion', { version: currentVersion })}
+          </Text>
+        ) : null}
         <View style={styles.updateStatusRow}>
           <Text style={styles.sectionDescription}>
             {actionState.updateBusy
@@ -332,7 +341,9 @@ function CloudInstanceManagement({
                 ? latestReleaseTag
                   ? t('deviceLink.cloudInstance.updateAvailableTag', { tag: latestReleaseTag })
                   : t('deviceLink.cloudInstance.updateAvailable')
-                : t('deviceLink.cloudInstance.upToDate')}
+                : currentVersion
+                  ? t('deviceLink.cloudInstance.currentVersionUpToDate', { version: currentVersion })
+                  : t('deviceLink.cloudInstance.upToDate')}
           </Text>
           {updateAvailable && !actionState.updateBusy ? (
             <InfoPill label={t('deviceLink.cloudInstance.updateAvailable')} />

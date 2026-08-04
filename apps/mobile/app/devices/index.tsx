@@ -43,7 +43,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useAuth } from '@/auth/AuthContext';
-import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@/cloud-instance/cloudInstanceWake';
+import {
+  CLOUD_WAKE_WATCH_TIMEOUT_MS,
+  isSelectedCloudInstanceWaking,
+} from '@/cloud-instance/cloudInstanceWake';
 import { useCloudInstances, type UseCloudInstances } from '@/cloud-instance/useCloudInstances';
 import type { CloudInstanceView } from '@/api/cloudInstance';
 import { configureCollapseAnimation } from '@/utils/collapseAnimation';
@@ -855,22 +858,49 @@ export default function HomeScreen() {
     () => new Set(displayDevices.filter((device) => device.online).map((device) => device.deviceId)),
     [displayDevices],
   );
-  // 云端唤醒 wake-watch:唤醒受理后到 Pod presence 上线之间有约一分钟空窗,此时
+  const onlineDeviceIdsRef = useRef(onlineDeviceIds);
+  onlineDeviceIdsRef.current = onlineDeviceIds;
+  // 云端唤醒 wake-watch:唤醒受理后到 Pod presence 上线之间可能有数分钟空窗,此时
   // cloudInstances.pending 已清、设备仍离线,「唤醒中」态若只看 pending 会提前回落成
   // 可再次点击。受理成功时记下 deviceId,presence 上线或超时兜底后解除;引导卡与
   // 设备菜单两个唤醒入口共用这一份状态。
-  const [cloudWakeWatchDeviceId, setCloudWakeWatchDeviceId] = useState<string | null>(null);
+  const [cloudWakeWatchDeviceId, setCloudWakeWatchDeviceIdState] = useState<string | null>(null);
+  const cloudWakeWatchDeviceIdRef = useRef<string | null>(null);
+  const setCloudWakeWatchDeviceId = useCallback((deviceId: string | null) => {
+    cloudWakeWatchDeviceIdRef.current = deviceId;
+    setCloudWakeWatchDeviceIdState(deviceId);
+  }, []);
   useEffect(() => {
     if (cloudWakeWatchDeviceId === null) return;
-    const timer = setTimeout(() => setCloudWakeWatchDeviceId(null), CLOUD_WAKE_WATCH_TIMEOUT_MS);
+    const watchedDeviceId = cloudWakeWatchDeviceId;
+    const timer = setTimeout(() => {
+      if (
+        cloudWakeWatchDeviceIdRef.current !== watchedDeviceId
+        || onlineDeviceIdsRef.current.has(watchedDeviceId)
+      ) {
+        return;
+      }
+      setCloudWakeWatchDeviceId(null);
+      Alert.alert(t('deviceLink.cloudInstance.wakeFailed'));
+    }, CLOUD_WAKE_WATCH_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [cloudWakeWatchDeviceId]);
+  }, [cloudWakeWatchDeviceId, setCloudWakeWatchDeviceId, t]);
   useEffect(() => {
     if (cloudWakeWatchDeviceId !== null && onlineDeviceIds.has(cloudWakeWatchDeviceId)) {
       setCloudWakeWatchDeviceId(null);
     }
-  }, [cloudWakeWatchDeviceId, onlineDeviceIds]);
+  }, [cloudWakeWatchDeviceId, onlineDeviceIds, setCloudWakeWatchDeviceId]);
   const cloudWaking = cloudInstances.pending?.action === 'wake' || cloudWakeWatchDeviceId !== null;
+  const selectedCloudInstance = cloudInstances.instances.find(
+    (instance) => instance.deviceId === selectedDeviceId,
+  ) ?? null;
+  const selectedCloudWaking = isSelectedCloudInstanceWaking({
+    deviceId: selectedCloudInstance?.deviceId ?? null,
+    instanceId: selectedCloudInstance?.instanceId ?? null,
+    online: selectedCloudInstance ? onlineDeviceIds.has(selectedCloudInstance.deviceId) : false,
+    pending: cloudInstances.pending,
+    wakeWatchDeviceId: cloudWakeWatchDeviceId,
+  });
   const revokedTipDeviceName = useMemo(
     () => revokedTipDeviceId
       ? deviceModels.find((item) => item.deviceId === revokedTipDeviceId)?.name ?? t('devices.list.thisComputer')
@@ -928,6 +958,10 @@ export default function HomeScreen() {
   const sections = useMemo(
     () => buildHomeSections(home, groupByProject, pinnedCollapsed),
     [groupByProject, home, pinnedCollapsed],
+  );
+  const renderedSections = useMemo(
+    () => selectedCloudWaking ? [] : sections,
+    [sections, selectedCloudWaking],
   );
   const windowLayout = buildMainWindowLayout({
     actionCount: 1,
@@ -1023,11 +1057,8 @@ export default function HomeScreen() {
   );
   const selectedDeviceLabel = useMemo(() => {
     if (!selectedDeviceId) return t('devices.list.allConversations');
-    const cloudInstance = cloudInstances.instances.find(
-      (instance) => instance.deviceId === selectedDeviceId,
-    );
-    if (cloudInstance) {
-      const descriptor = describeCloudInstanceName(cloudInstance);
+    if (selectedCloudInstance) {
+      const descriptor = describeCloudInstanceName(selectedCloudInstance);
       if (descriptor.kind === 'custom') return descriptor.label;
       return t('deviceLink.cloudInstance.cloud');
     }
@@ -1036,9 +1067,9 @@ export default function HomeScreen() {
       ?? restoredDeviceName
       ?? t('devices.list.thisComputer');
   }, [
-    cloudInstances.instances,
     home.deviceFilters,
     restoredDeviceName,
+    selectedCloudInstance,
     selectedDeviceId,
     t,
   ]);
@@ -1480,7 +1511,7 @@ export default function HomeScreen() {
       ) : null}
 
       <SectionList
-        sections={sections}
+        sections={renderedSections}
         keyExtractor={(item) => item.key}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadHome({ visible: true })} />}
         stickySectionHeadersEnabled={false}
@@ -1524,8 +1555,20 @@ export default function HomeScreen() {
             <View style={styles.pinnedFooter} testID="home.pinnedFooter" />
           ) : null}
         ListEmptyComponent={
-          initialHomeLoading ? (
-            <HomeInitialLoadingState
+          selectedCloudWaking ? (
+            <HomeListLoadingState
+              label={t('deviceLink.cloudWaking')}
+              testID="home.cloudWaking"
+              style={{
+                marginTop: spacing.xxl,
+                minHeight: windowLayout.emptyMinHeight,
+                padding: windowLayout.emptyPadding,
+              }}
+            />
+          ) : initialHomeLoading ? (
+            <HomeListLoadingState
+              label={t('devices.list.loading')}
+              testID="home.loading"
               style={{
                 marginTop: spacing.xxl,
                 minHeight: windowLayout.emptyMinHeight,
@@ -1702,14 +1745,21 @@ export default function HomeScreen() {
   );
 }
 
-function HomeInitialLoadingState({ style }: { style?: StyleProp<ViewStyle> }) {
+function HomeListLoadingState({
+  label,
+  style,
+  testID,
+}: {
+  label: string;
+  style?: StyleProp<ViewStyle>;
+  testID: string;
+}) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
-  const { t } = useTranslation();
   return (
-    <View style={[styles.initialLoadingState, style]} testID="home.loading">
+    <View style={[styles.initialLoadingState, style]} testID={testID}>
       <ActivityIndicator color={colors.textSecondary} size="small" />
-      <Text style={styles.initialLoadingText}>{t('devices.list.loading')}</Text>
+      <Text style={styles.initialLoadingText}>{label}</Text>
     </View>
   );
 }

@@ -9,6 +9,7 @@ export interface DeviceManagementRouteParams extends Record<string, string | und
   online: '0' | '1';
   cloudInstanceId?: string;
   cpuLabel?: string;
+  image?: string;
   kind?: string;
   latestReleaseTag?: string;
   lastFailedUpgradeImage?: string;
@@ -32,6 +33,7 @@ export function buildDeviceManagementRouteParams(input: {
     online: device?.online ? '1' : '0',
     ...(cloudInstance ? {
       cloudInstanceId: cloudInstance.instanceId,
+      ...(cloudInstance.status.image ? { image: cloudInstance.status.image } : {}),
       kind: 'cloud',
       ...(cloudInstance.status.latestReleaseTag
         ? { latestReleaseTag: cloudInstance.status.latestReleaseTag }

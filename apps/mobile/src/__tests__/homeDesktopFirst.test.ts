@@ -482,5 +482,9 @@ describe('mobile home desktop-first surface', () => {
     expect(devicesSource).toContain('waking: cloudWaking');
     expect(devicesSource).toContain('CLOUD_WAKE_WATCH_TIMEOUT_MS');
     expect(devicesSource).toContain('cloudInstances.pending !== null || cloudWakeWatchDeviceId !== null');
+    expect(devicesSource).toContain('const selectedCloudWaking = isSelectedCloudInstanceWaking({');
+    expect(devicesSource).toContain('sections={renderedSections}');
+    expect(devicesSource).toContain('testID="home.cloudWaking"');
+    expect(devicesSource).toContain("Alert.alert(t('deviceLink.cloudInstance.wakeFailed'))");
   });
 });
