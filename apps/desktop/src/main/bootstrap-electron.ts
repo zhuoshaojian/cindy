@@ -543,7 +543,10 @@ import {
   resetProviderModelAutoRefreshCooldowns,
 } from './maker-host/provider-model-auto-refresh.js';
 import { refreshProviderModelsAfterAccountReady } from './maker-host/account-provider-model-refresh.js';
-import { accountProviderReadinessBarrier } from './maker-host/account-provider-readiness-barrier.js';
+import {
+  accountProviderReadinessBarrier,
+  startAccountProviderReadiness,
+} from './maker-host/account-provider-readiness-barrier.js';
 import {
   readImDefaultSettingsState,
   resetImDefaultSettings,
@@ -675,6 +678,7 @@ import {
   createCloudRuntimeController,
   createCloudStatusStore,
   initializePodUserServices,
+  startPodAccountProviderReadiness,
   modelAccessReadiness,
   type CloudRuntimeController,
   type CloudReadinessComponents,
@@ -6750,9 +6754,9 @@ app.on('ready', async () => {
       const providerScopeKey = activeOwnerScopeKey();
       const startProviderReadiness = (): void => {
         if (activeOwnerScopeKey() !== providerScopeKey || isAppSessionBoundaryPending()) return;
-        const providerReadiness = accountProviderReadinessBarrier.start(
-          providerScopeKey,
-          async () => {
+        const providerReadiness = startAccountProviderReadiness({
+          scopeKey: providerScopeKey,
+          task: async () => {
             const startedAt = performance.now();
             try {
               // 自定义 MCP 与自定义供应商都只服务 Agent 路由，不应该阻塞任务列表。
@@ -6816,12 +6820,12 @@ app.on('ready', async () => {
                 });
               });
           },
-          (err) => {
+          onError: (err) => {
             accountSwitchLog.warn('account provider readiness rejected unexpectedly', {
               error: err instanceof Error ? err.message : String(err),
             });
           },
-        );
+        });
         // Hook / personal IM / scheduler can resolve routes before maker.createSession, so arm
         // them only after discovery settles. The Maker lifecycle hook remains the final guard for
         // every direct create path. The scope check prevents an old completion from reviving hosts
@@ -7141,6 +7145,14 @@ app.on('ready', async () => {
         refreshCustomProviders: refreshCustomProvidersIntoCatalog,
         startEmbeddingHost: attemptStartEmbeddingHost,
         prewarmModelPricing,
+        logger: headlessStartupLog,
+      });
+      const providerScopeKey = activeOwnerScopeKey();
+      startPodAccountProviderReadiness({
+        scopeKey: providerScopeKey,
+        refreshModels: refreshXdGatewayModels,
+        startReadiness: (scopeKey, task, onError) =>
+          startAccountProviderReadiness({ scopeKey, task, onError }),
         logger: headlessStartupLog,
       });
     }

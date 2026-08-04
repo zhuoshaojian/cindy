@@ -17,7 +17,7 @@ const compactBootstrapSource = bootstrapSource.replace(/\s+/g, ' ');
 describe('account provider readiness wiring', () => {
   it('arms provider discovery without keeping local-db ensure-ready behind it', () => {
     const workdirSweep = bootstrapSource.indexOf("logStartupPhase('dialogue-workdir-sweep')");
-    const barrierStart = compactBootstrapSource.indexOf('accountProviderReadinessBarrier.start(');
+    const barrierStart = compactBootstrapSource.indexOf('startAccountProviderReadiness({');
     const readableDone = compactBootstrapSource.indexOf(
       "logStartupPhase('post-db-hooks-scheduled')",
     );
@@ -29,7 +29,7 @@ describe('account provider readiness wiring', () => {
     expect(compactWorkdirSweep).toBeGreaterThanOrEqual(0);
     expect(barrierStart).toBeGreaterThan(compactWorkdirSweep);
     expect(readableDone).toBeGreaterThan(barrierStart);
-    expect(compactBootstrapSource).not.toContain('await accountProviderReadinessBarrier.start(');
+    expect(compactBootstrapSource).not.toContain('await startAccountProviderReadiness({');
   });
 
   it('publishes Maker provider configuration immediately and orders account route refreshes', () => {
@@ -53,7 +53,7 @@ describe('account provider readiness wiring', () => {
       'else startPendingAccountProviderReadiness = startProviderReadiness',
     );
 
-    const barrierStart = bootstrapSource.indexOf('accountProviderReadinessBarrier.start(');
+    const barrierStart = bootstrapSource.indexOf('startAccountProviderReadiness({');
     const makerRecreated = bootstrapSource.indexOf('getMakerCore();', barrierStart);
     const initialMcpRefresh = bootstrapSource.indexOf(
       'await waitForInitialCustomMcpRefresh()',
@@ -138,6 +138,19 @@ describe('account provider readiness wiring', () => {
     expect(integrations).toBeGreaterThan(settledContinuation);
     expect(scheduler).toBeGreaterThan(settledContinuation);
     expect(bootstrapSource).not.toContain('await attemptStartScheduler()');
+  });
+
+  it('arms Pod provider readiness without delaying device-link startup', () => {
+    const providerStart = bootstrapSource.indexOf('startPodAccountProviderReadiness({');
+    const deviceLinkStart = bootstrapSource.indexOf(
+      'await initializePodDeviceLink(podProvisioningMode, {',
+      providerStart,
+    );
+
+    expect(providerStart).toBeGreaterThanOrEqual(0);
+    expect(deviceLinkStart).toBeGreaterThan(providerStart);
+    expect(bootstrapSource.slice(providerStart - 16, providerStart)).not.toContain('await');
+    expect(bootstrapSource.match(/startAccountProviderReadiness\(\{/gu)).toHaveLength(2);
   });
 
   it('clears owner-scoped custom routes before replacing account runtimes', () => {

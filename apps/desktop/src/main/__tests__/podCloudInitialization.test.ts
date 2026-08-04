@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { initializePodUserServices } from '../cloud-runtime/pod-initialization.js';
+import {
+  initializePodUserServices,
+  startPodAccountProviderReadiness,
+} from '../cloud-runtime/pod-initialization.js';
+import {
+  createAccountProviderReadinessBarrier,
+  startAccountProviderReadiness,
+} from '../maker-host/account-provider-readiness-barrier.js';
 
 describe('Pod user services initialization', () => {
   it('refreshes account-scoped providers, starts embedding, and triggers pricing prewarm', async () => {
@@ -34,5 +41,40 @@ describe('Pod user services initialization', () => {
       logger: { warn },
     });
     await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(3));
+  });
+
+  it('arms the real provider barrier without blocking Pod startup', async () => {
+    const calls: string[] = [];
+    let finishRefresh: () => void = () => {
+      throw new Error('refresh resolver was not installed');
+    };
+    const refreshPending = new Promise<void>((resolve) => {
+      finishRefresh = resolve;
+    });
+    const barrier = createAccountProviderReadinessBarrier();
+
+    startPodAccountProviderReadiness({
+      scopeKey: 'owner:membership-1',
+      refreshModels: async () => {
+        calls.push('models');
+        await refreshPending;
+      },
+      startReadiness: (scopeKey, task, onError) =>
+        startAccountProviderReadiness({
+          scopeKey,
+          task,
+          onError,
+          barrier,
+        }),
+      logger: { warn: vi.fn() },
+    });
+
+    const readiness = barrier.waitForScope('owner:membership-1');
+    await Promise.resolve();
+    expect(calls).toEqual(['models']);
+    expect(await Promise.race([readiness.then(() => 'settled'), Promise.resolve('startup-free')]))
+      .toBe('startup-free');
+    finishRefresh();
+    await expect(readiness).resolves.toBe(true);
   });
 });
