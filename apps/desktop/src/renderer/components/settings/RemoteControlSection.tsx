@@ -246,7 +246,7 @@ export function RemoteControlSection() {
               onToggle={toggleDevices}
               pinned={<MyDevicesPanel s={s} variant="self" />}
             >
-              <MyDevicesPanel s={s} variant="others" />
+              <MyDevicesPanel s={s} variant="others" visible={devicesOpen} />
             </CollapsibleSubSection>
             <div className="h-px w-full bg-[var(--border-default)]" />
           </>

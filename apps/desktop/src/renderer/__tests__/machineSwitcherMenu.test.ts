@@ -250,6 +250,10 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     expect(menuSource).toContain('if (!hasRemote && !cloudReady) return null');
   });
 
+  it('菜单展开时即时刷新云端实例快照', () => {
+    expect(menuSource).toContain('if (open) void refreshCloudInstances()');
+  });
+
   it('云端唤醒项并入机器菜单(0 实例首次唤醒 + offline 实例再唤醒,不独立占行)', () => {
     expect(menuSource).toContain('useCloudInstances');
     expect(menuSource).toContain("devices.filter((device) => device.kind !== 'cloud')");
@@ -266,6 +270,9 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     expect(menuSource).not.toContain('CloudWakeMenuItem');
     // 唤醒失败不许静默,必须有用户可见反馈。
     expect(menuSource).toContain("t('ccAgent.sidebar.cloud.wakeFailed')");
+    // 在线云端行只提示正式版更新;动作仍集中在设置页。
+    expect(menuSource).toContain('instance.status.updateAvailable === true');
+    expect(menuSource).toContain("t('ccAgent.sidebar.cloud.updateAvailable')");
   });
 
   it('非会话视图选机器时切回会话视图(与新建 / 搜索行同惯例,Codex P2)', () => {

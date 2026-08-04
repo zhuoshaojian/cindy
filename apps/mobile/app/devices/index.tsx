@@ -15,6 +15,7 @@ import {
   View,
   useWindowDimensions,
   type StyleProp,
+  type AlertButton,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
@@ -189,6 +190,7 @@ export default function HomeScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { apiFetch, deviceId: selfDeviceId, user } = useAuth();
   const cloudInstances = useCloudInstances(apiFetch);
+  const refreshCloudInstances = cloudInstances.refresh;
   // 首页列表持久缓存按账号键控(401 掉线换号不串数据);首页仅登录后可达,user 理应非空。
   const homeCacheUserId = user?.id ?? '';
   const { connectionEpoch, connectionIssue, invoke, lastPresenceSnapshot, status, subscribe } = useDeviceLink();
@@ -778,6 +780,27 @@ export default function HomeScreen() {
     Alert.alert(t('deviceLink.cloudInstance.deleted'));
   }, [cloudInstances, loadHome, t]);
 
+  const runCloudUpgrade = useCallback(async (instance: CloudInstanceView) => {
+    const result = await cloudInstances.upgradeInstance(instance.instanceId);
+    if (!result) return;
+    void loadHome({ visible: false });
+    Alert.alert(t('deviceLink.cloudInstance.updateStarted'));
+  }, [cloudInstances, loadHome, t]);
+
+  const confirmCloudUpgrade = useCallback((instance: CloudInstanceView) => {
+    Alert.alert(
+      t('deviceLink.cloudInstance.updateConfirmTitle'),
+      t('deviceLink.cloudInstance.updateConfirmDescription'),
+      [
+        { style: 'cancel', text: t('devices.common.cancel') },
+        {
+          onPress: () => void runCloudUpgrade(instance),
+          text: t('deviceLink.cloudInstance.updateConfirm'),
+        },
+      ],
+    );
+  }, [runCloudUpgrade, t]);
+
   const confirmCloudDelete = useCallback((instance: CloudInstanceView) => {
     Alert.alert(
       t('deviceLink.cloudInstance.deleteConfirmTitle'),
@@ -800,25 +823,37 @@ export default function HomeScreen() {
       : t('deviceLink.cloudInstance.cloud');
     // DeviceMenuModal 关闭后再弹系统 Alert,与重命名/撤销提示共用同一兄弟 Modal 时序。
     pendingMenuActionRef.current = () => {
+      const actions: AlertButton[] = [
+        { style: 'cancel', text: t('devices.common.cancel') },
+      ];
+      if (
+        instance.status.updateAvailable
+        && instance.status.upgrade.state !== 'verifying'
+      ) {
+        actions.push({
+          onPress: () => confirmCloudUpgrade(instance),
+          text: t('deviceLink.cloudInstance.update'),
+        });
+      }
+      actions.push(
+        {
+          onPress: () => void runCloudStop(instance),
+          text: t('deviceLink.cloudInstance.stop'),
+        },
+        {
+          onPress: () => confirmCloudDelete(instance),
+          style: 'destructive',
+          text: t('deviceLink.cloudInstance.delete'),
+        },
+      );
       Alert.alert(
         t('deviceLink.cloudInstance.manageTitle', { name }),
         t('deviceLink.cloudInstance.manageDescription'),
-        [
-          { style: 'cancel', text: t('devices.common.cancel') },
-          {
-            onPress: () => void runCloudStop(instance),
-            text: t('deviceLink.cloudInstance.stop'),
-          },
-          {
-            onPress: () => confirmCloudDelete(instance),
-            style: 'destructive',
-            text: t('deviceLink.cloudInstance.delete'),
-          },
-        ],
+        actions,
       );
     };
     setDeviceMenuOpen(false);
-  }, [confirmCloudDelete, runCloudStop, t]);
+  }, [confirmCloudDelete, confirmCloudUpgrade, runCloudStop, t]);
 
   // 菜单 Modal 完全关闭(淡出结束 + 卸载)后,执行延后的弹窗动作。
   const handleDeviceMenuClosed = useCallback(() => {
@@ -831,8 +866,9 @@ export default function HomeScreen() {
   // 菜单展开时清掉上一轮残留的延后动作(例如淡出中途被重新展开,onClosed 未触发的情况)。
   const openDeviceMenu = useCallback(() => {
     pendingMenuActionRef.current = null;
+    void refreshCloudInstances();
     setDeviceMenuOpen(true);
-  }, []);
+  }, [refreshCloudInstances]);
 
   const closeRenameDevice = useCallback(() => {
     if (renameSaving) return;
@@ -1879,6 +1915,8 @@ function DeviceMenuModal({
       cloud: t('deviceLink.cloudInstance.cloud'),
       deleting: t('deviceLink.cloudInstance.deleting'),
       stopping: t('deviceLink.cloudInstance.stopping'),
+      updateAvailable: t('deviceLink.cloudInstance.updateAvailable'),
+      updating: t('deviceLink.cloudInstance.updating'),
       wake: t('deviceLink.cloudWake'),
       waking: t('deviceLink.cloudWaking'),
     }),
@@ -1921,6 +1959,7 @@ function DeviceMenuModal({
         label: cloudNameOf(instance),
         pendingKey: instance.instanceId,
         online,
+        updating: instance.status.upgrade.state === 'verifying',
         filter: buildCloudFilterItem(instance, {
           online,
           selected: selectedDeviceId === instance.deviceId,
@@ -1961,20 +2000,28 @@ function DeviceMenuModal({
             {cloudItems.map((item) => {
               // watch 命中 = 唤醒已受理、Pod 尚未上线:pending 已清仍要显示「唤醒中」。
               const waking = cloudWakingDeviceId === item.instance.deviceId && !item.online;
-              const busy = cloud.pending?.target === item.pendingKey || waking;
-              const busyLabel = cloud.pending?.action === 'stop'
-                ? cloudMessages.stopping
-                : cloud.pending?.action === 'delete'
-                  ? cloudMessages.deleting
-                  : cloudMessages.waking;
+              const pendingThisInstance = cloud.pending?.target === item.pendingKey;
+              const busy = pendingThisInstance || waking || item.updating;
+              const busyLabel = item.updating || (pendingThisInstance && cloud.pending?.action === 'upgrade')
+                ? cloudMessages.updating
+                : cloud.pending?.action === 'stop'
+                  ? cloudMessages.stopping
+                  : cloud.pending?.action === 'delete'
+                    ? cloudMessages.deleting
+                    : cloudMessages.waking;
               return (
                 <DeviceMenuItem
+                  badge={
+                    item.instance.status.updateAvailable && !busy
+                      ? cloudMessages.updateAvailable
+                      : undefined
+                  }
                   busy={busy}
                   disabled={!item.online && cloud.pending !== null}
                   key={item.instance.instanceId}
                   label={busy ? busyLabel : item.label}
                   onLongPress={
-                    cloud.pending === null
+                    cloud.pending === null && !item.updating
                       ? () => onManageCloudInstance(item.instance)
                       : undefined
                   }
@@ -2038,6 +2085,7 @@ function DeviceMenuModal({
 }
 
 function DeviceMenuItem({
+  badge,
   busy = false,
   checked = false,
   connectionState,
@@ -2051,6 +2099,7 @@ function DeviceMenuItem({
   status,
   testID,
 }: {
+  badge?: string;
   busy?: boolean;
   checked?: boolean;
   connectionState?: HomeDeviceConnectionState;
@@ -2110,6 +2159,11 @@ function DeviceMenuItem({
         ) : null}
       </View>
       <Text numberOfLines={1} style={styles.deviceMenuItemText}>{label}</Text>
+      {badge ? (
+        <View style={styles.deviceMenuBadge}>
+          <Text numberOfLines={1} style={styles.deviceMenuBadgeText}>{badge}</Text>
+        </View>
+      ) : null}
       {busy || status ? (
         <View style={styles.deviceMenuStatusSlot}>
           {busy ? (
@@ -3318,6 +3372,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     fontWeight: fontWeight.medium,
     lineHeight: lineHeight.body,
     minWidth: 0,
+  },
+  deviceMenuBadge: {
+    backgroundColor: colors.surfaceChip,
+    borderRadius: radius.pill,
+    maxWidth: 120,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  deviceMenuBadgeText: {
+    color: colors.textSecondary,
+    fontSize: typeScale.micro,
+    fontWeight: fontWeight.medium,
+    lineHeight: lineHeight.micro,
   },
   deviceMenuStatusSlot: {
     alignItems: 'center',

@@ -68,11 +68,22 @@ describe('mobile controllable device filter', () => {
     expect(source).toContain('const selectedCloudExists = cloudInstances.instances.some');
     expect(source).toContain('disabled={!item.online && cloud.pending !== null}');
     expect(source).toContain("status={item.online ? 'online' : 'offline'}");
+    const badgeTextStyle = source.slice(
+      source.indexOf('deviceMenuBadgeText:'),
+      source.indexOf('deviceMenuStatusSlot:'),
+    );
+    expect(badgeTextStyle).toContain('lineHeight: lineHeight.micro');
     expect(source).toContain('onManageCloudInstance={openCloudInstanceActions}');
     expect(source).toContain('onLongPress={');
     expect(source).toContain('cloudInstances.stopInstance');
     expect(source).toContain('cloudInstances.deleteInstance');
+    expect(source).toContain('cloudInstances.upgradeInstance');
+    expect(source).toContain("t('deviceLink.cloudInstance.updateConfirmDescription')");
+    expect(source).toContain('item.instance.status.updateAvailable && !busy');
+    expect(source).toContain("instance.status.upgrade.state === 'verifying'");
+    expect(source).toContain('cloud.pending === null && !item.updating');
     expect(source).toContain("t('deviceLink.cloudInstance.deleteConfirmDescription')");
+    expect(source).toContain('void refreshCloudInstances()');
     expect(source).not.toContain('cloudWakeItems');
   });
 

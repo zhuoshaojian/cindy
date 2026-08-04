@@ -95,9 +95,13 @@ export function MachineSwitcherMenu(): ReactNode {
   // 云端实例由控制面列表统一驱动,再以 stable deviceId join relay presence。
   // device-link 的 cloud 项仅作 presence 来源,不直接渲染,避免 online/offline 双行。
   const cloud = useCloudInstances();
+  const refreshCloudInstances = cloud.refresh;
   // 「鼠标移上去就展开」:hover 触发行即开、移开即关(受控开合,详见 useHoverOpenMenu;
   // 2026-07-12 产品确认要 hover 展开,恢复 d5a8d77c9 之前的交互)。
   const { open, onOpenChange, triggerRef, triggerProps, contentProps } = useHoverOpenMenu();
+  useEffect(() => {
+    if (open) void refreshCloudInstances();
+  }, [open, refreshCloudInstances]);
   // 本行随 SidebarTopNav 在所有非 rail 视图常驻,但机器过滤只作用于会话列表侧栏——
   // 选机器后必须让过滤结果可见(Codex P2):
   //   - /settings 等非 view 路由 → navigateToView('cc-agent') 切回会话视图
@@ -326,6 +330,12 @@ export function MachineSwitcherMenu(): ReactNode {
                 key={instance.instanceId}
                 icon={<Cloud size={14} strokeWidth={2} />}
                 label={cloudNameOf(instance)}
+                badge={
+                  instance.status.updateAvailable === true
+                  && instance.status.upgrade?.state !== 'verifying'
+                    ? t('ccAgent.sidebar.cloud.updateAvailable')
+                    : undefined
+                }
                 selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
                 onSelect={() => applySelect([instance.deviceId])}
                 onToggle={() => applyToggle(instance.deviceId)}
@@ -392,6 +402,7 @@ export function MachineSwitcherMenu(): ReactNode {
 function MachineMenuItem({
   icon,
   label,
+  badge,
   selected,
   onSelect,
   onToggle,
@@ -401,6 +412,7 @@ function MachineMenuItem({
 }: {
   icon?: ReactNode;
   label: string;
+  badge?: string;
   selected: boolean;
   onSelect: () => void;
   /** 多选动作(勾选 / 取消勾选);不传则该项无复选框、无修饰键 toggle(「所有」/ 被拒项)。 */
@@ -456,6 +468,11 @@ function MachineMenuItem({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {badge ? (
+        <span className="shrink-0 select-none rounded-full bg-[var(--surface-chip)] px-2 py-0.5 text-10 text-[var(--text-secondary)]">
+          {badge}
+        </span>
+      ) : null}
       {/* 右槽:恒定 w-4 占位(所有行都渲染),复选框浮现 / 消失只切 visibility / 边框——
           整行宽度与 label 截断位置在 hover 前后完全不变。
           已勾选且可多选 → 恒显 ✓,✓ 即取消勾选的点击目标(鼠标悬停到 ✓ 自身时才

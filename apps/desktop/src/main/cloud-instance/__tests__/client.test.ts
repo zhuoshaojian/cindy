@@ -48,6 +48,7 @@ describe('cloud instance HTTP client', () => {
     await client.rename('instance/a', 'Build');
     await client.status('instance/a');
     await client.stop('instance/a');
+    await client.upgrade('instance/a');
     await client.delete('instance/a');
 
     expect(requestMock.mock.calls).toEqual([
@@ -101,6 +102,15 @@ describe('cloud instance HTTP client', () => {
       ],
       [
         '/instances/instance%2Fa/stop',
+        {
+          method: 'POST',
+          baseUrl: 'http://127.0.0.1:3343',
+          timeoutMs: 12_345,
+          logMetadataOnly: true,
+        },
+      ],
+      [
+        '/instances/instance%2Fa/upgrade',
         {
           method: 'POST',
           baseUrl: 'http://127.0.0.1:3343',

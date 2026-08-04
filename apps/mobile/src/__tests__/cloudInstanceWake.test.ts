@@ -6,6 +6,18 @@ import {
   type CloudInstancePending,
 } from '@/cloud-instance/cloudInstanceWake';
 
+const cloudStatus = {
+  updateAvailable: false,
+  latestReleaseTag: null,
+  lastFailedUpgradeImage: null,
+  upgrade: {
+    state: 'idle' as const,
+    targetImage: null,
+    previousImage: null,
+    deadlineAtMs: null,
+  },
+};
+
 describe('runCloudInstanceWake', () => {
   it('blocks duplicate wake taps while pending and refreshes after success', async () => {
     let releaseWake!: () => void;
@@ -24,7 +36,7 @@ describe('runCloudInstanceWake', () => {
           nameSequence: 1,
           customLabel: null,
           created: false,
-          status: {},
+          status: cloudStatus,
         },
       };
     });
@@ -122,5 +134,36 @@ describe('runCloudInstanceWake', () => {
       null,
     ]);
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('refreshes silently when another client already started the upgrade', async () => {
+    const pendingRef: { current: CloudInstancePending } = { current: null };
+    const refresh = vi.fn(async () => undefined);
+    const onError = vi.fn(() => true);
+
+    await expect(
+      runCloudInstanceAction('instance-1', 'upgrade', {
+        pendingRef,
+        setPending: vi.fn(),
+        request: async () => ({
+          kind: 'error',
+          error: {
+            code: 'UPGRADE_IN_PROGRESS',
+            message: 'already updating',
+            status: 409,
+          },
+        }),
+        refresh,
+        onError,
+      }),
+    ).resolves.toBeNull();
+
+    expect(onError).toHaveBeenCalledWith('upgrade', {
+      code: 'UPGRADE_IN_PROGRESS',
+      message: 'already updating',
+      status: 409,
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(pendingRef.current).toBeNull();
   });
 });

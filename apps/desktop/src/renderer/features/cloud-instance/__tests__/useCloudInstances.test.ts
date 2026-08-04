@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   __resetCloudInstancesStoreForTest,
+  CLOUD_INSTANCES_REFRESH_INTERVAL_MS,
+  CLOUD_INSTANCES_VERIFYING_REFRESH_INTERVAL_MS,
   isCloudInstancesUnsupportedError,
+  type CloudInstanceView,
   useCloudInstances,
 } from '../useCloudInstances';
 
@@ -32,10 +35,11 @@ const cloudInstancesApi = {
   list: vi.fn(),
   wake: vi.fn(),
   stop: vi.fn(),
+  upgrade: vi.fn(),
   delete: vi.fn(),
 };
 
-function cloudInstanceView() {
+function cloudInstanceView(): CloudInstanceView {
   return {
     instanceId: 'cloud-instance-a',
     deviceId: 'cloud-device-a',
@@ -55,6 +59,12 @@ function cloudInstanceView() {
       runtimeState: 'running' as const,
       resourceTier: 'small' as const,
       readiness: { ready: true, reason: 'ready' as const, blockers: [] },
+      upgrade: {
+        state: 'idle' as const,
+        targetImage: null,
+        previousImage: null,
+        deadlineAtMs: null,
+      },
       updatedAtMs: 1_000,
     },
   };
@@ -67,15 +77,20 @@ beforeEach(() => {
   }));
   cloudInstancesApi.wake.mockReset();
   cloudInstancesApi.stop.mockReset();
+  cloudInstancesApi.upgrade.mockReset();
   cloudInstancesApi.delete.mockReset();
   rendererCacheMocks.clearRevoked.mockReset();
   rendererCacheMocks.removeDevice.mockReset();
   rendererCacheMocks.removeRemoteSessionActivityForDevice.mockReset();
   vi.stubGlobal('window', Object.assign(window, { electronAPI: { cloudInstances: cloudInstancesApi } }));
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
 });
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -134,5 +149,86 @@ describe('useCloudInstances capability visibility', () => {
     });
     expect(cloudInstancesApi.wake).toHaveBeenCalledTimes(1);
     expect(firstMount.result.current.pending).toBeNull();
+  });
+
+  it('treats an upgrade race as accepted and refreshes into server state', async () => {
+    cloudInstancesApi.upgrade.mockRejectedValue(
+      Object.assign(new Error('already updating'), {
+        code: 'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS' as const,
+      }),
+    );
+    const mounted = renderHook(() => useCloudInstances());
+    await waitFor(() => expect(mounted.result.current.loadState).toBe('ready'));
+
+    await act(async () => {
+      await expect(
+        mounted.result.current.upgradeInstance('cloud-instance-a'),
+      ).resolves.toBeUndefined();
+    });
+
+    expect(cloudInstancesApi.upgrade).toHaveBeenCalledWith({
+      instanceId: 'cloud-instance-a',
+    });
+    expect(cloudInstancesApi.list).toHaveBeenCalledTimes(2);
+    expect(mounted.result.current.pending).toBeNull();
+  });
+
+  it('polls only while the renderer is visible and refreshes immediately on return', async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    const mounted = renderHook(() => useCloudInstances());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mounted.result.current.loadState).toBe('ready');
+    expect(cloudInstancesApi.list).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_INSTANCES_REFRESH_INTERVAL_MS);
+    });
+    expect(cloudInstancesApi.list).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+    expect(cloudInstancesApi.list).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_INSTANCES_REFRESH_INTERVAL_MS);
+    });
+    expect(cloudInstancesApi.list).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses short polling while verifying and exits it after the server settles', async () => {
+    vi.useFakeTimers();
+    const verifying = cloudInstanceView();
+    verifying.status.upgrade = {
+      state: 'verifying' as const,
+      targetImage: 'registry/cindy:0.1.6',
+      previousImage: 'registry/cindy:0.1.5',
+      deadlineAtMs: 10_000,
+    };
+    cloudInstancesApi.list
+      .mockResolvedValueOnce({ instances: [verifying] })
+      .mockResolvedValue({ instances: [cloudInstanceView()] });
+
+    const mounted = renderHook(() => useCloudInstances());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mounted.result.current.instances[0]?.status.upgrade?.state).toBe('verifying');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_INSTANCES_VERIFYING_REFRESH_INTERVAL_MS);
+    });
+    expect(cloudInstancesApi.list).toHaveBeenCalledTimes(2);
+    expect(mounted.result.current.instances[0]?.status.upgrade?.state).not.toBe('verifying');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_INSTANCES_VERIFYING_REFRESH_INTERVAL_MS);
+    });
+    expect(cloudInstancesApi.list).toHaveBeenCalledTimes(2);
   });
 });

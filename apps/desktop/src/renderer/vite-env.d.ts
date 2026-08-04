@@ -111,6 +111,8 @@ type CloudInstanceRenameResult = import('../shared/cloudInstanceIpc').CloudInsta
 type CloudInstanceStatus = import('../shared/cloudInstanceIpc').CloudInstanceStatus;
 type CloudInstanceStatusInput = import('../shared/cloudInstanceIpc').CloudInstanceStatusInput;
 type CloudInstanceStopInput = import('../shared/cloudInstanceIpc').CloudInstanceStopInput;
+type CloudInstanceUpgradeInput = import('../shared/cloudInstanceIpc').CloudInstanceUpgradeInput;
+type CloudInstanceUpgradeResult = import('../shared/cloudInstanceIpc').CloudInstanceUpgradeResult;
 type CloudInstanceView = import('../shared/cloudInstanceIpc').CloudInstanceView;
 type CloudInstanceWakeInput = import('../shared/cloudInstanceIpc').CloudInstanceWakeInput;
 /** 设备互联:REST 设备视图(同 shared/deviceLinkIpc.ts DeviceLinkDeviceView) */
@@ -1097,6 +1099,7 @@ interface ElectronAPI {
     rename: (input: CloudInstanceRenameInput) => Promise<CloudInstanceRenameResult>;
     status: (input?: CloudInstanceStatusInput) => Promise<{ status: CloudInstanceStatus }>;
     stop: (input: CloudInstanceStopInput) => Promise<{ status: CloudInstanceStatus }>;
+    upgrade: (input: CloudInstanceUpgradeInput) => Promise<CloudInstanceUpgradeResult>;
     delete: (input: CloudInstanceDeleteInput) => Promise<CloudInstanceDeleteResult>;
   };
   getDeviceId: () => Promise<string>;

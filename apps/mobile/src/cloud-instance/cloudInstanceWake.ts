@@ -3,7 +3,7 @@ import type {
   CloudInstanceWakeResult,
 } from '@/api/cloudInstance';
 
-export type CloudInstanceAction = 'wake' | 'stop' | 'delete';
+export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'delete';
 
 export { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance';
 export type CloudInstancePending = {
@@ -20,7 +20,8 @@ interface RunCloudInstanceActionDeps<T> {
   setPending(value: CloudInstancePending): void;
   request(): Promise<CloudInstanceApiOutcome<T>>;
   refresh(): Promise<void>;
-  onError(action: CloudInstanceAction): void;
+  /** Return true when the error is an expected conflict that should refresh silently. */
+  onError(action: CloudInstanceAction, error: Extract<CloudInstanceApiOutcome<T>, { kind: 'error' }>['error']): boolean | void;
 }
 
 /**
@@ -40,8 +41,16 @@ export async function runCloudInstanceAction<T>(
   deps.setPending(pending);
   try {
     const result = await deps.request();
-    if (result.kind !== 'ok') {
-      deps.onError(action);
+    if (result.kind === 'unsupported') {
+      deps.onError(action, {
+        code: 'UNSUPPORTED_CAPABILITY',
+        message: 'Cloud instance control is unavailable',
+        status: null,
+      });
+      return null;
+    }
+    if (result.kind === 'error') {
+      if (deps.onError(action, result.error)) await deps.refresh();
       return null;
     }
     await deps.refresh();

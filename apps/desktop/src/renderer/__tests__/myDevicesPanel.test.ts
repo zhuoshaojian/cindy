@@ -37,6 +37,7 @@ describe('MyDevicesPanel rename guards', () => {
     // 动作/防重/云端列表刷新收敛在 useCloudInstances(单一状态机);面板只留
     // UI 关注点:确认框、toast、device-link 列表补刷。不许在面板直调 electronAPI。
     expect(source).toContain('await cloud.stopInstance(instanceId)');
+    expect(source).toContain('await cloud.upgradeInstance(instanceId)');
     expect(source).toContain('await cloud.deleteInstance(instanceId)');
     expect(source).not.toContain('window.electronAPI.cloudInstances');
     expect(source).toContain('void s.refresh(true)');
@@ -44,6 +45,13 @@ describe('MyDevicesPanel rename guards', () => {
     expect(source).toContain(
       "description: t('settings.devices.cloudInstance.deleteConfirm.description')",
     );
+    expect(source).toContain(
+      "description: t('settings.devices.cloudInstance.updateConfirm.description')",
+    );
+    expect(source).toContain("cloudInstance?.status.upgrade?.state === 'verifying'");
+    expect(source).toContain('cloudInstance?.status.updateAvailable === true');
+    expect(source).toContain('cloudInstance.status.lastFailedUpgradeImage');
+    expect(source).toContain("if (variant !== 'self' && visible) void refreshCloudInstances()");
   });
 
   it('hides relay cloud cards when the cloud capability is not ready', () => {

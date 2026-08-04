@@ -4,12 +4,28 @@ import { CLOUD_INSTANCE_API_BASE_URL } from '@/config/env';
 const CLOUD_INSTANCE_REQUEST_TIMEOUT_MS = 30_000;
 
 /** One account-owned cloud instance returned by the control plane. */
+export interface CloudInstanceUpgradeStatus {
+  state: 'idle' | 'verifying' | 'rolled-back';
+  targetImage: string | null;
+  previousImage: string | null;
+  deadlineAtMs: number | null;
+}
+
+/** Client-facing status fields used by the mobile cloud controls. */
+export interface CloudInstanceStatus {
+  updateAvailable: boolean;
+  latestReleaseTag: string | null;
+  lastFailedUpgradeImage: string | null;
+  upgrade: CloudInstanceUpgradeStatus;
+  [key: string]: unknown;
+}
+
 export interface CloudInstanceView {
   instanceId: string;
   deviceId: string;
   nameSequence: number;
   customLabel: string | null;
-  status: unknown;
+  status: CloudInstanceStatus;
 }
 
 /** Result returned after waking an existing instance or atomically creating the first one. */
@@ -19,12 +35,19 @@ export interface CloudInstanceWakeResult extends CloudInstanceView {
 
 /** Result returned after manually stopping an instance. */
 export interface CloudInstanceStopResult {
-  status: unknown;
+  status: CloudInstanceStatus;
+}
+
+/** Result returned after applying the latest server-selected release. */
+export interface CloudInstanceUpgradeResult {
+  status: CloudInstanceStatus;
+  outcome?: 'no-op' | 'upgraded' | 'verifying';
+  targetImage?: string;
 }
 
 /** Cleanup result returned after permanently deleting an instance. */
 export interface CloudInstanceDeleteResult {
-  status: unknown;
+  status: CloudInstanceStatus;
   revocation: unknown;
   archiveCleanup: unknown;
 }
@@ -105,7 +128,31 @@ export async function stopCloudInstance(
     if (!isRecord(payload) || !('status' in payload)) {
       throw invalidResponse();
     }
-    return { status: payload.status };
+    return { status: parseCloudInstanceStatus(payload.status) };
+  });
+}
+
+/** Upgrade one instance to the latest formal release selected by the server. */
+export async function upgradeCloudInstance(
+  instanceId: string,
+  deps: CloudInstanceApiDeps,
+): Promise<CloudInstanceApiOutcome<CloudInstanceUpgradeResult>> {
+  return requestCloudInstances(async (baseUrl) => {
+    const payload = await deps.apiFetch<unknown>(
+      `/instances/${encodeURIComponent(instanceId)}/upgrade`,
+      {
+        baseUrl,
+        method: 'POST',
+        timeoutMs: CLOUD_INSTANCE_REQUEST_TIMEOUT_MS,
+      },
+    );
+    if (!isRecord(payload) || !('status' in payload)) throw invalidResponse();
+    const outcome = parseUpgradeOutcome(payload.outcome);
+    return {
+      status: parseCloudInstanceStatus(payload.status),
+      ...(outcome ? { outcome } : {}),
+      ...(typeof payload.targetImage === 'string' ? { targetImage: payload.targetImage } : {}),
+    };
   });
 }
 
@@ -132,7 +179,7 @@ export async function deleteCloudInstance(
       throw invalidResponse();
     }
     return {
-      status: payload.status,
+      status: parseCloudInstanceStatus(payload.status),
       revocation: payload.revocation,
       archiveCleanup: payload.archiveCleanup,
     };
@@ -190,8 +237,45 @@ function parseCloudInstance(value: unknown): CloudInstanceView {
     deviceId: value.deviceId,
     nameSequence: value.nameSequence as number,
     customLabel: value.customLabel,
-    status: value.status,
+    status: parseCloudInstanceStatus(value.status),
   };
+}
+
+function parseCloudInstanceStatus(value: unknown): CloudInstanceStatus {
+  if (!isRecord(value)) throw invalidResponse();
+  const rawUpgrade = isRecord(value.upgrade) ? value.upgrade : {};
+  const rawState = rawUpgrade.state;
+  const state: CloudInstanceUpgradeStatus['state'] =
+    rawState === 'verifying' || rawState === 'rolled-back' ? rawState : 'idle';
+  return {
+    ...value,
+    updateAvailable: value.updateAvailable === true,
+    latestReleaseTag:
+      typeof value.latestReleaseTag === 'string' && value.latestReleaseTag.trim()
+        ? value.latestReleaseTag.trim()
+        : null,
+    lastFailedUpgradeImage:
+      typeof value.lastFailedUpgradeImage === 'string' && value.lastFailedUpgradeImage.trim()
+        ? value.lastFailedUpgradeImage.trim()
+        : state === 'rolled-back' && typeof rawUpgrade.targetImage === 'string'
+          ? rawUpgrade.targetImage
+          : null,
+    upgrade: {
+      state,
+      targetImage: typeof rawUpgrade.targetImage === 'string' ? rawUpgrade.targetImage : null,
+      previousImage: typeof rawUpgrade.previousImage === 'string' ? rawUpgrade.previousImage : null,
+      deadlineAtMs:
+        typeof rawUpgrade.deadlineAtMs === 'number' && Number.isFinite(rawUpgrade.deadlineAtMs)
+          ? rawUpgrade.deadlineAtMs
+          : null,
+    },
+  };
+}
+
+function parseUpgradeOutcome(value: unknown): CloudInstanceUpgradeResult['outcome'] {
+  return value === 'no-op' || value === 'upgraded' || value === 'verifying'
+    ? value
+    : undefined;
 }
 
 function invalidResponse(): ApiError {

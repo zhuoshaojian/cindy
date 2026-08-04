@@ -13,9 +13,9 @@
  * 模型 = 总闸 + 逐设备例外。底层全部复用 useDeviceLinkSettings,本面板只做组装与展示。
  */
 
-import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, Pencil, Trash2, Check, X, Moon, Sun } from 'lucide-react';
+import { RefreshCw, Pencil, Trash2, Check, X, Moon, Sun, CircleArrowUp } from 'lucide-react';
 import { deviceDisplayName } from '@cindy/maker-shared/device-list';
 
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
@@ -27,6 +27,7 @@ import type { DeviceLinkSettings } from '@/hooks/useDeviceLinkSettings';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { compareDevicesByName } from '@/features/device-link/deviceSort';
 import { toast } from '@/lib/toast';
+import { extractIpcError } from '@/utils/ipcError';
 import {
   canBeControlledPlatform,
   controlToggleState,
@@ -151,15 +152,21 @@ function ControlRow({
 export function MyDevicesPanel({
   s,
   variant = 'all',
+  visible = true,
 }: {
   s: DeviceLinkSettings;
   variant?: 'all' | 'self' | 'others';
+  visible?: boolean;
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   // RemoteControlSection renders separate self/others panels; only the latter
   // needs control-plane metadata, avoiding a duplicate list request.
   const cloud = useCloudInstances(variant !== 'self');
+  const refreshCloudInstances = cloud.refresh;
+  useEffect(() => {
+    if (variant !== 'self' && visible) void refreshCloudInstances();
+  }, [refreshCloudInstances, variant, visible]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   // 被对方撤销了本机访问权限的设备(控制端内存推导)。
@@ -254,6 +261,26 @@ export function MyDevicesPanel({
       toast.success(t('settings.devices.cloudInstance.toast.deleted'));
     } catch {
       toast.error(t('settings.devices.cloudInstance.toast.deleteFailed'));
+    }
+  };
+
+  const handleCloudUpgrade = async (instanceId: string) => {
+    const confirmed = await confirm({
+      title: t('settings.devices.cloudInstance.updateConfirm.title'),
+      description: t('settings.devices.cloudInstance.updateConfirm.description'),
+      confirmText: t('settings.devices.cloudInstance.updateConfirm.confirm'),
+      cancelText: t('settings.devices.cloudInstance.updateConfirm.cancel'),
+    });
+    if (!confirmed) return;
+    try {
+      await cloud.upgradeInstance(instanceId);
+      toast.success(t('settings.devices.cloudInstance.toast.updateStarted'));
+    } catch (error) {
+      if (extractIpcError(error)?.code === 'NO_RELEASE_AVAILABLE') {
+        toast.warning(t('settings.devices.cloudInstance.toast.noReleaseAvailable'));
+        return;
+      }
+      toast.error(t('settings.devices.cloudInstance.toast.updateFailed'));
     }
   };
 
@@ -394,6 +421,21 @@ export function MyDevicesPanel({
             const control = controlToggleState(d);
             const inbound = inboundToggleState(s.enabled, revokedControllers.has(d.deviceId));
             const isControlling = controlling.has(d.deviceId);
+            const cloudUpgradePending =
+              cloudInstance !== undefined
+              && cloud.pending?.target === cloudInstance.instanceId
+              && cloud.pending.action === 'upgrade';
+            const cloudUpgradeVerifying =
+              cloudInstance?.status.upgrade?.state === 'verifying';
+            const cloudUpdating = cloudUpgradePending || cloudUpgradeVerifying;
+            const cloudUpdateAvailable =
+              cloudInstance?.status.updateAvailable === true && !cloudUpdating;
+            const failedUpgradeImage = cloudInstance
+              ? cloudInstance.status.lastFailedUpgradeImage
+                ?? (cloudInstance.status.upgrade?.state === 'rolled-back'
+                  ? cloudInstance.status.upgrade.targetImage
+                  : null)
+              : null;
             const controlReason =
               control.reason === 'peer-off'
                 ? t('settings.remoteControl.myDevices.peerControlOff')
@@ -445,19 +487,52 @@ export function MyDevicesPanel({
                         </button>
                       </div>
                     ) : (
-                      <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                        {displayDeviceName(d, t)}
-                      </span>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-13 font-medium text-[var(--text-primary)]">
+                          {displayDeviceName(d, t)}
+                        </span>
+                        {cloudUpdateAvailable ? (
+                          <span className="shrink-0 select-none rounded-full bg-[var(--surface-chip)] px-2 py-0.5 text-10 text-[var(--text-secondary)]">
+                            {cloudInstance?.status.latestReleaseTag
+                              ? t('settings.devices.cloudInstance.updateAvailableTag', {
+                                  tag: cloudInstance.status.latestReleaseTag,
+                                })
+                              : t('settings.devices.cloudInstance.updateAvailable')}
+                          </span>
+                        ) : null}
+                      </div>
                     )}
                     <span className="truncate text-11 text-[var(--text-tertiary)]">
                       {deviceSubtitle(d, t, { isControlling })}
                     </span>
+                    {failedUpgradeImage ? (
+                      <span className="text-11 text-[var(--warning-fg)]">
+                        {t('settings.devices.cloudInstance.updateRolledBack')}
+                      </span>
+                    ) : null}
                   </div>
                   {editingId !== d.deviceId && (
                     <div className="flex shrink-0 items-center gap-1">
                       {isCloudDevice(d) ? (
                         cloudInstance ? (
                           <>
+                            {(cloudUpdateAvailable || cloudUpdating) ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleCloudUpgrade(cloudInstance.instanceId)}
+                                disabled={cloud.pending !== null || cloudUpgradeVerifying}
+                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Spinner
+                                  icon={CircleArrowUp}
+                                  size={12}
+                                  spinning={cloudUpdating}
+                                />
+                                {cloudUpdating
+                                  ? t('settings.devices.cloudInstance.updating')
+                                  : t('settings.devices.cloudInstance.update')}
+                              </button>
+                            ) : null}
                             {/* 第一动作位随在线态切换:在线可休眠;休眠中变唤醒(不再提供无效的休眠)。 */}
                             {d.online ? (
                               <button

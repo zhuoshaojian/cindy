@@ -55,6 +55,18 @@ export interface CloudInstanceStatus {
   runtimeState: CloudInstanceRuntimeState;
   resourceTier: CloudInstanceResourceTier;
   readiness: CloudInstanceReadiness;
+  /** Upgrade lifecycle reported by newer control planes. Missing means idle. */
+  upgrade?: {
+    state: 'idle' | 'verifying' | 'rolled-back';
+    targetImage: string | null;
+    previousImage: string | null;
+    deadlineAtMs: number | null;
+  };
+  /** Failed target retained after automatic rollback. Missing means no known failure. */
+  lastFailedUpgradeImage?: string | null;
+  /** Newer control planes set these release hints; older servers omit both. */
+  updateAvailable?: boolean;
+  latestReleaseTag?: string | null;
   updatedAtMs: number;
 }
 
@@ -107,6 +119,18 @@ export interface CloudInstanceStopInput {
   instanceId: string;
 }
 
+/** Renderer-to-main upgrade input. The server owns the release target. */
+export interface CloudInstanceUpgradeInput {
+  instanceId: string;
+}
+
+/** Result returned after asking the control plane to apply the latest release. */
+export interface CloudInstanceUpgradeResult {
+  status: CloudInstanceStatus;
+  outcome?: 'no-op' | 'upgraded' | 'verifying';
+  targetImage?: string;
+}
+
 /** Renderer-to-main permanent deletion input. */
 export interface CloudInstanceDeleteInput {
   instanceId: string;
@@ -136,5 +160,6 @@ export const CLOUD_INSTANCE_INVOKE = {
   RENAME: 'cloud-instance:rename',
   STATUS: 'cloud-instance:status',
   STOP: 'cloud-instance:stop',
+  UPGRADE: 'cloud-instance:upgrade',
   DELETE: 'cloud-instance:delete',
 } as const;

@@ -3088,6 +3088,17 @@
         "stopping": "休眠中…",
         "wake": "唤醒实例",
         "waking": "唤醒中…",
+        "updateAvailable": "有可用更新",
+        "updateAvailableTag": "有可用更新 · {{tag}}",
+        "update": "更新云端",
+        "updating": "更新中…",
+        "updateRolledBack": "上次更新失败，已自动回滚。",
+        "updateConfirm": {
+          "title": "更新云端实例？",
+          "description": "更新会重启云端实例，并中断正在运行的任务。",
+          "confirm": "更新云端实例",
+          "cancel": "取消"
+        },
         "delete": "删除实例",
         "deleting": "删除中…",
         "deleteConfirm": {
@@ -3102,7 +3113,10 @@
           "stopFailed": "休眠云端实例失败，请稍后重试",
           "deleteFailed": "删除云端实例失败，请稍后重试",
           "woke": "云端实例正在唤醒",
-          "wakeFailed": "唤醒云端实例失败，请稍后重试"
+          "wakeFailed": "唤醒云端实例失败，请稍后重试",
+          "updateStarted": "云端实例已开始更新",
+          "updateFailed": "无法开始更新云端实例，请稍后重试",
+          "noReleaseAvailable": "目前没有可用的正式版，请刷新后稍后重试"
         }
       },
       "error": {
@@ -6911,7 +6925,8 @@
       "cloud": {
         "wake": "唤醒云端",
         "waking": "唤醒中…",
-        "wakeFailed": "唤醒云端失败，请稍后重试"
+        "wakeFailed": "唤醒云端失败，请稍后重试",
+        "updateAvailable": "有可用更新"
       },
       "machineSwitcher": {
         "allMachines": "所有",
