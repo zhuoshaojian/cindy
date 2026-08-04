@@ -7,6 +7,19 @@
     "deleting": "删除中",
     "create": "新建"
   },
+  "management": {
+    "eyebrow": "设备",
+    "rename": "设备名称",
+    "renameHint": "此名称会显示在同账号设备上。",
+    "renameSaved": "设备名称已更新",
+    "actions": "操作",
+    "dangerZone": "删除",
+    "online": "在线",
+    "offline": "离线",
+    "unknown": "未知",
+    "memory": "{{count}} GB",
+    "openDetails": "查看「{{label}}」的详情"
+  },
   "list": {
     "thisComputer": "这台设备",
     "allConversations": "所有任务",
@@ -36,7 +49,6 @@
       "sync": "重新同步",
       "pinnedConversations": "置顶 {{count}} 条任务",
       "newRemoteConversation": "新建远程任务",
-      "renameDevice": "重命名 {{label}}",
       "project": "项目 {{title}}",
       "openAutomationLatest": "打开自动化 {{title}} 的最新任务",
       "automationTask": "自动化 {{title}}",
@@ -55,9 +67,7 @@
     },
     "renameDevice": {
       "title": "重命名设备",
-      "placeholder": "设备名称",
-      "savingA11y": "正在保存设备名",
-      "saveA11y": "保存设备名"
+      "placeholder": "设备名称"
     },
     "renameSession": {
       "title": "重命名任务",

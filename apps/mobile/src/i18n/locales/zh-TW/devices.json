@@ -7,6 +7,19 @@
     "deleting": "刪除中",
     "create": "新建"
   },
+  "management": {
+    "eyebrow": "裝置",
+    "rename": "裝置名稱",
+    "renameHint": "此名稱會顯示在同帳號裝置上。",
+    "renameSaved": "裝置名稱已更新",
+    "actions": "操作",
+    "dangerZone": "刪除",
+    "online": "線上",
+    "offline": "離線",
+    "unknown": "未知",
+    "memory": "{{count}} GB",
+    "openDetails": "開啟「{{label}}」的詳情"
+  },
   "list": {
     "thisComputer": "這臺裝置",
     "allConversations": "所有任務",

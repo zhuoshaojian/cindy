@@ -76,6 +76,16 @@ describe('cloud instance app-language copy', () => {
     }
   });
 
+  it('labels the update badge with both its state and details action in every locale', async () => {
+    for (const [locale, catalog] of Object.entries(locales)) {
+      await i18n.changeLanguage(locale);
+      const template = catalog.cloudInstance.updateAvailableOpenDetails;
+      expect(template, `${locale} is missing updateAvailableOpenDetails`).toBeTruthy();
+      expect(i18n.t('deviceLink.cloudInstance.updateAvailableOpenDetails', { label: 'Cloud' }))
+        .toBe(template.replace('{{label}}', 'Cloud'));
+    }
+  });
+
   it('logs cloud-list failures with metadata only', () => {
     expect(useCloudInstancesSource).toContain("console.warn('[cloud-instance] list failed', {");
     expect(useCloudInstancesSource).toContain('code: result.error.code');
