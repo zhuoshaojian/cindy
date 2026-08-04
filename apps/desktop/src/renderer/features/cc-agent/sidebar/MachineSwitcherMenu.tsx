@@ -61,6 +61,7 @@ import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance'
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { useCloudInstances, type CloudInstanceView } from '@/features/cloud-instance/useCloudInstances';
+import { cloudInstanceHasAvailableUpdate } from '@/features/cloud-instance/cloudDraftTarget';
 import {
   desktopCloudInstanceDisplayName,
   resolveDesktopCloudDeviceName,
@@ -331,11 +332,14 @@ export function MachineSwitcherMenu(): ReactNode {
                 icon={<Cloud size={14} strokeWidth={2} />}
                 label={cloudNameOf(instance)}
                 badge={
-                  instance.status.updateAvailable === true
-                  && instance.status.upgrade?.state !== 'verifying'
+                  cloudInstanceHasAvailableUpdate(instance)
                     ? t('ccAgent.sidebar.cloud.updateAvailable')
                     : undefined
                 }
+                onBadgeSelect={() => {
+                  onOpenChange(false);
+                  navigate('/settings?tab=remote-control&section=devices');
+                }}
                 selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
                 onSelect={() => applySelect([instance.deviceId])}
                 onToggle={() => applyToggle(instance.deviceId)}
@@ -403,6 +407,7 @@ function MachineMenuItem({
   icon,
   label,
   badge,
+  onBadgeSelect,
   selected,
   onSelect,
   onToggle,
@@ -413,6 +418,8 @@ function MachineMenuItem({
   icon?: ReactNode;
   label: string;
   badge?: string;
+  /** 行内附加动作；点击不触发行主体的机器选择。 */
+  onBadgeSelect?: () => void;
   selected: boolean;
   onSelect: () => void;
   /** 多选动作(勾选 / 取消勾选);不传则该项无复选框、无修饰键 toggle(「所有」/ 被拒项)。 */
@@ -468,10 +475,21 @@ function MachineMenuItem({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {badge ? (
-        <span className="shrink-0 select-none rounded-full bg-[var(--surface-chip)] px-2 py-0.5 text-10 text-[var(--text-secondary)]">
+      {badge && onBadgeSelect ? (
+        <button
+          type="button"
+          data-testid="machine-cloud-update-badge"
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onBadgeSelect();
+          }}
+          className="shrink-0 select-none rounded-full bg-[var(--surface-chip)] px-2 py-0.5 text-10 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+        >
           {badge}
-        </span>
+        </button>
       ) : null}
       {/* 右槽:恒定 w-4 占位(所有行都渲染),复选框浮现 / 消失只切 visibility / 边框——
           整行宽度与 label 截断位置在 hover 前后完全不变。

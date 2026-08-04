@@ -10,7 +10,12 @@ import type { SelectableDevice } from '@/hooks/useControllableDevices';
  */
 export type DraftPillDevice =
   | (SelectableDevice & { kind?: undefined; cloudInstanceId?: undefined })
-  | (SelectableDevice & { kind: 'cloud'; cloudInstanceId: string });
+  | (SelectableDevice & { kind: 'cloud'; cloudInstanceId: string; updateAvailable: boolean });
+
+/** 用户可见的正式版更新提示：升级验证期间不重复提示。 */
+export function cloudInstanceHasAvailableUpdate(instance: CloudInstanceView): boolean {
+  return instance.status.updateAvailable === true && instance.status.upgrade?.state !== 'verifying';
+}
 
 /**
  * 创建页设备 pill 的设备列表:云端行以**控制面实例列表**为唯一数据源;relay 列表
@@ -41,6 +46,7 @@ export function buildDraftPillDevices(
       online: onlineDeviceIds.has(instance.deviceId),
       kind: 'cloud',
       cloudInstanceId: instance.instanceId,
+      updateAvailable: cloudInstanceHasAvailableUpdate(instance),
     });
   }
   return rows;

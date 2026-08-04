@@ -64,6 +64,8 @@ export interface CloudInstanceStatus {
   };
   /** Failed target retained after automatic rollback. Missing means no known failure. */
   lastFailedUpgradeImage?: string | null;
+  /** Effective image reference. Newer control planes expose it for version presentation. */
+  image?: string | null;
   /** Newer control planes set these release hints; older servers omit both. */
   updateAvailable?: boolean;
   latestReleaseTag?: string | null;

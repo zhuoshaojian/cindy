@@ -1090,6 +1090,9 @@ export function NewMakerDraftRoute() {
       buildDraftPillDevices(selectableDevices, cloud.instances, cloud.onlineDeviceIds, cloudNameOf),
     [selectableDevices, cloud.instances, cloud.onlineDeviceIds, cloudNameOf],
   );
+  const openCloudDeviceSettings = useCallback(() => {
+    navigate('/settings?tab=remote-control&section=devices');
+  }, [navigate]);
   /**
    * 「云端唤醒在途」的唯一派生:pill 的行禁点、waking 表达与 busy 全部由这一对值
    * 供给。target 以 instanceId 为键(与 pending.target、行上的 cloudInstanceId 同键,
@@ -4628,6 +4631,7 @@ export function NewMakerDraftRoute() {
                   // 窄屏 pill 排会进正常流并 flex-wrap;多台时收成图标 + 状态点少占一行。
                   compact={isDraftNarrow && pillDevices.length > 1}
                   disabled={wtCreating || sendInFlight}
+                  onOpenCloudSettings={openCloudDeviceSettings}
                   cloudWake={
                     cloud.loadState === 'ready'
                       ? {

@@ -7,13 +7,17 @@ import {
 import type { CloudInstanceView } from '../useCloudInstances';
 import { MACHINE_ALL, MACHINE_LOCAL } from '@/features/device-link/selectedMachineStore';
 
-function instance(instanceId: string, deviceId: string): CloudInstanceView {
+function instance(
+  instanceId: string,
+  deviceId: string,
+  status: Partial<CloudInstanceView['status']> = {},
+): CloudInstanceView {
   return {
     instanceId,
     deviceId,
     nameSequence: 1,
     customLabel: null,
-    status: {} as CloudInstanceView['status'],
+    status: status as CloudInstanceView['status'],
   } as CloudInstanceView;
 }
 
@@ -52,6 +56,7 @@ describe('buildDraftPillDevices(设备 pill 云端行以控制面为唯一数据
         online: true,
         kind: 'cloud',
         cloudInstanceId: 'instance-a',
+        updateAvailable: false,
       },
     ]);
   });
@@ -72,6 +77,7 @@ describe('buildDraftPillDevices(设备 pill 云端行以控制面为唯一数据
         online: false,
         kind: 'cloud',
         cloudInstanceId: 'instance-a',
+        updateAvailable: false,
       },
     ]);
   });
@@ -84,5 +90,20 @@ describe('buildDraftPillDevices(设备 pill 云端行以控制面为唯一数据
       cloudInstanceId: 'instance-a',
     });
     expect(buildDraftPillDevices([plain], [], new Set(), cloudName)).toEqual([plain]);
+  });
+
+  it('只把非验证中的正式版更新投影到设备 pill', () => {
+    const available = instance('instance-a', 'device-a', { updateAvailable: true });
+    const verifying = instance('instance-b', 'device-b', {
+      updateAvailable: true,
+      upgrade: { state: 'verifying' } as CloudInstanceView['status']['upgrade'],
+    });
+
+    const out = buildDraftPillDevices([], [available, verifying], new Set(), cloudName);
+
+    expect(out.map((device) => device.kind === 'cloud' && device.updateAvailable)).toEqual([
+      true,
+      false,
+    ]);
   });
 });

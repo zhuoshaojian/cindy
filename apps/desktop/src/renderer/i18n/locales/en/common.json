@@ -3095,6 +3095,8 @@
         "waking": "Waking…",
         "updateAvailable": "Update Available",
         "updateAvailableTag": "Update Available · {{tag}}",
+        "currentVersion": "Current version {{version}}",
+        "currentVersionUpToDate": "Current version {{version}} · Up to date",
         "update": "Update Cloud",
         "updating": "Updating…",
         "updateRolledBack": "The last update failed and was rolled back automatically.",

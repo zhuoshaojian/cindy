@@ -64,4 +64,48 @@ describe('MyDevicesPanel rename guards', () => {
       'cloud.loadState === \'ready\' || !isCloudDevice(d)',
     );
   });
+
+  it('hides immutable control switches on cloud cards and guards both write handlers', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/settings/MyDevicesPanel.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('!isCloudDevice(d) ? (');
+    expect(source).toMatch(
+      /const onOutboundChange = async \(device:[\s\S]*?if \(isCloudDevice\(device\)\) return;[\s\S]*?setDeviceControlEnabled/,
+    );
+    expect(source).toMatch(
+      /const onInboundChange = async \(device:[\s\S]*?if \(isCloudDevice\(device\)\) return;[\s\S]*?s\.restore/,
+    );
+    expect(source).toContain('onCheckedChange={(v) => void onOutboundChange(d, v)}');
+    expect(source).toContain('onCheckedChange={(v) => void onInboundChange(d, v)}');
+    expect(source).not.toContain(
+      'onCheckedChange={(v) => void s.setDeviceControlEnabled(d.deviceId, v)}',
+    );
+  });
+
+  it('shows a parsed current cloud version and only labels idle no-update instances as current', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/settings/MyDevicesPanel.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('resolveCloudVersionPresentation({');
+    expect(source).toContain('image: cloudInstance?.status.image');
+    expect(source).toContain("'settings.devices.cloudInstance.currentVersionUpToDate'");
+    expect(source).toContain("'settings.devices.cloudInstance.currentVersion'");
+    expect(source).toContain('data-testid="cloud-instance-current-version"');
+
+    for (const locale of ['zh-CN', 'en', 'ja', 'ko']) {
+      const messages = JSON.parse(
+        readFileSync(
+          resolve(process.cwd(), `src/renderer/i18n/locales/${locale}/common.json`),
+          'utf8',
+        ),
+      ) as { settings: { devices: { cloudInstance: Record<string, string> } } };
+      expect(messages.settings.devices.cloudInstance.currentVersion).toBeTruthy();
+      expect(messages.settings.devices.cloudInstance.currentVersionUpToDate).toBeTruthy();
+    }
+  });
 });

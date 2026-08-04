@@ -3090,6 +3090,8 @@
         "waking": "唤醒中…",
         "updateAvailable": "有可用更新",
         "updateAvailableTag": "有可用更新 · {{tag}}",
+        "currentVersion": "当前版本 {{version}}",
+        "currentVersionUpToDate": "当前版本 {{version}} · 已是最新版本",
         "update": "更新云端",
         "updating": "更新中…",
         "updateRolledBack": "上次更新失败，已自动回滚。",

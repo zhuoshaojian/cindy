@@ -271,8 +271,9 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     // 唤醒失败不许静默,必须有用户可见反馈。
     expect(menuSource).toContain("t('ccAgent.sidebar.cloud.wakeFailed')");
     // 在线云端行只提示正式版更新;动作仍集中在设置页。
-    expect(menuSource).toContain('instance.status.updateAvailable === true');
+    expect(menuSource).toContain('cloudInstanceHasAvailableUpdate(instance)');
     expect(menuSource).toContain("t('ccAgent.sidebar.cloud.updateAvailable')");
+    expect(menuSource).toContain("navigate('/settings?tab=remote-control&section=devices')");
   });
 
   it('非会话视图选机器时切回会话视图(与新建 / 搜索行同惯例,Codex P2)', () => {

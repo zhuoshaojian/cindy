@@ -3094,6 +3094,8 @@
         "waking": "起動中…",
         "updateAvailable": "アップデートあり",
         "updateAvailableTag": "アップデートあり · {{tag}}",
+        "currentVersion": "現在のバージョン {{version}}",
+        "currentVersionUpToDate": "現在のバージョン {{version}} · 最新版です",
         "update": "クラウドをアップデート",
         "updating": "アップデート中…",
         "updateRolledBack": "前回のアップデートに失敗し、自動的にロールバックしました。",
