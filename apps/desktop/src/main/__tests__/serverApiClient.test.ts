@@ -134,6 +134,28 @@ describe('serverApiFetch', () => {
     );
   });
 
+  it('supports a Node fetch override without changing the ordinary Electron path', async () => {
+    const nodeFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    });
+
+    await expect(
+      serverApiFetch('/api/model-access/credentials', {
+        baseUrl: 'https://model-access.example.com',
+        fetchImpl: nodeFetch,
+        timeoutMs: 15_000,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(nodeFetch).toHaveBeenCalledWith(
+      'https://model-access.example.com/api/model-access/credentials',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(mocks.netFetch).not.toHaveBeenCalled();
+  });
+
   it('ACCOUNT_UNAVAILABLE 不 refresh，直接完整退登', async () => {
     mocks.getAccessToken.mockReturnValue('token-a');
     mocks.invalidateSession.mockResolvedValue(undefined);
