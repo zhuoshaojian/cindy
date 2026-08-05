@@ -6,6 +6,7 @@ import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation
 export default function DeviceManagementRoute() {
   const params = useLocalSearchParams<{
     deviceId: string;
+    autoUpdate?: string;
     name?: string;
     online?: string;
     cloudInstanceId?: string;
@@ -21,8 +22,10 @@ export default function DeviceManagementRoute() {
     upgradeState?: string;
   }>();
   const upgradeState = readRouteString(params.upgradeState);
+  const autoUpdate = readRouteString(params.autoUpdate);
   return (
     <DeviceManagementScreen
+      autoUpdate={autoUpdate === '1' ? true : autoUpdate === '0' ? false : undefined}
       cloudInstanceId={readRouteString(params.cloudInstanceId) ?? undefined}
       cpuLabel={readRouteString(params.cpuLabel) ?? undefined}
       deviceId={readRouteString(params.deviceId) ?? ''}

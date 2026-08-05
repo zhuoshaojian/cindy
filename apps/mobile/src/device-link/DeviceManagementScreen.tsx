@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { parseCloudInstanceImageTag } from '@cindy/maker-shared/cloud-instance';
@@ -34,6 +34,7 @@ export interface DeviceManagementScreenProps {
   deviceId: string;
   name: string;
   online: boolean;
+  autoUpdate?: boolean;
   cloudInstanceId?: string;
   cpuLabel?: string;
   image?: string;
@@ -202,6 +203,7 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
 }
 
 function CloudInstanceManagement({
+  autoUpdate: fallbackAutoUpdate,
   deviceId,
   image: fallbackImage,
   initialInstanceId,
@@ -218,6 +220,7 @@ function CloudInstanceManagement({
   onOnlineOverride(value: boolean): void;
 }) {
   const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const { t } = useTranslation();
   const { apiFetch } = useAuth();
   const cloud = useCloudInstances(apiFetch);
@@ -226,6 +229,10 @@ function CloudInstanceManagement({
     ?? cloud.instances.find((item) => item.deviceId === deviceId);
   const instanceId = instance?.instanceId ?? initialInstanceId ?? null;
   const status = instance?.status;
+  const autoUpdateSupported = instance
+    ? typeof status?.autoUpdate === 'boolean'
+    : typeof fallbackAutoUpdate === 'boolean';
+  const autoUpdate = status?.autoUpdate ?? fallbackAutoUpdate ?? false;
   const currentVersion = parseCloudInstanceImageTag(status?.image ?? fallbackImage);
   const updateAvailable = status?.updateAvailable ?? fallbackUpdateAvailable;
   const latestReleaseTag = instance
@@ -260,6 +267,8 @@ function CloudInstanceManagement({
     wakeWatching,
   });
   const recordUnavailable = cloud.loadState !== 'ready' || !instance || instanceId === null;
+  const autoUpdatePending = cloud.pending?.target === instanceId
+    && cloud.pending.action === 'autoUpdate';
 
   const runWake = useCallback(async () => {
     if (!instanceId) return;
@@ -318,6 +327,11 @@ function CloudInstanceManagement({
     );
   }, [cloud, instanceId, onDeleted, t]);
 
+  const setAutoUpdate = useCallback((enabled: boolean) => {
+    if (!instanceId) return;
+    void cloud.setAutoUpdate(instanceId, enabled);
+  }, [cloud, instanceId]);
+
   const lifecycleLabel = actionState.lifecycleBusy
     ? actionState.lifecycleAction === 'wake'
       ? t('deviceLink.cloudInstance.waking')
@@ -369,6 +383,30 @@ function CloudInstanceManagement({
               tone: 'primary',
             }]}
           />
+        ) : null}
+        {autoUpdateSupported ? (
+          <View style={styles.switchRow} testID="deviceManagement.cloudAutoUpdateRow">
+            <View style={styles.switchTexts}>
+              <Text style={styles.switchLabel}>
+                {t('deviceLink.cloudInstance.autoUpdate')}
+              </Text>
+              <Text style={styles.sectionDescription}>
+                {t('deviceLink.cloudInstance.autoUpdateHint')}
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel={t('deviceLink.cloudInstance.autoUpdate')}
+              accessibilityState={{
+                busy: autoUpdatePending,
+                disabled: cloud.pending !== null || recordUnavailable,
+              }}
+              disabled={cloud.pending !== null || recordUnavailable}
+              onValueChange={setAutoUpdate}
+              testID="deviceManagement.cloudAutoUpdate"
+              trackColor={{ true: colors.inputCaret }}
+              value={autoUpdate}
+            />
+          </View>
         ) : null}
       </View>
 
@@ -457,6 +495,25 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1,
     fontSize: typeScale.caption,
     lineHeight: lineHeight.caption,
+  },
+  switchRow: {
+    alignItems: 'center',
+    borderTopColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+    paddingTop: spacing.md,
+  },
+  switchTexts: {
+    flex: 1,
+    gap: spacing.xs,
+    minWidth: 0,
+  },
+  switchLabel: {
+    color: colors.textPrimary,
+    fontSize: typeScale.body,
+    lineHeight: lineHeight.body,
   },
   input: {
     backgroundColor: colors.surface,

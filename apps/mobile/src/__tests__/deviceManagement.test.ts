@@ -60,6 +60,9 @@ describe('device management route and cloud action state', () => {
     expect(source).toContain("t('deviceLink.cloudInstance.currentVersionUpToDate'");
     expect(source).toContain("t('deviceLink.cloudInstance.deleteConfirmDescription')");
     expect(source).toContain("testID: 'deviceManagement.cloudUpdate'");
+    expect(source).toContain('testID="deviceManagement.cloudAutoUpdate"');
+    expect(source).toContain("typeof status?.autoUpdate === 'boolean'");
+    expect(source).toContain('cloud.setAutoUpdate(instanceId, enabled)');
     expect(source).toContain("testID: 'deviceManagement.cloudDelete'");
     expect(source).toContain("testID: `deviceManagement.cloud${actionState.lifecycleAction === 'wake' ? 'Wake' : 'Stop'}`");
   });
@@ -75,6 +78,7 @@ describe('device management route and cloud action state', () => {
         instanceId: 'cloud-instance-a',
         nameSequence: 1,
         status: {
+          autoUpdate: true,
           image: 'registry.example/cindy-cloud:0.1.6@sha256:abc',
           lastFailedUpgradeImage: null,
           latestReleaseTag: '0.1.6',
@@ -88,6 +92,7 @@ describe('device management route and cloud action state', () => {
         },
       },
     })).toEqual({
+      autoUpdate: '1',
       cloudInstanceId: 'cloud-instance-a',
       cpuLabel: 'Xeon',
       deviceId: 'cloud-device-a',
@@ -102,6 +107,34 @@ describe('device management route and cloud action state', () => {
       updateAvailable: '1',
       upgradeState: 'idle',
     });
+  });
+
+  it('omits the auto-update route flag for legacy control-plane rows', () => {
+    const params = buildDeviceManagementRouteParams({
+      device,
+      deviceId: device.deviceId,
+      name: 'Cloud',
+      cloudInstance: {
+        customLabel: null,
+        deviceId: device.deviceId,
+        instanceId: 'cloud-instance-a',
+        nameSequence: 1,
+        status: {
+          image: null,
+          lastFailedUpgradeImage: null,
+          latestReleaseTag: null,
+          updateAvailable: false,
+          upgrade: {
+            deadlineAtMs: null,
+            previousImage: null,
+            state: 'idle',
+            targetImage: null,
+          },
+        },
+      },
+    });
+
+    expect(params).not.toHaveProperty('autoUpdate');
   });
 
   it('keeps relay-only cloud metadata routable while the control-plane row catches up', () => {

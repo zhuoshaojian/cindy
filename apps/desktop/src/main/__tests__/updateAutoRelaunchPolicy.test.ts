@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AUTO_UPDATE_BUSY_QUIET_PERIOD_MS,
   AUTO_UPDATE_IDLE_THRESHOLD_SECONDS,
+  AUTO_UPDATE_RESUME_COOLDOWN_MS,
   getAutoRelaunchBlockReason,
   type AutoRelaunchReadinessInput,
 } from '../updateAutoRelaunchPolicy';
@@ -33,8 +34,16 @@ describe('update auto relaunch policy', () => {
     expect(check({ enabled: false })).toBe('disabled');
   });
 
+  it('never relaunches a development build', () => {
+    expect(check({ isDev: true })).toBe('dev');
+  });
+
   it('blocks when the update is not ready yet', () => {
     expect(check({ status: 'downloading' })).toBe('not-ready');
+  });
+
+  it('does not start a second relaunch while one is already in progress', () => {
+    expect(check({ isRelaunching: true })).toBe('relaunching');
   });
 
   it('blocks while any task is busy', () => {
@@ -61,5 +70,6 @@ describe('update auto relaunch policy', () => {
 
   it('blocks for a short cooldown after resume or unlock', () => {
     expect(check({ lastResumeAtMs: BASE.nowMs - 1_000 })).toBe('recent-resume');
+    expect(check({ lastResumeAtMs: BASE.nowMs - AUTO_UPDATE_RESUME_COOLDOWN_MS })).toBeNull();
   });
 });

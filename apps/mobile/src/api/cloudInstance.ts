@@ -18,6 +18,8 @@ export interface CloudInstanceStatus {
   latestReleaseTag: string | null;
   lastFailedUpgradeImage: string | null;
   upgrade: CloudInstanceUpgradeStatus;
+  /** Missing on older control planes; consumers hide the setting in that case. */
+  autoUpdate?: boolean;
   [key: string]: unknown;
 }
 
@@ -109,6 +111,23 @@ export async function wakeCloudInstance(
       throw invalidResponse();
     }
     return { ...parseCloudInstance(payload), created: payload.created };
+  });
+}
+
+/** Patch mutable cloud-instance settings. */
+export async function patchCloudInstance(
+  instanceId: string,
+  patch: { customLabel?: string | null; autoUpdate?: boolean },
+  deps: CloudInstanceApiDeps,
+): Promise<CloudInstanceApiOutcome<true>> {
+  return requestCloudInstances(async (baseUrl) => {
+    await deps.apiFetch<unknown>(`/instances/${encodeURIComponent(instanceId)}`, {
+      baseUrl,
+      method: 'PATCH',
+      timeoutMs: CLOUD_INSTANCE_REQUEST_TIMEOUT_MS,
+      body: patch,
+    });
+    return true as const;
   });
 }
 
@@ -265,6 +284,7 @@ function parseCloudInstanceStatus(value: unknown): CloudInstanceStatus {
         : state === 'rolled-back' && typeof rawUpgrade.targetImage === 'string'
           ? rawUpgrade.targetImage
           : null,
+    ...(typeof value.autoUpdate === 'boolean' ? { autoUpdate: value.autoUpdate } : {}),
     upgrade: {
       state,
       targetImage: typeof rawUpgrade.targetImage === 'string' ? rawUpgrade.targetImage : null,

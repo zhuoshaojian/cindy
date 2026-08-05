@@ -69,6 +69,8 @@ export interface CloudInstanceStatus {
   /** Newer control planes set these release hints; older servers omit both. */
   updateAvailable?: boolean;
   latestReleaseTag?: string | null;
+  /** Newer control planes expose the idle/sleep auto-update preference. */
+  autoUpdate?: boolean;
   updatedAtMs: number;
 }
 
@@ -109,6 +111,13 @@ export interface CloudInstanceCreateInput {
 export interface CloudInstanceRenameInput {
   instanceId: string;
   customLabel: string | null;
+}
+
+/** Renderer-to-main mutable cloud-instance settings. */
+export interface CloudInstancePatchInput {
+  instanceId: string;
+  customLabel?: string | null;
+  autoUpdate?: boolean;
 }
 
 /** Renderer-to-main status lookup input. */
@@ -160,6 +169,7 @@ export const CLOUD_INSTANCE_INVOKE = {
   WAKE: 'cloud-instance:wake',
   CREATE: 'cloud-instance:create',
   RENAME: 'cloud-instance:rename',
+  PATCH: 'cloud-instance:patch',
   STATUS: 'cloud-instance:status',
   STOP: 'cloud-instance:stop',
   UPGRADE: 'cloud-instance:upgrade',

@@ -173,6 +173,7 @@ import {
   type CloudInstanceEnableResult,
   type CloudInstanceRenameInput,
   type CloudInstanceRenameResult,
+  type CloudInstancePatchInput,
   type CloudInstanceStatus,
   type CloudInstanceStatusInput,
   type CloudInstanceStopInput,
@@ -3748,6 +3749,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.CREATE, input),
     rename: (input: CloudInstanceRenameInput): Promise<CloudInstanceRenameResult> =>
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.RENAME, input),
+    patch: (input: CloudInstancePatchInput): Promise<void> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.PATCH, input),
     status: (input: CloudInstanceStatusInput = {}): Promise<{ status: CloudInstanceStatus }> =>
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.STATUS, input),
     stop: (input: CloudInstanceStopInput): Promise<{ status: CloudInstanceStatus }> =>

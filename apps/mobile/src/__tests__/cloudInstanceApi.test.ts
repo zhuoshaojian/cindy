@@ -188,6 +188,56 @@ describe('mobile cloud-instance API', () => {
     });
   });
 
+  it('patches auto-update and preserves support detection in status parsing', async () => {
+    const { listCloudInstances, patchCloudInstance } = await loadCloudInstanceApi(
+      'https://cloud.example.invalid',
+    );
+    const apiFetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        instances: [{
+          instanceId: 'instance-1',
+          deviceId: 'device-1',
+          nameSequence: 1,
+          customLabel: null,
+          status: { autoUpdate: false },
+        }],
+      })
+      .mockResolvedValueOnce({
+        instances: [{
+          instanceId: 'instance-1',
+          deviceId: 'device-1',
+          nameSequence: 1,
+          customLabel: null,
+          status: {},
+        }],
+      });
+    const authenticatedFetch = apiFetch as unknown as CloudInstanceApiFetch;
+
+    await expect(patchCloudInstance(
+      'instance/a',
+      { autoUpdate: true },
+      { apiFetch: authenticatedFetch },
+    )).resolves.toEqual({ kind: 'ok', value: true });
+    expect(apiFetch).toHaveBeenNthCalledWith(1, '/instances/instance%2Fa', {
+      baseUrl: 'https://cloud.example.invalid',
+      body: { autoUpdate: true },
+      method: 'PATCH',
+      timeoutMs: 30_000,
+    });
+
+    const supported = await listCloudInstances({ apiFetch: authenticatedFetch });
+    const legacy = await listCloudInstances({ apiFetch: authenticatedFetch });
+    expect(supported).toMatchObject({
+      kind: 'ok',
+      value: { instances: [{ status: { autoUpdate: false } }] },
+    });
+    expect(legacy).toMatchObject({ kind: 'ok' });
+    if (legacy.kind === 'ok') {
+      expect(legacy.value.instances[0]?.status).not.toHaveProperty('autoUpdate');
+    }
+  });
+
   it('maps structured API errors without exposing credentials', async () => {
     const { ApiError, listCloudInstances } = await loadCloudInstanceApi(
       'https://cloud.example.invalid',

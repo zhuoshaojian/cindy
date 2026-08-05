@@ -108,4 +108,16 @@ describe('MyDevicesPanel rename guards', () => {
       expect(messages.settings.devices.cloudInstance.currentVersionUpToDate).toBeTruthy();
     }
   });
+
+  it('only renders the cloud auto-update setting when the server exposes the field', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/settings/MyDevicesPanel.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain("typeof cloudInstance?.status.autoUpdate === 'boolean'");
+    expect(source).toContain('checked={cloudInstance.status.autoUpdate === true}');
+    expect(source).toContain('await cloud.setAutoUpdate(instanceId, enabled)');
+    expect(source).toContain('data-testid="cloud-instance-auto-update"');
+  });
 });

@@ -291,6 +291,14 @@ export function MyDevicesPanel({
     }
   };
 
+  const handleCloudAutoUpdate = async (instanceId: string, enabled: boolean) => {
+    try {
+      await cloud.setAutoUpdate(instanceId, enabled);
+    } catch {
+      toast.error(t('settings.devices.cloudInstance.toast.autoUpdateFailed'));
+    }
+  };
+
   const cardClass = 'rounded-xl border border-[var(--border-default)] px-4 py-3';
 
   return (
@@ -437,6 +445,12 @@ export function MyDevicesPanel({
             const cloudUpdating = cloudUpgradePending || cloudUpgradeVerifying;
             const cloudUpdateAvailable =
               cloudInstance?.status.updateAvailable === true && !cloudUpdating;
+            const cloudAutoUpdateSupported =
+              typeof cloudInstance?.status.autoUpdate === 'boolean';
+            const cloudAutoUpdatePending =
+              cloudInstance !== undefined
+              && cloud.pending?.target === cloudInstance.instanceId
+              && cloud.pending.action === 'autoUpdate';
             const cloudVersion = resolveCloudVersionPresentation({
               image: cloudInstance?.status.image,
               updateAvailable: cloudInstance?.status.updateAvailable === true,
@@ -649,6 +663,27 @@ export function MyDevicesPanel({
                     </div>
                   )}
                 </div>
+
+                {isCloudDevice(d) && cloudInstance && cloudAutoUpdateSupported ? (
+                  <div className="mt-3 border-t border-[var(--border-default)] pt-3">
+                    <ControlRow
+                      label={t('settings.devices.cloudInstance.autoUpdate')}
+                      reason={t('settings.devices.cloudInstance.autoUpdateHint')}
+                    >
+                      <Switch
+                        checked={cloudInstance.status.autoUpdate === true}
+                        disabled={cloud.pending !== null}
+                        onCheckedChange={(enabled) => void handleCloudAutoUpdate(
+                          cloudInstance.instanceId,
+                          enabled,
+                        )}
+                        aria-label={t('settings.devices.cloudInstance.autoUpdate')}
+                        data-testid="cloud-instance-auto-update"
+                        data-pending={cloudAutoUpdatePending || undefined}
+                      />
+                    </ControlRow>
+                  </div>
+                ) : null}
 
                 {/* 云端实例的两个方向恒为开启且不可编辑,整区隐藏;普通设备保持原行为。
                     手机等「不可被控」的普通设备、以及对方已拒绝本机的设备,不展示「我控制它」。 */}

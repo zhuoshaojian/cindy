@@ -3098,6 +3098,8 @@
         "currentVersionUpToDate": "현재 버전 {{version}} · 최신 버전입니다",
         "update": "클라우드 업데이트",
         "updating": "업데이트 중…",
+        "autoUpdate": "유휴 상태에서 자동 업데이트",
+        "autoUpdateHint": "새 버전이 있으면 클라우드 인스턴스가 유휴 상태이거나 절전 중일 때 자동으로 업데이트됩니다.",
         "updateRolledBack": "이전 업데이트에 실패해 자동으로 롤백했습니다.",
         "updateConfirm": {
           "title": "클라우드 인스턴스를 업데이트할까요?",
@@ -3122,6 +3124,7 @@
           "wakeFailed": "클라우드 인스턴스를 깨우지 못했습니다. 잠시 후 다시 시도해 주세요.",
           "updateStarted": "클라우드 인스턴스 업데이트를 시작했습니다",
           "updateFailed": "클라우드 인스턴스 업데이트를 시작하지 못했습니다. 다시 시도해 주세요.",
+          "autoUpdateFailed": "클라우드 인스턴스의 자동 업데이트 설정을 저장하지 못했습니다. 다시 시도해 주세요.",
           "noReleaseAvailable": "아직 사용할 수 있는 정식 버전이 없습니다. 새로 고친 후 잠시 뒤 다시 시도해 주세요."
         }
       },

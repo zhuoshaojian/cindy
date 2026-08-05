@@ -7,6 +7,7 @@ export interface DeviceManagementRouteParams extends Record<string, string | und
   deviceId: string;
   name: string;
   online: '0' | '1';
+  autoUpdate?: '0' | '1';
   cloudInstanceId?: string;
   cpuLabel?: string;
   image?: string;
@@ -33,6 +34,9 @@ export function buildDeviceManagementRouteParams(input: {
     online: device?.online ? '1' : '0',
     ...(cloudInstance ? {
       cloudInstanceId: cloudInstance.instanceId,
+      ...(typeof cloudInstance.status.autoUpdate === 'boolean'
+        ? { autoUpdate: cloudInstance.status.autoUpdate ? '1' : '0' }
+        : {}),
       ...(cloudInstance.status.image ? { image: cloudInstance.status.image } : {}),
       kind: 'cloud',
       ...(cloudInstance.status.latestReleaseTag

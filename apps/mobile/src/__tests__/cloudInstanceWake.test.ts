@@ -202,4 +202,29 @@ describe('runCloudInstanceWake', () => {
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(pendingRef.current).toBeNull();
   });
+
+  it('starts an optimistic setting update once and rolls it back on failure', async () => {
+    const pendingRef: { current: CloudInstancePending } = { current: null };
+    const onOptimisticStart = vi.fn();
+    const onOptimisticRollback = vi.fn();
+    const request = vi.fn(async () => ({
+      kind: 'error' as const,
+      error: { code: 'FAILED', message: 'failed', status: 500 },
+    }));
+
+    await expect(runCloudInstanceAction('instance-1', 'autoUpdate', {
+      pendingRef,
+      setPending: vi.fn(),
+      request,
+      refresh: vi.fn(async () => undefined),
+      onError: vi.fn(),
+      onOptimisticStart,
+      onOptimisticRollback,
+    })).resolves.toBeNull();
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(onOptimisticStart).toHaveBeenCalledTimes(1);
+    expect(onOptimisticRollback).toHaveBeenCalledTimes(1);
+    expect(pendingRef.current).toBeNull();
+  });
 });
