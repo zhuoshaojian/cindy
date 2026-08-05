@@ -51,7 +51,10 @@ export interface UseCloudInstances {
 }
 
 /** Account-level cloud instances for the mobile device menu. */
-export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInstances {
+export function useCloudInstances(
+  apiFetch: CloudInstanceApiFetch,
+  enabled = true,
+): UseCloudInstances {
   const [instances, setInstances] = useState<CloudInstanceView[]>([]);
   const [loadState, setLoadState] = useState<CloudInstancesLoadState>('loading');
   const [pending, setPending] = useState<CloudInstancePending>(null);
@@ -65,6 +68,7 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
   const refreshLoopRef = useRef<CloudInstanceRefreshLoop | null>(null);
 
   const requestRefresh = useCallback(async (silentFailure: boolean, allowPending = false) => {
+    if (!enabled) return;
     if (!allowPending && pendingRef.current !== null) return;
     const request = refreshInFlightRef.current ?? listCloudInstances({ apiFetch });
     refreshInFlightRef.current = request;
@@ -91,7 +95,7 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
       status: result.error.status,
     });
     if (!silentFailure) setLoadState('error');
-  }, [apiFetch]);
+  }, [apiFetch, enabled]);
 
   refreshRef.current = requestRefresh;
   if (!refreshLoopRef.current) {
@@ -114,10 +118,12 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
   );
 
   useEffect(() => {
+    if (!enabled) return;
     void requestRefresh(false, true);
-  }, [requestRefresh]);
+  }, [enabled, requestRefresh]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     const loop = refreshLoopRef.current;
     if (!loop) return undefined;
     loop.start();
@@ -129,7 +135,7 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
       subscription.remove();
       loop.stop();
     };
-  }, []);
+  }, [enabled]);
 
   const verifying = instances.some((instance) => instance.status.upgrade.state === 'verifying');
   useEffect(() => {

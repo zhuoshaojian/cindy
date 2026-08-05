@@ -72,7 +72,9 @@ describe('mobile controllable device filter', () => {
     expect(source).toContain('params: { deviceId: item.deviceId, name: item.label }');
     expect(source).toContain('onLongPress={item.deviceId ? () => onOpenDevice(item) : undefined}');
     expect(source).toContain('onDetails={item.deviceId ? () => onOpenManage(item) : undefined}');
-    expect(source).toContain('onLongPress={item.deviceId ? () => onOpenManage(item) : undefined}');
+    expect(source).toContain('onDetails={item.deviceId ? () => onOpenManage(item, true) : undefined}');
+    expect(source).toContain('onLongPress={item.deviceId ? () => onOpenManage(item, true) : undefined}');
+    expect(source).toContain('cloudCandidate,');
     expect(source).toContain('onOpenCloudInstance={(instance, label) => openDeviceManagement({');
     expect(source).toContain("pathname: '/devices/manage/[deviceId]'");
     expect(source).toContain('testID={testID ? `${testID}.details` : undefined}');

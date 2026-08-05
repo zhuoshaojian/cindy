@@ -7,6 +7,7 @@ export default function DeviceManagementRoute() {
   const params = useLocalSearchParams<{
     deviceId: string;
     autoUpdate?: string;
+    cloudCandidate?: string;
     name?: string;
     online?: string;
     cloudInstanceId?: string;
@@ -26,6 +27,7 @@ export default function DeviceManagementRoute() {
   return (
     <DeviceManagementScreen
       autoUpdate={autoUpdate === '1' ? true : autoUpdate === '0' ? false : undefined}
+      cloudCandidate={readRouteString(params.cloudCandidate) === '1'}
       cloudInstanceId={readRouteString(params.cloudInstanceId) ?? undefined}
       cpuLabel={readRouteString(params.cpuLabel) ?? undefined}
       deviceId={readRouteString(params.deviceId) ?? ''}

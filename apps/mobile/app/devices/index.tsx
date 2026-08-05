@@ -793,6 +793,7 @@ export default function HomeScreen() {
     deviceId: string;
     name: string;
     cloudInstance?: CloudInstanceView | null;
+    cloudCandidate?: boolean;
   }) => {
     const device = displayDevices.find((item) => item.deviceId === input.deviceId) ?? null;
     setDeviceMenuOpen(false);
@@ -800,6 +801,7 @@ export default function HomeScreen() {
       pathname: '/devices/manage/[deviceId]',
       params: buildDeviceManagementRouteParams({
         cloudInstance: input.cloudInstance,
+        cloudCandidate: input.cloudCandidate,
         device,
         deviceId: input.deviceId,
         name: input.name,
@@ -1689,9 +1691,10 @@ export default function HomeScreen() {
             params: { deviceId: item.deviceId, name: item.label },
           });
         }}
-        onOpenManage={(item) => {
+        onOpenManage={(item, cloudCandidate) => {
           if (!item.deviceId) return;
           openDeviceManagement({
+            cloudCandidate,
             deviceId: item.deviceId,
             name: item.label,
           });
@@ -1805,7 +1808,7 @@ function DeviceMenuModal({
   /** Opens the existing task-list detail route for an ordinary device. */
   onOpenDevice(item: MobileHomeDeviceFilterItem): void;
   /** Opens the dedicated device-management route. */
-  onOpenManage(item: MobileHomeDeviceFilterItem): void;
+  onOpenManage(item: MobileHomeDeviceFilterItem, cloudCandidate?: boolean): void;
   onSelect(item: MobileHomeDeviceFilterItem): void;
   onToggleGroupByProject(): void;
   onlineDeviceIds: ReadonlySet<string>;
@@ -1915,8 +1918,8 @@ function DeviceMenuModal({
                 dimmed={!item.available && item.state !== 'access_revoked'}
                 key={`cloud-fallback:${item.id}`}
                 label={item.label}
-                onDetails={item.deviceId ? () => onOpenManage(item) : undefined}
-                onLongPress={item.deviceId ? () => onOpenManage(item) : undefined}
+                onDetails={item.deviceId ? () => onOpenManage(item, true) : undefined}
+                onLongPress={item.deviceId ? () => onOpenManage(item, true) : undefined}
                 onPress={() => onSelect(item)}
                 selected={item.selected}
                 status={deviceMenuStatus(item)}

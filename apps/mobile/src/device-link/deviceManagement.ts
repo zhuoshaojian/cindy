@@ -8,6 +8,7 @@ export interface DeviceManagementRouteParams extends Record<string, string | und
   name: string;
   online: '0' | '1';
   autoUpdate?: '0' | '1';
+  cloudCandidate?: '1';
   cloudInstanceId?: string;
   cpuLabel?: string;
   image?: string;
@@ -26,12 +27,20 @@ export function buildDeviceManagementRouteParams(input: {
   name: string;
   device?: DeviceView | null;
   cloudInstance?: CloudInstanceView | null;
+  cloudCandidate?: boolean;
 }): DeviceManagementRouteParams {
   const { cloudInstance, device } = input;
+  const cloudCandidate = Boolean(
+    cloudInstance
+    || input.cloudCandidate
+    || device?.deviceInfo?.kind === 'cloud'
+    || input.deviceId.startsWith('cloud-device-'),
+  );
   return {
     deviceId: input.deviceId,
     name: input.name,
     online: device?.online ? '1' : '0',
+    ...(cloudCandidate ? { cloudCandidate: '1' } : {}),
     ...(cloudInstance ? {
       cloudInstanceId: cloudInstance.instanceId,
       ...(typeof cloudInstance.status.autoUpdate === 'boolean'
@@ -54,6 +63,28 @@ export function buildDeviceManagementRouteParams(input: {
     ...(typeof device?.deviceInfo?.memoryGb === 'number'
       ? { memoryGb: String(device.deviceInfo.memoryGb) }
       : {}),
+  };
+}
+
+export function resolveCloudManagementTarget(input: {
+  deviceId: string;
+  cloudCandidate?: boolean;
+  cloudInstanceId?: string;
+  kind?: string;
+  instances: readonly CloudInstanceView[];
+}): { instance: CloudInstanceView | null; isCloud: boolean } {
+  const instance = input.instances.find((item) => item.instanceId === input.cloudInstanceId)
+    ?? input.instances.find((item) => item.deviceId === input.deviceId)
+    ?? null;
+  return {
+    instance,
+    isCloud: Boolean(
+      instance
+      || input.cloudCandidate
+      || input.kind === 'cloud'
+      || input.cloudInstanceId
+      || input.deviceId.startsWith('cloud-device-'),
+    ),
   };
 }
 

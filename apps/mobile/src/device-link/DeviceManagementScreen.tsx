@@ -13,7 +13,11 @@ import {
   StatusDot,
 } from '@/components/MobilePrimitives';
 import { useAuth } from '@/auth/AuthContext';
-import { useCloudInstances } from '@/cloud-instance/useCloudInstances';
+import {
+  useCloudInstances,
+  type UseCloudInstances,
+} from '@/cloud-instance/useCloudInstances';
+import type { CloudInstanceView } from '@/api/cloudInstance';
 import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@/cloud-instance/cloudInstanceWake';
 import { DEVICE_LINK_API_BASE_URL } from '@/config/env';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
@@ -21,6 +25,7 @@ import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation
 import {
   cloudInstanceDetailActionState,
   devicePlatformLabel,
+  resolveCloudManagementTarget,
 } from '@/device-link/deviceManagement';
 import { formatRemoteError } from '@/device-link/remoteStatus';
 import { remoteSessionStore } from '@/session/remoteSessionStore';
@@ -35,6 +40,7 @@ export interface DeviceManagementScreenProps {
   name: string;
   online: boolean;
   autoUpdate?: boolean;
+  cloudCandidate?: boolean;
   cloudInstanceId?: string;
   cpuLabel?: string;
   image?: string;
@@ -55,6 +61,13 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
   const router = useRouter();
   const { t } = useTranslation();
   const { apiFetch } = useAuth();
+  const cloudCandidate = Boolean(
+    props.cloudCandidate
+    || props.kind === 'cloud'
+    || props.cloudInstanceId
+    || props.deviceId.startsWith('cloud-device-'),
+  );
+  const cloud = useCloudInstances(apiFetch, cloudCandidate);
   const { lastPresenceSnapshot } = useDeviceLink();
   const displayName = resolveMobileDeviceDisplayName(props.name);
   const [deviceName, setDeviceName] = useState(displayName);
@@ -62,7 +75,13 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
   const [renameEditing, setRenameEditing] = useState(false);
   const [renameSaving, setRenameSaving] = useState(false);
   const [online, setOnline] = useState(props.online);
-  const isCloud = props.kind === 'cloud' || Boolean(props.cloudInstanceId);
+  const cloudTarget = resolveCloudManagementTarget({
+    cloudCandidate,
+    cloudInstanceId: props.cloudInstanceId,
+    deviceId: props.deviceId,
+    instances: cloud.instances,
+    kind: props.kind,
+  });
 
   useEffect(() => {
     setDeviceName(displayName);
@@ -137,10 +156,12 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
           </View>
         </View>
 
-        {isCloud ? (
+        {cloudTarget.isCloud ? (
           <CloudInstanceManagement
             {...props}
+            cloud={cloud}
             initialInstanceId={props.cloudInstanceId}
+            resolvedInstance={cloudTarget.instance}
             online={online}
             onOnlineOverride={setOnline}
             onDeleted={() => goBackGuarded(router)}
@@ -204,6 +225,7 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
 
 function CloudInstanceManagement({
   autoUpdate: fallbackAutoUpdate,
+  cloud,
   deviceId,
   image: fallbackImage,
   initialInstanceId,
@@ -212,21 +234,21 @@ function CloudInstanceManagement({
   onDeleted,
   online,
   onOnlineOverride,
+  resolvedInstance,
   updateAvailable: fallbackUpdateAvailable = false,
   upgradeState: fallbackUpgradeState = 'idle',
 }: DeviceManagementScreenProps & {
+  cloud: UseCloudInstances;
   initialInstanceId?: string;
   onDeleted(): void;
   onOnlineOverride(value: boolean): void;
+  resolvedInstance: CloudInstanceView | null;
 }) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const { t } = useTranslation();
-  const { apiFetch } = useAuth();
-  const cloud = useCloudInstances(apiFetch);
   const refreshCloudInstances = cloud.refresh;
-  const instance = cloud.instances.find((item) => item.instanceId === initialInstanceId)
-    ?? cloud.instances.find((item) => item.deviceId === deviceId);
+  const instance = resolvedInstance;
   const instanceId = instance?.instanceId ?? initialInstanceId ?? null;
   const status = instance?.status;
   const autoUpdateSupported = instance
