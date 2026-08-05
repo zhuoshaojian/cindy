@@ -17,6 +17,7 @@ import { useCloudInstances } from '@/cloud-instance/useCloudInstances';
 import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@/cloud-instance/cloudInstanceWake';
 import { DEVICE_LINK_API_BASE_URL } from '@/config/env';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
+import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 import {
   cloudInstanceDetailActionState,
   devicePlatformLabel,
@@ -54,17 +55,18 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
   const { t } = useTranslation();
   const { apiFetch } = useAuth();
   const { lastPresenceSnapshot } = useDeviceLink();
-  const [deviceName, setDeviceName] = useState(props.name);
-  const [renameDraft, setRenameDraft] = useState(props.name);
+  const displayName = resolveMobileDeviceDisplayName(props.name);
+  const [deviceName, setDeviceName] = useState(displayName);
+  const [renameDraft, setRenameDraft] = useState(displayName);
   const [renameEditing, setRenameEditing] = useState(false);
   const [renameSaving, setRenameSaving] = useState(false);
   const [online, setOnline] = useState(props.online);
   const isCloud = props.kind === 'cloud' || Boolean(props.cloudInstanceId);
 
   useEffect(() => {
-    setDeviceName(props.name);
-    setRenameDraft(props.name);
-  }, [props.name]);
+    setDeviceName(displayName);
+    setRenameDraft(displayName);
+  }, [displayName]);
 
   useEffect(() => {
     if (lastPresenceSnapshot?.deviceId === props.deviceId) {

@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from 'expo-router';
 
 import { DeviceManagementScreen } from '@/device-link/DeviceManagementScreen';
+import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 
 export default function DeviceManagementRoute() {
   const params = useLocalSearchParams<{
@@ -31,7 +32,9 @@ export default function DeviceManagementRoute() {
       lastFailedUpgradeImage={readRouteString(params.lastFailedUpgradeImage) ?? undefined}
       memoryGb={readFiniteNumber(params.memoryGb)}
       modelLabel={readRouteString(params.modelLabel) ?? undefined}
-      name={readRouteString(params.name) ?? readRouteString(params.deviceId) ?? ''}
+      name={resolveMobileDeviceDisplayName(
+        readRouteString(params.name) ?? readRouteString(params.deviceId) ?? '',
+      )}
       online={readRouteString(params.online) === '1'}
       platform={readRouteString(params.platform) ?? undefined}
       updateAvailable={readRouteString(params.updateAvailable) === '1'}

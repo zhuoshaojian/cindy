@@ -936,8 +936,13 @@ export default function HomeScreen() {
   const liveActivityIndex = useStableValue(liveActivityIndexRaw, mapContentEqual);
   // 列表隐藏 Orca worker 子会话(本期不支持进 worker 聊天);Lead + 普通会话保留。仅 mobile 侧过滤。
   const homeSessions = useMemo(
-    () => excludeOrcaWorkerSessions(visibleSessions),
-    [visibleSessions],
+    () => excludeOrcaWorkerSessions(visibleSessions).map((session) => {
+      const rawName = session.deviceLinkDeviceName;
+      if (!rawName) return session;
+      const displayName = resolveMobileDeviceDisplayName(rawName);
+      return displayName === rawName ? session : { ...session, deviceLinkDeviceName: displayName };
+    }),
+    [t, visibleSessions],
   );
   const home = useMemo(
     () => buildMobileHomePresentation({
