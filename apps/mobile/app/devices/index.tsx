@@ -245,6 +245,9 @@ export default function HomeScreen() {
   // 菜单关闭动画完成(Modal 卸载)后要执行的动作。撤销授权提示是兄弟 Modal,
   // 必须等菜单完全卸载(onClosed)后再挂载,不能同一帧直接 set。
   const pendingMenuActionRef = useRef<(() => void) | null>(null);
+  const [renameTarget, setRenameTarget] = useState<MobileHomeDeviceFilterItem | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
   // 会话行滑动操作:互斥注册表(同一时间只允许一行滑开)+「选项」菜单 / 会话重命名弹窗状态。
   const swipeRegistry = useMemo(() => createSwipeRowRegistry(), []);
   const [actionSheetSession, setActionSheetSession] = useState<RemoteSession | null>(null);
@@ -789,6 +792,63 @@ export default function HomeScreen() {
     })),
     [devices, t],
   );
+  const openRenameDevice = useCallback((item: MobileHomeDeviceFilterItem) => {
+    if (!item.deviceId) return;
+    // 不能在菜单还没卸载时直接挂重命名 Modal(见 pendingMenuActionRef 注释),先关菜单再延后打开。
+    pendingMenuActionRef.current = () => {
+      setRenameTarget(item);
+      setRenameDraft(item.label);
+      setError(null);
+    };
+    setDeviceMenuOpen(false);
+  }, []);
+
+  const closeRenameDevice = useCallback(() => {
+    if (renameSaving) return;
+    setRenameTarget(null);
+    setRenameDraft('');
+  }, [renameSaving]);
+
+  const confirmRenameDevice = useCallback(async () => {
+    const target = renameTarget;
+    const name = renameDraft.trim();
+    if (!target?.deviceId || !name || renameSaving) return;
+    if (name === target.label.trim()) {
+      setRenameTarget(null);
+      setRenameDraft('');
+      return;
+    }
+
+    setRenameSaving(true);
+    try {
+      const res = await apiFetch<{ deviceId: string; name: string }>(
+        `/api/device-link/devices/${encodeURIComponent(target.deviceId)}`,
+        {
+          baseUrl: DEVICE_LINK_API_BASE_URL,
+          body: { name },
+          method: 'PATCH',
+          timeoutMs: DEVICE_LIST_TIMEOUT_MS,
+        },
+      );
+      const nextName = res.name;
+      setDevices((current) => {
+        const nextRaw = current.map((device) =>
+          device.deviceId === target.deviceId ? { ...device, name: nextName } : device);
+        const next = reconcileDeviceViews(nextRaw).devices;
+        devicesRef.current = next;
+        return next;
+      });
+      remoteSessionStore.renameDevice(target.deviceId, nextName);
+      setRenameTarget(null);
+      setRenameDraft('');
+      void loadHome({ visible: false });
+    } catch (err) {
+      setError(formatRemoteError(err));
+    } finally {
+      setRenameSaving(false);
+    }
+  }, [apiFetch, loadHome, reconcileDeviceViews, renameDraft, renameSaving, renameTarget]);
+
   const openDeviceManagement = useCallback((input: {
     deviceId: string;
     name: string;
@@ -1683,6 +1743,7 @@ export default function HomeScreen() {
         groupByProject={groupByProject}
         onClose={() => setDeviceMenuOpen(false)}
         onClosed={handleDeviceMenuClosed}
+        onRenameDevice={openRenameDevice}
         onOpenDevice={(item) => {
           if (!item.deviceId) return;
           setDeviceMenuOpen(false);
@@ -1749,6 +1810,14 @@ export default function HomeScreen() {
         saving={false}
         visible={renameSessionTarget !== null}
       />
+      <RenameDeviceModal
+        draft={renameDraft}
+        onCancel={closeRenameDevice}
+        onChangeDraft={setRenameDraft}
+        onConfirm={() => void confirmRenameDevice()}
+        saving={renameSaving}
+        visible={renameTarget !== null}
+      />
     </View>
   );
 }
@@ -1785,6 +1854,7 @@ function DeviceMenuModal({
   onOpenCloudInstance,
   onOpenDevice,
   onOpenManage,
+  onRenameDevice,
   onSelect,
   onToggleGroupByProject,
   onlineDeviceIds,
@@ -1809,6 +1879,8 @@ function DeviceMenuModal({
   onOpenDevice(item: MobileHomeDeviceFilterItem): void;
   /** Opens the dedicated device-management route. */
   onOpenManage(item: MobileHomeDeviceFilterItem, cloudCandidate?: boolean): void;
+  /** 常规设备行内重命名(铅笔)入口;云端行不提供。 */
+  onRenameDevice(item: MobileHomeDeviceFilterItem): void;
   onSelect(item: MobileHomeDeviceFilterItem): void;
   onToggleGroupByProject(): void;
   onlineDeviceIds: ReadonlySet<string>;
@@ -1907,6 +1979,7 @@ function DeviceMenuModal({
                 onDetails={item.deviceId ? () => onOpenManage(item) : undefined}
                 onLongPress={item.deviceId ? () => onOpenDevice(item) : undefined}
                 onPress={() => onSelect(item)}
+                onRename={item.deviceId ? () => onRenameDevice(item) : undefined}
                 selected={item.selected}
                 status={deviceMenuStatus(item)}
                 testID={item.deviceId ? `home.deviceChip.${sanitizeDeviceChipTestId(item.deviceId)}` : undefined}
@@ -2027,6 +2100,7 @@ function DeviceMenuItem({
   onDetails,
   onLongPress,
   onPress,
+  onRename,
   selected,
   status,
   testID,
@@ -2042,6 +2116,7 @@ function DeviceMenuItem({
   onDetails?: () => void;
   onLongPress?: () => void;
   onPress(): void;
+  onRename?: () => void;
   selected: boolean;
   status?: 'online' | 'offline';
   testID?: string;
@@ -2061,7 +2136,7 @@ function DeviceMenuItem({
         disabled: rowDisabled,
         selected: selected || undefined,
       }}
-      disabled={rowDisabled && !onDetails}
+      disabled={rowDisabled && !onDetails && !onRename}
       onLongPress={
         !onLongPress
           ? undefined
@@ -2120,6 +2195,27 @@ function DeviceMenuItem({
           ) : null}
         </View>
       ) : null}
+      {/* 尾列固定宽槽:有重命名(常规设备)渲染铅笔,无重命名(云端等)留空,
+          保证状态点在各行同一水平位置、不因缺少铅笔而右移错位。 */}
+      {status || onRename ? (
+        <View style={styles.deviceMenuRenameSlot}>
+          {onRename ? (
+            <Pressable
+              accessibilityLabel={t('devices.list.a11y.renameDevice', { label })}
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={(event) => {
+                event.stopPropagation();
+                onRename();
+              }}
+              style={({ pressed }) => [styles.deviceMenuRenameButton, pressed && styles.pressed]}
+              testID={testID ? `${testID}.rename` : undefined}
+            >
+              <Pencil color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.regular} />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       {/* 尾列详情 affordance 打开管理页;长按目标由各行单独决定,行点击仍只切换设备筛选。 */}
       {status || onDetails ? (
         <View style={styles.deviceMenuDetailsSlot}>
@@ -2144,8 +2240,74 @@ function DeviceMenuItem({
   );
 }
 
+function RenameDeviceModal({
+  draft,
+  onCancel,
+  onChangeDraft,
+  onConfirm,
+  saving,
+  visible,
+}: {
+  draft: string;
+  onCancel(): void;
+  onChangeDraft(value: string): void;
+  onConfirm(): void;
+  saving: boolean;
+  visible: boolean;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const canSave = draft.trim().length > 0 && !saving;
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onCancel}>
+      <Pressable style={styles.renameDeviceBackdrop} onPress={onCancel} testID="home.renameDevice.backdrop">
+        <Pressable style={styles.renameDeviceCard} onPress={() => undefined} testID="home.renameDevice.modal">
+          <Text style={styles.renameDeviceTitle}>{t('devices.list.renameDevice.title')}</Text>
+          <TextInput
+            autoFocus
+            editable={!saving}
+            maxLength={64}
+            onChangeText={onChangeDraft}
+            onSubmitEditing={() => {
+              if (canSave) onConfirm();
+            }}
+            placeholder={t('devices.list.renameDevice.placeholder')}
+            placeholderTextColor={colors.textTertiary}
+            returnKeyType="done"
+            selectTextOnFocus
+            style={styles.renameDeviceInput}
+            testID="home.renameDevice.input"
+            value={draft}
+          />
+          {/* 确认对统一规则:共享满宽纵排组(保存在上/取消居底),置于卡片底部。 */}
+          <MainWindowActionGroup
+            primaryActions={[{
+              accessibilityLabel: saving ? t('devices.list.renameDevice.savingA11y') : t('devices.list.renameDevice.saveA11y'),
+              busy: saving,
+              disabled: !canSave,
+              label: saving ? t('devices.common.saving') : t('devices.common.save'),
+              onPress: onConfirm,
+              testID: 'home.renameDevice.save',
+              tone: 'primary',
+            }]}
+            cancelAction={{
+              accessibilityLabel: t('devices.list.a11y.cancelRename'),
+              disabled: saving,
+              label: t('devices.common.cancel'),
+              onPress: onCancel,
+              testID: 'home.renameDevice.cancel',
+            }}
+            testID="home.renameDevice.actions"
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 /**
- * 会话重命名弹窗:沿用设备页既有的轻量卡片样式,不引入新的弹窗视觉语言。
+ * 会话重命名弹窗:与 RenameDeviceModal 平行的轻量组件,复用同一套 renameDevice* 样式。
  */
 function RenameSessionModal({
   draft,
@@ -3278,6 +3440,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   // 尾列固定宽槽:没有详情入口的特殊行留空占位,状态点跨行对齐。
   deviceMenuDetailsSlot: {
+    alignItems: 'center',
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  deviceMenuRenameButton: {
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  // 尾列固定宽槽(与重命名按钮同宽):云端等无重命名的行留空占位,状态点跨行对齐。
+  deviceMenuRenameSlot: {
     alignItems: 'center',
     height: 34,
     justifyContent: 'center',

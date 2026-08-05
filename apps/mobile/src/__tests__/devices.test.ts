@@ -80,7 +80,10 @@ describe('mobile controllable device filter', () => {
     expect(source).toContain('testID={testID ? `${testID}.details` : undefined}');
     expect(source).toContain('projectDeviceMenuSources({');
     expect(source).toContain('fallbackCloudFilters.map((item) => (');
-    expect(source).not.toContain('onRenameDevice');
+    // 常规设备保留行内重命名(铅笔)入口;云端行(rich/兜底)不提供重命名。
+    expect(source).toContain('onRename={item.deviceId ? () => onRenameDevice(item) : undefined}');
+    expect(source.match(/onRename=\{/g)).toHaveLength(1);
+    expect(source).toContain('testID="home.renameDevice.modal"');
   });
 
   it('does not render a cloud icon in the home device menu', () => {

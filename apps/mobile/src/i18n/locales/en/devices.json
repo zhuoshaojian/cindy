@@ -60,14 +60,17 @@
       "doneUnread": "Completed, unread",
       "running": "Running",
       "close": "Close",
-      "cancelRename": "Cancel rename"
+      "cancelRename": "Cancel rename",
+      "renameDevice": "Rename {{label}}"
     },
     "menu": {
       "groupByProject": "Group by Project"
     },
     "renameDevice": {
       "title": "Rename Device",
-      "placeholder": "Device name"
+      "placeholder": "Device name",
+      "savingA11y": "Saving device name",
+      "saveA11y": "Save device name"
     },
     "renameSession": {
       "title": "Rename Session",

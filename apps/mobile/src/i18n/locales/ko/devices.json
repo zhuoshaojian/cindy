@@ -60,14 +60,17 @@
       "doneUnread": "완료·읽지 않음",
       "running": "실행 중",
       "close": "닫기",
-      "cancelRename": "이름 변경 취소"
+      "cancelRename": "이름 변경 취소",
+      "renameDevice": "{{label}} 이름 변경"
     },
     "menu": {
       "groupByProject": "프로젝트별 그룹화"
     },
     "renameDevice": {
       "title": "기기 이름 변경",
-      "placeholder": "기기 이름"
+      "placeholder": "기기 이름",
+      "savingA11y": "기기 이름 저장 중",
+      "saveA11y": "기기 이름 저장"
     },
     "renameSession": {
       "title": "세션 이름 변경",

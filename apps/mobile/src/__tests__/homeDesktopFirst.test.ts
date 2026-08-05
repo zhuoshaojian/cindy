@@ -267,7 +267,9 @@ describe('mobile home desktop-first surface', () => {
     const detailSource = readSource('src/device-link/DeviceManagementScreen.tsx');
 
     expect(homeSource).toContain('buildDeviceManagementRouteParams({');
-    expect(homeSource).not.toContain('function RenameDeviceModal');
+    // 行内重命名(原有交互)与管理页重命名并存,都走同一 device-link PATCH。
+    expect(homeSource).toContain('function RenameDeviceModal');
+    expect(homeSource).toContain('`/api/device-link/devices/${encodeURIComponent(target.deviceId)}`');
     expect(detailSource).toContain('testID="deviceManagement.renameInput"');
     expect(detailSource).toContain("testID: 'deviceManagement.renameSave'");
     expect(detailSource).toContain('`/api/device-link/devices/${encodeURIComponent(props.deviceId)}`');
