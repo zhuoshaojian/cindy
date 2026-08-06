@@ -20,6 +20,8 @@ export interface CloudInstanceStatus {
   upgrade: CloudInstanceUpgradeStatus;
   /** Missing on older control planes; consumers hide the setting in that case. */
   autoUpdate?: boolean;
+  /** 观测项:Pod 模型凭据同步状态透传;缺省(旧控制面/非运行态)时不提示。 */
+  modelAccess?: 'ready' | 'not-ready' | 'unknown';
   [key: string]: unknown;
 }
 
@@ -285,6 +287,14 @@ function parseCloudInstanceStatus(value: unknown): CloudInstanceStatus {
           ? rawUpgrade.targetImage
           : null,
     ...(typeof value.autoUpdate === 'boolean' ? { autoUpdate: value.autoUpdate } : {}),
+    ...(() => {
+      // readiness.modelAccess 是观测透传;仅认识的取值进入视图,其余按缺省处理。
+      const readiness = isRecord(value.readiness) ? value.readiness : {};
+      const modelAccess = readiness.modelAccess;
+      return modelAccess === 'ready' || modelAccess === 'not-ready' || modelAccess === 'unknown'
+        ? { modelAccess }
+        : {};
+    })(),
     upgrade: {
       state,
       targetImage: typeof rawUpgrade.targetImage === 'string' ? rawUpgrade.targetImage : null,

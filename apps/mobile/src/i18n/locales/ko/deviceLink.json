@@ -49,7 +49,8 @@
     "deleteFailed": "클라우드 인스턴스를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.",
     "deleteConfirmTitle": "클라우드 인스턴스를 삭제할까요?",
     "deleteConfirmDescription": "클라우드 데이터가 삭제되며 복구할 수 없습니다. 해당 기기도 함께 제거됩니다.",
-    "deleteConfirm": "인스턴스 삭제"
+    "deleteConfirm": "인스턴스 삭제",
+    "modelAccessStale": "클라우드 모델 자격 증명을 새로 고쳐야 합니다. 모델을 일시적으로 사용할 수 없을 수 있습니다"
   },
   "sectionFirstRun": "시작하기",
   "sectionOffline": "연결한 기기",

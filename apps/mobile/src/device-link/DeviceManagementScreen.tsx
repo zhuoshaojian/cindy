@@ -392,6 +392,12 @@ function CloudInstanceManagement({
             {t('deviceLink.cloudInstance.updateRolledBack')}
           </Text>
         ) : null}
+        {/* 观测提示:Pod 模型凭据同步失败(不阻塞就绪,不影响本页其它操作)。 */}
+        {status?.modelAccess === 'not-ready' ? (
+          <Text style={styles.warningText} testID="deviceManagement.cloudModelAccessStale">
+            {t('deviceLink.cloudInstance.modelAccessStale')}
+          </Text>
+        ) : null}
         {(updateAvailable || actionState.updateBusy) ? (
           <MainWindowActionGroup
             primaryActions={[{

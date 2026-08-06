@@ -238,6 +238,40 @@ describe('mobile cloud-instance API', () => {
     }
   });
 
+  it('passes the model-access observation through and drops unknown values', async () => {
+    const { listCloudInstances } = await loadCloudInstanceApi(
+      'https://cloud.example.invalid',
+    );
+    const row = (readiness: unknown) => ({
+      instanceId: 'instance-1',
+      deviceId: 'device-1',
+      nameSequence: 1,
+      customLabel: null,
+      status: { readiness },
+    });
+    const apiFetch = vi.fn()
+      .mockResolvedValueOnce({ instances: [row({ ready: true, modelAccess: 'not-ready' })] })
+      .mockResolvedValueOnce({ instances: [row({ ready: true })] })
+      .mockResolvedValueOnce({ instances: [row({ ready: true, modelAccess: 'later-new-state' })] });
+    const authenticatedFetch = apiFetch as unknown as CloudInstanceApiFetch;
+
+    const stale = await listCloudInstances({ apiFetch: authenticatedFetch });
+    expect(stale).toMatchObject({
+      kind: 'ok',
+      value: { instances: [{ status: { modelAccess: 'not-ready' } }] },
+    });
+    // 旧控制面缺字段 / 未来新增取值:都按缺省处理,不进视图也不报错。
+    for (const outcome of [
+      await listCloudInstances({ apiFetch: authenticatedFetch }),
+      await listCloudInstances({ apiFetch: authenticatedFetch }),
+    ]) {
+      expect(outcome).toMatchObject({ kind: 'ok' });
+      if (outcome.kind === 'ok') {
+        expect(outcome.value.instances[0]?.status).not.toHaveProperty('modelAccess');
+      }
+    }
+  });
+
   it('maps structured API errors without exposing credentials', async () => {
     const { ApiError, listCloudInstances } = await loadCloudInstanceApi(
       'https://cloud.example.invalid',

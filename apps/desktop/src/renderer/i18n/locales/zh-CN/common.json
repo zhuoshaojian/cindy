@@ -3122,7 +3122,8 @@
           "updateFailed": "无法开始更新云端实例，请稍后重试",
           "autoUpdateFailed": "无法保存云端实例的自动更新设置，请稍后重试",
           "noReleaseAvailable": "目前没有可用的正式版，请刷新后稍后重试"
-        }
+        },
+        "modelAccessStale": "云端模型凭据待刷新，云端模型可能暂不可用"
       },
       "error": {
         "unavailable": "设备互联服务暂不可用(服务端未启用或网络异常)",

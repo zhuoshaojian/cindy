@@ -49,7 +49,8 @@
     "deleteFailed": "クラウドインスタンスの削除に失敗しました。しばらくしてからもう一度お試しください。",
     "deleteConfirmTitle": "クラウドインスタンスを削除しますか？",
     "deleteConfirmDescription": "クラウド上のデータは削除され、元に戻せません。対応するデバイスも削除されます。",
-    "deleteConfirm": "インスタンスを削除"
+    "deleteConfirm": "インスタンスを削除",
+    "modelAccessStale": "クラウドのモデル資格情報の更新が必要です。モデルが一時的に利用できない場合があります"
   },
   "sectionFirstRun": "はじめに",
   "sectionOffline": "接続したデバイス",

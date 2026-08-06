@@ -68,6 +68,9 @@ describe('device management route and cloud action state', () => {
     expect(source).toContain('cloud.setAutoUpdate(instanceId, enabled)');
     expect(source).toContain("testID: 'deviceManagement.cloudDelete'");
     expect(source).toContain("testID: `deviceManagement.cloud${actionState.lifecycleAction === 'wake' ? 'Wake' : 'Stop'}`");
+    // 模型凭据陈旧的观测提示:只在 not-ready 时显示,不影响任何操作可用性。
+    expect(source).toContain("status?.modelAccess === 'not-ready'");
+    expect(source).toContain('testID="deviceManagement.cloudModelAccessStale"');
   });
 
   it('pins device metadata and cloud release state into the management route', () => {

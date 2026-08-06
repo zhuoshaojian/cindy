@@ -49,7 +49,8 @@
     "deleteFailed": "删除云端实例失败，请稍后重试",
     "deleteConfirmTitle": "删除云端实例？",
     "deleteConfirmDescription": "删除后，云端数据将被删除且无法恢复，同时会移除对应设备。",
-    "deleteConfirm": "删除实例"
+    "deleteConfirm": "删除实例",
+    "modelAccessStale": "云端模型凭据待刷新，云端模型可能暂不可用"
   },
   "sectionFirstRun": "开始使用",
   "sectionOffline": "连接过的设备",

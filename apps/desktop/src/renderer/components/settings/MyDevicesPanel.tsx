@@ -549,6 +549,15 @@ export function MyDevicesPanel({
                         {t('settings.devices.cloudInstance.updateRolledBack')}
                       </span>
                     ) : null}
+                    {/* 观测提示:Pod 模型凭据同步失败(不阻塞就绪,不影响其它操作)。 */}
+                    {cloudInstance?.status.readiness?.modelAccess === 'not-ready' ? (
+                      <span
+                        data-testid="cloud-instance-model-access-stale"
+                        className="text-11 text-[var(--warning-fg)]"
+                      >
+                        {t('settings.devices.cloudInstance.modelAccessStale')}
+                      </span>
+                    ) : null}
                   </div>
                   {editingId !== d.deviceId && (
                     <div className="flex shrink-0 items-center gap-1">

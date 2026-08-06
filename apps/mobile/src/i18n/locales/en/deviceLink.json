@@ -49,7 +49,8 @@
     "deleteFailed": "Failed to delete the cloud instance. Try again.",
     "deleteConfirmTitle": "Delete Cloud Instance?",
     "deleteConfirmDescription": "The cloud data will be deleted and cannot be recovered. The corresponding device will also be removed.",
-    "deleteConfirm": "Delete Instance"
+    "deleteConfirm": "Delete Instance",
+    "modelAccessStale": "Cloud model credentials need a refresh; cloud models may be temporarily unavailable"
   },
   "sectionFirstRun": "Get Started",
   "sectionOffline": "Connected Devices",

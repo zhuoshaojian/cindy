@@ -96,6 +96,10 @@ describe('MyDevicesPanel rename guards', () => {
     expect(source).toContain("'settings.devices.cloudInstance.currentVersionUpToDate'");
     expect(source).toContain("'settings.devices.cloudInstance.currentVersion'");
     expect(source).toContain('data-testid="cloud-instance-current-version"');
+    // 模型凭据陈旧观测提示:只认 not-ready,unknown/缺省不打扰用户。
+    expect(source).toContain("cloudInstance?.status.readiness?.modelAccess === 'not-ready'");
+    expect(source).toContain('data-testid="cloud-instance-model-access-stale"');
+    expect(source).toContain("t('settings.devices.cloudInstance.modelAccessStale')");
 
     for (const locale of ['zh-CN', 'en', 'ja', 'ko']) {
       const messages = JSON.parse(

@@ -35,6 +35,11 @@ export interface CloudInstanceReadiness {
   ready: boolean;
   reason: CloudInstanceReadinessReason;
   blockers: string[];
+  /**
+   * 观测项透传:Pod 侧模型凭据同步(credentialsSync)状态。不参与 ready/blockers,
+   * 仅用于「云端模型凭据待刷新」类提示;旧控制面/非运行态可能缺省。
+   */
+  modelAccess?: 'ready' | 'not-ready' | 'unknown';
 }
 
 /** Membership ownership echoed by the authenticated control plane. */
