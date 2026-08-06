@@ -2196,8 +2196,10 @@ function DeviceMenuItem({
         </View>
       ) : null}
       {/* 尾列固定宽槽:有重命名(常规设备)渲染铅笔,无重命名(云端等)留空,
-          保证状态点在各行同一水平位置、不因缺少铅笔而右移错位。 */}
-      {status || onRename ? (
+          保证状态点在各行同一水平位置、不因缺少铅笔而右移错位。
+          例外:带更新徽标的云端行永远没有铅笔,空占位会在窄面板里把
+          flex:1 的名字挤成零宽,该行让出占位换名字可见。 */}
+      {(status || onRename) && !badge ? (
         <View style={styles.deviceMenuRenameSlot}>
           {onRename ? (
             <Pressable

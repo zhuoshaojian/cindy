@@ -84,6 +84,8 @@ describe('mobile controllable device filter', () => {
     expect(source).toContain('onRename={item.deviceId ? () => onRenameDevice(item) : undefined}');
     expect(source.match(/onRename=\{/g)).toHaveLength(1);
     expect(source).toContain('testID="home.renameDevice.modal"');
+    // 带更新徽标的云端行让出空铅笔占位,窄面板里名字与徽标必须并存可见。
+    expect(source).toContain('{(status || onRename) && !badge ? (');
   });
 
   it('does not render a cloud icon in the home device menu', () => {
