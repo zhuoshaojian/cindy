@@ -239,9 +239,26 @@ type AccountSwitchTeardown = (context: {
 
 /** Releases every account-scoped runtime before terminal local sign-out. */
 type AuthSessionTeardown = (reason: string) => void | Promise<void>;
+/** Rebuilds a headless Pod resource session from its retained Account credential. */
+type ProvisionedSessionRecovery = () => void | Promise<void>;
+
+export type ProvisionedAccountCredentialState =
+  | { kind: 'present'; accountRefreshToken: string }
+  | { kind: 'definitely-absent' }
+  | { kind: 'temporarily-unreadable' };
+
+export class ProvisionedAccountCredentialTemporarilyUnreadableError extends Error {
+  constructor() {
+    super('Pod Account credential is temporarily unreadable');
+    this.name = 'ProvisionedAccountCredentialTemporarilyUnreadableError';
+  }
+}
 
 let accountSwitchTeardown: AccountSwitchTeardown | null = null;
 let authSessionTeardown: AuthSessionTeardown | null = null;
+let provisionedSessionRecovery: ProvisionedSessionRecovery | null = null;
+let provisionedSessionRecoveryPending = false;
+let provisionedResourceInvalidationPromise: Promise<void> | null = null;
 
 // ── Module-level state ──────────────────────────────────────────────────────
 
@@ -805,6 +822,22 @@ export function setAccountSwitchTeardown(teardown: AccountSwitchTeardown | null)
 
 export function setAuthSessionTeardown(teardown: AuthSessionTeardown | null): void {
   authSessionTeardown = teardown;
+}
+
+export function setProvisionedSessionRecovery(
+  recovery: ProvisionedSessionRecovery | null,
+): void {
+  provisionedSessionRecovery = recovery;
+  if (!recovery || !provisionedSessionRecoveryPending) return;
+  provisionedSessionRecoveryPending = false;
+  void Promise.resolve()
+    .then(recovery)
+    .catch((error) => {
+      provisionedSessionRecoveryPending = true;
+      log.error('deferred provisioned resource session recovery trigger failed', {
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+    });
 }
 
 // ── User-level API key sync ─────────────────────────────────────────────────
@@ -1485,6 +1518,8 @@ function clearAuth(
      * removeSafe 会把别人的新 token 删掉,把对方也踢成半死。
      */
     preservePersistedRefreshToken?: boolean;
+    /** Keep the durable Account bootstrap credential while replacing only a Pod resource session. */
+    preserveProvisionedAccountCredentials?: boolean;
     /**
      * Clear auth fields immediately, but defer publishing the signed-out
      * owner until the enclosing teardown completes. Owner-bound consumers are
@@ -1524,8 +1559,11 @@ function clearAuth(
     } else {
       removeSafe(AUTH_SESSION_KEY);
       removeSafe(LEGACY_RESOURCE_REFRESH_TOKEN_KEY);
-      removeSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);
-      removeSafe(POD_MEMBERSHIP_ID_KEY);
+      if (!opts.preserveProvisionedAccountCredentials) {
+        provisionedSessionRecoveryPending = false;
+        removeSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);
+        removeSafe(POD_MEMBERSHIP_ID_KEY);
+      }
       removeSafe(LEGACY_ACCOUNT_REFRESH_TOKEN_KEY);
       removeSafe(LEGACY_REFRESH_TOKEN_KEY);
     }
@@ -1564,11 +1602,17 @@ async function expireRuntimeAuth(
   reason: SessionExpiredReason = 'unknown',
   opts: { preservePersistedRefreshToken?: boolean } = {},
 ): Promise<void> {
+  const recoverProvisionedSession = provisionedSessionRecovery;
+  const provisionedAccountCredential = readProvisionedAccountCredentialState();
+  const mayHaveProvisionedAccountCredential =
+    provisionedAccountCredential.kind !== 'definitely-absent';
   const releaseBoundary = beginAppSessionBoundary();
   notifyRendererAuthBoundaryPending();
   clearAuth({
     notify: false,
     preservePersistedRefreshToken: opts.preservePersistedRefreshToken,
+    preserveProvisionedAccountCredentials:
+      recoverProvisionedSession !== null || mayHaveProvisionedAccountCredential,
     deferSessionCommit: true,
   });
   try {
@@ -1596,6 +1640,46 @@ async function expireRuntimeAuth(
     notifyAuthListeners();
     notifySessionExpired(reason);
   }
+  // A concurrent terminal Account rejection clears the durable credential and
+  // must win over this resource-only recovery path.
+  if (readProvisionedAccountCredentialState().kind === 'definitely-absent') return;
+  if (recoverProvisionedSession) {
+    try {
+      await recoverProvisionedSession();
+    } catch (error) {
+      log.error('provisioned resource session recovery trigger failed', {
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+    }
+  } else if (mayHaveProvisionedAccountCredential) {
+    provisionedSessionRecoveryPending = true;
+  }
+}
+
+/**
+ * Recover a rejected Pod resource session without discarding its durable
+ * Account credential. Normal desktop sessions retain the existing terminal
+ * invalidation behavior because they have no provisioning recovery boundary.
+ */
+export function invalidateResourceSession(reason: string): Promise<void> {
+  if (
+    !provisionedSessionRecovery
+    && readProvisionedAccountCredentialState().kind === 'definitely-absent'
+  ) {
+    return invalidateSession(reason);
+  }
+  if (provisionedResourceInvalidationPromise) return provisionedResourceInvalidationPromise;
+
+  const previousUserId = currentUser?.id ?? getActiveAppSession().dataOwnerId ?? 'signed-out';
+  const run = expireRuntimeAuth(previousUserId, 'unknown');
+  provisionedResourceInvalidationPromise = run;
+  const clearIfCurrent = (): void => {
+    if (provisionedResourceInvalidationPromise === run) {
+      provisionedResourceInvalidationPromise = null;
+    }
+  };
+  void run.then(clearIfCurrent, clearIfCurrent);
+  return run;
 }
 
 /**
@@ -1689,9 +1773,35 @@ export function getAuthState(): AuthState {
   return snapshotAuthState();
 }
 
-/** Read the latest rotated account refresh token for headless Pod provisioning. */
+/**
+ * Classify the durable Pod Account credential without treating a transient
+ * safeStorage/filesystem failure as absence.
+ */
+export function readProvisionedAccountCredentialState(): ProvisionedAccountCredentialState {
+  const accountRefreshToken = readSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);
+  if (accountRefreshToken?.trim()) {
+    return { kind: 'present', accountRefreshToken };
+  }
+  return isPersistedSecretAbsent(POD_ACCOUNT_REFRESH_TOKEN_KEY)
+    ? { kind: 'definitely-absent' }
+    : { kind: 'temporarily-unreadable' };
+}
+
+/** Read the latest rotated account refresh token for non-destructive display/compatibility paths. */
 export function readProvisionedAccountRefreshToken(): string | null {
-  return readSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);
+  const state = readProvisionedAccountCredentialState();
+  return state.kind === 'present' ? state.accountRefreshToken : null;
+}
+
+/**
+ * Strict provisioning read: an unreadable persisted credential must not fall
+ * back to the already-rotated one-shot mount token.
+ */
+export function readProvisionedAccountRefreshTokenForProvisioning(): string | null {
+  const state = readProvisionedAccountCredentialState();
+  if (state.kind === 'present') return state.accountRefreshToken;
+  if (state.kind === 'definitely-absent') return null;
+  throw new ProvisionedAccountCredentialTemporarilyUnreadableError();
 }
 
 /**
@@ -1704,9 +1814,23 @@ export function persistProvisionedAccountRefreshToken(accountRefreshToken: strin
   }
 }
 
-/** Forget a server-rejected Pod account token so a retry can read a refreshed Secret. */
-export function clearProvisionedAccountRefreshToken(): void {
+/** Forget Account credentials only after the Account refresh endpoint rejects them. */
+export function clearProvisionedAccountCredentials(): void {
+  provisionedSessionRecoveryPending = false;
   removeSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);
+  removeSafe(POD_MEMBERSHIP_ID_KEY);
+}
+
+/**
+ * Confirm that both durable Pod Account credential files are physically gone.
+ * A read returning null is insufficient because safeStorage or filesystem
+ * failures are also represented as null by the ordinary read path.
+ */
+export function areProvisionedAccountCredentialsAbsent(): boolean {
+  return (
+    isPersistedSecretAbsent(POD_ACCOUNT_REFRESH_TOKEN_KEY)
+    && isPersistedSecretAbsent(POD_MEMBERSHIP_ID_KEY)
+  );
 }
 
 /** Read the last validated Pod membership selection from encrypted storage. */

@@ -13,6 +13,7 @@ import {
   POD_USER_DATA_DIR_ENV,
   resolvePodDeviceIdOverride,
 } from './headless-startup.js';
+import { DEFINITIVE_REFRESH_FAILURE_CODES } from './authRefreshFailure.js';
 
 export const POD_ACCOUNT_REFRESH_TOKEN_ENV = 'XDT_POD_ACCOUNT_REFRESH_TOKEN';
 export const POD_DEVICE_NAME_ENV = 'XDT_POD_DEVICE_NAME';
@@ -47,7 +48,7 @@ export interface PodProvisioningDeps {
   readPersistedMembershipId: () => string | null;
   readSecretFile?: (filePath: string) => string;
   persistAccountRefreshToken: (accountRefreshToken: string) => void;
-  clearPersistedAccountRefreshToken?: () => void;
+  clearPersistedAccountCredentials?: () => void;
   persistMembershipId: (membershipId: string) => void;
   installSession: (session: AuthTokenPair & { deviceId: string }) => unknown | Promise<unknown>;
   /** A validated local resource session makes the one-shot bootstrap token unnecessary. */
@@ -163,6 +164,7 @@ export async function bootstrapPodProvisioning(deps: PodProvisioningDeps): Promi
     return true;
   }
 
+  let accountRefreshRejected = false;
   try {
     const config = resolvePodProvisioningConfig(
       deps.env,
@@ -178,9 +180,16 @@ export async function bootstrapPodProvisioning(deps: PodProvisioningDeps): Promi
       fetch: deps.fetch,
     });
     deps.logger.info('Pod provisioning account refresh start');
-    const accountPair = await client.refreshAccount(config.accountRefreshToken, {
-      timeoutMs: deps.timeoutMs ?? POD_PROVISIONING_TIMEOUT_MS,
-    });
+    let accountPair: Awaited<ReturnType<CindyAuthClient['refreshAccount']>>;
+    try {
+      accountPair = await client.refreshAccount(config.accountRefreshToken, {
+        timeoutMs: deps.timeoutMs ?? POD_PROVISIONING_TIMEOUT_MS,
+      });
+    } catch (error) {
+      accountRefreshRejected = error instanceof AuthApiError
+        && DEFINITIVE_REFRESH_FAILURE_CODES.has(error.code);
+      throw error;
+    }
     deps.logger.info('Pod provisioning account refresh ok');
     // The account refresh endpoint rotates on every success. Persist immediately
     // before any later request can fail, otherwise the only usable token is lost.
@@ -219,12 +228,12 @@ export async function bootstrapPodProvisioning(deps: PodProvisioningDeps): Promi
       deps.logger.info('Pod provisioning failed after local session recovery; continuing');
       return true;
     }
-    // A rotated account token is single-use. If a previous attempt persisted a
-    // token that the server has since rejected, discard only that rejected
-    // local copy so the next retry re-reads the mounted Secret. Transient
-    // transport/server failures keep the local token for a safe retry.
-    if (error instanceof AuthApiError && error.code === 'INVALID_REFRESH_TOKEN') {
-      deps.clearPersistedAccountRefreshToken?.();
+    // Only an explicit rejection from the Account refresh endpoint invalidates
+    // the durable Account credential and its Membership selection. Resource
+    // exchange/install failures and transient refresh failures keep both so a
+    // later provisioning attempt can recover the resource session.
+    if (accountRefreshRejected) {
+      deps.clearPersistedAccountCredentials?.();
     }
     throw error;
   }

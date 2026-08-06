@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getAccessToken: vi.fn(),
   refresh: vi.fn(),
   invalidateSession: vi.fn(),
+  invalidateResourceSession: vi.fn(),
   logger: {
     error: vi.fn(),
     warn: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../authManager', () => ({
   getAccessToken: mocks.getAccessToken,
   refresh: mocks.refresh,
   invalidateSession: mocks.invalidateSession,
+  invalidateResourceSession: mocks.invalidateResourceSession,
 }));
 vi.mock('../i18n.js', () => ({
   getResolvedMainLocale: () => 'zh-CN',
@@ -202,10 +204,10 @@ describe('serverApiFetch', () => {
     expect(mocks.invalidateSession).not.toHaveBeenCalled();
   });
 
-  it('refresh 后仍返回可恢复 401 时完整退登', async () => {
+  it('refresh 后仍返回可恢复 401 时失效 resource session', async () => {
     mocks.getAccessToken.mockReturnValue('token-a');
     mocks.refresh.mockResolvedValue(true);
-    mocks.invalidateSession.mockResolvedValue(undefined);
+    mocks.invalidateResourceSession.mockResolvedValue(undefined);
     mocks.netFetch
       .mockResolvedValueOnce({
         ok: false,
@@ -223,7 +225,10 @@ describe('serverApiFetch', () => {
         baseUrl: 'https://resource.example.com',
       }),
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED', statusCode: 401 });
-    expect(mocks.invalidateSession).toHaveBeenCalledWith('resource-unauthorized-after-refresh');
+    expect(mocks.invalidateResourceSession).toHaveBeenCalledWith(
+      'resource-unauthorized-after-refresh',
+    );
+    expect(mocks.invalidateSession).not.toHaveBeenCalled();
   });
 
   it.each([
