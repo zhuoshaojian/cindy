@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDeviceListPresentation,
+  CLOUD_DEVICE_ID_PREFIX,
   CLOUD_DEVICE_NAME_SENTINEL,
   deviceAccessState,
   deviceDisplayName,
   formatCloudDeviceName,
   isControllableDevice,
+  isCloudInstanceDeviceId,
   parseCloudDeviceName,
   platformLabel,
   toDeviceListItems,
@@ -28,6 +30,12 @@ function device(patch: Partial<DeviceListDeviceLike> = {}): DeviceListDeviceLike
 }
 
 describe('shared device list presentation model', () => {
+  it('recognizes the reserved cloud device-id namespace', () => {
+    expect(CLOUD_DEVICE_ID_PREFIX).toBe('cloud-device-');
+    expect(isCloudInstanceDeviceId('cloud-device-abc')).toBe(true);
+    expect(isCloudInstanceDeviceId('desktop-device-abc')).toBe(false);
+  });
+
   it('requires online, remoteControlEnabled and not self', () => {
     expect(isControllableDevice(device())).toBe(true);
     expect(isControllableDevice(device({ busy: true }))).toBe(true);

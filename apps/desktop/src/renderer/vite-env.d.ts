@@ -3558,6 +3558,7 @@ interface ElectronAPI {
         devices: Array<{
           deviceId: string;
           deviceName: string;
+          kind?: 'cloud';
           sessions: Record<string, unknown>[];
         }>;
         ownerToken?: string;
@@ -3567,6 +3568,7 @@ interface ElectronAPI {
         devices: ReadonlyArray<{
           deviceId: string;
           deviceName: string;
+          kind?: 'cloud';
           sessions: readonly Record<string, unknown>[];
         }>,
         expectedOwnerToken?: string,

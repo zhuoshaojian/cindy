@@ -3800,6 +3800,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           memoryGb?: number;
           osVersion?: string;
           modelLabel?: string;
+          kind?: 'cloud';
         } | null;
         platform: string | null;
         appVersion: string | null;
@@ -3904,6 +3905,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         devices: Array<{
           deviceId: string;
           deviceName: string;
+          kind?: 'cloud';
           sessions: Record<string, unknown>[];
         }>;
         ownerToken?: string;
@@ -3914,6 +3916,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         devices: ReadonlyArray<{
           deviceId: string;
           deviceName: string;
+          kind?: 'cloud';
           sessions: readonly Record<string, unknown>[];
         }>,
         expectedOwnerToken?: string,

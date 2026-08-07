@@ -50,6 +50,8 @@ export type RemoteSessionStatus = Exclude<ListStatusFilter, 'all'>;
 interface DeviceShard {
   deviceId: string;
   deviceName: string;
+  /** Relay-declared cloud identity; optional for caches written before this field existed. */
+  kind?: 'cloud';
   connectionStatus: DeviceLinkConnectionStatus;
   /** 已打 device-link origin 标记的远端会话(可直接进 groupSessions)。 */
   sessions: Session[];
@@ -147,6 +149,8 @@ const EMPTY: Session[] = [];
 export interface RemoteDeviceSummary {
   deviceId: string;
   deviceName: string;
+  /** Relay-declared cloud identity, retained while the authoritative directory converges. */
+  kind?: 'cloud';
   sessionCount: number;
   /** true = 当前在线可控;false = 仅保留最近一次会话快照,用于断线时稳定侧边栏。 */
   connected: boolean;
@@ -165,6 +169,7 @@ function sameDeviceList(a: RemoteDeviceSummary[], b: RemoteDeviceSummary[]): boo
     if (
       a[i].deviceId !== b[i].deviceId ||
       a[i].deviceName !== b[i].deviceName ||
+      a[i].kind !== b[i].kind ||
       a[i].sessionCount !== b[i].sessionCount ||
       a[i].connected !== b[i].connected
     ) {
@@ -323,6 +328,7 @@ function recompute(): void {
       .map((shard) => ({
         deviceId: shard.deviceId,
         deviceName: shard.deviceName,
+        kind: shard.kind,
         sessionCount: shard.sessions.length,
         connected: shard.connectionStatus === 'connected',
       }))
@@ -409,6 +415,7 @@ const actions = {
     deviceName: string,
     rawSessions: readonly Session[],
     status: RemoteSessionStatus = 'active',
+    kind?: 'cloud',
   ): void {
     const connectionStatus: DeviceLinkConnectionStatus = 'connected';
     // 状态桶本身是权威筛选条件：跨版本兼容行 / 测试夹具可能缺 status，统一按本次
@@ -417,6 +424,7 @@ const actions = {
       stamp({ ...session, status }, deviceId, deviceName, connectionStatus),
     );
     const existing = shards.get(deviceId);
+    const effectiveKind = kind ?? existing?.kind;
     const loadingStateCleared =
       status === 'active'
         ? setBootstrapState(deviceId, 'idle')
@@ -440,6 +448,7 @@ const actions = {
       existing &&
       existing.connectionStatus === connectionStatus &&
       existing.deviceName === deviceName &&
+      existing.kind === effectiveKind &&
       JSON.stringify(existing.sessions) === JSON.stringify(nextSessions)
     ) {
       if (!statusWasLoaded) {
@@ -466,6 +475,7 @@ const actions = {
     shards.set(deviceId, {
       deviceId,
       deviceName,
+      kind: effectiveKind,
       connectionStatus,
       sessions: nextSessions,
       loadedStatuses,
@@ -483,7 +493,12 @@ const actions = {
    *  - 不清 bootstrapFailed、不动 epoch:种入不是一次拉取,不参与乱序保护。
    */
   hydrateFromCache(
-    devices: ReadonlyArray<{ deviceId: string; deviceName: string; sessions: readonly Session[] }>,
+    devices: ReadonlyArray<{
+      deviceId: string;
+      deviceName: string;
+      kind?: 'cloud';
+      sessions: readonly Session[];
+    }>,
   ): void {
     let changed = false;
     for (const device of devices) {
@@ -500,6 +515,7 @@ const actions = {
       shards.set(deviceId, {
         deviceId,
         deviceName,
+        kind: device.kind,
         connectionStatus: 'disconnected',
         sessions: cachedSessions.map((s) => stamp(s, deviceId, deviceName, 'disconnected')),
         // 冷缓存只用于首屏，不是本轮权威结果；重连后 active / archived 仍要分别校准。
@@ -544,10 +560,11 @@ const actions = {
     deviceName: string,
     rawSessions: readonly Session[],
     status: RemoteSessionStatus = 'active',
+    kind?: 'cloud',
   ): void {
     const existing = shards.get(deviceId);
     if (!existing) {
-      actions.setDeviceSessions(deviceId, deviceName, rawSessions, status);
+      actions.setDeviceSessions(deviceId, deviceName, rawSessions, status, kind);
       return;
     }
     const incomingIds = new Set(rawSessions.map((session) => session.id));
@@ -561,6 +578,7 @@ const actions = {
         ),
       ],
       status,
+      kind,
     );
   },
 
@@ -873,6 +891,11 @@ const actions = {
   /** 取设备友好名(tooltip / 日志用)。 */
   getDeviceName(deviceId: string): string | undefined {
     return shards.get(deviceId)?.deviceName;
+  },
+
+  /** Cached relay identity used by the cold-cache writer and cloud presentation hooks. */
+  getDeviceKind(deviceId: string): 'cloud' | undefined {
+    return shards.get(deviceId)?.kind;
   },
 
   /** 当前是否保留着该设备的远程会话快照(connected 或 disconnected 都算)。 */

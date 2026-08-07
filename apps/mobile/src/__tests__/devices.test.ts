@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import type { DeviceView } from '@cindy/device-link';
 import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import {
+  buildMobileHomePresentation,
   selectMobileHomeSources,
   type MobileHomeDeviceFilterItem,
+  type MobileHomeSessionLike,
 } from '@/session/mobileHome';
 import {
   deviceAccessState,
@@ -17,6 +19,7 @@ import {
 import {
   projectCloudInstanceMenuItems,
   projectDeviceMenuSources,
+  resolveDeviceMenuKind,
 } from '@/device-link/deviceMenuProjection';
 
 function device(patch: Partial<DeviceView> = {}): DeviceView {
@@ -48,6 +51,30 @@ function deviceFilter(
     state: 'ready',
     statusLabel: 'online',
     waitingCount: 0,
+  };
+}
+
+function mobileSession(
+  id: string,
+  patch: Partial<MobileHomeSessionLike> = {},
+): MobileHomeSessionLike {
+  return {
+    agentKind: 'cc',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    effort: 'medium',
+    fastMode: false,
+    id,
+    model: 'claude-sonnet-4-6',
+    permissionMode: 'ask',
+    pinnedAt: null,
+    status: 'active',
+    title: id,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    userId: 'user-1',
+    userSendAt: null,
+    workspaceKind: 'project',
+    workingDir: '/repo/app',
+    ...patch,
   };
 }
 
@@ -187,6 +214,67 @@ describe('mobile controllable device filter', () => {
     })).toEqual({
       deviceFilters: [regular],
       fallbackCloudFilters: [],
+    });
+  });
+
+  it('casts live prefix devices at the model boundary and hides only a reachable orphan cache row', () => {
+    const liveModels = [
+      {
+        canOpen: true,
+        deviceId: 'cloud-device-live',
+        kind: resolveDeviceMenuKind('cloud-device-live', undefined),
+        name: 'Cloud',
+        state: 'ready',
+        statusLabel: 'online',
+      },
+    ];
+    const liveHome = buildMobileHomePresentation({ devices: liveModels, sessions: [] });
+    const liveCloudDeviceIds = new Set(
+      liveModels.filter((item) => item.kind === 'cloud').map((item) => item.deviceId),
+    );
+    const liveCloud = liveHome.deviceFilters.find(
+      (item) => item.deviceId === 'cloud-device-live',
+    );
+    expect(liveCloud).toBeDefined();
+    expect(projectDeviceMenuSources({
+      cloudDeviceIds: liveCloudDeviceIds,
+      cloudInstanceDeviceIds: new Set(),
+      cloudLoadState: 'ready',
+      filters: [liveCloud!],
+    }).fallbackCloudFilters).toEqual([liveCloud!]);
+
+    const home = buildMobileHomePresentation({
+      devices: [],
+      sessions: [mobileSession('stale-cloud', {
+        deviceLinkDeviceId: 'cloud-device-deleted',
+        deviceLinkDeviceName: '__cindy_cloud_device_name__',
+      })],
+    });
+    const staleCloud = home.deviceFilters.find(
+      (item) => item.deviceId === 'cloud-device-deleted',
+    );
+    expect(staleCloud).toBeDefined();
+
+    expect(projectDeviceMenuSources({
+      cloudDeviceIds: new Set(),
+      cloudInstanceDeviceIds: new Set(),
+      cloudLoadState: 'ready',
+      filters: [staleCloud!],
+    })).toEqual({
+      deviceFilters: [],
+      fallbackCloudFilters: [],
+    });
+
+    // Without an authoritative control-plane result, preserve the existing
+    // offline-cache fallback instead of guessing that the instance was deleted.
+    expect(projectDeviceMenuSources({
+      cloudDeviceIds: new Set(),
+      cloudInstanceDeviceIds: new Set(),
+      cloudLoadState: 'error',
+      filters: [staleCloud!],
+    })).toEqual({
+      deviceFilters: [],
+      fallbackCloudFilters: [staleCloud!],
     });
   });
 

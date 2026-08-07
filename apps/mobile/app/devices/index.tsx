@@ -76,6 +76,7 @@ import {
   buildCloudDeviceFilterItem,
   projectCloudInstanceMenuItems,
   projectDeviceMenuSources,
+  resolveDeviceMenuKind,
 } from '@/device-link/deviceMenuProjection';
 import {
   collectFreshPresenceDeviceIds,
@@ -893,7 +894,7 @@ export default function HomeScreen() {
       deviceRows.map((item) => ({
         canOpen: item.canOpen,
         deviceId: item.device.deviceId,
-        kind: item.device.deviceInfo?.kind,
+        kind: resolveDeviceMenuKind(item.device.deviceId, item.device.deviceInfo?.kind),
         name: item.device.name,
         state: item.state,
         statusDetail: item.statusDetail,

@@ -39,6 +39,7 @@ export function collectSessionListSnapshot(): CachedDeviceSessionsSnapshot[] {
   return remoteProjectsStore.getAllDeviceIds().map((deviceId) => ({
     deviceId,
     deviceName: remoteProjectsStore.getDeviceName(deviceId) ?? deviceId,
+    kind: remoteProjectsStore.getDeviceKind(deviceId),
     sessions: [...remoteProjectsStore.getDeviceSessions(deviceId)],
   }));
 }
@@ -196,6 +197,8 @@ function backoffMs(attempt: number): number {
 const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 export interface RefreshOptions {
+  /** Relay-declared cloud identity; retained by the shard and cold cache. */
+  kind?: 'cloud';
   /** 注入式 sleep(测试用,默认真实 setTimeout)。 */
   sleep?: (ms: number) => Promise<void>;
   /** 最大尝试次数(含首次),默认 DEFAULT_MAX_ATTEMPTS。 */
@@ -418,15 +421,21 @@ async function runRefreshRemoteDeviceSessions(
               removeRemoteSessionActivityEntry(sessionId);
             }
           }
-          remoteProjectsStore.setDeviceSessions(deviceId, deviceName, sessions, status);
+          remoteProjectsStore.setDeviceSessions(deviceId, deviceName, sessions, status, opts.kind);
         } else {
-          remoteProjectsStore.mergeDeviceSessions(deviceId, deviceName, sessions, status);
+          remoteProjectsStore.mergeDeviceSessions(
+            deviceId,
+            deviceName,
+            sessions,
+            status,
+            opts.kind,
+          );
           if (status === 'active') {
             await probeMissingSessionStatuses(deviceId, epoch, missingSessionIds);
           }
         }
       } else {
-        remoteProjectsStore.setDeviceSessions(deviceId, deviceName, sessions, status);
+        remoteProjectsStore.setDeviceSessions(deviceId, deviceName, sessions, status, opts.kind);
       }
       return 'ok'; // 成功
     } catch (err) {

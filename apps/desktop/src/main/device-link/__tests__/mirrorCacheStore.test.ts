@@ -315,6 +315,7 @@ describe('normalizeDeviceSessions', () => {
         {
           deviceId: 'dev-1',
           deviceName: 'Mac',
+          kind: 'cloud',
           sessions: [
             { id: 'old', status: 'active', updatedAt: '2026-01-01T00:00:00.000Z' },
             { id: 'new', status: 'active', updatedAt: '2026-06-01T00:00:00.000Z' },
@@ -327,7 +328,15 @@ describe('normalizeDeviceSessions', () => {
     );
     expect(devices).toHaveLength(1);
     expect(devices[0].deviceId).toBe('dev-1');
+    expect(devices[0].kind).toBe('cloud');
     expect(devices[0].sessions.map((s) => s.id)).toEqual(['new']);
+
+    expect(normalizeDeviceSessions([{
+      deviceId: 'dev-legacy',
+      deviceName: 'Legacy',
+      kind: 'not-cloud',
+      sessions: [{ id: 's1', status: 'active' }],
+    }])[0]?.kind).toBeUndefined();
   });
 });
 

@@ -4,6 +4,7 @@ import { Alert, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { parseCloudInstanceImageTag } from '@cindy/maker-shared/cloud-instance';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 
 import { Text, TextInput } from '@/components/AppText';
 import {
@@ -65,7 +66,7 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
     props.cloudCandidate
     || props.kind === 'cloud'
     || props.cloudInstanceId
-    || props.deviceId.startsWith('cloud-device-'),
+    || isCloudInstanceDeviceId(props.deviceId),
   );
   const cloud = useCloudInstances(apiFetch, cloudCandidate);
   const { lastPresenceSnapshot } = useDeviceLink();

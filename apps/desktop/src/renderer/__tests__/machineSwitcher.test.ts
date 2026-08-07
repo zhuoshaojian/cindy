@@ -448,6 +448,55 @@ describe('buildSwitcherDevices', () => {
     expect(result).toEqual([{ deviceId: 'dev-a', name: 'Mac A', status: 'connecting' }]);
   });
 
+  it('fullList 尚未落地时 cached kind keeps a real cloud device classified', () => {
+    const result = buildSwitcherDevices({
+      fullList: null,
+      syncedDevices: [
+        {
+          deviceId: 'opaque-device-id',
+          deviceName: 'Cloud',
+          kind: 'cloud',
+          sessionCount: 2,
+          connected: true,
+        },
+      ],
+      revoked: new Set(),
+    });
+
+    expect(result).toEqual([
+      {
+        deviceId: 'opaque-device-id',
+        name: 'Cloud',
+        kind: 'cloud',
+        status: 'connected',
+      },
+    ]);
+  });
+
+  it('legacy cache without kind uses the reserved prefix migration fallback', () => {
+    const result = buildSwitcherDevices({
+      fullList: [],
+      syncedDevices: [
+        {
+          deviceId: 'cloud-device-deleted',
+          deviceName: 'Cloud',
+          sessionCount: 2,
+          connected: false,
+        },
+      ],
+      revoked: new Set(),
+    });
+
+    expect(result).toEqual([
+      {
+        deviceId: 'cloud-device-deleted',
+        name: 'Cloud',
+        kind: 'cloud',
+        status: 'connecting',
+      },
+    ]);
+  });
+
   it('已连接设备名以同步分片为准(覆盖 fullList 滞后的旧名;REST 改名不广播 presence)', () => {
     const result = buildSwitcherDevices({
       fullList: [mkDevice('dev-a', { name: '旧名' })],

@@ -1,4 +1,5 @@
 import type { DeviceView } from '@cindy/device-link';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 
 import type { CloudInstanceView } from '@/api/cloudInstance';
 import type { CloudInstancePending } from '@/cloud-instance/useCloudInstances';
@@ -34,7 +35,7 @@ export function buildDeviceManagementRouteParams(input: {
     cloudInstance
     || input.cloudCandidate
     || device?.deviceInfo?.kind === 'cloud'
-    || input.deviceId.startsWith('cloud-device-'),
+    || isCloudInstanceDeviceId(input.deviceId),
   );
   return {
     deviceId: input.deviceId,
@@ -83,7 +84,7 @@ export function resolveCloudManagementTarget(input: {
       || input.cloudCandidate
       || input.kind === 'cloud'
       || input.cloudInstanceId
-      || input.deviceId.startsWith('cloud-device-'),
+      || isCloudInstanceDeviceId(input.deviceId),
     ),
   };
 }
