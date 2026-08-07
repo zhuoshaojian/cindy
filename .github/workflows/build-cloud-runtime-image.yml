@@ -1,0 +1,291 @@
+name: build-cloud-runtime-image
+
+on:
+  pull_request:
+    paths:
+      - '.dockerignore'
+      - '.github/workflows/build-cloud-runtime-image.yml'
+      - 'apps/desktop/**'
+      - 'apps/*-bin/linux-x64/**'
+      - 'cindy-protocol'
+      - 'cindy-protocol/**'
+      - 'config/**'
+      - 'deploy/cloud-instance/**'
+      - 'docs/cloud-instance-runtime.md'
+      - 'i18n/**'
+      - 'package.json'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'scripts/cloud-runtime-*.mjs'
+      - 'scripts/ensure-agent-binaries*.mjs'
+      - 'scripts/ensure-deps.mjs'
+      - 'scripts/ensure-dev-runtime-assets.mjs'
+      - 'tools/**'
+  push:
+    branches: [main]
+    paths:
+      - '.dockerignore'
+      - '.github/workflows/build-cloud-runtime-image.yml'
+      - 'apps/desktop/**'
+      - 'apps/*-bin/linux-x64/**'
+      - 'cindy-protocol'
+      - 'cindy-protocol/**'
+      - 'config/**'
+      - 'deploy/cloud-instance/**'
+      - 'docs/cloud-instance-runtime.md'
+      - 'i18n/**'
+      - 'package.json'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'scripts/cloud-runtime-*.mjs'
+      - 'scripts/ensure-agent-binaries*.mjs'
+      - 'scripts/ensure-deps.mjs'
+      - 'scripts/ensure-dev-runtime-assets.mjs'
+      - 'tools/**'
+  workflow_dispatch:
+    inputs:
+      check_promotion_readiness:
+        description: 'Exercise the intentionally closed registry/cosign promotion gate'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-runtime-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-artifact:
+    name: Build and test linux/amd64 artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
+
+    steps:
+      - name: Checkout client
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      # A PR can edit .gitmodules. Validate the public source before any
+      # submodule command executes content selected by the PR gitlink.
+      - name: Verify cindy-protocol submodule source
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_url='https://github.com/makecindy/cindy-protocol.git'
+          expected_path='cindy-protocol'
+          actual_url="$(git config -f .gitmodules --get submodule.cindy-protocol.url || true)"
+          actual_path="$(git config -f .gitmodules --get submodule.cindy-protocol.path || true)"
+          if [ "$actual_url" != "$expected_url" ] || [ "$actual_path" != "$expected_path" ]; then
+            echo "::error file=.gitmodules::unexpected cindy-protocol source: url='$actual_url' path='$actual_path'"
+            exit 1
+          fi
+
+      - name: Fetch public protocol submodule
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule sync -- cindy-protocol
+          git submodule update --init --force --recursive -- cindy-protocol
+
+      - name: Reject protocol rollback or divergence
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          CINDY_PROTOCOL_BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/check-submodule-forward.mjs
+
+      - name: Reclaim GitHub runner disk
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Disk space before cleanup:'
+          df -h "$GITHUB_WORKSPACE"
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker system prune -af
+          echo 'Disk space after cleanup:'
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: Require native x64 builder and sufficient disk
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ runner.os }}" != Linux ] || [ "${{ runner.arch }}" != X64 ] || [ "$(uname -m)" != x86_64 ]; then
+            echo '::error::Cloud runtime artifacts require a native GitHub-hosted linux/x64 runner; emulation is forbidden.'
+            exit 1
+          fi
+          available_kb="$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR==2 {print $4}')"
+          if [ "$available_kb" -lt 12582912 ]; then
+            echo "::error::Cloud runtime build requires at least 12 GiB free; available $((available_kb / 1024 / 1024)) GiB."
+            exit 1
+          fi
+
+      - name: Prepare credential-clean tracked build context
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/cloud-runtime-build-context.mjs \
+            --output="${RUNNER_TEMP}/cloud-runtime-build-context"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Compute image metadata
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_tag="sha-${GITHUB_SHA}"
+          echo "created_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
+          echo "image_ref=cindy-cloud-runtime:$image_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Generate OCI labels and SHA tag
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: cindy-cloud-runtime
+          tags: |
+            type=raw,value=${{ steps.vars.outputs.image_tag }}
+          labels: |
+            org.opencontainers.image.created=${{ steps.vars.outputs.created_at }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.vars.outputs.image_tag }}
+
+      - name: Build packaged runtime without registry access
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ runner.temp }}/cloud-runtime-build-context
+          file: ${{ runner.temp }}/cloud-runtime-build-context/deploy/cloud-instance/Dockerfile
+          target: runtime
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_DATE=${{ steps.vars.outputs.created_at }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.vars.outputs.image_tag }}
+            CINDY_BUILD_REGION=global
+          cache-from: type=gha,scope=cloud-runtime-amd64
+          cache-to: type=gha,mode=max,scope=cloud-runtime-amd64
+
+      - name: Run capability, health and entrypoint smoke
+        run: node scripts/cloud-runtime-image-smoke.mjs --image=${{ steps.vars.outputs.image_ref }}
+
+      - name: Reject source, local config and credential material
+        run: node scripts/cloud-runtime-image-content-check.mjs --image=${{ steps.vars.outputs.image_ref }}
+
+      - name: Export tested image archive and identities
+        id: archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          image_ref='${{ steps.vars.outputs.image_ref }}'
+          loaded_image_config_id="$(docker image inspect --format '{{.Id}}' "$image_ref")"
+          if ! [[ "$loaded_image_config_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo '::error::Loaded test image does not expose a valid config ID.'
+            exit 1
+          fi
+          docker save "$image_ref" | gzip -1 > artifacts/cloud-runtime-image.tar.gz
+          archive_sha256="$(sha256sum artifacts/cloud-runtime-image.tar.gz | awk '{print $1}')"
+          if ! [[ "$archive_sha256" =~ ^[a-f0-9]{64}$ ]]; then
+            echo '::error::Unable to bind the exported image archive to a SHA-256 digest.'
+            exit 1
+          fi
+          echo "loaded_image_config_id=$loaded_image_config_id" >> "$GITHUB_OUTPUT"
+          echo "archive_sha256=sha256:$archive_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Generate SPDX image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.vars.outputs.image_ref }}
+          format: spdx-json
+          output-file: artifacts/cloud-runtime.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Write deterministic build metadata
+        shell: bash
+        env:
+          BUILDKIT_DIGEST: ${{ steps.build.outputs.digest }}
+          BUILDKIT_METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          set -euo pipefail
+          buildkit_digest="$BUILDKIT_DIGEST"
+          buildkit_digest_source='steps.build.outputs.digest'
+          # push:false + load:true digest output behavior, including this
+          # metadata fallback, remains unverified until the first CI run.
+          if [ -z "$buildkit_digest" ]; then
+            buildkit_digest="$(jq -r '.["containerimage.config.digest"] // empty' \
+              <<< "$BUILDKIT_METADATA" 2>/dev/null || true)"
+            buildkit_digest_source='steps.build.outputs.metadata["containerimage.config.digest"]'
+          fi
+          if ! [[ "$buildkit_digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo '::error::Buildx did not return a valid digest directly or through containerimage.config.digest; metadata would be incomplete.'
+            exit 1
+          fi
+          node scripts/cloud-runtime-build-metadata.mjs \
+            --output=artifacts/cloud-runtime-build-metadata.json \
+            --image-ref='${{ steps.vars.outputs.image_ref }}' \
+            --image-tag='${{ steps.vars.outputs.image_tag }}' \
+            --buildkit-digest="$buildkit_digest" \
+            --buildkit-digest-source="$buildkit_digest_source" \
+            --loaded-image-config-id='${{ steps.archive.outputs.loaded_image_config_id }}' \
+            --platform=linux/amd64 \
+            --source-repository='${{ github.repository }}' \
+            --source-sha='${{ github.sha }}' \
+            --source-ref='${{ github.ref }}' \
+            --created-at='${{ steps.vars.outputs.created_at }}' \
+            --run-id='${{ github.run_id }}' \
+            --run-attempt='${{ github.run_attempt }}' \
+            --image-archive=cloud-runtime-image.tar.gz \
+            --image-archive-sha256='${{ steps.archive.outputs.archive_sha256 }}' \
+            --sbom=cloud-runtime.spdx.json
+
+      - name: Trivy Critical vulnerability gate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.vars.outputs.image_ref }}
+          format: json
+          output: artifacts/trivy-critical.json
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          timeout: 15m
+
+      - name: Upload build/test supply-chain artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cloud-runtime-linux-amd64-${{ github.sha }}
+          path: artifacts/
+          # Preserve the original build/scan failure when the job stops before
+          # producing artifacts instead of replacing it with an upload error.
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0
+
+  promotion-readiness-gate:
+    name: Registry and cosign gate (intentionally closed)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.check_promotion_readiness }}
+    needs: build-test-artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse promotion until protected supply-chain prerequisites exist
+        shell: bash
+        run: |
+          echo '::error::Promotion and signing are intentionally disabled in Build-1. Configure the protected ACR environment, immutable repository, least-privilege OIDC identity and approved cosign policy before implementing a separate promotion job.'
+          exit 78

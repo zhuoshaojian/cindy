@@ -16,14 +16,14 @@ const now = Date.now();
 // healthy Pod.
 const blockingReadinessComponents = ['auth', 'database', 'binaries', 'maker', 'deviceLink'];
 if (
-  !status ||
-  status.version !== 1 ||
-  status.phase !== 'ready' ||
-  !Number.isFinite(status.heartbeatAtMs) ||
-  status.heartbeatAtMs > now ||
-  now - status.heartbeatAtMs > staleAfterMs ||
-  !status.readiness ||
-  blockingReadinessComponents.some((component) => status.readiness[component] !== 'ready')
+  !status
+  || status.version !== 1
+  || status.phase !== 'ready'
+  || !Number.isFinite(status.heartbeatAtMs)
+  || status.heartbeatAtMs > now
+  || now - status.heartbeatAtMs > staleAfterMs
+  || !status.readiness
+  || blockingReadinessComponents.some((component) => status.readiness[component] !== 'ready')
 ) {
   console.error('[cloud-health] runtime status is not ready or stale');
   process.exit(1);

@@ -1,37 +1,56 @@
-# Cloud instance runtime boundary
+# Cloud instance headless runtime image
 
-这是云端实例容器化的客户端侧边界说明。当前代码提供本地 Docker 编排、Pod
-headless bootstrap 中的 runtime status/readiness 心跳，以及 fail-closed idle activity
-采集；自动 stop/wake 仍由后续 control plane / provider 消费这些状态执行。
+本目录是 **Cindy headless runtime 镜像的客户端侧权威入口**。它说明镜像需要打包什么、
+接受哪些启动输入、持久化哪些目录，以及向控制面暴露什么 status/readiness 契约。完整运行期
+契约见 [`../../docs/cloud-instance-runtime.md`](../../docs/cloud-instance-runtime.md)。
 
-## Capability matrix
+> **权威范围（authoritative-for）**：runtime process ABI，包括启动环境变量、固定路径、
+> status writer/schema、delete-control socket 与清凭据后的 acknowledgement。
+> **非权威范围（not-authoritative-for）**：server desired-state、Provider/Kubernetes 生命周期、
+> H7 编排、ACS/ACR/RBAC/Postgres/IaC 和部署 BOM；这些以 server 文档为准。
 
-| 目标 | 架构 | 调试方式 | agent/native 资产 | 状态 |
-| --- | --- | --- | --- | --- |
-| Local Docker | AMD64 (`linux-x64`) | `docker compose` + headless logs | Claude/Codex/rg pins + `sqlite-vec/linux-x64` | capability gate 可验证；Electron readiness 待 controller 接线 |
-| Local Docker | ARM64 (`linux-arm64`) | 原生容器调试 | 当前 pins / sqlite-vec 缺失 | 明确 fail-closed；不使用 QEMU |
-| Alibaba Cloud | AMD64 | ACK/ECS Pod + status/health probes | 需 ACR 多架构镜像与同一 x64 资产校验 | 规划中，未部署 |
-| Alibaba Cloud | ARM64 | ACK/ECS 原生 ARM 节点 | 需上游原生 pins、native modules、sqlite-vec 资产 | 规划中，未部署；不得以仿真替代 |
+## 当前状态
 
-两种调试模式都必须把 provisioning refresh token 作为 secret file 挂载，把
-`XDT_POD_DEVICE_ID` 作为稳定设备身份注入；token 不进入 image layer、环境日志或
-status JSON。容器使用非 root 用户；数据与状态分别落在可替换的持久化卷（本地
-Docker named volume，阿里云后续对应 PVC/NAS），容器被删除不应丢失 refresh
-rotation 或本地数据库。
+- 正式构建入口已建立：[`Dockerfile`](./Dockerfile) 是 packaged headless runtime 的唯一镜像
+  真源；[Build-1 workflow](../../.github/workflows/build-cloud-runtime-image.yml) 在原生 Linux x64
+  runner 上生成并测试短期 artifact、metadata、SBOM 与 Trivy 报告。
+- Local Docker PoC 继续保留：Local Compose 直接选择正式 Dockerfile 的 `development` target，
+  可验证 headless 启动、Linux x64 capability gate、持久目录、状态心跳和健康检查，不再维护
+  第二份 runtime stage。
+- ACS Dev v1 的架构设计已经冻结，目标运行面为 **ACS Serverless + `linux/amd64`**；集群、
+  Registry、权限、数据库和部署 Pipeline 尚未建设，当前不能表述为已部署。
+- 当前 workflow **不登录或推送 ACR、不签名、不 promote、不部署**；其产物只是 build/test
+  artifact。发布与 cosign 的封闭门禁和外部前置见
+  [`image-supply-chain.md`](./image-supply-chain.md)。
+- ARM64 不在 Dev v1 范围。未来若支持，必须提供原生 agent/native 资产与原生构建链；禁止用
+  本地 QEMU 构建正式制品。
 
-## Planned cloud interfaces
+## 本仓 owner 边界
 
-阿里云部署只需要替换编排层，不改变 headless 客户端 seam：
+`cindy-moved` 只负责 runtime data plane：
 
-- ACR：按 `linux/amd64`、未来 `linux/arm64` 分别做原生镜像并在发布前运行
-  `check-capabilities.mjs`；
-- ACK/ECS：Pod 生命周期、优雅 SIGTERM、liveness/readiness 探针、节点架构约束；
-- KMS/Secrets Manager：向 `/run/secrets` 注入 account refresh token，轮换后的 token
-  仍由应用 safeStorage/持久化卷管理；
-- PVC/NAS：`XDT_USER_DATA_DIR`、local DB、状态 JSON 和工作区数据的持久化；
-- control plane：调用 server `provision-device`，下发稳定 deviceId，读取 status，
-  负责 wake/stop/restart/fencing；data plane 保持 relay、Maker、workspace 和模型
- 访问在 Pod 内。
+- headless runtime 镜像及其 `linux/amd64` capability gate；
+- 不可变 endpoint manifest、只读 secret、稳定 `deviceId` 等启动输入；
+- `user-data`、`workspaces`、`home` 三类持久目录及临时目录约定；
+- status/readiness/idle observation 和 model-access observation；
+- delete-control Unix socket，以及 runtime 内凭据清理的 acknowledgement；
+- 环境变量、固定路径和跨仓字面量的 runtime 侧定义与契约测试入口。
 
-`remote project` / 新建会话 UI、Pod onReady 下游 hooks、remote-file-service 和
-model-access 的服务化不在本阶段客户端改动范围。
+以下内容不属于本仓 owner：面向客户端的 API、内网 orchestrator、ACS/ACR、Kubernetes
+RBAC、Postgres、IaC、Registry 发布和控制面部署。runtime 镜像不持有 kubeconfig、云账号凭证
+或 cloud-instance-server token，只消费控制面注入的不可变 endpoint/config、secret 和稳定
+设备身份。
+
+ACS Dev v1 的资源参数、namespace/StorageClass/RBAC、API/orchestrator 分层和完整部署 BOM，
+以服务端仓库 `cindy-server/docs/cloud-instance/` 索引为权威（待同批落地）。本仓不复制整份
+BOM，避免双源漂移；这里只维护 runtime 必须遵守的消费侧契约。
+
+## 目录
+
+- [`Dockerfile`](./Dockerfile)：正式 packaged runtime 构建入口，同时提供 local scaffold 使用的
+  `development` target。
+- [`image-supply-chain.md`](./image-supply-chain.md)：Build-1 artifact、SBOM、扫描、secret 边界与
+  未来 ACR/cosign promotion 前置。
+- [`local/`](./local/)：Local Docker PoC/Compose scaffold；不是发布或部署入口。
+- [`../../docs/cloud-instance-runtime.md`](../../docs/cloud-instance-runtime.md)：Pod 启动、
+  存储、状态、删除和跨仓 wire twin 的完整技术契约。

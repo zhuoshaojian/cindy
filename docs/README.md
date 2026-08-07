@@ -4,6 +4,9 @@
 
 **状态含义**：`authoritative` = 权威、对治理模块有约束力；`参考` = 设计 / 记录 / spike，非约束、仅供背景参考（不区分是否完成，要看正文）。
 
+> **权威范围（authoritative-for）**：文档发现、分类与状态索引。
+> **非权威范围（not-authoritative-for）**：各链接文档的技术或产品语义；以对应正文声明为准。
+
 | 文档 | 类型 | 状态 | 治理/相关代码 | owner |
 |---|---|---|---|---|
 | [README.md](./README.md) | 索引 | — | `docs/` 文档目录 | — |
@@ -35,5 +38,7 @@
 | [auth-realm-routing.md](./auth-realm-routing.md) | 跨仓契约 | 参考 | 组织 SSO 双区域发现、会话区域持久化与 token 消费端点路由 | — |
 | [client-log-upload-requirements.md](./client-log-upload-requirements.md) | 需求文档 | 参考 | Desktop 客户端日志上报（手动 + 崩溃自动）的目标、数据边界、同意闸与可靠性要求 | — |
 | [client-log-upload-implementation-plan.md](./client-log-upload-implementation-plan.md) | 实现方案 | 参考 | 上述需求的落地方案：模块布局、四层收窄管道、定位读取与锚点裁剪、标记代次、分期 | — |
+| [cloud-instance-runtime.md](./cloud-instance-runtime.md) | 技术契约 | 参考 | headless runtime 镜像、Pod 启动输入、持久目录、status/readiness、modelAccess 观测与 delete-control；服务端以 `cindy-server/docs/cloud-instance/` 索引为权威（待同批落地，跨仓位置不创建相对链接） | — |
+| [headless-poc.md](./headless-poc.md) | 历史 PoC | archived | 早期 macOS 无窗启动验证；现行契约见 `cloud-instance-runtime.md` | — |
 | [legal/README.md](./legal/README.md) | 法律/合规索引 | authoritative | 法律合规资料归档边界与固定路径例外 | — |
 | [legal/notices/README.md](./legal/notices/README.md) | 第三方许可/SBOM | generated | `pnpm licenses:generate`、Desktop/Mobile 随包声明 | — |
