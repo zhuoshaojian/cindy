@@ -505,7 +505,9 @@ export async function loadMobileEndpointsForRealm(
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`http-${response.status}`);
-    const parsed = parseClientEndpointManifest(await response.text());
+    const parsed = parseClientEndpointManifest(await response.text(), {
+      allowHttp: __DEV__,
+    });
     if (!parsed.ok) throw new Error(parsed.reason);
     if (parsed.region !== null && parsed.region !== region) {
       throw new Error(`region-mismatch:${region}:${parsed.region}`);
