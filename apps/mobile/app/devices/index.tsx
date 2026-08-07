@@ -114,6 +114,14 @@ import {
   scheduleHomeListSnapshotPersist,
 } from '@/session/mobileHomeListCache';
 import { startBoundedStartupRead } from '@/session/mobileHomeStartup';
+import {
+  createHomePeerRecoveryRefresh,
+  isCurrentHomeStartupLoading,
+  markHomePeerReady,
+  promoteRecoveredHomeDevice,
+  pruneHomePeerReady,
+  type HomePeerRecoveryRefresh,
+} from '@/session/homePeerRecovery';
 import { serializeNewSessionDeviceOptions } from '@/session/newSession';
 import {
   buildRemoteSessionCardPreview,
@@ -202,13 +210,26 @@ export default function HomeScreen() {
   const refreshCloudInstances = cloudInstances.refresh;
   // 首页列表持久缓存按账号键控(401 掉线换号不串数据);首页仅登录后可达,user 理应非空。
   const homeCacheUserId = user?.id ?? '';
-  const { connectionEpoch, connectionIssue, invoke, lastPresenceSnapshot, status, subscribe } = useDeviceLink();
+  const {
+    connectionEpoch,
+    connectionIssue,
+    invoke,
+    lastPresenceSnapshot,
+    status,
+    subscribe,
+    subscribePeerLinkRecovered,
+  } = useDeviceLink();
   const revokedDevices = useRevokedDevices();
   const sessions = useRemoteSessions();
   const messageVersion = useRemoteMessageVersion();
   const storeVersion = useRemoteSessionStoreVersion();
   const syncInFlightRef = useRef<Promise<void> | null>(null);
   const devicesRef = useRef<DeviceView[]>([]);
+  // The REST list is available before the initial Promise.all hydrate settles.
+  // Keep its controllable devices addressable so peer recovery can refresh only
+  // the recovered device instead of waiting for (or restarting) the global load.
+  const peerRecoveryDevicesRef = useRef<DeviceView[]>([]);
+  const peerRecoveryRefreshRef = useRef<HomePeerRecoveryRefresh<DeviceView> | null>(null);
   // schedule-index hydration 延后任务登记表(按设备 id 索引):为同一设备注册新延后任务前取消上一轮
   // pending 的,避免 800ms 窗口内多次 hydrate 时较早回调用旧快照覆盖新状态(并发覆盖竞态);卸载时 cancelAll。
   const scheduleIndexDeferRegistryRef = useRef(createScheduleIndexDeferRegistry());
@@ -234,6 +255,9 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [peerRecoveryReadyDeviceIds, setPeerRecoveryReadyDeviceIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   // 恢复偏好时暂存的设备名:设备列表尚未同步回来前表头用它兜底,避免显示成占位文案。
   const [restoredDeviceName, setRestoredDeviceName] = useState<string | null>(null);
@@ -407,6 +431,45 @@ export default function HomeScreen() {
     }
   }, [homeCacheUserId, invoke, markDeviceOffline, refreshDeviceScheduleIndex, statusFilter, subscribe, t, updateDeviceConnectionState]);
 
+  useEffect(() => {
+    // Construct inside the effect: StrictMode intentionally runs setup → cleanup
+    // → setup on mount, and a disposed controller must never be reused.
+    const peerRecoveryRefresh = createHomePeerRecoveryRefresh<DeviceView>({
+      getDeviceId: (device) => device.deviceId,
+      hydrate: hydrateDeviceSessions,
+      onReady: (deviceId, device) => {
+        // A successful sessions/list hydrate is stronger reachability evidence
+        // than an older REST offline bit. Preserve any newer local fields and
+        // only promote this recovered peer into the current Home projection.
+        setDevices((current) => {
+          const existingIndex = current.findIndex((item) => item.deviceId === deviceId);
+          const currentDevice = existingIndex < 0 ? null : current[existingIndex];
+          const recoveredDevice = promoteRecoveredHomeDevice(currentDevice, device);
+          if (currentDevice === recoveredDevice) return current;
+          const nextRaw = existingIndex < 0
+            ? [...current, recoveredDevice]
+            : current.map((item, index) => index === existingIndex ? recoveredDevice : item);
+          const next = reconcileDeviceViews(nextRaw).devices;
+          devicesRef.current = next;
+          return next;
+        });
+        setPeerRecoveryReadyDeviceIds((current) => markHomePeerReady(current, deviceId));
+      },
+    });
+    peerRecoveryRefreshRef.current = peerRecoveryRefresh;
+    void peerRecoveryRefresh.setDevices(peerRecoveryDevicesRef.current);
+    const unsubscribe = subscribePeerLinkRecovered((deviceId, generation) => {
+      void peerRecoveryRefresh.refresh(deviceId, generation);
+    });
+    return () => {
+      unsubscribe();
+      if (peerRecoveryRefreshRef.current === peerRecoveryRefresh) {
+        peerRecoveryRefreshRef.current = null;
+      }
+      peerRecoveryRefresh.dispose();
+    };
+  }, [hydrateDeviceSessions, reconcileDeviceViews, subscribePeerLinkRecovered]);
+
   const loadHome = useCallback(async (options: { visible?: boolean } = {}) => {
     if (!deviceIdentityCacheReady) return;
     const visible = options.visible === true;
@@ -445,6 +508,20 @@ export default function HomeScreen() {
       const serverDevices = mergeFreshPresence(reconcileDeviceViews(res.devices).devices);
       const deviceRows = toDeviceListItems(serverDevices, now, revokedDevices);
       const availableRows = deviceRows.filter((item) => item.canOpen);
+      // Recovery success is newer reachability evidence than this REST snapshot,
+      // so keep still-bound soft-offline peers eligible for a targeted hydrate.
+      // Revoked/remote-disabled/self rows remain excluded and cannot be revived.
+      peerRecoveryDevicesRef.current = deviceRows
+        .filter((item) =>
+          item.device.deviceId !== selfDeviceId
+          && deviceMirrorCleanupDisposition(item.state) !== 'hard')
+        .map((item) => item.device);
+      const peerRecoveryDeviceIds = new Set(
+        peerRecoveryDevicesRef.current.map((device) => device.deviceId),
+      );
+      setPeerRecoveryReadyDeviceIds((current) =>
+        pruneHomePeerReady(current, peerRecoveryDeviceIds));
+      void peerRecoveryRefreshRef.current?.setDevices(peerRecoveryDevicesRef.current);
       setDeviceConnectionStates((current) => pruneHomeDeviceConnectionStates(
         current,
         new Set(availableRows.map((item) => item.device.deviceId)),
@@ -519,7 +596,7 @@ export default function HomeScreen() {
     return task.finally(() => {
       if (visible) setRefreshing(false);
     });
-  }, [apiFetch, deviceIdentityCacheReady, homeCacheUserId, hydrateDeviceSessions, reconcileDeviceViews, revokedDevices, softInvalidateDeviceMirror]);
+  }, [apiFetch, deviceIdentityCacheReady, homeCacheUserId, hydrateDeviceSessions, reconcileDeviceViews, revokedDevices, selfDeviceId, softInvalidateDeviceMirror]);
 
   // 冷启动先画缓存:上次 loadHome 成功的设备+会话快照种入 store,先把列表画出来(消除首屏强制
   // spinner);loadHome 返回后由 setDeviceSessions / removeDevice 正常覆盖收敛。缓存为空时列表
@@ -1041,6 +1118,13 @@ export default function HomeScreen() {
   const initialHomeSettled = deviceIdentityCacheReady && lastSyncedAt !== null;
   const initialHomeLoading = !initialHomeSettled && !connectionError;
   const initialHomeError = !initialHomeSettled && !!connectionError;
+  const selectedPeerRecoveryReady = selectedDeviceId !== null
+    && peerRecoveryReadyDeviceIds.has(selectedDeviceId);
+  const currentHomeLoading = isCurrentHomeStartupLoading({
+    initialHomeLoading,
+    selectedDeviceId,
+    recoveryReadyDeviceIds: peerRecoveryReadyDeviceIds,
+  });
   // 首次同步完成后校验恢复/当前选中的设备,不成立时回退「所有对话」并同步持久化:
   // - 设备已不存在(解绑):home.selectedDeviceId 是归一化后的口径,查不到会变 null,
   //   若不回退,表头显示旧设备名而列表实际展示全部会话,两者口径不一致。
@@ -1096,7 +1180,7 @@ export default function HomeScreen() {
     ? cloudInstances.loadState
     : null;
   const remoteGuideBaseVisible = homeListItemCount === 0
-    && !initialHomeLoading
+    && !currentHomeLoading
     && !initialHomeError
     && home.pinned.length === 0
     && home.emptyKind === 'noDevice'
@@ -1109,10 +1193,12 @@ export default function HomeScreen() {
     const revoked = home.emptyNoDevice?.reason === 'accessRevoked' ? home.emptyNoDevice.devices : [];
     for (const device of revoked) void retryRevokedDevice(device.deviceId);
   }, [home.emptyNoDevice, retryRevokedDevice]);
-  const hasOpenableLiveDevice = deviceModels.some((item) => item.canOpen);
+  const hasOpenableLiveDevice = deviceModels.some((item) =>
+    item.canOpen && (selectedDeviceId === null || item.deviceId === selectedDeviceId));
   // 首次 loadHome 落地前(含失败态)FAB 只认 live 设备:缓存画出的会话会让 primaryDevice 合成出
   // 「可用」项,但缓存设备不能当 live 设备直接开新会话——列表先画出来,新建入口等 live 数据。
-  const newSessionDisabled = !home.primaryDevice || (!initialHomeSettled && !hasOpenableLiveDevice);
+  const currentHomeSettled = initialHomeSettled || selectedPeerRecoveryReady;
+  const newSessionDisabled = !home.primaryDevice || (!currentHomeSettled && !hasOpenableLiveDevice);
   const newSessionDeviceOptions = useMemo(
     () => deviceModels
       .filter((item) => item.canOpen)
@@ -1633,7 +1719,7 @@ export default function HomeScreen() {
                 padding: windowLayout.emptyPadding,
               }}
             />
-          ) : initialHomeLoading ? (
+          ) : currentHomeLoading ? (
             <HomeListLoadingState
               label={t('devices.list.loading')}
               testID="home.loading"
@@ -1711,7 +1797,7 @@ export default function HomeScreen() {
         <Pressable
           accessibilityLabel={t('devices.list.a11y.newRemoteConversation')}
           accessibilityRole="button"
-          accessibilityState={{ busy: initialHomeLoading || undefined, disabled: newSessionDisabled }}
+          accessibilityState={{ busy: currentHomeLoading || undefined, disabled: newSessionDisabled }}
           disabled={newSessionDisabled}
           onPress={() => openNewSession()}
           style={({ pressed }) => [

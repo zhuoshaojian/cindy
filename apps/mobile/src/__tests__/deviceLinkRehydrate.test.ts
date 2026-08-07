@@ -51,6 +51,143 @@ describe('rehydrateDeviceLinkTopics', () => {
     ]);
   });
 
+  it('requires a recovery-only open to succeed before replaying subscriptions', async () => {
+    const { calls, harness } = deps();
+    const onPeerLinkRecovered = vi.fn();
+    harness.onPeerLinkRecovered = onPeerLinkRecovered;
+
+    await rehydrateDeviceLinkTopics([{
+      deviceId: 'dev-1',
+      openLink: true,
+      topics: ['sessions'],
+      requireOpenSuccessBeforeReplay: true,
+    }], harness);
+
+    expect(calls).toEqual([
+      'open:dev-1',
+      'subscribe:dev-1:sessions',
+      'reseed:dev-1',
+    ]);
+    expect(onPeerLinkRecovered).toHaveBeenCalledWith('dev-1');
+  });
+
+  it('does not emit a recovery generation for an already-owned durable open', async () => {
+    const { harness } = deps();
+    const onPeerLinkRecovered = vi.fn();
+    harness.onPeerLinkRecovered = onPeerLinkRecovered;
+
+    await rehydrateDeviceLinkTopics([{
+      deviceId: 'dev-1',
+      openLink: true,
+      topics: ['sessions'],
+    }], harness);
+
+    expect(onPeerLinkRecovered).not.toHaveBeenCalled();
+  });
+
+  it.each(['explicit close', 'revoked'])(
+    'drops a late recovery-open success after %s wins the race',
+    async () => {
+      const { harness } = deps();
+      let resolveOpen!: () => void;
+      const open = new Promise<void>((resolve) => {
+        resolveOpen = resolve;
+      });
+      let eligible = true;
+      harness.canPublishPeerLinkRecovered = vi.fn(() => eligible);
+      harness.onPeerLinkRecovered = vi.fn();
+      vi.mocked(harness.openLink).mockReturnValueOnce({
+        capturedPresenceEpoch: 0,
+        capturedResponseEvidenceEpoch: 0,
+        request: open,
+      });
+
+      const run = rehydrateDeviceLinkTopics([{
+        deviceId: 'dev-1',
+        openLink: true,
+        topics: ['sessions'],
+        requireOpenSuccessBeforeReplay: true,
+      }], harness);
+      eligible = false;
+      resolveOpen();
+      await run;
+
+      expect(harness.onPeerLinkRecovered).not.toHaveBeenCalled();
+      expect(harness.subscribe).not.toHaveBeenCalled();
+      expect(harness.requestSessionsReseed).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps recovery pending and skips replay when its open fails transiently', async () => {
+    const { harness } = deps();
+    const onPeerLinkRecovered = vi.fn();
+    harness.onPeerLinkRecovered = onPeerLinkRecovered;
+    vi.mocked(harness.openLink).mockReturnValueOnce({
+      capturedPresenceEpoch: 0,
+      capturedResponseEvidenceEpoch: 0,
+      request: Promise.reject(
+        Object.assign(new Error('not connected'), { code: 'NOT_CONNECTED' }),
+      ),
+    });
+
+    const result = await rehydrateDeviceLinkTopics([{
+      deviceId: 'dev-1',
+      openLink: true,
+      topics: ['sessions'],
+      requireOpenSuccessBeforeReplay: true,
+    }], harness);
+
+    expect(onPeerLinkRecovered).not.toHaveBeenCalled();
+    expect(harness.subscribe).not.toHaveBeenCalled();
+    expect(harness.requestSessionsReseed).not.toHaveBeenCalled();
+    expect(result.transientFailures).toBe(1);
+  });
+
+  it('does not replay or clear recovery after an open succeeds in a stale presence epoch', async () => {
+    const { harness } = deps();
+    const onPeerLinkRecovered = vi.fn();
+    harness.onPeerLinkRecovered = onPeerLinkRecovered;
+    vi.mocked(harness.isPresenceEpochCurrent).mockReturnValue(false);
+
+    const result = await rehydrateDeviceLinkTopics([{
+      deviceId: 'dev-1',
+      openLink: true,
+      topics: ['sessions'],
+      requireOpenSuccessBeforeReplay: true,
+    }], harness);
+
+    expect(onPeerLinkRecovered).not.toHaveBeenCalled();
+    expect(harness.subscribe).not.toHaveBeenCalled();
+    expect(harness.requestSessionsReseed).not.toHaveBeenCalled();
+    expect(result.transientFailureDeviceIds).toEqual(['dev-1']);
+  });
+
+  it('isolates a recovering peer from a healthy peer', async () => {
+    const { calls, harness } = deps();
+    vi.mocked(harness.openLink).mockReturnValueOnce({
+      capturedPresenceEpoch: 0,
+      capturedResponseEvidenceEpoch: 0,
+      request: Promise.reject(
+        Object.assign(new Error('timeout'), { code: 'INVOKE_TIMEOUT' }),
+      ),
+    });
+
+    await rehydrateDeviceLinkTopics([
+      {
+        deviceId: 'dev-a',
+        openLink: true,
+        topics: ['sessions'],
+        requireOpenSuccessBeforeReplay: true,
+      },
+      { deviceId: 'dev-b', openLink: false, topics: ['session:b'] },
+    ], harness);
+
+    expect(calls).toEqual([
+      'subscribe:dev-b:session:b',
+      'rebuild:dev-b:b',
+    ]);
+  });
+
   it('stops the remaining sweep when background release cancels it', async () => {
     const { calls, harness } = deps();
     let cancelled = false;
