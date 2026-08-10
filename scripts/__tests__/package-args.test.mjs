@@ -59,6 +59,31 @@ test('parsePackageArgs: 版本化打包必须显式指定 region', () => {
   );
 });
 
+test('parsePackageArgs: 显式接收且只接收一份端点清单基址文件', () => {
+  const basesFile = 'config/desktop-endpoint-manifest-bases.json';
+  assert.equal(
+    parsePackageArgs(['--endpoint-manifest-bases-file', basesFile], {
+      platform: 'linux',
+      arch: 'x64',
+    }).endpointManifestBasesFile,
+    basesFile,
+  );
+  assert.throws(
+    () => parsePackageArgs(
+      ['--endpoint-manifest-bases-file', 'first.json', '--endpoint-manifest-bases-file', 'second.json'],
+      { platform: 'linux', arch: 'x64' },
+    ),
+    /只能传一次/,
+  );
+  assert.throws(
+    () => parsePackageArgs(['--endpoint-manifest-bases-file'], {
+      platform: 'linux',
+      arch: 'x64',
+    }),
+    /需要一个值/,
+  );
+});
+
 test('parsePackageArgs: linux 显式 --arch 指向宿主架构时放行', () => {
   // defaults 注入宿主身份,让断言不依赖跑测试的机器。
   for (const arch of ['x64', 'arm64']) {
