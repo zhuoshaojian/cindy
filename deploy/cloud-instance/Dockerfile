@@ -87,6 +87,14 @@ WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY dependency-patches/ ./dependency-patches/
 COPY apps/desktop/ ./apps/desktop/
+# The shared lockfile contains five Mobile file: snapshots. pnpm validates
+# their package manifests even for a Desktop-filtered install; source is not
+# included in the generated build context.
+COPY apps/mobile/modules/xdt-ios-app-distribution/package.json ./apps/mobile/modules/xdt-ios-app-distribution/package.json
+COPY apps/mobile/modules/xdt-mobile-realtime-audio/package.json ./apps/mobile/modules/xdt-mobile-realtime-audio/package.json
+COPY apps/mobile/modules/xdt-screenshot-monitor/package.json ./apps/mobile/modules/xdt-screenshot-monitor/package.json
+COPY apps/mobile/modules/xdt-tapdb/package.json ./apps/mobile/modules/xdt-tapdb/package.json
+COPY apps/mobile/modules/xdt-wechat-login/package.json ./apps/mobile/modules/xdt-wechat-login/package.json
 COPY appicon/ ./appicon/
 COPY packages/ ./packages/
 COPY cindy-protocol/packages/ ./cindy-protocol/packages/
@@ -98,7 +106,7 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store,id=cindy-cloud-pnpm-
     --mount=type=cache,target=/root/.cache/electron,id=cindy-cloud-electron \
     pnpm config set node-linker hoisted \
   && pnpm config set store-dir /root/.local/share/pnpm/store \
-  && pnpm install --prod=false --frozen-lockfile
+  && pnpm install --filter desktop... --prod=false --frozen-lockfile
 RUN node scripts/ensure-agent-binaries-direct.mjs --platform=linux-x64
 RUN node scripts/ensure-agent-binaries.mjs --platform=linux-x64
 RUN node scripts/ensure-deps.mjs
@@ -119,7 +127,8 @@ CMD ["pnpm", "dev:desktop:headless:local"]
 # Electron-ABI native rebuild. Do not introduce a parallel headless build graph.
 FROM source AS packager
 ARG CINDY_BUILD_REGION=global
-RUN CINDY_AUTH_REGION="${CINDY_BUILD_REGION}" \
+RUN NODE_OPTIONS=--max-old-space-size=8192 \
+  CINDY_AUTH_REGION="${CINDY_BUILD_REGION}" \
   pnpm --filter desktop package --platform=linux --arch=x64
 RUN node scripts/cloud-runtime-packaged-content-manifest.mjs \
   --asar=/workspace/apps/desktop/out/Cindy-linux-x64/resources/app.asar \

@@ -11,6 +11,14 @@ const EXACT_INPUTS = new Set([
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
+  // pnpm validates every file: snapshot in the shared lockfile even when the
+  // install is filtered to Desktop. Only these package manifests are needed;
+  // no Mobile runtime source enters the cloud image context.
+  'apps/mobile/modules/xdt-ios-app-distribution/package.json',
+  'apps/mobile/modules/xdt-mobile-realtime-audio/package.json',
+  'apps/mobile/modules/xdt-screenshot-monitor/package.json',
+  'apps/mobile/modules/xdt-tapdb/package.json',
+  'apps/mobile/modules/xdt-wechat-login/package.json',
   'config/endpoint.json',
   'config/endpoint.global.json',
 ]);
@@ -56,6 +64,11 @@ export function isCloudRuntimeBuildInput(relativePath) {
 
 export function isExcludedCloudRuntimeBuildInput(relativePath) {
   const normalized = normalize(relativePath);
+  // This pinned fs-safe dist is vendored runtime source, not generated build
+  // output. The Desktop bundle imports it directly during packaging.
+  if (normalized.startsWith('packages/browser-control-runtime/src/_generated/vendor/fs-safe/dist/')) {
+    return false;
+  }
   const segments = normalized.split('/');
   const basename = segments.at(-1) ?? '';
   if (segments.some((segment) => [

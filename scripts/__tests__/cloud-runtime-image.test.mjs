@@ -53,7 +53,7 @@ test('formal Dockerfile is the single runtime-stage source used by local compose
   assert.equal(dockerfile.match(new RegExp(architectureAssertion.source, 'g'))?.length, 2);
   assert.match(dockerfile, /FROM source AS packager/);
   assert.match(dockerfile, /ENV NODE_ENV=development/);
-  assert.match(dockerfile, /pnpm install --prod=false --frozen-lockfile/);
+  assert.match(dockerfile, /pnpm install --filter desktop\.\.\. --prod=false --frozen-lockfile/);
   assert.doesNotMatch(dockerfile, /COPY \. \./);
   for (const expectedCopy of [
     'COPY apps/desktop/ ./apps/desktop/',
@@ -66,6 +66,12 @@ test('formal Dockerfile is the single runtime-stage source used by local compose
     'COPY config/endpoint.json config/endpoint.global.json ./config/',
   ]) assert.match(dockerfile, new RegExp(expectedCopy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(dockerfile, /pnpm --filter desktop package --platform=linux --arch=x64/);
+  assert.match(dockerfile, /NODE_OPTIONS=--max-old-space-size=8192/);
+  const forgeConfig = read('apps/desktop/forge.config.ts');
+  assert.match(
+    forgeConfig,
+    /fs\.rmSync\(path\.join\(destModules, 'ssh2', 'test'\), \{ recursive: true, force: true \}\)/,
+  );
   assert.match(dockerfile, /FROM base AS runtime/);
   assert.equal(dockerfile.match(/ AS runtime\s*$/gm)?.length, 1);
   assert.match(dockerfile, /useradd --create-home --uid 10001/);
@@ -139,10 +145,24 @@ test('docker context excludes host state, credentials and local endpoints', () =
 test('build context whitelist excludes unrelated and credential-sensitive inputs', () => {
   assert.equal(isCloudRuntimeBuildInput('apps/desktop/src/main/index.ts'), true);
   assert.equal(isCloudRuntimeBuildInput('config/endpoint.global.json'), true);
+  assert.equal(
+    isCloudRuntimeBuildInput('apps/mobile/modules/xdt-ios-app-distribution/package.json'),
+    true,
+  );
+  assert.equal(
+    isCloudRuntimeBuildInput('apps/mobile/modules/xdt-ios-app-distribution/src/index.ts'),
+    false,
+  );
   assert.equal(isCloudRuntimeBuildInput('apps/mobile/app.json'), false);
   assert.equal(isCloudRuntimeBuildInput('.github/workflows/ci.yml'), false);
   assert.equal(isExcludedCloudRuntimeBuildInput('apps/desktop/.env.production'), true);
   assert.equal(isExcludedCloudRuntimeBuildInput('packages/example/src/__tests__/fixture.ts'), true);
+  assert.equal(
+    isExcludedCloudRuntimeBuildInput(
+      'packages/browser-control-runtime/src/_generated/vendor/fs-safe/dist/advanced.js',
+    ),
+    false,
+  );
   assert.equal(sensitiveBuildContextPathRule('apps/desktop/.config/gh/hosts.yml'), 'provider-config');
   assert.equal(sensitiveBuildContextPathRule('packages/example/token.ts'), null);
   assert.equal(
