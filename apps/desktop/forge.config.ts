@@ -344,6 +344,10 @@ function bundleNativeDeps(buildPath: string, targetPlatform: string, targetArch:
     fs.cpSync(src, dst, { recursive: true, dereference: true });
     console.log(`[forge:afterCopy] bundled native dep: ${dep} <- ${src}`);
   }
+  // ssh2 publishes test TLS fixtures inside the package tarball. They are not
+  // runtime inputs and include a private-key-shaped PEM that must never enter
+  // a packaged app or cloud image.
+  fs.rmSync(path.join(destModules, 'ssh2', 'test'), { recursive: true, force: true });
   copyDiscordRuntimeDeps(destModules);
 }
 
