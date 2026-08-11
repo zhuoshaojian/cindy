@@ -168,6 +168,32 @@ test('Desktop packaged 构建通过显式文件注入 current/peer，且普通 e
   );
 });
 
+test('Vite main 优先消费 packaged 构建注入，不会先加载缺失的 dev 清单', async () => {
+  process.env.CINDY_AUTH_REGION = 'dev';
+  process.env.VITE_CINDY_AUTH_REGION = 'dev';
+  process.env.VITE_ENDPOINT_MANIFEST_BASE_URL = 'https://current.example.invalid/cindy';
+  process.env.VITE_ENDPOINT_MANIFEST_PEER_BASE_URL = 'https://peer.example.invalid/cindy';
+
+  const { loadConfigFromFile } = await import('vite');
+  const loaded = await loadConfigFromFile(
+    { command: 'build', mode: 'production' },
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../apps/desktop/vite.main.config.ts'),
+  );
+  assert.ok(loaded);
+  assert.deepEqual(
+    {
+      region: loaded.config.define['import.meta.env.VITE_CINDY_AUTH_REGION'],
+      current: loaded.config.define['import.meta.env.VITE_ENDPOINT_MANIFEST_BASE_URL'],
+      peer: loaded.config.define['import.meta.env.VITE_ENDPOINT_MANIFEST_PEER_BASE_URL'],
+    },
+    {
+      region: JSON.stringify('dev'),
+      current: JSON.stringify('https://current.example.invalid/cindy'),
+      peer: JSON.stringify('https://peer.example.invalid/cindy'),
+    },
+  );
+});
+
 test('Desktop 清单基址文件对 schema、realm、字段和 HTTPS 凭据 fail closed', () => {
   const repoRoot = writeRepoFixtures();
   const filePath = path.join(repoRoot, 'manifest-bases.json');
