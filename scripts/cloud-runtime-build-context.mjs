@@ -44,7 +44,9 @@ const REQUIRED_INPUTS = [
   'deploy/cloud-instance/Dockerfile',
   'docs/legal/notices/desktop-linux.txt',
   'scripts/ensure-agent-binaries.mjs',
+  'scripts/agent-binary-mirror.mjs',
   'scripts/ensure-deps.mjs',
+  'tools/agent-binary-mirror/linux-x64.json',
 ];
 
 const TEXT_EXTENSIONS = new Set([

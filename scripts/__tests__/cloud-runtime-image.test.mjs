@@ -58,6 +58,12 @@ test('formal Dockerfile is the single runtime-stage source used by local compose
   assert.match(dockerfile, /FROM source AS packager/);
   assert.match(dockerfile, /ENV NODE_ENV=development/);
   assert.match(dockerfile, /pnpm install --filter desktop\.\.\. --prod=false --frozen-lockfile/);
+  assert.match(dockerfile, /ARG XDT_AGENT_BINARY_MIRROR_BASE_URL=""/);
+  assert.doesNotMatch(dockerfile, /ENV XDT_AGENT_BINARY_MIRROR_BASE_URL/);
+  assert.ok(
+    dockerfile.indexOf('ARG XDT_AGENT_BINARY_MIRROR_BASE_URL=""')
+      < dockerfile.indexOf('pnpm install --filter desktop... --prod=false --frozen-lockfile'),
+  );
   assert.doesNotMatch(dockerfile, /COPY \. \./);
   for (const expectedCopy of [
     'COPY apps/desktop/ ./apps/desktop/',
@@ -75,6 +81,10 @@ test('formal Dockerfile is the single runtime-stage source used by local compose
     packagerStage,
     /RUN --mount=type=cache,target=\/root\/\.cache\/electron,id=cindy-cloud-electron/,
   );
+  const directBootstrap = read('scripts/ensure-agent-binaries-direct.mjs');
+  const normalBootstrap = read('scripts/ensure-agent-binaries.mjs');
+  assert.match(directBootstrap, /installAgentBinaryFromMirror/);
+  assert.match(normalBootstrap, /installAgentBinaryFromMirror/);
   const forgeConfig = read('apps/desktop/forge.config.ts');
   assert.match(
     forgeConfig,

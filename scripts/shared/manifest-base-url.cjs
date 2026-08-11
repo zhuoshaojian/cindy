@@ -6,7 +6,7 @@ function trimTrailingSlashes(value) {
   return value.slice(0, end);
 }
 
-function normalizeManifestBaseUrl(raw, { fieldName, source }) {
+function normalizeManifestBaseUrl(raw, { fieldName, source, appendedPath = '/endpoint.json' }) {
   if (typeof raw !== 'string' || !raw.trim()) {
     throw new Error(`${source} 缺少非空字段 ${fieldName}`);
   }
@@ -21,7 +21,7 @@ function normalizeManifestBaseUrl(raw, { fieldName, source }) {
     throw new Error(`${source} 字段 ${fieldName} 必须是无凭据 HTTPS URL`);
   }
   if (normalized.includes('?') || normalized.includes('#')) {
-    throw new Error(`${source} 字段 ${fieldName} 不允许 query/hash：运行时会在 base 后按路径拼接 /endpoint.json`);
+    throw new Error(`${source} 字段 ${fieldName} 不允许 query/hash：运行时会在 base 后按路径拼接 ${appendedPath}`);
   }
   return normalized;
 }

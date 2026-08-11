@@ -102,6 +102,9 @@ COPY scripts/ ./scripts/
 COPY tools/ ./tools/
 COPY docs/legal/notices/ ./docs/legal/notices/
 COPY config/endpoint.json config/endpoint.global.json ./config/
+# Optional deterministic source for repository-pinned agent runtime assets.
+# Empty preserves the existing upstream/CDN behavior; configured mode is fail-closed.
+ARG XDT_AGENT_BINARY_MIRROR_BASE_URL=""
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,id=cindy-cloud-pnpm-store \
     --mount=type=cache,target=/root/.cache/electron,id=cindy-cloud-electron \
     pnpm config set node-linker hoisted \
