@@ -127,7 +127,10 @@ CMD ["pnpm", "dev:desktop:headless:local"]
 # Electron-ABI native rebuild. Do not introduce a parallel headless build graph.
 FROM source AS packager
 ARG CINDY_BUILD_REGION=global
-RUN NODE_OPTIONS=--max-old-space-size=8192 \
+# Region variants always rerun packaging; mount the shared Electron cache here
+# as well so Forge reuses the archive populated during dependency install.
+RUN --mount=type=cache,target=/root/.cache/electron,id=cindy-cloud-electron \
+  NODE_OPTIONS=--max-old-space-size=8192 \
   CINDY_AUTH_REGION="${CINDY_BUILD_REGION}" \
   pnpm --filter desktop package --platform=linux --arch=x64
 RUN node scripts/cloud-runtime-packaged-content-manifest.mjs \

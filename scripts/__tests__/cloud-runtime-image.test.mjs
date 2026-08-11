@@ -45,6 +45,10 @@ test('formal Dockerfile is the single runtime-stage source used by local compose
     dockerfile.indexOf('FROM base AS source'),
     dockerfile.indexOf('FROM source AS development'),
   );
+  const packagerStage = dockerfile.slice(
+    dockerfile.indexOf('FROM source AS packager'),
+    dockerfile.indexOf('FROM base AS runtime'),
+  );
   const runtimeStage = dockerfile.slice(dockerfile.indexOf('FROM base AS runtime'));
   const architectureAssertion = /test "\$\{TARGETOS\}" = linux && test "\$\{TARGETARCH\}" = amd64/;
   assert.doesNotMatch(baseStage, architectureAssertion);
@@ -67,6 +71,10 @@ test('formal Dockerfile is the single runtime-stage source used by local compose
   ]) assert.match(dockerfile, new RegExp(expectedCopy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(dockerfile, /pnpm --filter desktop package --platform=linux --arch=x64/);
   assert.match(dockerfile, /NODE_OPTIONS=--max-old-space-size=8192/);
+  assert.match(
+    packagerStage,
+    /RUN --mount=type=cache,target=\/root\/\.cache\/electron,id=cindy-cloud-electron/,
+  );
   const forgeConfig = read('apps/desktop/forge.config.ts');
   assert.match(
     forgeConfig,
