@@ -21,8 +21,14 @@ import { deviceDisplayName } from '@cindy/maker-shared/device-list';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { useCloudInstances } from '@/features/cloud-instance/useCloudInstances';
-import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
+import {
+  CloudInstanceRebuildCreateError,
+  useCloudInstances,
+} from '@/features/cloud-instance/useCloudInstances';
+import {
+  desktopCloudInstanceDisplayName,
+  resolveDesktopCloudDeviceName,
+} from '@/features/cloud-instance/cloudDeviceName';
 import { resolveCloudVersionPresentation } from '@/features/cloud-instance/cloudVersionPresentation';
 import type { DeviceLinkSettings } from '@/hooks/useDeviceLinkSettings';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
@@ -185,6 +191,13 @@ export function MyDevicesPanel({
     .filter((d) => cloud.loadState === 'ready' || !isCloudDevice(d))
     // 云端实例整体置底(防误点),桶内沿用稳定身份排序(与切换栏一致)。
     .sort((a, b) => Number(isCloudDevice(a)) - Number(isCloudDevice(b)) || compareDevicesByName(a, b));
+  const relayDeviceIds = new Set((s.devices ?? []).map((device) => device.deviceId));
+  // 控制面创建成功但 Pod 从未注册 relay 时也必须可管理。此类实例没有 device row,
+  // 不能再依赖 others 的 join 才渲染卡片。
+  const relaySnapshotSettled = s.devices !== null || Boolean(s.listError);
+  const unregisteredCloudInstances = cloud.loadState === 'ready' && relaySnapshotSettled
+    ? cloud.instances.filter((instance) => !relayDeviceIds.has(instance.deviceId))
+    : [];
   const revokedControllers = new Set(s.revokedControllers);
   const controlling = new Set(s.controlledBy.map((c) => c.deviceId));
 
@@ -288,6 +301,29 @@ export function MyDevicesPanel({
         return;
       }
       toast.error(t('settings.devices.cloudInstance.toast.updateFailed'));
+    }
+  };
+
+  const handleCloudRebuild = async (instanceId: string) => {
+    const confirmed = await confirm({
+      title: t('settings.devices.cloudInstance.rebuildConfirm.title'),
+      description: t('settings.devices.cloudInstance.rebuildConfirm.description'),
+      confirmText: t('settings.devices.cloudInstance.rebuildConfirm.confirm'),
+      cancelText: t('settings.devices.cloudInstance.rebuildConfirm.cancel'),
+      confirmVariant: 'destructive',
+    });
+    if (!confirmed) return;
+    try {
+      await cloud.rebuildInstance(instanceId);
+      void s.refresh(true);
+      toast.success(t('settings.devices.cloudInstance.toast.rebuilt'));
+    } catch (error) {
+      if (error instanceof CloudInstanceRebuildCreateError) {
+        void s.refresh(true);
+        toast.error(t('settings.devices.cloudInstance.toast.rebuildCreateFailed'));
+        return;
+      }
+      toast.error(t('settings.devices.cloudInstance.toast.rebuildFailed'));
     }
   };
 
@@ -423,7 +459,8 @@ export function MyDevicesPanel({
           <li className="rounded-xl border border-[var(--border-default)] px-4 py-6 text-center text-12 text-[var(--text-tertiary)]">
             {s.listError}
           </li>
-        ) : s.devices === null ? null : others.length === 0 ? (
+        ) : s.devices === null && unregisteredCloudInstances.length === 0 ? null
+          : others.length === 0 && unregisteredCloudInstances.length === 0 ? (
           <li className="rounded-xl border border-[var(--border-default)] px-4 py-6 text-center text-12 text-[var(--text-tertiary)]">
             {t('settings.devices.empty')}
           </li>
@@ -443,8 +480,13 @@ export function MyDevicesPanel({
             const cloudUpgradeVerifying =
               cloudInstance?.status.upgrade?.state === 'verifying';
             const cloudUpdating = cloudUpgradePending || cloudUpgradeVerifying;
+            const cloudHasReleaseChannel = cloudInstance?.status.latestReleaseTag != null;
             const cloudUpdateAvailable =
-              cloudInstance?.status.updateAvailable === true && !cloudUpdating;
+              cloudHasReleaseChannel
+              && cloudInstance?.status.updateAvailable === true
+              && !cloudUpdating;
+            const cloudRebuildAvailable =
+              cloudInstance !== undefined && !cloudHasReleaseChannel && !cloudUpdating;
             const cloudAutoUpdateSupported =
               typeof cloudInstance?.status.autoUpdate === 'boolean';
             const cloudAutoUpdatePending =
@@ -579,6 +621,28 @@ export function MyDevicesPanel({
                                 {cloudUpdating
                                   ? t('settings.devices.cloudInstance.updating')
                                   : t('settings.devices.cloudInstance.update')}
+                              </button>
+                            ) : null}
+                            {cloudRebuildAvailable ? (
+                              <button
+                                type="button"
+                                data-testid="cloud-instance-rebuild"
+                                onClick={() => void handleCloudRebuild(cloudInstance.instanceId)}
+                                disabled={cloud.pending !== null}
+                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Spinner
+                                  icon={RefreshCw}
+                                  size={12}
+                                  spinning={
+                                    cloud.pending?.target === cloudInstance.instanceId
+                                    && cloud.pending.action === 'rebuild'
+                                  }
+                                />
+                                {cloud.pending?.target === cloudInstance.instanceId
+                                && cloud.pending.action === 'rebuild'
+                                  ? t('settings.devices.cloudInstance.rebuilding')
+                                  : t('settings.devices.cloudInstance.rebuild')}
                               </button>
                             ) : null}
                             {/* 第一动作位随在线态切换:在线可休眠;休眠中变唤醒(不再提供无效的休眠)。 */}
@@ -733,6 +797,64 @@ export function MyDevicesPanel({
             );
           })
         )}
+
+        {variant === 'self' ? null : unregisteredCloudInstances.map((instance) => {
+          const rebuildPending =
+            cloud.pending?.target === instance.instanceId
+            && cloud.pending.action === 'rebuild';
+          const deletePending =
+            cloud.pending?.target === instance.instanceId
+            && cloud.pending.action === 'delete';
+          return (
+            <li
+              key={instance.instanceId}
+              data-testid="cloud-instance-unregistered-card"
+              data-instance-id={instance.instanceId}
+              className={cardClass}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className="h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: 'var(--remote-status-disconnected)' }}
+                  aria-hidden
+                />
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate text-13 font-medium text-[var(--text-primary)]">
+                    {desktopCloudInstanceDisplayName(instance, t)}
+                  </span>
+                  <span className="text-11 text-[var(--warning-fg)]">
+                    {t('settings.devices.cloudInstance.unregisteredStatus')}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    data-testid="cloud-instance-rebuild"
+                    onClick={() => void handleCloudRebuild(instance.instanceId)}
+                    disabled={cloud.pending !== null}
+                    className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Spinner icon={RefreshCw} size={12} spinning={rebuildPending} />
+                    {rebuildPending
+                      ? t('settings.devices.cloudInstance.rebuilding')
+                      : t('settings.devices.cloudInstance.rebuild')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleCloudDelete(instance.instanceId)}
+                    disabled={cloud.pending !== null}
+                    className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--error-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Spinner icon={Trash2} size={12} spinning={deletePending} />
+                    {deletePending
+                      ? t('settings.devices.cloudInstance.deleting')
+                      : t('settings.devices.cloudInstance.delete')}
+                  </button>
+                </div>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

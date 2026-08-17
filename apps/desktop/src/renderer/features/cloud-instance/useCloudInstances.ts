@@ -27,7 +27,24 @@ export type CloudInstanceWakeResult = Awaited<
 /** 端点未配置 → unsupported(隐藏入口);首次加载 → loading;正常 → ready;其它 → error。 */
 export type CloudInstancesLoadState = 'loading' | 'ready' | 'unsupported' | 'error';
 
-export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'autoUpdate' | 'delete';
+export type CloudInstanceAction =
+  | 'wake'
+  | 'stop'
+  | 'upgrade'
+  | 'rebuild'
+  | 'autoUpdate'
+  | 'delete';
+
+/** Delete completed, but the replacement instance could not be created. */
+export class CloudInstanceRebuildCreateError extends Error {
+  readonly originalError: unknown;
+
+  constructor(originalError: unknown) {
+    super('cloud instance was deleted but its replacement could not be created');
+    this.name = 'CloudInstanceRebuildCreateError';
+    this.originalError = originalError;
+  }
+}
 
 /** in-flight 动作:target 为 instanceId,首次唤醒(自动建)为 'new';空闲为 null。 */
 export type CloudInstancePendingState = {
@@ -52,6 +69,7 @@ export interface UseCloudInstances {
   wake: (instanceId?: string) => Promise<CloudInstanceWakeResult | undefined>;
   stopInstance: (instanceId: string) => Promise<void>;
   upgradeInstance: (instanceId: string) => Promise<void>;
+  rebuildInstance: (instanceId: string) => Promise<CloudInstanceWakeResult | undefined>;
   setAutoUpdate: (instanceId: string, enabled: boolean) => Promise<boolean>;
   deleteInstance: (instanceId: string) => Promise<void>;
 }
@@ -324,6 +342,13 @@ async function setAutoUpdate(instanceId: string, enabled: boolean): Promise<bool
   return result === true;
 }
 
+function clearDeletedInstanceRendererState(target: CloudInstanceView | undefined): void {
+  if (!target) return;
+  remoteProjectsStore.removeDevice(target.deviceId);
+  removeRemoteSessionActivityForDevice(target.deviceId);
+  revokedDevicesStore.clearRevoked(target.deviceId);
+}
+
 async function deleteInstance(instanceId: string): Promise<void> {
   await runAction(instanceId, 'delete', async () => {
     const target = snapshot.instances.find((instance) => instance.instanceId === instanceId);
@@ -332,10 +357,39 @@ async function deleteInstance(instanceId: string): Promise<void> {
     // 这里补齐本 renderer 的最后一层:同步分片 / 会话活动 / 被拒标记 ——
     // 否则已删云端会以分片缓存旧名(裸 'Cloud')的断线幽灵行再现于机器菜单。
     // 仅发起端收敛;其它在线客户端的收敛仍依赖后续的 device-removed 推送(已记录)。
-    if (target) {
-      remoteProjectsStore.removeDevice(target.deviceId);
-      removeRemoteSessionActivityForDevice(target.deviceId);
-      revokedDevicesStore.clearRevoked(target.deviceId);
+    clearDeletedInstanceRendererState(target);
+  });
+}
+
+/**
+ * Self-hosted control planes may not advertise a release, so the upgrade IPC
+ * has no target. Rebuild keeps the resource tier but intentionally goes through
+ * the existing delete (H7) and first-wake creation paths to pick up the current
+ * runtime policy.
+ */
+async function rebuildInstance(
+  instanceId: string,
+): Promise<CloudInstanceWakeResult | undefined> {
+  return runAction(instanceId, 'rebuild', async () => {
+    const target = snapshot.instances.find((instance) => instance.instanceId === instanceId);
+    if (!target) throw new Error(`cloud instance not found: ${instanceId}`);
+
+    await window.electronAPI.cloudInstances.delete({ instanceId });
+    clearDeletedInstanceRendererState(target);
+
+    try {
+      return await window.electronAPI.cloudInstances.wake({
+        resourceTier: target.status.resourceTier,
+      });
+    } catch (error) {
+      // The destructive half already committed. Never leave the deleted card
+      // in renderer state even if the follow-up list request also fails.
+      const withoutDeleted = snapshot.instances.filter(
+        (instance) => instance.instanceId !== instanceId,
+      );
+      const patch = await refreshAfterMutation();
+      updateSnapshot({ instances: withoutDeleted, ...patch });
+      throw new CloudInstanceRebuildCreateError(error);
     }
   });
 }
@@ -394,6 +448,7 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
       wake,
       stopInstance,
       upgradeInstance,
+      rebuildInstance,
       setAutoUpdate,
       deleteInstance,
     }),

@@ -38,6 +38,7 @@ describe('MyDevicesPanel rename guards', () => {
     // UI 关注点:确认框、toast、device-link 列表补刷。不许在面板直调 electronAPI。
     expect(source).toContain('await cloud.stopInstance(instanceId)');
     expect(source).toContain('await cloud.upgradeInstance(instanceId)');
+    expect(source).toContain('await cloud.rebuildInstance(instanceId)');
     expect(source).toContain('await cloud.deleteInstance(instanceId)');
     expect(source).not.toContain('window.electronAPI.cloudInstances');
     expect(source).toContain('void s.refresh(true)');
@@ -52,6 +53,24 @@ describe('MyDevicesPanel rename guards', () => {
     expect(source).toContain('cloudInstance?.status.updateAvailable === true');
     expect(source).toContain('cloudInstance.status.lastFailedUpgradeImage');
     expect(source).toContain("if (variant !== 'self' && visible) void refreshCloudInstances()");
+    expect(source).toContain('data-testid="cloud-instance-rebuild"');
+    expect(source).toContain('cloudInstance?.status.latestReleaseTag != null');
+    expect(source).toContain("confirmVariant: 'destructive'");
+  });
+
+  it('renders control-plane-only cloud instances with rebuild and delete actions', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/settings/MyDevicesPanel.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('const unregisteredCloudInstances =');
+    expect(source).toContain('!relayDeviceIds.has(instance.deviceId)');
+    expect(source).toContain('data-testid="cloud-instance-unregistered-card"');
+    expect(source).toContain('desktopCloudInstanceDisplayName(instance, t)');
+    expect(source).toContain("t('settings.devices.cloudInstance.unregisteredStatus')");
+    expect(source).toContain('handleCloudDelete(instance.instanceId)');
+    expect(source).not.toContain('renameInstance');
   });
 
   it('hides relay cloud cards when the cloud capability is not ready', () => {
@@ -60,9 +79,7 @@ describe('MyDevicesPanel rename guards', () => {
       'utf8',
     );
 
-    expect(source).toContain(
-      'cloud.loadState === \'ready\' || !isCloudDevice(d)',
-    );
+    expect(source).toContain("cloud.loadState === 'ready' || !isCloudDevice(d)");
   });
 
   it('hides immutable control switches on cloud cards and guards both write handlers', () => {
@@ -101,7 +118,7 @@ describe('MyDevicesPanel rename guards', () => {
     expect(source).toContain('data-testid="cloud-instance-model-access-stale"');
     expect(source).toContain("t('settings.devices.cloudInstance.modelAccessStale')");
 
-    for (const locale of ['zh-CN', 'en', 'ja', 'ko']) {
+    for (const locale of ['zh-CN', 'zh-TW', 'en', 'ja', 'ko']) {
       const messages = JSON.parse(
         readFileSync(
           resolve(process.cwd(), `src/renderer/i18n/locales/${locale}/common.json`),
@@ -110,6 +127,9 @@ describe('MyDevicesPanel rename guards', () => {
       ) as { settings: { devices: { cloudInstance: Record<string, string> } } };
       expect(messages.settings.devices.cloudInstance.currentVersion).toBeTruthy();
       expect(messages.settings.devices.cloudInstance.currentVersionUpToDate).toBeTruthy();
+      expect(messages.settings.devices.cloudInstance.rebuild).toBeTruthy();
+      expect(messages.settings.devices.cloudInstance.rebuilding).toBeTruthy();
+      expect(messages.settings.devices.cloudInstance.unregisteredStatus).toBeTruthy();
     }
   });
 

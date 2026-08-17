@@ -7,6 +7,7 @@ import {
   __resetCloudInstancesStoreForTest,
   CLOUD_INSTANCES_REFRESH_INTERVAL_MS,
   CLOUD_INSTANCES_VERIFYING_REFRESH_INTERVAL_MS,
+  CloudInstanceRebuildCreateError,
   isCloudInstancesUnsupportedError,
   type CloudInstanceView,
   useCloudInstances,
@@ -85,7 +86,10 @@ beforeEach(() => {
   rendererCacheMocks.clearRevoked.mockReset();
   rendererCacheMocks.removeDevice.mockReset();
   rendererCacheMocks.removeRemoteSessionActivityForDevice.mockReset();
-  vi.stubGlobal('window', Object.assign(window, { electronAPI: { cloudInstances: cloudInstancesApi } }));
+  vi.stubGlobal(
+    'window',
+    Object.assign(window, { electronAPI: { cloudInstances: cloudInstancesApi } }),
+  );
   vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
 });
@@ -102,9 +106,12 @@ describe('useCloudInstances capability visibility', () => {
     const endpointError = Object.assign(new Error('cloud instance control is unavailable'), {
       code: 'UNSUPPORTED_CAPABILITY' as const,
     });
-    const disabledError = Object.assign(new Error('cloud instance control is disabled for this account'), {
-      code: 'CLOUD_INSTANCE_DISABLED' as const,
-    });
+    const disabledError = Object.assign(
+      new Error('cloud instance control is disabled for this account'),
+      {
+        code: 'CLOUD_INSTANCE_DISABLED' as const,
+      },
+    );
     expect(isCloudInstancesUnsupportedError(endpointError)).toBe(true);
     expect(isCloudInstancesUnsupportedError(disabledError)).toBe(true);
   });
@@ -140,7 +147,9 @@ describe('useCloudInstances capability visibility', () => {
       }),
     );
 
-    await expect(secondMount.result.current.deleteInstance('cloud-instance-a')).resolves.toBeUndefined();
+    await expect(
+      secondMount.result.current.deleteInstance('cloud-instance-a'),
+    ).resolves.toBeUndefined();
     expect(cloudInstancesApi.delete).not.toHaveBeenCalled();
     expect(rendererCacheMocks.removeDevice).not.toHaveBeenCalled();
     expect(rendererCacheMocks.removeRemoteSessionActivityForDevice).not.toHaveBeenCalled();
@@ -178,9 +187,11 @@ describe('useCloudInstances capability visibility', () => {
 
   it('optimistically patches auto-update and rolls back when the write fails', async () => {
     let rejectPatch!: (error: Error) => void;
-    cloudInstancesApi.patch.mockReturnValue(new Promise<void>((_resolve, reject) => {
-      rejectPatch = reject;
-    }));
+    cloudInstancesApi.patch.mockReturnValue(
+      new Promise<void>((_resolve, reject) => {
+        rejectPatch = reject;
+      }),
+    );
     const mounted = renderHook(() => useCloudInstances());
     await waitFor(() => expect(mounted.result.current.loadState).toBe('ready'));
 
@@ -206,6 +217,58 @@ describe('useCloudInstances capability visibility', () => {
     });
     expect(mounted.result.current.instances[0]?.status.autoUpdate).toBe(false);
     expect(mounted.result.current.pending).toBeNull();
+  });
+
+  it('rebuilds through delete then first-wake while preserving the resource tier', async () => {
+    cloudInstancesApi.delete.mockResolvedValue({ instanceId: 'cloud-instance-a' });
+    cloudInstancesApi.wake.mockResolvedValue({
+      ...cloudInstanceView(),
+      instanceId: 'cloud-instance-b',
+      deviceId: 'cloud-device-b',
+      created: true,
+    });
+    const mounted = renderHook(() => useCloudInstances());
+    await waitFor(() => expect(mounted.result.current.loadState).toBe('ready'));
+
+    await act(async () => {
+      await expect(
+        mounted.result.current.rebuildInstance('cloud-instance-a'),
+      ).resolves.toMatchObject({ instanceId: 'cloud-instance-b', created: true });
+    });
+
+    expect(cloudInstancesApi.delete).toHaveBeenCalledWith({
+      instanceId: 'cloud-instance-a',
+    });
+    expect(cloudInstancesApi.wake).toHaveBeenCalledWith({ resourceTier: 'small' });
+    expect(cloudInstancesApi.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      cloudInstancesApi.wake.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(rendererCacheMocks.removeDevice).toHaveBeenCalledWith('cloud-device-a');
+    expect(rendererCacheMocks.removeRemoteSessionActivityForDevice).toHaveBeenCalledWith(
+      'cloud-device-a',
+    );
+    expect(rendererCacheMocks.clearRevoked).toHaveBeenCalledWith('cloud-device-a');
+    expect(mounted.result.current.pending).toBeNull();
+  });
+
+  it('removes the deleted card and reports a distinct error when replacement creation fails', async () => {
+    cloudInstancesApi.list
+      .mockResolvedValueOnce({ instances: [cloudInstanceView()] })
+      .mockResolvedValue({ instances: [] });
+    cloudInstancesApi.delete.mockResolvedValue({ instanceId: 'cloud-instance-a' });
+    cloudInstancesApi.wake.mockRejectedValue(new Error('create unavailable'));
+    const mounted = renderHook(() => useCloudInstances());
+    await waitFor(() => expect(mounted.result.current.loadState).toBe('ready'));
+
+    await act(async () => {
+      await expect(
+        mounted.result.current.rebuildInstance('cloud-instance-a'),
+      ).rejects.toBeInstanceOf(CloudInstanceRebuildCreateError);
+    });
+
+    expect(mounted.result.current.instances).toEqual([]);
+    expect(mounted.result.current.pending).toBeNull();
+    expect(cloudInstancesApi.list).toHaveBeenCalledTimes(2);
   });
 
   it('polls only while the renderer is visible and refreshes immediately on return', async () => {

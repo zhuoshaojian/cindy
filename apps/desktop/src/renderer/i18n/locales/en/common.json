@@ -3099,6 +3099,9 @@
         "currentVersionUpToDate": "Current version {{version}} · Up to date",
         "update": "Update Cloud",
         "updating": "Updating…",
+        "rebuild": "Recreate Instance",
+        "rebuilding": "Recreating…",
+        "unregisteredStatus": "The instance did not finish starting and cannot connect yet.",
         "autoUpdate": "Automatically Update When Idle",
         "autoUpdateHint": "When a new release is available, the cloud instance updates automatically while idle or sleeping.",
         "updateRolledBack": "The last update failed and was rolled back automatically.",
@@ -3106,6 +3109,12 @@
           "title": "Update Cloud Instance?",
           "description": "Updating restarts the cloud instance and interrupts any running tasks.",
           "confirm": "Update Cloud Instance",
+          "cancel": "Cancel"
+        },
+        "rebuildConfirm": {
+          "title": "Recreate Cloud Instance?",
+          "description": "This deletes the current cloud instance and its data, then creates a new instance with the current runtime environment. Running tasks will be interrupted, and deleted data cannot be recovered.",
+          "confirm": "Recreate Instance",
           "cancel": "Cancel"
         },
         "delete": "Delete Instance",
@@ -3125,6 +3134,9 @@
           "wakeFailed": "Failed to wake the cloud instance. Try again.",
           "updateStarted": "Cloud instance update started",
           "updateFailed": "Cloud instance update couldn't start. Try again.",
+          "rebuilt": "Cloud instance recreated",
+          "rebuildFailed": "The cloud instance couldn't be recreated. Try again.",
+          "rebuildCreateFailed": "The old cloud instance was deleted, but a new instance couldn't be created. Wake Cloud again from the machine menu.",
           "autoUpdateFailed": "The cloud instance auto-update setting couldn't be saved. Try again.",
           "noReleaseAvailable": "No release is available yet. Refresh and try again later."
         },
