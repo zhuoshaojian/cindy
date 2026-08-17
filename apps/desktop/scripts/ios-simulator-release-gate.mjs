@@ -123,6 +123,16 @@ export function validateReleaseGateReport(report, options) {
   return report;
 }
 
+export function buildIOSSimulatorReleaseGateExecutableArgs(options, userDataPath) {
+  return [
+    `--ios-simulator-release-gate=${options.requireNative ? 'native' : 'static'}`,
+    `--user-data-dir=${userDataPath}`,
+    // A packaging gate must not depend on or prompt for the developer's real
+    // macOS Keychain. Chromium's test-only mock keeps this child hermetic.
+    '--use-mock-keychain',
+  ];
+}
+
 function releaseGateEnvironment() {
   const environment = {};
   for (const key of SAFE_ENV_KEYS) {
@@ -145,10 +155,7 @@ export function runIOSSimulatorReleaseGateCli(options) {
   try {
     const result = spawnSync(
       executablePath,
-      [
-        `--ios-simulator-release-gate=${options.requireNative ? 'native' : 'static'}`,
-        `--user-data-dir=${userDataPath}`,
-      ],
+      buildIOSSimulatorReleaseGateExecutableArgs(options, userDataPath),
       {
         encoding: 'utf8',
         env: releaseGateEnvironment(),
