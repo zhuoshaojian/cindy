@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  NATIVE_BUILD_METADATA_DIRECTORY_RELATIVE_PATHS,
   NATIVE_BUILD_METADATA_RELATIVE_PATHS,
   pruneNativeBuildMetadata,
 } from '../../../forge-native-build-metadata';
@@ -27,6 +28,11 @@ describe('pruneNativeBuildMetadata', () => {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(target, '/Users/builder/private/checkout\n');
     }
+    for (const relativePath of NATIVE_BUILD_METADATA_DIRECTORY_RELATIVE_PATHS) {
+      const target = path.join(relativePath, 'obj.target', 'native.o.d');
+      fs.mkdirSync(path.dirname(path.join(modulesDir, target)), { recursive: true });
+      fs.writeFileSync(path.join(modulesDir, target), '/Users/builder/private/checkout\n');
+    }
 
     const runtimeFiles = [
       path.join('better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
@@ -39,8 +45,14 @@ describe('pruneNativeBuildMetadata', () => {
       fs.writeFileSync(target, 'runtime');
     }
 
-    expect(pruneNativeBuildMetadata(buildPath)).toEqual([...NATIVE_BUILD_METADATA_RELATIVE_PATHS]);
+    expect(pruneNativeBuildMetadata(buildPath)).toEqual([
+      ...NATIVE_BUILD_METADATA_RELATIVE_PATHS,
+      ...NATIVE_BUILD_METADATA_DIRECTORY_RELATIVE_PATHS,
+    ]);
     for (const relativePath of NATIVE_BUILD_METADATA_RELATIVE_PATHS) {
+      expect(fs.existsSync(path.join(modulesDir, relativePath))).toBe(false);
+    }
+    for (const relativePath of NATIVE_BUILD_METADATA_DIRECTORY_RELATIVE_PATHS) {
       expect(fs.existsSync(path.join(modulesDir, relativePath))).toBe(false);
     }
     for (const relativePath of runtimeFiles) {

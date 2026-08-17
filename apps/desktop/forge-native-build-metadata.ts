@@ -23,6 +23,11 @@ export const NATIVE_BUILD_METADATA_RELATIVE_PATHS = Object.freeze([
   path.join('node-pty', 'node-addon-api', 'node_addon_api_maybe.target.mk'),
 ]);
 
+export const NATIVE_BUILD_METADATA_DIRECTORY_RELATIVE_PATHS = Object.freeze([
+  path.join('better-sqlite3', 'build', 'Release', '.deps'),
+  path.join('node-pty', 'build', 'Release', '.deps'),
+]);
+
 export function pruneNativeBuildMetadata(buildPath: string): string[] {
   const modulesDir = path.join(buildPath, 'node_modules');
   const removed: string[] = [];
@@ -30,6 +35,12 @@ export function pruneNativeBuildMetadata(buildPath: string): string[] {
     const target = path.join(modulesDir, relativePath);
     if (!fs.existsSync(target)) continue;
     fs.rmSync(target, { force: true });
+    removed.push(relativePath);
+  }
+  for (const relativePath of NATIVE_BUILD_METADATA_DIRECTORY_RELATIVE_PATHS) {
+    const target = path.join(modulesDir, relativePath);
+    if (!fs.existsSync(target)) continue;
+    fs.rmSync(target, { recursive: true, force: true });
     removed.push(relativePath);
   }
   return removed;
