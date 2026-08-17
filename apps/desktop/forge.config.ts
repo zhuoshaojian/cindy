@@ -20,6 +20,7 @@ import {
   resolveCindyRegion,
 } from '@cindy/maker-shared/brand-identity';
 import { stageMacIOSSimulatorHelper } from './forge-ios-simulator-helper';
+import { stagePackagedDevKeychainIdentity } from './forge-packaged-keychain-identity';
 import { stagePackagedThirdPartyNotices } from './forge-third-party-notices';
 import { pruneNativeBuildMetadata } from './forge-native-build-metadata';
 
@@ -1367,6 +1368,17 @@ const config: ForgeConfig = {
       (buildPath, electronVersion, platform, arch, callback) => {
         (async () => {
           try {
+            const stagedKeychainIdentity = stagePackagedDevKeychainIdentity({
+              buildPath,
+              platform,
+              region: CINDY_REGION,
+            });
+            if (stagedKeychainIdentity) {
+              console.log(
+                `[forge:afterCopy] packaged dev keychain identity → ${CINDY_EXE} ` +
+                  `(${path.relative(buildPath, stagedKeychainIdentity)})`,
+              );
+            }
             bundleNativeDeps(buildPath, platform, arch);
             await rebuildNativeDepsInPackage(buildPath, electronVersion, arch);
             copySqliteVecBinary(buildPath, platform, arch);

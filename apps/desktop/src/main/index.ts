@@ -77,10 +77,12 @@ if (podUserDataDir || devFlags.userDataDirOverride) {
   process.env.XDT_USER_DATA_DIR = userDataDirOverride!;
 }
 
-// packaged dev 与正式 Cindy 必须连 safeStorage 钥匙串身份也分开。先固定当前实际
-// userData（默认即 CindyDev；显式 Chromium --user-data-dir 也照原值），再只改
-// app.name，让 Electron 从此使用 `CindyDev Safe Storage`。顺序不可反：app.name
-// 也参与默认 userData 派生，先改名再取路径会把“钥匙串隔离”意外扩大成数据迁移。
+// packaged dev 与正式 Cindy 必须连 safeStorage 钥匙串身份也分开。打包阶段已把
+// app.asar/package.json 的 productName 固定为 CindyDev，确保 Electron 在 main
+// entry 运行前触发 safeStorage 时也不会碰正式条目。这里保留运行时防线：先固定
+// 当前实际 userData（默认即 CindyDev；显式 Chromium --user-data-dir 也照原值），
+// 再确认 app.name 为 CindyDev。顺序不可反：app.name 也参与默认 userData 派生，
+// 先改名再取路径会把“钥匙串隔离”意外扩大成数据迁移。
 const packagedDevKeychainAppName = resolvePackagedDevKeychainAppName({
   isPackaged: app.isPackaged,
   region: CURRENT_CINDY_REGION,

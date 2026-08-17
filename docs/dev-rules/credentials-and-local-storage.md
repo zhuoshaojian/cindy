@@ -30,7 +30,9 @@
 - macOS 上 Electron `safeStorage` 的钥匙串条目名由 `app.name` 派生
   （service = `<app.name> Safe Storage`）。当前语义（#871）：packaged cn / global 与
   **共享 userData** 的 dev 共用 `Cindy Safe Storage`；packaged dev 与**显式隔离**的 dev 沙箱
-  使用独立的 `CindyDev Safe Storage`。显式隔离的 dev 沙箱
+  使用独立的 `CindyDev Safe Storage`。packaged dev 必须在打包 staging 阶段把
+  `app.asar/package.json` 的 `productName` 固定为 `CindyDev`；只在 main 入口调用
+  `app.setName()` 太晚，Electron 可能在用户代码运行前已经访问 safeStorage。显式隔离的 dev 沙箱
   （`--isolated` / `XDT_ISOLATED=1`）在首启（profile 为空）时选定独立的
   `CindyDev Safe Storage`，并把身份写入 profile 根的 `keychain-identity` 标记文件、
   跨重启粘住（见 `apps/desktop/src/main/devKeychainName.ts`；身份不能用「目录是否
