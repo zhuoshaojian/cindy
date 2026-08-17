@@ -27,6 +27,7 @@ import {
   resolveDevKeychainDecision,
 } from './devKeychainName.js';
 import { createKeychainMarkerIo } from './devKeychainMarkerIo.js';
+import { resolvePackagedDevKeychainAppName } from './packagedDevKeychainName.js';
 
 // 同机双装(cn/global):global 构建把 userData 切到区域目录(CindyGlobal),
 // 与 cn 版(productName 默认 'Cindy')彻底分库;数据库 / 登录态 / 单实例锁 /
@@ -74,6 +75,24 @@ if (podUserDataDir || devFlags.userDataDirOverride) {
   // Keep diagnostics and legacy migration guards aligned with the path that
   // was actually selected, including the packaged Pod override.
   process.env.XDT_USER_DATA_DIR = userDataDirOverride!;
+}
+
+// packaged dev 与正式 Cindy 必须连 safeStorage 钥匙串身份也分开。先固定当前实际
+// userData（默认即 CindyDev；显式 Chromium --user-data-dir 也照原值），再只改
+// app.name，让 Electron 从此使用 `CindyDev Safe Storage`。顺序不可反：app.name
+// 也参与默认 userData 派生，先改名再取路径会把“钥匙串隔离”意外扩大成数据迁移。
+const packagedDevKeychainAppName = resolvePackagedDevKeychainAppName({
+  isPackaged: app.isPackaged,
+  region: CURRENT_CINDY_REGION,
+  platform: process.platform,
+});
+if (packagedDevKeychainAppName) {
+  const pinnedUserDataDir = app.getPath('userData');
+  app.setName(packagedDevKeychainAppName);
+  app.setPath('userData', pinnedUserDataDir);
+  stderr.write(
+    `[cindy] packaged dev keychain isolation → app.name=${packagedDevKeychainAppName}\n`,
+  );
 }
 
 // Node happy-eyeballs(autoSelectFamily)默认每个地址只给 250ms 完成 TCP 握手,
