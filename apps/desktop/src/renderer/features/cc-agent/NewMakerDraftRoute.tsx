@@ -207,6 +207,7 @@ import {
 } from '@/hooks/useAgentCapabilities';
 import { useProviders } from '@/hooks/useProviders';
 import { useAvailableAgents } from '@/hooks/useAvailableAgents';
+import { resolveDraftAgentAvailability } from './draftAgentAvailability';
 import {
   useDeviceProviders,
   evictDeviceProviders,
@@ -820,9 +821,11 @@ export function NewMakerDraftRoute() {
   // null,agent map 无 pi,但模型目录仍投影 Pi → 需按 maker:list-available-agents 过滤,
   // 否则一路创建到 requireAgent 的 not-registered 报错,codex review P2)。远程草稿以被控端
   // 的注册结果为准(hook 传 deviceId 走隧道)。未加载完成时不隐藏任何入口(fail-open)。
-  const { availableVendors, loaded: availableAgentsLoaded } = useAvailableAgents(
-    effectiveDeviceLinkDeviceId,
-  );
+  const {
+    availableVendors,
+    loaded: availableAgentsLoaded,
+    status: availableAgentsStatus,
+  } = useAvailableAgents(effectiveDeviceLinkDeviceId);
   const hiddenSwitcherVendors = useMemo<MakerVendor[]>(() => {
     if (!availableAgentsLoaded) return [];
     return (['cc', 'codex', 'pi'] as const).filter((vendor) => !availableVendors.has(vendor));
@@ -2485,19 +2488,43 @@ export function NewMakerDraftRoute() {
     [currentPrefs],
   );
 
+  /**
+   * 创建边界再核一次 runtime 注册结果。仅靠下方 effect 收敛不够：权威列表返回后的
+   * render 与 effect 提交之间仍有一帧，首次加载期间也可能先按持久化的 Pi 草稿点击发送。
+   * 这两种竞态都会把未注册 Agent 送进 maker:create-session。查询失败保持既有 fail-open，
+   * 由 main 的 requireAgent 作最终裁决；只有尚在加载时等待、已知不可用时切到首个可用项。
+   */
+  const guardDraftAgentAvailability = useCallback((): string | null => {
+    const decision = resolveDraftAgentAvailability(
+      draft.vendor,
+      availableVendors,
+      availableAgentsStatus,
+    );
+    if (decision.kind === 'proceed') return null;
+    if (decision.kind === 'wait') return t('ccAgent.draft.agentAvailabilityLoading');
+    if (decision.kind === 'switch') {
+      handleVendorChange(decision.vendor);
+      return t('ccAgent.draft.agentUnavailableAutoSwitch', {
+        agent: decision.vendor === 'cc' ? 'Claude' : decision.vendor === 'codex' ? 'Codex' : 'Pi',
+      });
+    }
+    return t('ccAgent.draft.createSessionFailed');
+  }, [availableAgentsStatus, availableVendors, draft.vendor, handleVendorChange, t]);
+
   // 当前草稿选中的 vendor 变为不可用(如 Pi 未注册 / 被控端无 Pi)时,coerce 到首个可用来源
   // (优先 cc),避免 tablist 卡在被隐藏段、且防止创建出注定 requireAgent 报错的会话。
   // 只在已加载可用性后收敛;fallback 一定可见,收敛一次即稳定(switchVendor 同值早返,不成环)。
   useEffect(() => {
     if (!availableAgentsLoaded) return;
-    if (!hiddenSwitcherVendors.includes(draft.vendor)) return;
-    const fallback = (['cc', 'codex', 'pi'] as const).find((vendor) =>
-      availableVendors.has(vendor),
+    const decision = resolveDraftAgentAvailability(
+      draft.vendor,
+      availableVendors,
+      availableAgentsStatus,
     );
-    if (fallback && fallback !== draft.vendor) handleVendorChange(fallback);
+    if (decision.kind === 'switch') handleVendorChange(decision.vendor);
   }, [
     availableAgentsLoaded,
-    hiddenSwitcherVendors,
+    availableAgentsStatus,
     availableVendors,
     draft.vendor,
     handleVendorChange,
@@ -3039,6 +3066,11 @@ export function NewMakerDraftRoute() {
       },
     ): Promise<boolean | undefined> => {
       if (sendInFlightRef.current) return false;
+      const agentAvailabilityError = guardDraftAgentAvailability();
+      if (agentAvailabilityError) {
+        toast.warning(agentAvailabilityError);
+        return false;
+      }
       if (effectiveCollab.enabled && collabPolicy.loading) {
         toast.warning(t('newChat.collaboration.loadingHint'));
         return false;
@@ -3886,6 +3918,7 @@ export function NewMakerDraftRoute() {
       crossAgentDialog.runMigrationFlow,
       attachmentState,
       refreshWorktrees,
+      guardDraftAgentAvailability,
       t,
     ],
   );
@@ -3913,6 +3946,8 @@ export function NewMakerDraftRoute() {
       if (sendInFlightRef.current) {
         throw new Error(t('goal.newGoalDialog.busy'));
       }
+      const agentAvailabilityError = guardDraftAgentAvailability();
+      if (agentAvailabilityError) throw new Error(agentAvailabilityError);
       markSendInFlight(true);
       try {
         const selectedWorkingDir = effectiveWorkingDir?.trim() || undefined;
@@ -4446,6 +4481,7 @@ export function NewMakerDraftRoute() {
       localProvidersLoading,
       patchCollab,
       refreshWorktrees,
+      guardDraftAgentAvailability,
       navigate,
       t,
     ],

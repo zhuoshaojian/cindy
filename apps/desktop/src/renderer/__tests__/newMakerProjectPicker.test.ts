@@ -460,10 +460,11 @@ describe('Shared create project picker', () => {
     expect(availableAgentsHookSource).toContain(
       "dl.invoke(deviceId, 'maker:list-available-agents', [])",
     );
-    // claude-code → cc 归一,fail-open(未加载不隐藏)。
+    // claude-code → cc 归一,fail-open(查询失败不隐藏)。
     expect(availableAgentsHookSource).toContain("agent === 'claude-code' ? 'cc' : agent");
-    // 未加载完成时不隐藏任何入口(loaded 保持 false → 空 hidden)。
+    // loaded 继续服务展示层；status 额外区分「仍在加载」与「查询失败后 fail-open」。
     expect(availableAgentsHookSource).toMatch(/loaded/);
+    expect(availableAgentsHookSource).toContain('status: AvailableAgentsStatus');
 
     // 开关按 hiddenVendors 过滤 OPTIONS,但保留当前选中段避免"无选中"过渡帧。
     expect(vendorSwitcherSource).toContain('hiddenVendors');
@@ -476,7 +477,11 @@ describe('Shared create project picker', () => {
       /useAvailableAgents\(\s*effectiveDeviceLinkDeviceId,?\s*\)/,
     );
     expect(newMakerDraftRouteSource).toContain('hiddenVendors={hiddenSwitcherVendors}');
-    expect(newMakerDraftRouteSource).toMatch(/hiddenSwitcherVendors\.includes\(draft\.vendor\)/);
+    expect(newMakerDraftRouteSource).toContain('if (!availableAgentsLoaded) return;');
+    // 创建边界必须复核，不能只依赖 render 后的 effect 收敛；Send 与 Goal 共用同一 guard。
+    expect(newMakerDraftRouteSource).toContain('const guardDraftAgentAvailability = useCallback(');
+    expect(newMakerDraftRouteSource.match(/guardDraftAgentAvailability\(\)/g)).toHaveLength(2);
+    expect(newMakerDraftRouteSource).toContain('resolveDraftAgentAvailability(');
   });
 
   it('hides SSH targets for Pi and fail-closed guards Pi+SSH session creation', () => {

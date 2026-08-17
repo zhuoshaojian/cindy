@@ -6932,6 +6932,8 @@
       "remoteProviderUnsupported": "該供應商不支援 SSH 遠端會話，請更換來源",
       "remoteNativeOauthUnavailable": "未連線 Claude.ai 訂閱，請先連線或選擇閘道器模型",
       "deviceStillLoading": "遠端裝置仍在載入中，請稍候",
+      "agentAvailabilityLoading": "正在檢查可用 Agent，請稍候",
+      "agentUnavailableAutoSwitch": "所選 Agent 目前不可用，已切換到 {{agent}}。請重新傳送。",
       "remoteDefaultsLoadFailed": "無法讀取遠端裝置配置。請檢查連線，Cindy 正在重試。",
       "worktreeMissingRepo": "無法開 worktree：缺少當前目錄的倉庫根",
       "worktreeRepoHint": "可嘗試重新選一次工作目錄，等右下角資料夾標識重新整理後再試",

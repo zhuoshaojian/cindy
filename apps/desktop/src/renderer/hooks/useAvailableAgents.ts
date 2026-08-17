@@ -10,8 +10,8 @@
  * device-link:远程草稿的可用性以**被控端**为准 —— 传 deviceId 时走隧道 invoke
  * (channel 在 REMOTE_INVOKE_ALLOWLIST 内)。省略 = 本机。
  *
- * 加载语义:未加载完成时 `loaded=false` 且 `availableVendors` 为空;消费方必须把
- * "未加载" 当作 "先别隐藏任何入口"(避免异步 fetch 期间误隐藏合法 agent)。
+ * 加载语义:`status` 区分 loading / ready / error；`loaded` 只表示 ready，继续供展示层
+ * 决定是否隐藏入口。创建边界必须等待 loading，error 则保持既有 fail-open。
  */
 import { useEffect, useState } from 'react';
 
@@ -21,6 +21,7 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('useAvailableAgents');
 
 type RuntimeAgentKind = 'claude-code' | 'codex' | 'pi';
+export type AvailableAgentsStatus = 'loading' | 'ready' | 'error';
 
 /** runtime agent id → NewMaker vendor(其余保持同名)。 */
 function toVendor(agent: RuntimeAgentKind): MakerVendor {
@@ -59,30 +60,73 @@ export interface UseAvailableAgentsResult {
   availableVendors: ReadonlySet<MakerVendor>;
   /** 首次结果是否已返回。未加载完成时消费方不应据此隐藏任何入口。 */
   loaded: boolean;
+  /**
+   * `loaded=false` 同时覆盖「仍在加载」与「查询失败后 fail-open」，创建边界不能只靠它
+   * 区分两者：前者必须等权威结果，后者沿用 main 的 requireAgent 最终裁决。
+   */
+  status: AvailableAgentsStatus;
 }
+
+interface AvailableAgentsState {
+  deviceId: string | null;
+  availableVendors: ReadonlySet<MakerVendor>;
+  status: AvailableAgentsStatus;
+}
+
+const EMPTY_AVAILABLE_VENDORS: ReadonlySet<MakerVendor> = new Set();
 
 /**
  * @param deviceId 省略/undefined = 本机;传值 = 该被控端(device-link)。
  */
 export function useAvailableAgents(deviceId?: string | null): UseAvailableAgentsResult {
-  const [availableVendors, setAvailableVendors] = useState<ReadonlySet<MakerVendor>>(new Set());
-  const [loaded, setLoaded] = useState(false);
+  const normalizedDeviceId = deviceId ?? null;
+  const [state, setState] = useState<AvailableAgentsState>(() => ({
+    deviceId: normalizedDeviceId,
+    availableVendors: EMPTY_AVAILABLE_VENDORS,
+    status: 'loading',
+  }));
+
+  // Effects run after render. Tagging results with their device prevents one render from exposing
+  // the previous device's Agent list after the user switches creation targets.
+  const currentState =
+    state.deviceId === normalizedDeviceId
+      ? state
+      : {
+          deviceId: normalizedDeviceId,
+          availableVendors: EMPTY_AVAILABLE_VENDORS,
+          status: 'loading' as const,
+        };
 
   useEffect(() => {
     let cancelled = false;
-    setLoaded(false);
-    setAvailableVendors(new Set());
+    setState({
+      deviceId: normalizedDeviceId,
+      availableVendors: EMPTY_AVAILABLE_VENDORS,
+      status: 'loading',
+    });
     const run = (): void => {
       fetchAvailableAgents(deviceId)
         .then((agents) => {
           if (cancelled) return;
-          setAvailableVendors(new Set(agents.map(toVendor)));
-          setLoaded(true);
+          setState({
+            deviceId: normalizedDeviceId,
+            availableVendors: new Set(agents.map(toVendor)),
+            status: 'ready',
+          });
         })
         .catch((err: unknown) => {
           if (cancelled) return;
           // fail-open:查询失败时不隐藏任何入口(loaded 保持 false)——宁可多显示一个
           // 也不因一次 IPC 抖动把合法 agent 从创建入口里抹掉。真正的兜底是创建期 requireAgent。
+          setState((current) =>
+            current.deviceId === normalizedDeviceId && current.status === 'ready'
+              ? current
+              : {
+                  deviceId: normalizedDeviceId,
+                  availableVendors: EMPTY_AVAILABLE_VENDORS,
+                  status: 'error',
+                },
+          );
           log.warn('listAvailableAgents failed; not gating agent entries this cycle', {
             error: err instanceof Error ? err.message : String(err),
           });
@@ -96,7 +140,11 @@ export function useAvailableAgents(deviceId?: string | null): UseAvailableAgents
       cancelled = true;
       window.removeEventListener('focus', onFocus);
     };
-  }, [deviceId]);
+  }, [deviceId, normalizedDeviceId]);
 
-  return { availableVendors, loaded };
+  return {
+    availableVendors: currentState.availableVendors,
+    loaded: currentState.status === 'ready',
+    status: currentState.status,
+  };
 }
