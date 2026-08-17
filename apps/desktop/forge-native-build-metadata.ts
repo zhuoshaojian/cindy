@@ -26,6 +26,11 @@ export const NATIVE_BUILD_METADATA_RELATIVE_PATHS = Object.freeze([
 export const NATIVE_BUILD_METADATA_DIRECTORY_RELATIVE_PATHS = Object.freeze([
   path.join('better-sqlite3', 'build', 'Release', '.deps'),
   path.join('node-pty', 'build', 'Release', '.deps'),
+  // pnpm's nested .bin links resolve to absolute workspace targets. asar
+  // records those targets in its header even though the CLIs are unused at
+  // runtime, so remove the link directories before packing.
+  path.join('better-sqlite3', 'node_modules', '.bin'),
+  path.join('sharp', 'node_modules', '.bin'),
 ]);
 
 export function pruneNativeBuildMetadata(buildPath: string): string[] {

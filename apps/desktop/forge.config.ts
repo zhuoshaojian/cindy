@@ -422,7 +422,7 @@ async function rebuildNativeDepsInPackage(
 
   const prunedMetadata = pruneNativeBuildMetadata(buildPath);
   console.log(
-    `[forge:afterCopy] pruned ${prunedMetadata.length} host-specific native build metadata files`,
+    `[forge:afterCopy] pruned ${prunedMetadata.length} host-specific native build metadata entries`,
   );
 
   console.log(`[forge:afterCopy] rebuild ok: ${sqliteNative}, ${ptyNative}`);
