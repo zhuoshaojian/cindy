@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { brandUserDataDirName } from '@cindy/maker-shared/brand-identity';
+
 import { stagePackagedDevKeychainIdentity } from '../../../forge-packaged-keychain-identity';
 
 const tempDirs: string[] = [];
@@ -23,6 +25,17 @@ function stagePackage(productName = 'Cindy'): string {
   return buildPath;
 }
 
+function readStagedProductName(buildPath: string): string {
+  const parsed = JSON.parse(fs.readFileSync(path.join(buildPath, 'package.json'), 'utf8')) as {
+    productName: string;
+  };
+  return parsed.productName;
+}
+
+function safeStorageServiceForProductName(productName: string): string {
+  return `${productName} Safe Storage`;
+}
+
 describe('stagePackagedDevKeychainIdentity', () => {
   it('sets the staged macOS dev productName before asar packaging', () => {
     const buildPath = stagePackage();
@@ -35,6 +48,25 @@ describe('stagePackagedDevKeychainIdentity', () => {
       productName: 'CindyDev',
       version: '0.0.0',
     });
+    expect(safeStorageServiceForProductName(readStagedProductName(buildPath))).toBe(
+      'CindyDev Safe Storage',
+    );
+  });
+
+  it('leaves the formal macOS safeStorage service unchanged', () => {
+    const buildPath = stagePackage();
+
+    expect(
+      stagePackagedDevKeychainIdentity({ buildPath, platform: 'darwin', region: 'cn' }),
+    ).toBeNull();
+    expect(safeStorageServiceForProductName(readStagedProductName(buildPath))).toBe(
+      'Cindy Safe Storage',
+    );
+  });
+
+  it('keeps the formal and packaged-dev default userData directory names unchanged', () => {
+    expect(brandUserDataDirName('cn')).toBe('Cindy');
+    expect(brandUserDataDirName('dev')).toBe('CindyDev');
   });
 
   it.each([
