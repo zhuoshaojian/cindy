@@ -349,23 +349,41 @@ describe('NewMakerDraftRoute Orca worker create order', () => {
       expect(sessionViewSource).not.toContain('rememberRecoverableHandoff(');
     });
 
-    it('首条消息:等协同 → 经 deliver 发送 → 锁覆盖整条交接', () => {
+    it('首条消息:等远程订阅 ACK → 等协同 → 经 deliver 发送', () => {
       const branch = messageBranch();
+      const stickyOrigin = branch.indexOf(
+        'const handoffDeviceId = getStickySessionDeviceId(sessionId);',
+      );
       const lock = branch.indexOf('if (holdComposer) setRemoteHandoffPreparing(true)');
+      const awaitSubscribe = branch.indexOf('await window.electronAPI.deviceLink.subscribe(');
       const awaitCollab = branch.indexOf('await consumePendingRemoteCollab(pending.remoteCollab');
       const send = branch.indexOf('sendMessage(');
       const unlock = branch.indexOf('if (holdComposer) setRemoteHandoffPreparing(false)');
 
+      expect(stickyOrigin).toBeGreaterThan(-1);
       expect(lock).toBeGreaterThan(-1);
+      expect(lock).toBeLessThan(awaitSubscribe);
+      expect(awaitSubscribe).toBeLessThan(awaitCollab);
       expect(awaitCollab).toBeLessThan(send);
-      // 解锁必须排在 sendMessage **之后**:提前解锁的话,命令派发那次 await 里
-      // 用户补发的消息会抢在草稿提交的首条之前。
-      expect(lock).toBeLessThan(awaitCollab);
+      // 订阅是真正的远程屏障:组件 mount 里的 subscribeHeavy 只是 fire-and-forget,
+      // 不等 ACK 就发首轮会让 maker:event / messages:created 落在无订阅者窗口。
+      expect(branch).toContain('`session:${sessionId}`');
+      // 旧被控端不支持 subscribe 时保留原有 pull / reconcile 兼容路径;
+      // 其它订阅错误仍必须中止首发并恢复用户正文。
+      expect(branch).toContain("extractIpcError(err)?.code !== 'DEVICE_LINK_CHANNEL_NOT_ALLOWED'");
+      expect(branch).toContain(
+        "log.info('remote first-message subscription unsupported; using legacy reconcile')",
+      );
+      // 解锁必须排在 sendMessage **之后**:提前解锁的话,订阅 / 命令派发的
+      // await 里用户补发的消息会抢在草稿提交的首条之前。
       expect(send).toBeLessThan(unlock);
       // sendMessage 失败时 resolve false 而不抛错 —— 必须 await 且经 deliver 判定,
       // 裸调 + 立刻丢副本会让正文从界面和磁盘上一起消失(codex P1 第五轮)。
       expect(branch).toContain('await deliverRecoverableHandoff(sessionId, () =>');
       expect(branch).toContain('sendMessage(');
+      // 订阅失败不能造成 unhandled rejection 或永久空任务:已有副本回填 composer。
+      expect(branch).toContain("log.warn('pending first message handoff failed:', err)");
+      expect(branch).toContain("restoreRecoverableHandoff('message')");
     });
 
     it('新建目标:锁从消费一路盖到 setGoal 结束,setGoal 成功后才清副本', () => {

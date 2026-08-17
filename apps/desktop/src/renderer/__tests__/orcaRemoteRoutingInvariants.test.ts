@@ -93,6 +93,29 @@ describe('orca 远程路由接线不变式', () => {
     expect(branch).toContain('goalApiFor(sessionId).setGoal(');
   });
 
+  it('远程草稿首条消息在发送前等粘滞归属的重 topic 订阅', () => {
+    const view = read('features/cc-agent/CCAgentSessionView.tsx');
+    const messageConsumer = view.slice(
+      view.indexOf('const pending = consumePending(sessionId);'),
+      view.indexOf('const pendingGoalConsumedRef'),
+    );
+    const sticky = messageConsumer.indexOf(
+      'const handoffDeviceId = getStickySessionDeviceId(sessionId);',
+    );
+    const subscribe = messageConsumer.indexOf(
+      'await window.electronAPI.deviceLink.subscribe(handoffDeviceId,',
+    );
+    const send = messageConsumer.indexOf('sendMessage(');
+
+    expect(sticky).toBeGreaterThan(-1);
+    expect(subscribe).toBeGreaterThan(sticky);
+    expect(send).toBeGreaterThan(subscribe);
+    expect(messageConsumer).not.toContain('const handoffDeviceId = getSessionDeviceId(sessionId);');
+    expect(messageConsumer).toContain(
+      "extractIpcError(err)?.code !== 'DEVICE_LINK_CHANNEL_NOT_ALLOWED'",
+    );
+  });
+
   it('makerApiForSticky 住在传输层(归属判定只有一处可改)', () => {
     const src = read('lib/makerTransport.ts');
     expect(src).toContain('export function makerApiForSticky(');
