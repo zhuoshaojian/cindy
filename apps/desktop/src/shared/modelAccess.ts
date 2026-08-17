@@ -29,11 +29,30 @@ export interface ModelAccessStatus {
   state: ModelAccessSyncState;
   /** 诊断子码(ServerApiError code / 'SAFE_STORAGE_UNAVAILABLE')，不得包含凭据。 */
   errorCode?: string;
+  /**
+   * 本轮同步里连续失败的次数(成功清零,不跨轮累计)。只在**仍会继续重试**时出现,
+   * 用来把「持续故障」与「还没结果」分开——见
+   * MODEL_ACCESS_PERSISTENT_FAILURE_THRESHOLD。
+   */
+  consecutiveFailures?: number;
   /** 当前生效凭据的来源标记。 */
   source: ModelAccessCredentialSource | null;
   /** source='server' 时下发的推理 endpoint(展示用;消费一律走 main 侧 getter)。 */
   endpoint: string | null;
 }
+
+/**
+ * 连续失败达到该次数后,「仍在重试」就应被解读为**持续故障**,而不是「还没结果」。
+ *
+ * 为什么需要它:云端 Pod 注入的退避永不耗尽(headlessModelAccessRetryDelayMs 对每个
+ * attempt 都返回有限延迟),所以 `failed` 在 Pod 里**不可达**,状态永停 `syncing`。
+ * 没有这个判据,持续故障在 status.json 上与「刚开始同步」无法区分,精确错误码只留在
+ * 日志里——而 status.json 才是控制面能看到的面。
+ *
+ * 取 3 的理由:Desktop 缺省退避是 [2s, 8s],第 3 次失败时 delay 已耗尽并转入 `failed`,
+ * 所以该阈值在 Desktop 上**不可能**改变可观测的状态序列;它只对永不耗尽的 Pod 生效。
+ */
+export const MODEL_ACCESS_PERSISTENT_FAILURE_THRESHOLD = 3;
 
 /** 当前登录身份在 AIGateway Credit Ledger 中的同一时点余额快照。 */
 export interface ModelAccessBalance {
