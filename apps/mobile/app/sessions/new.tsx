@@ -462,6 +462,9 @@ export default function NewRemoteSessionScreen() {
     [deviceOptions, routeDeviceFallback, selectedDeviceId],
   );
   const selectedDeviceLabel = selectedDeviceOption?.name || selectedDeviceName || selectedDeviceId || t('session.new.selectDevice');
+  const selectedDeviceModelAccessStale = selectedDeviceOption?.kind === 'cloud'
+    && selectedDeviceOption.modelAccessStale === true;
+  const modelAccessStaleHint = t('deviceLink.cloudInstance.modelAccessStale');
   const maker = useMobileMakerTransport(selectedDeviceId);
   const worktreePreference = useRemoteNewMakerWorktreePreference(selectedDeviceId);
   const worktreeEnabled = worktreePreference.enabled;
@@ -5173,6 +5176,7 @@ export default function NewRemoteSessionScreen() {
             <View style={styles.selectorStack}>
               <View style={styles.deviceSelectorWrap}>
               <Pressable
+                accessibilityHint={selectedDeviceModelAccessStale ? modelAccessStaleHint : undefined}
                 accessibilityLabel={t('session.new.selectControlledDevice')}
                 accessibilityRole="button"
                 accessibilityState={{
@@ -5194,7 +5198,17 @@ export default function NewRemoteSessionScreen() {
                 ) : (
                   <Laptop color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
                 )}
-                <Text style={styles.selectorText} numberOfLines={1}>{selectedDeviceLabel}</Text>
+                <View style={styles.deviceOptionTextStack}>
+                  <Text style={styles.selectorText} numberOfLines={1}>{selectedDeviceLabel}</Text>
+                  {selectedDeviceModelAccessStale ? (
+                    <Text
+                      style={styles.modelAccessStaleText}
+                      testID="newSession.selectedCloudModelAccessStale"
+                    >
+                      {modelAccessStaleHint}
+                    </Text>
+                  ) : null}
+                </View>
                 {deviceHasChoices ? (
                   <ChevronsUpDown color={colors.borderStrong} size={iconSize.sm} strokeWidth={iconStroke.regular} />
                 ) : null}
@@ -5203,8 +5217,11 @@ export default function NewRemoteSessionScreen() {
                 <View style={styles.devicePickerPanel} testID="newSession.devicePickerPanel">
                   {deviceOptions.map((option) => {
                     const selected = option.deviceId === selectedDeviceId;
+                    const modelAccessStale = option.kind === 'cloud'
+                      && option.modelAccessStale === true;
                     return (
                       <Pressable
+                        accessibilityHint={modelAccessStale ? modelAccessStaleHint : undefined}
                         accessibilityLabel={t('session.new.selectDeviceNamed', { name: option.name || option.deviceId })}
                         accessibilityRole="button"
                         key={option.deviceId}
@@ -5225,9 +5242,19 @@ export default function NewRemoteSessionScreen() {
                             strokeWidth={iconStroke.thin}
                           />
                         )}
-                        <Text style={styles.deviceOptionText} numberOfLines={1}>
-                          {option.name || option.deviceId}
-                        </Text>
+                        <View style={styles.deviceOptionTextStack}>
+                          <Text style={styles.deviceOptionText} numberOfLines={1}>
+                            {option.name || option.deviceId}
+                          </Text>
+                          {modelAccessStale ? (
+                            <Text
+                              style={styles.modelAccessStaleText}
+                              testID="newSession.deviceOptionCloudModelAccessStale"
+                            >
+                              {modelAccessStaleHint}
+                            </Text>
+                          ) : null}
+                        </View>
                         {selected ? (
                           <Check color={colors.textPrimary} size={iconSize.lg} strokeWidth={iconStroke.medium} />
                         ) : null}
@@ -6143,11 +6170,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   deviceOptionText: {
     color: colors.textPrimary,
-    flex: 1,
     fontSize: typeScale.body,
     fontWeight: fontWeight.medium,
     lineHeight: lineHeight.body,
+  },
+  deviceOptionTextStack: {
+    flex: 1,
     minWidth: 0,
+  },
+  modelAccessStaleText: {
+    color: colors.statusAccent,
+    fontSize: typeScale.caption,
+    fontWeight: fontWeight.regular,
+    lineHeight: lineHeight.caption,
   },
   agentSelectorWrap: {
     position: 'relative',

@@ -5898,6 +5898,7 @@
       "label": "设备",
       "localHint": "在这台电脑上运行",
       "onlineHint": "已连接，可在其上创建",
+      "modelAccessStaleHint": "模型凭据待刷新",
       "offlineHint": "离线 · 连上后可用",
       "attachmentsDropped": "已移除 {{count}} 个附件：它们是上一台设备上的文件",
       "attachmentsRemoteUnsupported": "远程设备暂不支持文件附件，已跳过 {{count}} 个（图片可以）"

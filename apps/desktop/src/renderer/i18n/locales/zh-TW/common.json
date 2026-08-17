@@ -5901,6 +5901,7 @@
       "label": "裝置",
       "localHint": "在這臺電腦上執行",
       "onlineHint": "已連線，可在其上建立",
+      "modelAccessStaleHint": "模型憑證需要重新整理",
       "offlineHint": "離線 · 連上後可用",
       "attachmentsDropped": "已移除 {{count}} 個附件：它們是上一臺裝置上的檔案",
       "attachmentsRemoteUnsupported": "遠端裝置暫不支援檔案附件，已跳過 {{count}} 個（圖片可以）"

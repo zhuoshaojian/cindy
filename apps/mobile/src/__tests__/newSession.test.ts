@@ -10,6 +10,7 @@ import {
   buildNewSessionCreatePreview,
   buildRecentWorkspaceOptions,
   buildRemoteCreateSessionOptions,
+  cloudInstanceModelAccessStale,
   filterRemoteDirectoryEntries,
   defaultPermissionModeForNewSessionAgent,
   normalizeCreateSessionResult,
@@ -1286,16 +1287,39 @@ describe('new session model', () => {
   it('serializes device candidates for new-session route params', () => {
     const encoded = serializeNewSessionDeviceOptions([
       { deviceId: ' pc ', name: ' PC ' },
-      { deviceId: 'pod', name: 'Cloud Cindy', kind: 'cloud' },
-      { deviceId: 'mac', name: '' },
+      { deviceId: 'pod', name: 'Cloud Cindy', kind: 'cloud', modelAccessStale: true },
+      { deviceId: 'mac', name: '', modelAccessStale: true },
       { deviceId: 'pc', name: 'Duplicate' },
     ]);
 
     expect(parseNewSessionDeviceOptions(encoded)).toEqual([
       { deviceId: 'pc', name: 'PC' },
       { deviceId: 'mac', name: 'mac' },
-      { deviceId: 'pod', name: 'Cloud Cindy', kind: 'cloud' },
+      { deviceId: 'pod', name: 'Cloud Cindy', kind: 'cloud', modelAccessStale: true },
     ]);
+  });
+
+  it('warns only for a persistent cloud model-access failure', () => {
+    const instance = (modelAccess?: 'ready' | 'not-ready' | 'unknown') => ({
+      status: { modelAccess },
+    });
+
+    expect(cloudInstanceModelAccessStale(instance('not-ready'))).toBe(true);
+    expect(cloudInstanceModelAccessStale(instance('ready'))).toBe(false);
+    expect(cloudInstanceModelAccessStale(instance('unknown'))).toBe(false);
+    expect(cloudInstanceModelAccessStale(instance())).toBe(false);
+    expect(cloudInstanceModelAccessStale(null)).toBe(false);
+  });
+
+  it('projects and renders the cloud model-access warning with the shared warning token', () => {
+    const homeSource = readTextLf(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
+    const newSource = readTextLf(resolve(process.cwd(), 'app/sessions/new.tsx'), 'utf8');
+
+    expect(homeSource).toContain('modelAccessStale: cloudInstanceModelAccessStale(');
+    expect(newSource).toContain("t('deviceLink.cloudInstance.modelAccessStale')");
+    expect(newSource).toContain('testID="newSession.selectedCloudModelAccessStale"');
+    expect(newSource).toContain('testID="newSession.deviceOptionCloudModelAccessStale"');
+    expect(newSource).toContain('color: colors.statusAccent');
   });
 
   it('falls back to the route device when candidate params are missing or invalid', () => {

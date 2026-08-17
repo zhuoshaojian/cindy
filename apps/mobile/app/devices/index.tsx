@@ -122,7 +122,10 @@ import {
   pruneHomePeerReady,
   type HomePeerRecoveryRefresh,
 } from '@/session/homePeerRecovery';
-import { serializeNewSessionDeviceOptions } from '@/session/newSession';
+import {
+  cloudInstanceModelAccessStale,
+  serializeNewSessionDeviceOptions,
+} from '@/session/newSession';
 import {
   buildRemoteSessionCardPreview,
   buildSessionMessagePreviewIndex,
@@ -1199,16 +1202,25 @@ export default function HomeScreen() {
   // 「可用」项,但缓存设备不能当 live 设备直接开新会话——列表先画出来,新建入口等 live 数据。
   const currentHomeSettled = initialHomeSettled || selectedPeerRecoveryReady;
   const newSessionDisabled = !home.primaryDevice || (!currentHomeSettled && !hasOpenableLiveDevice);
-  const newSessionDeviceOptions = useMemo(
-    () => deviceModels
+  const newSessionDeviceOptions = useMemo(() => {
+    const cloudInstanceByDeviceId = new Map(
+      cloudInstances.instances.map((instance) => [instance.deviceId, instance] as const),
+    );
+    return deviceModels
       .filter((item) => item.canOpen)
       .map((item) => ({
         deviceId: item.deviceId,
         name: item.name,
-        ...(item.kind === 'cloud' ? { kind: 'cloud' as const } : {}),
-      })),
-    [deviceModels],
-  );
+        ...(item.kind === 'cloud'
+          ? {
+              kind: 'cloud' as const,
+              modelAccessStale: cloudInstanceModelAccessStale(
+                cloudInstanceByDeviceId.get(item.deviceId),
+              ),
+            }
+          : {}),
+      }));
+  }, [cloudInstances.instances, deviceModels]);
   const selectedDeviceLabel = useMemo(() => {
     if (!selectedDeviceId) return t('devices.list.allConversations');
     if (selectedCloudInstance) {

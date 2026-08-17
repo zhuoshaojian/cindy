@@ -57,6 +57,7 @@ describe('buildDraftPillDevices(设备 pill 云端行以控制面为唯一数据
         kind: 'cloud',
         cloudInstanceId: 'instance-a',
         updateAvailable: false,
+        modelAccessStale: false,
       },
     ]);
   });
@@ -78,6 +79,7 @@ describe('buildDraftPillDevices(设备 pill 云端行以控制面为唯一数据
         kind: 'cloud',
         cloudInstanceId: 'instance-a',
         updateAvailable: false,
+        modelAccessStale: false,
       },
     ]);
   });
@@ -90,6 +92,28 @@ describe('buildDraftPillDevices(设备 pill 云端行以控制面为唯一数据
       cloudInstanceId: 'instance-a',
     });
     expect(buildDraftPillDevices([plain], [], new Set(), cloudName)).toEqual([plain]);
+  });
+
+  /**
+   * 「能连上」与「能跑模型」是两件事:modelAccess 不参与就绪判定,实例确实是 ready,
+   * 所以创建入口必须自己带上这个提示,否则用户要到 agent 跑不动时才发现。
+   * `unknown` 是「还不知道」(刚启动/尚未探测),不能拿来打扰用户。
+   */
+  it.each([
+    ['not-ready', true],
+    ['unknown', false],
+    ['ready', false],
+    [undefined, false],
+  ] as const)('把 readiness.modelAccess=%s 投影成 modelAccessStale=%s', (modelAccess, expected) => {
+    const readiness = { ready: true, reason: 'ready', blockers: [], modelAccess };
+    const out = buildDraftPillDevices(
+      [],
+      [instance('instance-a', 'device-a', { readiness } as Partial<CloudInstanceView['status']>)],
+      new Set(['device-a']),
+      cloudName,
+    );
+
+    expect(out[0].kind === 'cloud' && out[0].modelAccessStale).toBe(expected);
   });
 
   it('只把非验证中的正式版更新投影到设备 pill', () => {

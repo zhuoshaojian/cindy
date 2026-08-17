@@ -5904,6 +5904,7 @@
       "label": "Device",
       "localHint": "Runs on this computer",
       "onlineHint": "Connected — available",
+      "modelAccessStaleHint": "Model credentials need a refresh",
       "offlineHint": "Offline — available once connected",
       "attachmentsDropped": "Removed {{count}} attachment(s) — they live on the previous device",
       "attachmentsRemoteUnsupported": "File attachments aren't supported on a remote device — skipped {{count}} (images are fine)"

@@ -27,6 +27,7 @@ const onlineCloud: DraftPillDevice = {
   kind: 'cloud',
   cloudInstanceId: 'cloud-instance-a',
   updateAvailable: false,
+  modelAccessStale: false,
 };
 
 const offlineCloud: DraftPillDevice = { ...onlineCloud, online: false };
