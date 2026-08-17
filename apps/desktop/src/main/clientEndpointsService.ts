@@ -89,7 +89,6 @@ import { createLogger, getLogDir } from './logger';
 import { ENDPOINT_MANIFEST_BASE_URL, ENDPOINT_MANIFEST_PEER_BASE_URL } from '../shared/endpoints';
 import { resolvePreferredSystemLocale } from '../shared/locale';
 import { HEADLESS_POD_RUNTIME_ENV } from './headless-startup';
-import { presentVisibleNativeStartupDialog } from './localDb/fatalDialogPolicy';
 
 const log = createLogger('clientEndpoints');
 
@@ -591,35 +590,17 @@ export function promptRetryDialog(
       copyStatus,
       offlineSavedAt: context.offlineSavedAt,
     });
-    // createWindow 之前无父窗口。先记录并激活 app，再进入同步系统模态；否则
-    // NSAlert 虽在 runModal，用户却看不到任何窗口，只会觉得应用没有启动。
-    const clicked = presentVisibleNativeStartupDialog(
-      {
-        event: 'clientEndpoints.dialog.prompt',
-        context: {
-          kind: context.kind,
-          offline: context.offlineSavedAt ? 'available' : 'none',
-          copyStatus,
-        },
-      },
-      {
-        logBeforePresent: (message) => log.error(message),
-        activateApp: () => {
-          if (process.platform === 'darwin') app.focus({ steal: true });
-        },
-        showNativeDialog: () =>
-          dialog.showMessageBoxSync({
-            type: 'warning',
-            title: 'Cindy',
-            message: content.message,
-            detail: content.detail,
-            buttons: content.buttons,
-            defaultId: content.defaultId,
-            cancelId: content.cancelId,
-            noLink: true,
-          }),
-      },
-    );
+    // createWindow 之前无父窗口,showMessageBoxSync 直接系统模态。
+    const clicked = dialog.showMessageBoxSync({
+      type: 'warning',
+      title: 'Cindy',
+      message: content.message,
+      detail: content.detail,
+      buttons: content.buttons,
+      defaultId: content.defaultId,
+      cancelId: content.cancelId,
+      noLink: true,
+    });
     const action: EndpointManifestDialogAction = content.choices[clicked] ?? 'exit';
     if (action !== 'copy-diagnostics') return action;
     try {

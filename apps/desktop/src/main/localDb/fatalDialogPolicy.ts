@@ -24,38 +24,7 @@ export interface LocalDbFatalPresentationInput {
 
 export interface LocalDbFatalPresentationDeps {
   logError: (message: string, error?: unknown) => void;
-  activateApp: () => void;
   showNativeDialog: () => void;
-}
-
-export interface VisibleNativeStartupDialogInput {
-  event: string;
-  context?: Record<string, unknown>;
-}
-
-export interface VisibleNativeStartupDialogDeps<TResult> {
-  logBeforePresent: (message: string) => void;
-  activateApp: () => void;
-  showNativeDialog: () => TResult;
-}
-
-/**
- * Native startup dialogs can run before the first BrowserWindow exists. Keep
- * their observability and macOS activation ordering behind one boundary so a
- * synchronous modal cannot leave the user with a silent, apparently hung app.
- */
-export function presentVisibleNativeStartupDialog<TResult>(
-  input: VisibleNativeStartupDialogInput,
-  deps: VisibleNativeStartupDialogDeps<TResult>,
-): TResult {
-  deps.logBeforePresent(
-    JSON.stringify({
-      event: input.event,
-      ...(input.context ?? {}),
-    }),
-  );
-  deps.activateApp();
-  return deps.showNativeDialog();
 }
 
 /**
@@ -90,21 +59,7 @@ export function presentLocalDbFatalError(
     );
     return;
   }
-  presentVisibleNativeStartupDialog(
-    {
-      event: 'localDb.fatal.native',
-      context: {
-        code: input.code,
-        title: input.title,
-        detail: input.detail,
-      },
-    },
-    {
-      logBeforePresent: deps.logError,
-      activateApp: deps.activateApp,
-      showNativeDialog: deps.showNativeDialog,
-    },
-  );
+  deps.showNativeDialog();
 }
 
 /** MIGRATE_FAILED 由 renderer 全屏恢复界面接管 UX；其余 code 维持原生对话框。 */

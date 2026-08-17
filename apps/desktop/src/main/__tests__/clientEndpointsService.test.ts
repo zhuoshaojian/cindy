@@ -23,14 +23,12 @@ const ipcOn = vi.hoisted(() => vi.fn());
 const netRequest = vi.hoisted(() => vi.fn());
 const showMessageBoxSync = vi.hoisted(() => vi.fn());
 const clipboardWriteText = vi.hoisted(() => vi.fn());
-const appFocus = vi.hoisted(() => vi.fn());
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(),
     getAppPath: vi.fn(() => '/repo/apps/desktop'),
     isPackaged: false,
     exit: vi.fn(),
-    focus: appFocus,
   },
   dialog: { showMessageBoxSync },
   clipboard: { writeText: clipboardWriteText },
@@ -76,7 +74,6 @@ afterEach(() => {
   netRequest.mockReset();
   showMessageBoxSync.mockReset();
   clipboardWriteText.mockReset();
-  appFocus.mockReset();
 });
 
 const FULL_MANIFEST = JSON.stringify({
@@ -148,12 +145,6 @@ describe('启动失败系统提示框', () => {
     );
 
     expect(choice).toBe('retry');
-    if (process.platform === 'darwin') {
-      expect(appFocus).toHaveBeenCalledWith({ steal: true });
-      expect(appFocus.mock.invocationCallOrder[0]).toBeLessThan(
-        showMessageBoxSync.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-      );
-    }
     expect(showMessageBoxSync).toHaveBeenCalledTimes(1);
     const options = showMessageBoxSync.mock.calls[0]?.[0] as {
       type: string;
