@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const loggerMocks = vi.hoisted(() => ({ warn: vi.fn() }));
+const purgeQueueMocks = vi.hoisted(() => ({ enqueuePurge: vi.fn(async () => undefined) }));
+vi.mock('../../logger.js', () => ({
+  createLogger: () => ({ warn: loggerMocks.warn }),
+}));
+vi.mock('../../device-link/mirrorCachePurgeQueue.js', () => ({
+  enqueuePurge: purgeQueueMocks.enqueuePurge,
+}));
+
 import { ServerApiError } from '../../serverApiClient.js';
+import { MirrorCachePurgeError } from '../../device-link/mirrorCacheStore.js';
 import { CloudInstanceClientNotConfiguredError, type CloudInstanceClient } from '../client.js';
 import {
   handleCloudInstanceStatus,
@@ -26,7 +36,7 @@ function client(): CloudInstanceClient {
     stop: vi.fn().mockResolvedValue({ status: {} }),
     upgrade: vi.fn().mockResolvedValue({ status: {} }),
     delete: vi.fn().mockResolvedValue({
-      status: {},
+      status: { deviceId: 'cloud-device-a' },
       revocation: { status: 'revoked' },
       archiveCleanup: 'removed',
     }),
@@ -38,6 +48,7 @@ function deps(accessToken: string | null = 'resource-access-test'): CloudInstanc
     getAccessToken: vi.fn(() => accessToken),
     client: client(),
     forgetDeviceName: vi.fn(async () => true),
+    clearMirrorCacheDevice: vi.fn(async () => undefined),
   };
 }
 
@@ -133,7 +144,8 @@ describe('cloud instance IPC handlers', () => {
     expect(testDeps.client.upgrade).toHaveBeenCalledWith('instance-1');
     expect(testDeps.client.delete).toHaveBeenCalledWith('instance-2');
     // 删除成功后必须清掉该设备的名字缓存,防止已删云端以缓存旧名再现。
-    expect(testDeps.forgetDeviceName).toHaveBeenCalledTimes(1);
+    expect(testDeps.forgetDeviceName).toHaveBeenCalledWith('cloud-device-a');
+    expect(testDeps.clearMirrorCacheDevice).toHaveBeenCalledWith('cloud-device-a');
     await expect(handleStopCloudInstance(testDeps, {})).rejects.toMatchObject({
       code: 'INVALID_PARAMS',
     });
@@ -175,6 +187,66 @@ describe('cloud instance IPC handlers', () => {
     await expect(
       handleDeleteCloudInstance(testDeps, { instanceId: 'instance-1' }),
     ).rejects.toMatchObject({ code: 'CLOUD_INSTANCE_UNAVAILABLE' });
+    expect(testDeps.clearMirrorCacheDevice).not.toHaveBeenCalled();
+  });
+
+  it('keeps delete successful and logs when local mirror-cache cleanup fails', async () => {
+    const testDeps = deps();
+    vi.mocked(testDeps.clearMirrorCacheDevice).mockRejectedValue(new MirrorCachePurgeError(
+      '/owners/member/device-link-mirror-cache',
+      ['/owners/member/device-link-mirror-cache/messages/cloud-device-a.json'],
+      new Error('cache locked'),
+      ['cloud-device-a'],
+      ['device:cloud-device-a'],
+    ));
+
+    await expect(
+      handleDeleteCloudInstance(testDeps, { instanceId: 'instance-2' }),
+    ).resolves.toMatchObject({ status: { deviceId: 'cloud-device-a' } });
+
+    expect(loggerMocks.warn).toHaveBeenCalledWith(
+      'failed to clear deleted cloud instance mirror cache (cloud-de)',
+      { error: 'device-link mirror cache purge incomplete: 1 file(s) remain' },
+    );
+    expect(purgeQueueMocks.enqueuePurge).toHaveBeenCalledWith(
+      '/owners/member/device-link-mirror-cache',
+      ['/owners/member/device-link-mirror-cache/messages/cloud-device-a.json'],
+      ['cloud-device-a'],
+      ['device:cloud-device-a'],
+    );
+  });
+
+  it('keeps delete successful and logs when the mirror-cache purge retry cannot be queued', async () => {
+    const testDeps = deps();
+    vi.mocked(testDeps.clearMirrorCacheDevice).mockRejectedValue(new MirrorCachePurgeError(
+      '/owners/member/device-link-mirror-cache',
+      ['/owners/member/device-link-mirror-cache/messages/cloud-device-a.json'],
+      new Error('cache locked'),
+      ['cloud-device-a'],
+      ['device:cloud-device-a'],
+    ));
+    purgeQueueMocks.enqueuePurge.mockRejectedValueOnce(new Error('purge queue unavailable'));
+
+    await expect(
+      handleDeleteCloudInstance(testDeps, { instanceId: 'instance-2' }),
+    ).resolves.toMatchObject({ status: { deviceId: 'cloud-device-a' } });
+
+    expect(loggerMocks.warn).toHaveBeenCalledWith(
+      'failed to queue deleted cloud instance mirror-cache purge retry',
+      { error: 'purge queue unavailable' },
+    );
+  });
+
+  it('clears only the deleted device from the injected mirror cache', async () => {
+    const testDeps = deps();
+    const cachedDeviceIds = new Set(['cloud-device-a', 'cloud-device-b']);
+    vi.mocked(testDeps.clearMirrorCacheDevice).mockImplementation(async (deviceId) => {
+      cachedDeviceIds.delete(deviceId);
+    });
+
+    await handleDeleteCloudInstance(testDeps, { instanceId: 'instance-2' });
+
+    expect(cachedDeviceIds).toEqual(new Set(['cloud-device-b']));
   });
 
   it.each([
