@@ -91,6 +91,8 @@ export interface AgentFacingTextSource {
   text: string;
   quotesEncoded?: boolean;
   agentReferences?: readonly AgentInputReference[];
+  /** Build-scoped schemes accepted while validating structured reference hrefs. */
+  deepLinkSchemes?: readonly string[];
 }
 
 /** Bounded readable message text plus an explicit truncation bit. */
@@ -116,8 +118,9 @@ function nonEmptyString(value: unknown): value is string {
 function stripDeepLinkPrefix(
   href: string,
   route: 'session/' | 'project/' | 'browser-tab/' | 'desktop-window/' | 'plugin-resource/',
+  deepLinkSchemes: readonly string[] = allDeepLinkSchemes(),
 ): string | null {
-  for (const scheme of allDeepLinkSchemes()) {
+  for (const scheme of deepLinkSchemes) {
     const prefix = `${scheme}://${route}`;
     if (href.startsWith(prefix)) return href.slice(prefix.length);
   }
@@ -128,8 +131,9 @@ export function buildPluginResourceReferenceHref(args: {
   ghostId: string;
   tool: string;
   resourceId: string;
-}): string {
-  const scheme = allDeepLinkSchemes()[0];
+}, deepLinkSchemes: readonly string[] = allDeepLinkSchemes()): string {
+  const scheme = deepLinkSchemes[0];
+  if (!scheme) throw new Error('At least one deep-link scheme is required');
   const strictEncode = (value: string) => encodeURIComponent(value)
     .replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
   return `${scheme}://plugin-resource/${strictEncode(args.ghostId)}/${strictEncode(args.tool)}/${strictEncode(args.resourceId)}`;
@@ -137,8 +141,9 @@ export function buildPluginResourceReferenceHref(args: {
 
 export function parsePluginResourceReferenceHref(
   href: string,
+  deepLinkSchemes: readonly string[] = allDeepLinkSchemes(),
 ): { ghostId: string; tool: string; resourceId: string } | null {
-  const rest = stripDeepLinkPrefix(href, 'plugin-resource/');
+  const rest = stripDeepLinkPrefix(href, 'plugin-resource/', deepLinkSchemes);
   if (rest === null || rest.length > 1_500 || rest.includes('?') || rest.includes('#')) return null;
   const [rawGhostId, rawTool, rawResourceId, ...extra] = rest.split('/');
   if (extra.length > 0) return null;
@@ -176,8 +181,9 @@ function queryValue(query: string, key: string, maxLength: number): string | nul
 
 export function parseBrowserTabReferenceHref(
   href: string,
+  deepLinkSchemes: readonly string[] = allDeepLinkSchemes(),
 ): { tabId: string; url: string } | null {
-  const rest = stripDeepLinkPrefix(href, 'browser-tab/');
+  const rest = stripDeepLinkPrefix(href, 'browser-tab/', deepLinkSchemes);
   if (rest === null || rest.length > 5_000) return null;
   const hashIndex = rest.indexOf('#');
   const withoutHash = hashIndex >= 0 ? rest.slice(0, hashIndex) : rest;
@@ -196,8 +202,9 @@ export function parseBrowserTabReferenceHref(
 
 export function parseDesktopWindowReferenceHref(
   href: string,
+  deepLinkSchemes: readonly string[] = allDeepLinkSchemes(),
 ): { pid: number; windowId: number; appName: string } | null {
-  const rest = stripDeepLinkPrefix(href, 'desktop-window/');
+  const rest = stripDeepLinkPrefix(href, 'desktop-window/', deepLinkSchemes);
   if (rest === null || rest.length > 1_000) return null;
   const hashIndex = rest.indexOf('#');
   const withoutHash = hashIndex >= 0 ? rest.slice(0, hashIndex) : rest;
@@ -227,8 +234,9 @@ function stripTrailingSlashes(value: string): string {
 
 function parseSessionHref(
   href: string,
+  deepLinkSchemes: readonly string[],
 ): { sessionId: string; messageClientId: string | null } | null {
-  const rest = stripDeepLinkPrefix(href, 'session/');
+  const rest = stripDeepLinkPrefix(href, 'session/', deepLinkSchemes);
   if (rest === null) return null;
   const hashIndex = rest.indexOf('#');
   const withoutHash = hashIndex >= 0 ? rest.slice(0, hashIndex) : rest;
@@ -263,8 +271,11 @@ function parseSessionHref(
   return { sessionId, messageClientId };
 }
 
-function parseProjectHref(href: string): { workingDir: string } | null {
-  const rest = stripDeepLinkPrefix(href, 'project/');
+function parseProjectHref(
+  href: string,
+  deepLinkSchemes: readonly string[],
+): { workingDir: string } | null {
+  const rest = stripDeepLinkPrefix(href, 'project/', deepLinkSchemes);
   if (rest === null) return null;
   const hashIndex = rest.indexOf('#');
   const withoutHash = hashIndex >= 0 ? rest.slice(0, hashIndex) : rest;
@@ -291,6 +302,7 @@ function referenceSpanMatchesHref(span: string, href: string): boolean {
 function readReference(
   value: unknown,
   sourceText: string,
+  deepLinkSchemes: readonly string[],
 ): AgentInputReference | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
@@ -308,7 +320,7 @@ function readReference(
   if (!referenceSpanMatchesHref(sourceText.slice(start, end), candidate.href)) return null;
 
   if (candidate.kind === 'message') {
-    const target = parseSessionHref(candidate.href);
+    const target = parseSessionHref(candidate.href, deepLinkSchemes);
     if (!target?.messageClientId) return null;
     return {
       kind: 'message',
@@ -322,7 +334,7 @@ function readReference(
     };
   }
   if (candidate.kind === 'session') {
-    const target = parseSessionHref(candidate.href);
+    const target = parseSessionHref(candidate.href, deepLinkSchemes);
     if (!target || target.messageClientId) return null;
     return {
       kind: 'session',
@@ -334,7 +346,7 @@ function readReference(
     };
   }
   if (candidate.kind === 'project' && nonEmptyString(candidate.name)) {
-    const target = parseProjectHref(candidate.href);
+    const target = parseProjectHref(candidate.href, deepLinkSchemes);
     if (!target) return null;
     return {
       kind: 'project',
@@ -346,7 +358,7 @@ function readReference(
     };
   }
   if (candidate.kind === 'browser-tab') {
-    const target = parseBrowserTabReferenceHref(candidate.href);
+    const target = parseBrowserTabReferenceHref(candidate.href, deepLinkSchemes);
     if (!target) return null;
     return {
       kind: 'browser-tab',
@@ -359,7 +371,7 @@ function readReference(
     };
   }
   if (candidate.kind === 'desktop-window') {
-    const target = parseDesktopWindowReferenceHref(candidate.href);
+    const target = parseDesktopWindowReferenceHref(candidate.href, deepLinkSchemes);
     if (!target) return null;
     return {
       kind: 'desktop-window',
@@ -379,7 +391,7 @@ function readReference(
     && nonEmptyString(candidate.label)
     && candidate.label.length <= 128
   ) {
-    const target = parsePluginResourceReferenceHref(candidate.href);
+    const target = parsePluginResourceReferenceHref(candidate.href, deepLinkSchemes);
     if (!target) return null;
     return {
       kind: 'plugin-resource',
@@ -401,10 +413,11 @@ function readReference(
 export function readAgentInputReferences(
   value: unknown,
   sourceText: string,
+  deepLinkSchemes: readonly string[] = allDeepLinkSchemes(),
 ): AgentInputReference[] {
   if (!Array.isArray(value)) return [];
   const references = value
-    .map((candidate) => readReference(candidate, sourceText))
+    .map((candidate) => readReference(candidate, sourceText, deepLinkSchemes))
     .filter((candidate): candidate is AgentInputReference => candidate !== null)
     .sort((left, right) => left.start - right.start || left.end - right.end);
   const nonOverlapping: AgentInputReference[] = [];
@@ -504,7 +517,11 @@ function projectLiteralText(text: string, quotesEncoded: boolean): string {
  * in source order with readable semantic blocks.
  */
 export function projectAgentFacingText(source: AgentFacingTextSource): string {
-  const references = readAgentInputReferences(source.agentReferences, source.text);
+  const references = readAgentInputReferences(
+    source.agentReferences,
+    source.text,
+    source.deepLinkSchemes,
+  );
   const stripMarkers = source.quotesEncoded === true;
   if (references.length === 0) return projectLiteralText(source.text, stripMarkers);
 
@@ -533,7 +550,11 @@ export function projectAgentFacingText(source: AgentFacingTextSource): string {
  * 起出有意义的标题。
  */
 export function projectLiteralUserText(source: AgentFacingTextSource): string {
-  const references = readAgentInputReferences(source.agentReferences, source.text);
+  const references = readAgentInputReferences(
+    source.agentReferences,
+    source.text,
+    source.deepLinkSchemes,
+  );
   const stripMarkers = source.quotesEncoded === true;
   if (references.length === 0) return projectLiteralText(source.text, stripMarkers).trim();
 
@@ -564,7 +585,10 @@ export function describeAgentInputReference(reference: AgentInputReference): str
  * Returns null for non-user/unknown shapes so callers can keep their existing
  * assistant/tool extraction logic.
  */
-export function projectPersistedAgentFacingUserText(content: unknown): string | null {
+export function projectPersistedAgentFacingUserText(
+  content: unknown,
+  deepLinkSchemes: readonly string[] = allDeepLinkSchemes(),
+): string | null {
   let value = content;
   if (typeof value === 'string') {
     if (!value || (value[0] !== '{' && value[0] !== '[')) return null;
@@ -580,6 +604,7 @@ export function projectPersistedAgentFacingUserText(content: unknown): string | 
   return projectAgentFacingText({
     text: record.text,
     quotesEncoded: record.quotesEncoded === true,
-    agentReferences: readAgentInputReferences(record.agentReferences, record.text),
+    agentReferences: readAgentInputReferences(record.agentReferences, record.text, deepLinkSchemes),
+    deepLinkSchemes,
   });
 }

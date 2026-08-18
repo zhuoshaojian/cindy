@@ -490,7 +490,12 @@ async function finishDarwin({
     const appZipPath = path.join(artifactDir, `${baseName}-${arch}.zip`);
     console.log('==> Creating app ZIP (ad-hoc signed)...');
     if (fs.existsSync(appZipPath)) fs.unlinkSync(appZipPath);
-    exec(`/usr/bin/ditto -c -k --keepParent "${appPath}" "${appZipPath}"`);
+    // 把资源叉 / 扩展属性的 AppleDouble 条目隔离到 __MACOSX/。没有该参数时，
+    // Apple ditto 解压会还原为 xattr，但通用 unzip 会在 .app 内留下实体 ._* 文件，
+    // 使 codesign sealed resources 校验失败。内部包必须同时兼容两种解压器。
+    exec(
+      `/usr/bin/ditto -c -k --sequesterRsrc --keepParent "${appPath}" "${appZipPath}"`,
+    );
     files.push(fileEntry('installer', appZipPath));
   }
 

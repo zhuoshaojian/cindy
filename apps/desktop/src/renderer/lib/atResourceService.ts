@@ -1,6 +1,7 @@
 import { createLogger } from '@/lib/logger';
 import type { Session } from '@/lib/ccAgent.types';
 import { buildSessionDeepLink, strictEncodeURIComponent } from '@/lib/deepLink';
+import { buildDeepLink } from '../../shared/deepLinkSchemes';
 import {
   conversationSearchTitle,
   type ConversationSearchResponse,
@@ -69,7 +70,7 @@ export const AT_MENTION_EMPTY_WORKSPACE_SCAN_CAP = 2000;
 export const AT_FILE_PICKER_RESOURCE: AtResourceItem = {
   type: 'file-picker',
   name: '',
-  relPath: 'cindy://file-picker',
+  relPath: buildDeepLink('file-picker'),
 };
 
 const EMPTY_QUERY_SECTION_LIMIT = 3;
@@ -98,7 +99,9 @@ export interface AtResourceScanContext {
 }
 
 function browserTabReference(tabId: string, url: string): string {
-  return `cindy://browser-tab/${strictEncodeURIComponent(tabId)}?url=${strictEncodeURIComponent(url)}`;
+  return buildDeepLink(
+    `browser-tab/${strictEncodeURIComponent(tabId)}?url=${strictEncodeURIComponent(url)}`,
+  );
 }
 
 function desktopWindowReference(
@@ -106,7 +109,9 @@ function desktopWindowReference(
   windowId: number,
   appName: string,
 ): string {
-  return `cindy://desktop-window/${pid}/${windowId}?app=${strictEncodeURIComponent(appName)}`;
+  return buildDeepLink(
+    `desktop-window/${pid}/${windowId}?app=${strictEncodeURIComponent(appName)}`,
+  );
 }
 
 function oneLineText(value: unknown, maxLength: number): string {

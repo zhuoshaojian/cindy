@@ -7,6 +7,7 @@ import {
   allUserDataDirNames,
   brandAppId,
   brandBundleIdPrefix,
+  brandDeepLinkSchemes,
   brandExecutableName,
   brandUserDataDirName,
   resolveCindyRegion,
@@ -68,13 +69,33 @@ describe('BRAND_IDENTITY invariants', () => {
     expect(BRAND_IDENTITY.userDataDirNameByRegion.cn).toBe(BRAND_IDENTITY.userDataDirName);
   });
 
-  it('scheme 符合 RFC 3986(字母开头,字母/数字/+/-/. 组成)且主 scheme 不在 legacy 里', () => {
+  it('各构建 scheme 符合 RFC 3986,同一构建内不重复', () => {
     const schemeRe = /^[a-z][a-z0-9+.-]*$/;
     expect(BRAND_IDENTITY.primaryScheme).toMatch(schemeRe);
     for (const s of BRAND_IDENTITY.legacySchemes) {
       expect(s).toMatch(schemeRe);
     }
     expect(BRAND_IDENTITY.legacySchemes).not.toContain(BRAND_IDENTITY.primaryScheme);
+    for (const region of ['cn', 'global', 'dev'] as const) {
+      const schemes = BRAND_IDENTITY.deepLinkSchemesByRegion[region];
+      expect(schemes.length).toBeGreaterThan(0);
+      expect(new Set(schemes).size).toBe(schemes.length);
+      for (const scheme of schemes) expect(scheme).toMatch(schemeRe);
+    }
+  });
+
+  it('正式 cn/global scheme 逐字保持兼容,dev 使用不重叠的专属组', () => {
+    expect(BRAND_IDENTITY.deepLinkSchemesByRegion.cn).toEqual(['cindy', 'xdt-maker']);
+    expect(BRAND_IDENTITY.deepLinkSchemesByRegion.global).toEqual(['cindy', 'xdt-maker']);
+    expect(BRAND_IDENTITY.deepLinkSchemesByRegion.dev).toEqual([
+      'cindydev',
+      'xdt-maker-dev',
+    ]);
+    expect(
+      BRAND_IDENTITY.deepLinkSchemesByRegion.dev.some((scheme) =>
+        BRAND_IDENTITY.deepLinkSchemesByRegion.cn.includes(scheme),
+      ),
+    ).toBe(false);
   });
 
   it('appId 两区都是反向域名格式且互不相同(cn/global 可并存的系统身份)', () => {
@@ -103,6 +124,10 @@ describe('BRAND_IDENTITY invariants', () => {
     expect(Object.isFrozen(BRAND_IDENTITY)).toBe(true);
     expect(Object.isFrozen(BRAND_IDENTITY.appIdByRegion)).toBe(true);
     expect(Object.isFrozen(BRAND_IDENTITY.executableNameByRegion)).toBe(true);
+    expect(Object.isFrozen(BRAND_IDENTITY.deepLinkSchemesByRegion)).toBe(true);
+    for (const schemes of Object.values(BRAND_IDENTITY.deepLinkSchemesByRegion)) {
+      expect(Object.isFrozen(schemes)).toBe(true);
+    }
     expect(Object.isFrozen(BRAND_IDENTITY.userDataDirNameByRegion)).toBe(true);
     expect(Object.isFrozen(BRAND_IDENTITY.legacySchemes)).toBe(true);
     expect(Object.isFrozen(BRAND_IDENTITY.legacyUserDataDirNames)).toBe(true);
@@ -133,6 +158,7 @@ describe('区域解析与派生', () => {
   it('brandExecutableName / brandUserDataDirName 按区域取值,默认 global', () => {
     expect(brandExecutableName()).toBe('Cindy');
     // global 与 cn 同值(2026-07-26 显示名统一决策);dev 仍独立。
+    expect(brandExecutableName('cn')).toBe('Cindy');
     expect(brandExecutableName('global')).toBe('Cindy');
     expect(brandExecutableName('dev')).toBe('CindyDev');
     expect(brandUserDataDirName()).toBe('CindyGlobal');
@@ -143,6 +169,13 @@ describe('区域解析与派生', () => {
 describe('派生 helper', () => {
   it('allDeepLinkSchemes 主 scheme 恒为首位且包含全部 legacy', () => {
     expect(allDeepLinkSchemes()).toEqual(['cindy', 'xdt-maker']);
+  });
+
+  it('brandDeepLinkSchemes 按区域派生且默认 global', () => {
+    expect(brandDeepLinkSchemes()).toEqual(['cindy', 'xdt-maker']);
+    expect(brandDeepLinkSchemes('cn')).toEqual(['cindy', 'xdt-maker']);
+    expect(brandDeepLinkSchemes('global')).toEqual(['cindy', 'xdt-maker']);
+    expect(brandDeepLinkSchemes('dev')).toEqual(['cindydev', 'xdt-maker-dev']);
   });
 
   it('allUserDataDirNames 本区域目录名恒为首位 + 全部历史值,且不含另一区域', () => {
@@ -158,12 +191,18 @@ describe('派生 helper', () => {
       ...BRAND_IDENTITY,
       primaryScheme: 'xdt-maker',
       legacySchemes: [],
+      deepLinkSchemesByRegion: {
+        cn: ['xdt-maker'],
+        global: ['xdt-maker'],
+        dev: ['xdt-maker-dev'],
+      },
       userDataDirNameByRegion: { cn: 'xdt-maker', global: 'xdt-maker' },
       legacyUserDataDirNames: [],
       dbFilePrefix: 'xdt-maker',
       legacyDbFilePrefixes: [],
     };
     expect(allDeepLinkSchemes(legacyLike)).toEqual(['xdt-maker']);
+    expect(brandDeepLinkSchemes('dev', legacyLike)).toEqual(['xdt-maker-dev']);
     expect(allUserDataDirNames('cn', legacyLike)).toEqual(['xdt-maker']);
   });
 });

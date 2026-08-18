@@ -47,6 +47,7 @@ import type {
 } from '@/lib/ccAgent.types';
 import type { PastedTextRange, SlashCommandRange } from '@/lib/imageRef';
 import type { AgentInputReference } from '../../../shared/agentInputQueue';
+import { DEEP_LINK_SCHEMES } from '../../../shared/deepLinkSchemes';
 import type { PersistedSessionReferenceMetadata } from '../../../shared/sessionReferenceMetadata';
 import { buildRewindDraftAttachments } from '@/lib/rewindDraftAttachments';
 import {
@@ -1005,7 +1006,7 @@ export function UserMessage({
   // 解析过的 Orca 结果传入复用,渲染热路径不重复 JSON.parse(Copilot review)。
   const displayContent = resolveUserDisplayText({ content, hookSource }, orcaCommunication);
   const validAgentReferences = useMemo(
-    () => readAgentInputReferences(agentReferences, content),
+    () => readAgentInputReferences(agentReferences, content, DEEP_LINK_SCHEMES),
     [agentReferences, content],
   );
   // ghost-summon-card:意识指令/提示的机器追加段从气泡正文尾部剥离,交给

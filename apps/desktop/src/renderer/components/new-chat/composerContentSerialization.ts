@@ -8,6 +8,8 @@ import {
   type AgentInputReference,
 } from '@cindy/maker-shared/agent-input-projection';
 
+import { DEEP_LINK_SCHEMES } from '../../../shared/deepLinkSchemes';
+
 import type { MentionedResource } from '@/lib/fileTypes';
 import { formatQuoteForSend } from '@/lib/chatQuotes';
 import { formatMentionRef } from '@/lib/mentionRefFormat';
@@ -293,7 +295,7 @@ function serializeComposerDocument(
           const wire = `[${label || 'Browser tab'}](${attrs.path})`;
           const start = buffer.length;
           buffer += wire;
-          const target = parseBrowserTabReferenceHref(attrs.path);
+          const target = parseBrowserTabReferenceHref(attrs.path, DEEP_LINK_SCHEMES);
           if (target) {
             bufferAgentReferences.push({
               kind: 'browser-tab',
@@ -315,7 +317,7 @@ function serializeComposerDocument(
           const wire = `[${label || 'Desktop window'}](${attrs.path})`;
           const start = buffer.length;
           buffer += wire;
-          const target = parseDesktopWindowReferenceHref(attrs.path);
+          const target = parseDesktopWindowReferenceHref(attrs.path, DEEP_LINK_SCHEMES);
           if (target) {
             bufferAgentReferences.push({
               kind: 'desktop-window',
@@ -350,7 +352,7 @@ function serializeComposerDocument(
           const wire = `[${label || 'Plugin resource'}](${attrs.path})`;
           const start = buffer.length;
           buffer += wire;
-          const target = parsePluginResourceReferenceHref(attrs.path);
+          const target = parsePluginResourceReferenceHref(attrs.path, DEEP_LINK_SCHEMES);
           if (target) {
             bufferAgentReferences.push({
               kind: 'plugin-resource',

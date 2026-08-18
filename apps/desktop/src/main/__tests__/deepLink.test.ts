@@ -222,6 +222,27 @@ describe('dual scheme (cindy primary + legacy xdt-maker)', () => {
     expect(parseDeepLink('cindy://session/')).toBeNull();
   });
 
+  it('keeps production legacy links alive while dev rejects production schemes', () => {
+    expect(parseDeepLink('xdt-maker://session/legacy', 'cn')).toEqual({
+      type: 'session',
+      id: 'legacy',
+    });
+    expect(parseDeepLink('xdt-maker://session/legacy', 'global')).toEqual({
+      type: 'session',
+      id: 'legacy',
+    });
+    expect(parseDeepLink('cindy://session/prod', 'dev')).toBeNull();
+    expect(parseDeepLink('xdt-maker://session/prod', 'dev')).toBeNull();
+    expect(parseDeepLink('cindydev://session/dev-only', 'dev')).toEqual({
+      type: 'session',
+      id: 'dev-only',
+    });
+    expect(parseDeepLink('xdt-maker-dev://session/dev-legacy', 'dev')).toEqual({
+      type: 'session',
+      id: 'dev-legacy',
+    });
+  });
+
   it('generates all builders with the primary cindy:// scheme', () => {
     expect(DEEP_LINK_PROTOCOL).toBe('cindy');
     expect(buildSessionDeepLink('abc-123')).toBe('cindy://session/abc-123');
@@ -248,6 +269,14 @@ describe('findDeepLinkInArgv', () => {
     expect(findDeepLinkInArgv(['electron.exe', 'cindy://session/a'])).toBe('cindy://session/a');
     expect(findDeepLinkInArgv(['electron.exe', 'xdt-maker://session/a'])).toBe(
       'xdt-maker://session/a',
+    );
+  });
+
+  it('filters argv schemes by build identity', () => {
+    expect(findDeepLinkInArgv(['CindyDev', 'cindy://session/a'], 'dev')).toBeNull();
+    expect(findDeepLinkInArgv(['CindyDev', 'xdt-maker://session/a'], 'dev')).toBeNull();
+    expect(findDeepLinkInArgv(['CindyDev', 'cindydev://session/a'], 'dev')).toBe(
+      'cindydev://session/a',
     );
   });
 });
