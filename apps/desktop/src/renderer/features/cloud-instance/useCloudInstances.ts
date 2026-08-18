@@ -9,12 +9,18 @@
  * UI:按钮、确认框、toast。
  */
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import {
+  waitForCloudInstanceTerminalState,
+  type CloudInstanceTerminalWatch,
+} from '@cindy/maker-shared/cloud-instance';
 import { extractIpcError } from '@/utils/ipcError';
 import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDeviceList';
 import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { removeRemoteSessionActivityForDevice } from '@/features/device-link/remoteSessionActivityStore';
 import { setCloudCapability } from '@/features/device-link/cloudCapability';
+
+export { CloudInstanceActionTimeoutError } from '@cindy/maker-shared/cloud-instance';
 
 /** 控制面列出的一个实例(展示模型)。由 electronAPI 返回类型推导,避免跨层类型 import。 */
 export type CloudInstanceView = Awaited<
@@ -92,6 +98,8 @@ let refreshInFlight: Promise<Partial<CloudInstancesSnapshot>> | null = null;
 let pollingConsumers = 0;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let visibilityListenersAttached = false;
+let onlineDeviceIdsSnapshot: ReadonlySet<string> = new Set();
+let terminalWatchAbortController: AbortController | null = null;
 
 export const CLOUD_INSTANCES_REFRESH_INTERVAL_MS = 90_000;
 export const CLOUD_INSTANCES_VERIFYING_REFRESH_INTERVAL_MS = 5_000;
@@ -142,6 +150,15 @@ function pendingEqual(
       && right !== null
       && left.target === right.target
       && left.action === right.action);
+}
+
+function retargetPending(
+  action: CloudInstanceAction,
+  expectedTarget: string | 'new',
+  nextTarget: string,
+): void {
+  if (snapshot.pending?.action !== action || snapshot.pending.target !== expectedTarget) return;
+  updateSnapshot({ pending: { action, target: nextTarget } });
 }
 
 function updateSnapshot(next: Partial<CloudInstancesSnapshot>): void {
@@ -212,6 +229,10 @@ async function refreshSnapshot(): Promise<void> {
   updateSnapshot(await refresh(true));
 }
 
+async function refreshSnapshotDuringAction(): Promise<void> {
+  updateSnapshot(await refresh(true));
+}
+
 function clearPollTimer(): void {
   if (pollTimer === null) return;
   clearTimeout(pollTimer);
@@ -279,6 +300,7 @@ async function runAction<T>(
   target: string | 'new',
   action: CloudInstanceAction,
   op: () => Promise<T>,
+  terminalWatch?: (value: T) => CloudInstanceTerminalWatch,
 ): Promise<T | undefined> {
   if (snapshot.pending) return undefined;
   updateSnapshot({ pending: { target, action } });
@@ -286,21 +308,55 @@ async function runAction<T>(
   try {
     const value = await op();
     listPatch = await refreshAfterMutation();
+    updateSnapshot(listPatch);
+    if (terminalWatch) {
+      const controller = new AbortController();
+      terminalWatchAbortController = controller;
+      try {
+        await waitForCloudInstanceTerminalState({
+          watch: terminalWatch(value),
+          getState: () => ({
+            instances: snapshot.instances,
+            onlineDeviceIds: onlineDeviceIdsSnapshot,
+          }),
+          refresh: refreshSnapshotDuringAction,
+          signal: controller.signal,
+        });
+      } finally {
+        if (terminalWatchAbortController === controller) terminalWatchAbortController = null;
+      }
+    }
     return value;
   } finally {
-    updateSnapshot({ ...listPatch, pending: null });
+    updateSnapshot({ pending: null });
   }
 }
 
 async function wake(instanceId?: string): Promise<CloudInstanceWakeResult | undefined> {
-  return runAction(instanceId ?? 'new', 'wake', () =>
-    window.electronAPI.cloudInstances.wake(instanceId ? { instanceId } : {}),
+  return runAction(
+    instanceId ?? 'new',
+    'wake',
+    async () => {
+      const result = await window.electronAPI.cloudInstances.wake(instanceId ? { instanceId } : {});
+      if (!instanceId) retargetPending('wake', 'new', result.instanceId);
+      return result;
+    },
+    (result) => ({
+      action: 'wake',
+      instanceId: result.instanceId,
+      deviceId: result.deviceId,
+    }),
   );
 }
 
 async function stopInstance(instanceId: string): Promise<void> {
-  await runAction(instanceId, 'stop', () =>
-    window.electronAPI.cloudInstances.stop({ instanceId }),
+  const target = snapshot.instances.find((instance) => instance.instanceId === instanceId);
+  if (!target) throw new Error(`cloud instance not found: ${instanceId}`);
+  await runAction(
+    instanceId,
+    'stop',
+    () => window.electronAPI.cloudInstances.stop({ instanceId }),
+    () => ({ action: 'stop', instanceId, deviceId: target.deviceId }),
   );
 }
 
@@ -370,17 +426,19 @@ async function deleteInstance(instanceId: string): Promise<void> {
 async function rebuildInstance(
   instanceId: string,
 ): Promise<CloudInstanceWakeResult | undefined> {
+  const target = snapshot.instances.find((instance) => instance.instanceId === instanceId);
+  if (!target) throw new Error(`cloud instance not found: ${instanceId}`);
   return runAction(instanceId, 'rebuild', async () => {
-    const target = snapshot.instances.find((instance) => instance.instanceId === instanceId);
-    if (!target) throw new Error(`cloud instance not found: ${instanceId}`);
 
     await window.electronAPI.cloudInstances.delete({ instanceId });
     clearDeletedInstanceRendererState(target);
 
     try {
-      return await window.electronAPI.cloudInstances.wake({
+      const result = await window.electronAPI.cloudInstances.wake({
         resourceTier: target.status.resourceTier,
       });
+      retargetPending('rebuild', instanceId, result.instanceId);
+      return result;
     } catch (error) {
       // The destructive half already committed. Never leave the deleted card
       // in renderer state even if the follow-up list request also fails.
@@ -391,16 +449,24 @@ async function rebuildInstance(
       updateSnapshot({ instances: withoutDeleted, ...patch });
       throw new CloudInstanceRebuildCreateError(error);
     }
-  });
+  }, (result) => ({
+    action: 'rebuild',
+    oldInstanceId: instanceId,
+    newInstanceId: result.instanceId,
+    newDeviceId: result.deviceId,
+  }));
 }
 
 function resetCloudInstancesStore(): void {
+  terminalWatchAbortController?.abort();
+  terminalWatchAbortController = null;
   clearPollTimer();
   detachVisibilityListeners();
   snapshot = initialSnapshot;
   started = false;
   refreshInFlight = null;
   pollingConsumers = 0;
+  onlineDeviceIdsSnapshot = new Set();
   subscribers.clear();
 }
 
@@ -423,6 +489,9 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
     () => new Set((deviceList ?? []).filter((device) => device.online).map((device) => device.deviceId)),
     [deviceList],
   );
+  useEffect(() => {
+    onlineDeviceIdsSnapshot = onlineDeviceIds;
+  }, [onlineDeviceIds]);
   useEffect(() => {
     if (loadState === 'unsupported') {
       setCloudCapability(

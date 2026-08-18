@@ -1580,17 +1580,18 @@ describe('Shared create project picker', () => {
     );
   });
 
-  it('云端创建入口只由设备 pill 承载，并复用既有 presence 上线状态机', () => {
+  it('云端创建入口只由设备 pill 承载，并消费共享 hook 的终态在途状态', () => {
     expect(newMakerDraftRouteSource).not.toContain('create-agent-cloud-toggle');
     expect(newMakerDraftRouteSource).not.toContain('cloudToggleState');
     expect(newMakerDraftRouteSource).not.toContain('handleCloudToggle');
     expect(newMakerDraftRouteSource).toContain('onWake: handleCloudWake');
     expect(newMakerDraftRouteSource).toContain(
-      'if (!wakeActivation || !cloud.onlineDeviceIds.has(wakeActivation.deviceId)) return;',
+      "const cloudWakeTarget = cloud.pending?.action === 'wake' ? cloud.pending.target : null;",
     );
     expect(newMakerDraftRouteSource).toContain(
-      'activateCloudDevice(wakeActivation.deviceId, wakeActivation.deviceName);',
+      'activateCloudDevice(result.deviceId, cloudNameOf(result));',
     );
+    expect(newMakerDraftRouteSource).not.toContain('wakeActivation');
     expect(deviceSwitcherPillSource).toContain("device.kind === 'cloud'");
     expect(deviceSwitcherPillSource).toContain('cloudWake?.onWake(device.cloudInstanceId)');
   });

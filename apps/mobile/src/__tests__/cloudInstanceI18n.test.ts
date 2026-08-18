@@ -88,11 +88,32 @@ describe('cloud instance app-language copy', () => {
     }
   });
 
+  it('provides a bounded-action timeout message in every locale', async () => {
+    for (const [locale, catalog] of Object.entries(locales)) {
+      await i18n.changeLanguage(locale);
+      expect(catalog.cloudInstance.actionTimedOut).toBeTruthy();
+      expect(i18n.t('deviceLink.cloudInstance.actionTimedOut')).toBe(
+        catalog.cloudInstance.actionTimedOut,
+      );
+    }
+  });
+
   it('logs cloud-list failures with metadata only', () => {
     expect(useCloudInstancesSource).toContain("console.warn('[cloud-instance] list failed', {");
     expect(useCloudInstancesSource).toContain('code: result.error.code');
     expect(useCloudInstancesSource).toContain('silent: silentFailure');
     expect(useCloudInstancesSource).toContain('status: result.error.status');
     expect(useCloudInstancesSource).not.toContain('message: result.error.message');
+  });
+
+  it('shares the action lock across Home and device-management hook mounts', () => {
+    expect(useCloudInstancesSource).toContain(
+      'const sharedPendingRef: { current: CloudInstancePending } = { current: null };',
+    );
+    expect(useCloudInstancesSource).toContain('sharedPendingSubscribers.add(subscriber);');
+    expect(useCloudInstancesSource).toContain('pendingRef: sharedPendingRef');
+    expect(useCloudInstancesSource).not.toContain(
+      'const pendingRef = useRef<CloudInstancePending>(null)',
+    );
   });
 });

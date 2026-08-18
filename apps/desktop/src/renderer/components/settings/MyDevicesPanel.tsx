@@ -22,6 +22,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import {
+  CloudInstanceActionTimeoutError,
   CloudInstanceRebuildCreateError,
   useCloudInstances,
 } from '@/features/cloud-instance/useCloudInstances';
@@ -250,20 +251,22 @@ export function MyDevicesPanel({
       await cloud.stopInstance(instanceId);
       void s.refresh(true);
       toast.success(t('settings.devices.cloudInstance.toast.stopped'));
-    } catch {
-      toast.error(t('settings.devices.cloudInstance.toast.stopFailed'));
+    } catch (error) {
+      toast.error(t(error instanceof CloudInstanceActionTimeoutError
+        ? 'settings.devices.cloudInstance.toast.actionTimedOut'
+        : 'settings.devices.cloudInstance.toast.stopFailed'));
     }
   };
 
-  // 休眠实例的第一动作位变成「唤醒实例」;presence 上线由 relay 推送刷新设备列表,
-  // 这里只负责发起唤醒并提示,不等待上线终态。
   const handleCloudWake = async (instanceId: string) => {
     try {
       await cloud.wake(instanceId);
       void s.refresh(true);
       toast.success(t('settings.devices.cloudInstance.toast.woke'));
-    } catch {
-      toast.error(t('settings.devices.cloudInstance.toast.wakeFailed'));
+    } catch (error) {
+      toast.error(t(error instanceof CloudInstanceActionTimeoutError
+        ? 'settings.devices.cloudInstance.toast.actionTimedOut'
+        : 'settings.devices.cloudInstance.toast.wakeFailed'));
     }
   };
 
@@ -318,6 +321,10 @@ export function MyDevicesPanel({
       void s.refresh(true);
       toast.success(t('settings.devices.cloudInstance.toast.rebuilt'));
     } catch (error) {
+      if (error instanceof CloudInstanceActionTimeoutError) {
+        toast.error(t('settings.devices.cloudInstance.toast.actionTimedOut'));
+        return;
+      }
       if (error instanceof CloudInstanceRebuildCreateError) {
         void s.refresh(true);
         toast.error(t('settings.devices.cloudInstance.toast.rebuildCreateFailed'));
@@ -493,6 +500,13 @@ export function MyDevicesPanel({
               cloudInstance !== undefined
               && cloud.pending?.target === cloudInstance.instanceId
               && cloud.pending.action === 'autoUpdate';
+            const cloudLifecyclePending =
+              cloudInstance !== undefined
+              && cloud.pending?.target === cloudInstance.instanceId
+              && (cloud.pending.action === 'wake' || cloud.pending.action === 'stop')
+                ? cloud.pending.action
+                : null;
+            const cloudLifecycleAction = cloudLifecyclePending ?? (d.online ? 'stop' : 'wake');
             const cloudVersion = resolveCloudVersionPresentation({
               image: cloudInstance?.status.image,
               updateAvailable: cloudInstance?.status.updateAvailable === true,
@@ -645,8 +659,8 @@ export function MyDevicesPanel({
                                   : t('settings.devices.cloudInstance.rebuild')}
                               </button>
                             ) : null}
-                            {/* 第一动作位随在线态切换:在线可休眠;休眠中变唤醒(不再提供无效的休眠)。 */}
-                            {d.online ? (
+                            {/* 动作在途时保持原动作的进度表达；空闲时再随 presence 切换。 */}
+                            {cloudLifecycleAction === 'stop' ? (
                               <button
                                 type="button"
                                 onClick={() => void handleCloudStop(cloudInstance.instanceId)}

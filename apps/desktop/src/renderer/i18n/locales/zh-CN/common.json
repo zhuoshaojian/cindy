@@ -3127,6 +3127,7 @@
           "deleteFailed": "删除云端实例失败，请稍后重试",
           "woke": "云端实例正在唤醒",
           "wakeFailed": "唤醒云端实例失败，请稍后重试",
+          "actionTimedOut": "操作耗时较长，请稍后重试。",
           "updateStarted": "云端实例已开始更新",
           "updateFailed": "无法开始更新云端实例，请稍后重试",
           "rebuilt": "云端实例已重新创建",
@@ -6947,6 +6948,7 @@
         "wake": "唤醒云端",
         "waking": "唤醒中…",
         "wakeFailed": "唤醒云端失败，请稍后重试",
+        "actionTimedOut": "操作耗时较长，请稍后重试。",
         "updateAvailable": "有可用更新"
       },
       "machineSwitcher": {

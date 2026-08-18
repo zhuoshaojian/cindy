@@ -3132,6 +3132,7 @@
           "deleteFailed": "Failed to delete the cloud instance. Try again.",
           "woke": "Cloud instance is waking up.",
           "wakeFailed": "Failed to wake the cloud instance. Try again.",
+          "actionTimedOut": "This is taking longer than expected. Try again in a moment.",
           "updateStarted": "Cloud instance update started",
           "updateFailed": "Cloud instance update couldn't start. Try again.",
           "rebuilt": "Cloud instance recreated",
@@ -6963,6 +6964,7 @@
         "wake": "Wake Cloud",
         "waking": "Waking…",
         "wakeFailed": "Failed to wake the cloud instance. Try again.",
+        "actionTimedOut": "This is taking longer than expected. Try again in a moment.",
         "updateAvailable": "Update Available"
       },
       "machineSwitcher": {

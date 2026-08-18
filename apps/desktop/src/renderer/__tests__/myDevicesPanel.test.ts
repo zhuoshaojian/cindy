@@ -54,6 +54,12 @@ describe('MyDevicesPanel rename guards', () => {
     expect(source).toContain('cloudInstance.status.lastFailedUpgradeImage');
     expect(source).toContain("if (variant !== 'self' && visible) void refreshCloudInstances()");
     expect(source).toContain('data-testid="cloud-instance-rebuild"');
+    expect(source).toContain('disabled={cloud.pending !== null}');
+    expect(source).toContain("&& cloud.pending.action === 'rebuild'");
+    expect(source).toContain("&& cloud.pending.action === 'stop'");
+    expect(source).toContain("&& cloud.pending.action === 'wake'");
+    expect(source).toContain("const cloudLifecycleAction = cloudLifecyclePending ?? (d.online ? 'stop' : 'wake');");
+    expect(source).toContain("{cloudLifecycleAction === 'stop' ? (");
     expect(source).toContain('cloudInstance?.status.latestReleaseTag != null');
     expect(source).toContain("confirmVariant: 'destructive'");
   });

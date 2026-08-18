@@ -3130,6 +3130,7 @@
           "deleteFailed": "刪除雲端實例失敗，請稍後重試",
           "woke": "雲端實例正在喚醒",
           "wakeFailed": "喚醒雲端實例失敗，請稍後重試",
+          "actionTimedOut": "操作耗時較長，請稍後重試。",
           "updateStarted": "雲端實例已開始更新",
           "updateFailed": "無法開始更新雲端實例，請稍後重試",
           "rebuilt": "雲端實例已重新建立",
@@ -6950,6 +6951,7 @@
         "wake": "喚醒雲端",
         "waking": "喚醒中…",
         "wakeFailed": "喚醒雲端失敗，請稍後重試",
+        "actionTimedOut": "操作耗時較長，請稍後重試。",
         "updateAvailable": "有可用更新"
       },
       "machineSwitcher": {

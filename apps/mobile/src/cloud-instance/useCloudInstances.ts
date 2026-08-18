@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
+import {
+  CloudInstanceActionTimeoutError,
+  waitForCloudInstanceTerminalState,
+  type CloudInstanceTerminalWatch,
+} from '@cindy/maker-shared/cloud-instance';
 
 import {
   deleteCloudInstance,
@@ -38,10 +43,22 @@ export const CLOUD_INSTANCE_ACTION_ERROR_KEYS = {
   delete: 'deviceLink.cloudInstance.deleteFailed',
 } as const satisfies Record<CloudInstanceAction, string>;
 
+// Mobile 的 Home 与设备详情会同时挂在导航栈中；动作锁必须跨 hook 挂载共享，
+// 否则从一个页面发起长动作后切到另一个页面仍可重复提交。
+const sharedPendingRef: { current: CloudInstancePending } = { current: null };
+const sharedPendingSubscribers = new Set<(value: CloudInstancePending) => void>();
+let sharedTerminalWatchAbortController: AbortController | null = null;
+
+function publishSharedPending(value: CloudInstancePending): void {
+  sharedPendingRef.current = value;
+  sharedPendingSubscribers.forEach((subscriber) => subscriber(value));
+}
+
 export interface UseCloudInstances {
   instances: CloudInstanceView[];
   loadState: CloudInstancesLoadState;
   pending: CloudInstancePending;
+  updateOnlineDeviceIds(deviceIds: ReadonlySet<string>): void;
   refresh(): Promise<void>;
   wake(instanceId?: string): Promise<CloudInstanceWakeResult | null>;
   stopInstance(instanceId: string): Promise<CloudInstanceStopResult | null>;
@@ -57,8 +74,9 @@ export function useCloudInstances(
 ): UseCloudInstances {
   const [instances, setInstances] = useState<CloudInstanceView[]>([]);
   const [loadState, setLoadState] = useState<CloudInstancesLoadState>('loading');
-  const [pending, setPending] = useState<CloudInstancePending>(null);
-  const pendingRef = useRef<CloudInstancePending>(null);
+  const [pending, setPending] = useState<CloudInstancePending>(sharedPendingRef.current);
+  const instancesRef = useRef<CloudInstanceView[]>([]);
+  const onlineDeviceIdsRef = useRef<ReadonlySet<string>>(new Set());
   const refreshInFlightRef = useRef<ReturnType<typeof listCloudInstances> | null>(null);
   const appVisibleRef = useRef(AppState.currentState === 'active');
   const verifyingRef = useRef(false);
@@ -67,15 +85,29 @@ export function useCloudInstances(
   );
   const refreshLoopRef = useRef<CloudInstanceRefreshLoop | null>(null);
 
+  useEffect(() => {
+    const subscriber = (value: CloudInstancePending) => setPending(value);
+    sharedPendingSubscribers.add(subscriber);
+    setPending(sharedPendingRef.current);
+    return () => {
+      sharedPendingSubscribers.delete(subscriber);
+      if (sharedPendingSubscribers.size === 0) {
+        sharedTerminalWatchAbortController?.abort();
+        sharedTerminalWatchAbortController = null;
+      }
+    };
+  }, []);
+
   const requestRefresh = useCallback(async (silentFailure: boolean, allowPending = false) => {
     if (!enabled) return;
-    if (!allowPending && pendingRef.current !== null) return;
+    if (!allowPending && sharedPendingRef.current !== null) return;
     const request = refreshInFlightRef.current ?? listCloudInstances({ apiFetch });
     refreshInFlightRef.current = request;
     const result = await request.finally(() => {
       if (refreshInFlightRef.current === request) refreshInFlightRef.current = null;
     });
     if (result.kind === 'ok') {
+      instancesRef.current = result.value.instances;
       setInstances((current) => (
         cloudInstancesEqual(current, result.value.instances) ? current : result.value.instances
       ));
@@ -83,6 +115,7 @@ export function useCloudInstances(
       return;
     }
     if (result.kind === 'unsupported') {
+      instancesRef.current = [];
       setInstances((current) => (current.length === 0 ? current : []));
       setLoadState('unsupported');
       return;
@@ -107,6 +140,9 @@ export function useCloudInstances(
   }
 
   const refresh = useCallback(() => requestRefresh(true), [requestRefresh]);
+  const updateOnlineDeviceIds = useCallback((deviceIds: ReadonlySet<string>) => {
+    onlineDeviceIdsRef.current = deviceIds;
+  }, []);
   const refreshAfterAction = useCallback(
     async () => {
       // Do not reuse a menu/AppState refresh that began before the mutation.
@@ -143,17 +179,55 @@ export function useCloudInstances(
     refreshLoopRef.current?.instancesChanged();
   }, [verifying]);
 
+  const waitForTerminal = useCallback(async (watch: CloudInstanceTerminalWatch) => {
+    const controller = new AbortController();
+    sharedTerminalWatchAbortController?.abort();
+    sharedTerminalWatchAbortController = controller;
+    try {
+      await waitForCloudInstanceTerminalState({
+        watch,
+        getState: () => ({
+          instances: instancesRef.current,
+          onlineDeviceIds: onlineDeviceIdsRef.current,
+        }),
+        refresh: refreshAfterAction,
+        signal: controller.signal,
+      });
+    } finally {
+      if (sharedTerminalWatchAbortController === controller) {
+        sharedTerminalWatchAbortController = null;
+      }
+    }
+  }, [refreshAfterAction]);
+
+  const onTerminalError = useCallback((error: unknown) => {
+    if (error instanceof CloudInstanceActionTimeoutError) {
+      Alert.alert(i18n.t('deviceLink.cloudInstance.actionTimedOut'));
+    }
+  }, []);
+
   const wake = useCallback(
     async (instanceId?: string) => {
       return runCloudInstanceWake(instanceId, {
-        pendingRef,
-        setPending,
+        pendingRef: sharedPendingRef,
+        setPending: publishSharedPending,
         requestWake: (target) => wakeCloudInstance(target, { apiFetch }),
         refresh: refreshAfterAction,
         onError: () => Alert.alert(i18n.t('deviceLink.cloudInstance.wakeFailed')),
+        onAccepted: (result) => {
+          if (sharedPendingRef.current?.action !== 'wake' || sharedPendingRef.current.target !== 'new') return;
+          const accepted = { action: 'wake' as const, target: result.instanceId };
+          publishSharedPending(accepted);
+        },
+        waitForTerminal: (result) => waitForTerminal({
+          action: 'wake',
+          instanceId: result.instanceId,
+          deviceId: result.deviceId,
+        }),
+        onTerminalError,
       });
     },
-    [apiFetch, refreshAfterAction],
+    [apiFetch, onTerminalError, refreshAfterAction, waitForTerminal],
   );
 
   const onActionError = useCallback((action: CloudInstanceAction) => {
@@ -161,22 +235,34 @@ export function useCloudInstances(
   }, []);
 
   const stopInstance = useCallback(
-    (instanceId: string) =>
-      runCloudInstanceAction(instanceId, 'stop', {
-        pendingRef,
-        setPending,
+    (instanceId: string) => {
+      const target = instancesRef.current.find((instance) => instance.instanceId === instanceId);
+      if (!target) {
+        onActionError('stop');
+        return Promise.resolve(null);
+      }
+      return runCloudInstanceAction(instanceId, 'stop', {
+        pendingRef: sharedPendingRef,
+        setPending: publishSharedPending,
         request: () => stopCloudInstance(instanceId, { apiFetch }),
         refresh: refreshAfterAction,
         onError: onActionError,
-      }),
-    [apiFetch, onActionError, refreshAfterAction],
+        waitForTerminal: () => waitForTerminal({
+          action: 'stop',
+          instanceId,
+          deviceId: target.deviceId,
+        }),
+        onTerminalError,
+      });
+    },
+    [apiFetch, onActionError, onTerminalError, refreshAfterAction, waitForTerminal],
   );
 
   const deleteInstance = useCallback(
     (instanceId: string) =>
       runCloudInstanceAction(instanceId, 'delete', {
-        pendingRef,
-        setPending,
+        pendingRef: sharedPendingRef,
+        setPending: publishSharedPending,
         request: () => deleteCloudInstance(instanceId, { apiFetch }),
         refresh: refreshAfterAction,
         onError: onActionError,
@@ -187,8 +273,8 @@ export function useCloudInstances(
   const upgradeInstance = useCallback(
     (instanceId: string) =>
       runCloudInstanceAction(instanceId, 'upgrade', {
-        pendingRef,
-        setPending,
+        pendingRef: sharedPendingRef,
+        setPending: publishSharedPending,
         request: () => upgradeCloudInstance(instanceId, { apiFetch }),
         refresh: refreshAfterAction,
         onError: (action, error) => {
@@ -218,8 +304,8 @@ export function useCloudInstances(
           ? { ...instance, status: { ...instance.status, autoUpdate: value } }
           : instance));
       return runCloudInstanceAction(instanceId, 'autoUpdate', {
-        pendingRef,
-        setPending,
+        pendingRef: sharedPendingRef,
+        setPending: publishSharedPending,
         request: () => patchCloudInstance(instanceId, { autoUpdate: enabled }, { apiFetch }),
         refresh: refreshAfterAction,
         onError: onActionError,
@@ -236,6 +322,7 @@ export function useCloudInstances(
       instances,
       loadState,
       pending,
+      updateOnlineDeviceIds,
       refresh,
       wake,
       stopInstance,
@@ -243,7 +330,7 @@ export function useCloudInstances(
       setAutoUpdate,
       deleteInstance,
     }),
-    [deleteInstance, instances, loadState, pending, refresh, setAutoUpdate, stopInstance, upgradeInstance, wake],
+    [deleteInstance, instances, loadState, pending, refresh, setAutoUpdate, stopInstance, updateOnlineDeviceIds, upgradeInstance, wake],
   );
 }
 

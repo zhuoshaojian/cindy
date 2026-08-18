@@ -1,10 +1,97 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CLOUD_DEVICE_NAME_SENTINEL } from '../deviceList.js';
 import {
+  CloudInstanceActionTimeoutError,
   describeCloudInstanceName,
+  isCloudInstanceTerminalState,
   parseCloudInstanceImageTag,
+  waitForCloudInstanceTerminalState,
 } from '../cloudInstance.js';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('cloud instance lifecycle terminal state', () => {
+  const running = {
+    instanceId: 'old-instance',
+    deviceId: 'old-device',
+    status: { runtimeState: 'running' },
+  };
+
+  it('waits for wake presence and for stop runtime + presence together', () => {
+    expect(isCloudInstanceTerminalState(
+      { action: 'wake', instanceId: 'old-instance', deviceId: 'old-device' },
+      { instances: [running], onlineDeviceIds: new Set() },
+    )).toBe(false);
+    expect(isCloudInstanceTerminalState(
+      { action: 'wake', instanceId: 'old-instance', deviceId: 'old-device' },
+      { instances: [running], onlineDeviceIds: new Set(['old-device']) },
+    )).toBe(true);
+
+    expect(isCloudInstanceTerminalState(
+      { action: 'stop', instanceId: 'old-instance', deviceId: 'old-device' },
+      {
+        instances: [{ ...running, status: { runtimeState: 'stopped' } }],
+        onlineDeviceIds: new Set(['old-device']),
+      },
+    )).toBe(false);
+    expect(isCloudInstanceTerminalState(
+      { action: 'stop', instanceId: 'old-instance', deviceId: 'old-device' },
+      {
+        instances: [{ ...running, status: { runtimeState: 'stopped' } }],
+        onlineDeviceIds: new Set(),
+      },
+    )).toBe(true);
+  });
+
+  it('requires the old rebuild instance to disappear and the new device to be online', () => {
+    const watch = {
+      action: 'rebuild' as const,
+      oldInstanceId: 'old-instance',
+      newInstanceId: 'new-instance',
+      newDeviceId: 'new-device',
+    };
+    expect(isCloudInstanceTerminalState(watch, {
+      instances: [running],
+      onlineDeviceIds: new Set(['new-device']),
+    })).toBe(false);
+    expect(isCloudInstanceTerminalState(watch, {
+      instances: [{
+        instanceId: 'new-instance',
+        deviceId: 'new-device',
+        status: { runtimeState: 'running' },
+      }],
+      onlineDeviceIds: new Set(),
+    })).toBe(false);
+    expect(isCloudInstanceTerminalState(watch, {
+      instances: [{
+        instanceId: 'new-instance',
+        deviceId: 'new-device',
+        status: { runtimeState: 'running' },
+      }],
+      onlineDeviceIds: new Set(['new-device']),
+    })).toBe(true);
+  });
+
+  it('checks immediately, polls with a bound, and reports timeout', async () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn(async () => undefined);
+    const waiting = waitForCloudInstanceTerminalState({
+      watch: { action: 'wake', instanceId: 'old-instance', deviceId: 'old-device' },
+      getState: () => ({ instances: [running], onlineDeviceIds: new Set() }),
+      refresh,
+      pollIntervalMs: 10,
+      timeoutMs: 25,
+    });
+    expect(refresh).not.toHaveBeenCalled();
+    const timedOut = expect(waiting).rejects.toBeInstanceOf(CloudInstanceActionTimeoutError);
+    await vi.advanceTimersByTimeAsync(25);
+    await timedOut;
+    expect(refresh).toHaveBeenCalledTimes(3);
+  });
+});
 
 describe('cloud instance image tag', () => {
   it.each([
