@@ -25,6 +25,9 @@ import * as authManager from '../authManager.js';
 import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 import { ServerApiError } from '../serverApiClient.js';
+import { createLogger } from '../logger.js';
+import { getMirrorCache, MirrorCachePurgeError } from '../device-link/mirrorCacheStore.js';
+import { enqueuePurge } from '../device-link/mirrorCachePurgeQueue.js';
 import { forgetLastKnownDeviceName } from '../device-link/settings-store.js';
 import {
   CLOUD_INSTANCE_RESOURCE_TIERS,
@@ -33,12 +36,16 @@ import {
   type CloudInstanceClient,
 } from './client.js';
 
+const log = createLogger('cloud-instance:ipc');
+
 /** Dependencies used by pure cloud-instance IPC handlers. */
 export interface CloudInstanceIpcDeps {
   getAccessToken(): string | null;
   client: CloudInstanceClient;
   /** Drop the deleted instance's cached device name (device-link settings). */
   forgetDeviceName(deviceId: string): Promise<boolean>;
+  /** Drop the deleted instance's owner-scoped remote-session mirror cache. */
+  clearMirrorCacheDevice(deviceId: string): Promise<void>;
 }
 
 /** Default main-process wiring. */
@@ -47,6 +54,7 @@ export function defaultCloudInstanceIpcDeps(): CloudInstanceIpcDeps {
     getAccessToken: authManager.getAccessToken,
     client: createDefaultCloudInstanceClient(),
     forgetDeviceName: forgetLastKnownDeviceName,
+    clearMirrorCacheDevice: (deviceId) => getMirrorCache().clearDevice(deviceId),
   };
 }
 
@@ -280,8 +288,30 @@ export async function handleDeleteCloudInstance(
   const instanceId = requiredInstanceId(rawInput);
   const result = await callClient(() => deps.client.delete(instanceId));
   // 控制面已清服务端五层(容器/store/auth/relay 档案);这里补本机侧的
-  // 设备名缓存,防止已删云端以缓存旧名再现(renderer 侧分片由 hook 清)。
+  // 设备名与远程会话镜像缓存,防止已删云端以幽灵设备 / 会话再现。
   void deps.forgetDeviceName(result.status.deviceId);
+  try {
+    await deps.clearMirrorCacheDevice(result.status.deviceId);
+  } catch (error) {
+    // 服务端删除已提交,本地缓存清理失败不能把成功反转成失败；保留诊断，账号
+    // 边界的 clearAll 仍会在登出 / 切账号时兜底收敛。
+    log.warn(
+      `failed to clear deleted cloud instance mirror cache (${result.status.deviceId.slice(0, 8)})`,
+      { error: error instanceof Error ? error.message : String(error) },
+    );
+    if (error instanceof MirrorCachePurgeError) {
+      await enqueuePurge(
+        error.root,
+        error.remaining,
+        error.barriers,
+        error.tombstones,
+      ).catch((queueError: unknown) => {
+        log.warn('failed to queue deleted cloud instance mirror-cache purge retry', {
+          error: queueError instanceof Error ? queueError.message : String(queueError),
+        });
+      });
+    }
+  }
   return result;
 }
 
