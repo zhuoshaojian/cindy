@@ -42,7 +42,11 @@ function deps(): CloudInstanceIpcDeps {
       delete: vi.fn(),
     } as unknown as CloudInstanceClient,
     forgetDeviceName: vi.fn(async () => true),
-    clearMirrorCacheDevice: vi.fn(async () => undefined),
+    retireMirrorCacheDevice: vi.fn(async () => undefined),
+    listMirrorCacheRetiredDevices: vi.fn(async () => []),
+    releaseMirrorCacheRetiredDevice: vi.fn(async () => undefined),
+    getDevicePresenceState: vi.fn(() => 'unknown' as const),
+    nowMs: vi.fn(() => 1_000_000),
   };
 }
 

@@ -437,7 +437,6 @@ async function rebuildInstance(
       const result = await window.electronAPI.cloudInstances.wake({
         resourceTier: target.status.resourceTier,
       });
-      retargetPending('rebuild', instanceId, result.instanceId);
       return result;
     } catch (error) {
       // The destructive half already committed. Never leave the deleted card

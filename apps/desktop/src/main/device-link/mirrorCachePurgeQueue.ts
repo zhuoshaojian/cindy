@@ -34,9 +34,12 @@ import {
   bumpClearedCounter,
   cacheLockPath,
   clearPendingMark,
+  isDeviceRetirementScope,
   listClearCounterKeys,
+  markDeviceRetirement,
   listPendingClearScopes,
   CLEARED_ACCOUNT,
+  type DeviceRetirementTombstone,
 } from './mirrorCacheBarrier';
 
 const log = createLogger('device-link:mirror-cache-purge');
@@ -71,6 +74,8 @@ interface PurgeEntry {
    * 永远挂着,整个账号的冷缓存就此关闭(review: codex P1)。
    */
   tombstones?: string[];
+  /** 长期设备退役墓碑本身未能落盘时，队列先补墓碑再删缓存。 */
+  retirements?: DeviceRetirementTombstone[];
   /** 首次记录时间(毫秒),仅供排查。 */
   since: number;
   /** 已经尝试过多少次。 */
@@ -155,6 +160,36 @@ export function isPurgableRoot(root: string, ownersRootPath: string): boolean {
 /** 单个屏障 key 的上限与形状:它会被拼进 `cleared/` 下的文件名,必须不含任何路径结构。 */
 const MAX_BARRIERS_PER_ENTRY = 16;
 const BARRIER_KEY_RE = /^[A-Za-z0-9_-]{1,128}$/;
+const MAX_RETIREMENTS_PER_ENTRY = 16;
+
+function safeRetirements(
+  retirements: readonly DeviceRetirementTombstone[] | undefined,
+): DeviceRetirementTombstone[] {
+  const out: DeviceRetirementTombstone[] = [];
+  for (const item of retirements ?? []) {
+    const deviceId = typeof item?.deviceId === 'string' ? item.deviceId.trim() : '';
+    const hasInstanceId = item != null && Object.prototype.hasOwnProperty.call(item, 'instanceId');
+    const instanceId = typeof item?.instanceId === 'string' ? item.instanceId.trim() : undefined;
+    if (
+      !deviceId
+      || deviceId.length > 256
+      || (hasInstanceId && typeof item.instanceId !== 'string')
+      || (instanceId?.length ?? 0) > 256
+      || typeof item?.createdAtMs !== 'number'
+      || !Number.isSafeInteger(item.createdAtMs)
+      || item.createdAtMs < 0
+    ) {
+      continue;
+    }
+    if (out.some((entry) => entry.deviceId === deviceId)) continue;
+    // 队列文件不可信；未来时间会让 24h unknown-presence 兜底永远到不了。保留墓碑本身
+    // （fail-closed），只把未来时间收敛到当前时刻，避免时钟回拨或手工改写造成永久封锁。
+    const createdAtMs = Math.min(item.createdAtMs, Date.now());
+    out.push({ deviceId, ...(instanceId ? { instanceId } : {}), createdAtMs });
+    if (out.length >= MAX_RETIREMENTS_PER_ENTRY) break;
+  }
+  return out;
+}
 
 /**
  * 过滤屏障 key。队列文件是普通 JSON、随时可能被改写 —— 这些 key 会变成
@@ -213,9 +248,7 @@ async function readPersistedQueue(): Promise<PurgeEntry[]> {
   // 追加目录里的条目同样有效(抢不到锁时写在那里,见 QUEUE_PENDING_DIR)。
   const pending = (await readPendingEntries()).items;
   if (pending.length === 0) return main;
-  const merged = new Map<string, PurgeEntry>();
-  for (const entry of [...main, ...pending.map((p) => p.entry)]) merged.set(entryKey(entry), entry);
-  return compactEntries([...merged.values()]);
+  return compactEntries([...main, ...pending.map((p) => p.entry)]);
 }
 
 function pendingDirPath(): string {
@@ -306,6 +339,11 @@ async function readQueueFile(file: string): Promise<PurgeEntry[] | null> {
             tombstones: safeBarrierKeys(
               Array.isArray(entry.tombstones) ? entry.tombstones : undefined,
             ),
+            retirements: safeRetirements(
+              Array.isArray(entry.retirements)
+                ? (entry.retirements as DeviceRetirementTombstone[])
+                : undefined,
+            ),
             // 文件级清单超上限(理论上写不出来,只可能来自被改写的队列文件):降级成整根条目
             // 而不是截断 —— 截断会静默漏掉待清路径,整根是超集(见 compactEntries)。
             paths: paths && paths.length > MAX_PATHS_PER_ENTRY ? undefined : paths,
@@ -322,10 +360,7 @@ async function readQueueFile(file: string): Promise<PurgeEntry[] | null> {
 
 /** 持久 + 内存两处合并后的待清清单(内存条目优先,它更新)。 */
 async function readQueue(): Promise<PurgeEntry[]> {
-  const merged = new Map<string, PurgeEntry>();
-  for (const entry of await readPersistedQueue()) merged.set(entryKey(entry), entry);
-  for (const [key, entry] of memoryQueue) merged.set(key, entry);
-  return compactEntries([...merged.values()]);
+  return compactEntries([...(await readPersistedQueue()), ...memoryQueue.values()]);
 }
 
 /**
@@ -335,9 +370,34 @@ async function readQueue(): Promise<PurgeEntry[]> {
  * 自己的缓存目录,而这份缓存是纯粹可重建的加速物,多删只损失首屏速度,不丢任何数据。
  */
 function compactEntries(entries: readonly PurgeEntry[]): PurgeEntry[] {
-  if (entries.length <= MAX_ENTRIES) return [...entries];
-  const byRoot = new Map<string, PurgeEntry>();
+  // 正本、追加目录与内存兜底可能同时带着同一条记录。先按精确 entry key 合并元数据，
+  // 否则后读到的旧副本会覆盖「墓碑仍待补写」这类安全信息。
+  const exact = new Map<string, PurgeEntry>();
   for (const entry of entries) {
+    const key = entryKey(entry);
+    const existing = exact.get(key);
+    const barriers = safeBarrierKeys([...(existing?.barriers ?? []), ...(entry.barriers ?? [])]);
+    const tombstones = safeBarrierKeys([
+      ...(existing?.tombstones ?? []),
+      ...(entry.tombstones ?? []),
+    ]);
+    const retirements = safeRetirements([
+      ...(existing?.retirements ?? []),
+      ...(entry.retirements ?? []),
+    ]);
+    exact.set(key, {
+      ...entry,
+      ...(barriers.length > 0 ? { barriers } : { barriers: undefined }),
+      ...(tombstones.length > 0 ? { tombstones } : { tombstones: undefined }),
+      ...(retirements.length > 0 ? { retirements } : { retirements: undefined }),
+      since: existing ? Math.min(existing.since, entry.since) : entry.since,
+      attempts: Math.max(existing?.attempts ?? 0, entry.attempts),
+    });
+  }
+  const deduped = [...exact.values()];
+  if (deduped.length <= MAX_ENTRIES) return deduped;
+  const byRoot = new Map<string, PurgeEntry>();
+  for (const entry of deduped) {
     const key = path.resolve(entry.root);
     const existing = byRoot.get(key);
     // barriers 取并集:折叠成整根条目不代表"不用补屏障了" —— 消化时若没有具体 key,
@@ -348,18 +408,23 @@ function compactEntries(entries: readonly PurgeEntry[]): PurgeEntry[] {
       ...(existing?.tombstones ?? []),
       ...(entry.tombstones ?? []),
     ]);
+    const retirements = safeRetirements([
+      ...(existing?.retirements ?? []),
+      ...(entry.retirements ?? []),
+    ]);
     byRoot.set(key, {
       root: entry.root,
       paths: undefined,
       ...(barriers.length > 0 ? { barriers } : {}),
       ...(tombstones.length > 0 ? { tombstones } : {}),
+      ...(retirements.length > 0 ? { retirements } : {}),
       since: existing ? Math.min(existing.since, entry.since) : entry.since,
       attempts: Math.max(existing?.attempts ?? 0, entry.attempts),
     });
   }
   const collapsed = [...byRoot.values()];
   log.warn(
-    `mirror cache purge queue overflow (${entries.length} entries); collapsed to ${collapsed.length} root-level entr(ies)`,
+    `mirror cache purge queue overflow (${deduped.length} entries); collapsed to ${collapsed.length} root-level entr(ies)`,
   );
   // **不再截断**:不同 owner root 之间无法合并(一个账号的缓存不能拿另一个账号的清理来代表),
   // 截掉就等于那个账号的明文缓存永远没有重试机会(review: codex P1)。超出正本容量的部分由
@@ -462,8 +527,11 @@ export async function enqueuePurge(
   paths?: readonly string[],
   barriers?: readonly string[],
   tombstones?: readonly string[],
+  retirements?: readonly DeviceRetirementTombstone[],
 ): Promise<void> {
-  return withQueueLock((held) => enqueuePurgeLocked(root, paths, barriers, tombstones, held));
+  return withQueueLock((held) =>
+    enqueuePurgeLocked(root, paths, barriers, tombstones, retirements, held),
+  );
 }
 
 async function enqueuePurgeLocked(
@@ -471,6 +539,7 @@ async function enqueuePurgeLocked(
   paths?: readonly string[],
   barriers?: readonly string[],
   tombstones?: readonly string[],
+  retirements?: readonly DeviceRetirementTombstone[],
   lockHeld = true,
 ): Promise<void> {
   const base = ownersRoot();
@@ -503,11 +572,13 @@ async function enqueuePurgeLocked(
       paths: chunk,
       barriers: safeBarrierKeys(barriers),
       tombstones: safeBarrierKeys(tombstones),
+      retirements: safeRetirements(retirements),
       since: Date.now(),
       attempts: 1,
     };
     if (entry.barriers?.length === 0) delete entry.barriers;
     if (entry.tombstones?.length === 0) delete entry.tombstones;
+    if (entry.retirements?.length === 0) delete entry.retirements;
     const key = entryKey(entry);
     const existing = (await readQueue()).find((candidate) => entryKey(candidate) === key);
     if (existing) {
@@ -519,6 +590,11 @@ async function enqueuePurgeLocked(
       if (merged.length > 0) entry.barriers = merged;
       const marks = safeBarrierKeys([...(existing.tombstones ?? []), ...(entry.tombstones ?? [])]);
       if (marks.length > 0) entry.tombstones = marks;
+      const retired = safeRetirements([
+        ...(existing.retirements ?? []),
+        ...(entry.retirements ?? []),
+      ]);
+      if (retired.length > 0) entry.retirements = retired;
     }
     // 内存兜底先落:即使接下来落盘失败,本进程后续的 drain 仍会重试。
     memoryQueue.set(key, entry);
@@ -639,6 +715,17 @@ async function drainPurgeQueueLocked(
         if (!status.held) {
           log.warn(`purging ${entry.root} without the mirror-cache lock; relying on barriers`);
         }
+        // `retireDevice()` 只有在长期墓碑落盘后才能开始删；若那次落盘失败，错误会把
+        // 元数据交给本队列。这里必须先补墓碑再清缓存，保证进程重启 / 另一实例同步时仍
+        // fail-closed。补写失败会抛出，整条记录继续保留。
+        for (const retirement of safeRetirements(entry.retirements)) {
+          await markDeviceRetirement(
+            entry.root,
+            retirement.deviceId,
+            retirement.createdAtMs,
+            retirement.instanceId,
+          );
+        }
         for (const key of keysToBump) await bumpClearedCounter(entry.root, key);
         if (!purgeWholeRoot) {
           // 逐个删成功才算清掉;剩下的继续留在队列里。
@@ -668,9 +755,14 @@ async function drainPurgeQueueLocked(
         // 缓存读永久不命中(hasPendingClears 对整个 root 生效)(review: codex P1)。
         // 撤墓碑排在最后:前面任何一步抛错都会让条目留在队列里,墓碑也就继续挡着读。
         // 整根删完 = 这个 owner 没有任何"清理未完成"了 → 所有墓碑一次退役(同理不依赖清单)。
-        const scopes = purgeWholeRoot
-          ? await listPendingClearScopes(entry.root)
-          : safeBarrierKeys(entry.tombstones);
+        // 长期退役墓碑不是「这次 purge 完成即可撤」的过程墓碑；它要等控制面 absence +
+        // relay offline（或设备 id 明确复用）后由 cloud-instance 对账解除。整根补删也不能
+        // 顺手把它清掉，否则旧 Pod 下一次同步又能把 session-list 写回来。
+        const scopes = (
+          purgeWholeRoot
+            ? await listPendingClearScopes(entry.root)
+            : safeBarrierKeys(entry.tombstones)
+        ).filter((scope) => !isDeviceRetirementScope(scope));
         for (const scope of scopes) await clearPendingMark(entry.root, scope);
       });
       purged += 1;

@@ -28,6 +28,10 @@ import { ServerApiError } from '../serverApiClient.js';
 import { createLogger } from '../logger.js';
 import { getMirrorCache, MirrorCachePurgeError } from '../device-link/mirrorCacheStore.js';
 import { enqueuePurge } from '../device-link/mirrorCachePurgeQueue.js';
+import {
+  getDevicePresenceState,
+  type DevicePresenceState,
+} from '../device-link/presenceState.js';
 import { forgetLastKnownDeviceName } from '../device-link/settings-store.js';
 import {
   CLOUD_INSTANCE_RESOURCE_TIERS,
@@ -37,6 +41,7 @@ import {
 } from './client.js';
 
 const log = createLogger('cloud-instance:ipc');
+export const CLOUD_DEVICE_RETIREMENT_UNKNOWN_PRESENCE_GRACE_MS = 24 * 60 * 60 * 1_000;
 
 /** Dependencies used by pure cloud-instance IPC handlers. */
 export interface CloudInstanceIpcDeps {
@@ -44,8 +49,16 @@ export interface CloudInstanceIpcDeps {
   client: CloudInstanceClient;
   /** Drop the deleted instance's cached device name (device-link settings). */
   forgetDeviceName(deviceId: string): Promise<boolean>;
-  /** Drop the deleted instance's owner-scoped remote-session mirror cache. */
-  clearMirrorCacheDevice(deviceId: string): Promise<void>;
+  /** Persistently block and clear a deleted device's owner-scoped mirror cache. */
+  retireMirrorCacheDevice(deviceId: string, createdAtMs?: number, instanceId?: string): Promise<void>;
+  /** Persisted retirement tombstones survive restart until list/presence converge. */
+  listMirrorCacheRetiredDevices(): Promise<
+    Array<{ deviceId: string; instanceId?: string; createdAtMs: number }>
+  >;
+  /** Final clear, then remove the target device's retirement tombstone. */
+  releaseMirrorCacheRetiredDevice(deviceId: string): Promise<void>;
+  getDevicePresenceState(deviceId: string): DevicePresenceState;
+  nowMs(): number;
 }
 
 /** Default main-process wiring. */
@@ -54,7 +67,13 @@ export function defaultCloudInstanceIpcDeps(): CloudInstanceIpcDeps {
     getAccessToken: authManager.getAccessToken,
     client: createDefaultCloudInstanceClient(),
     forgetDeviceName: forgetLastKnownDeviceName,
-    clearMirrorCacheDevice: (deviceId) => getMirrorCache().clearDevice(deviceId),
+    retireMirrorCacheDevice: (deviceId, createdAtMs, instanceId) =>
+      getMirrorCache().retireDevice(deviceId, createdAtMs, instanceId),
+    listMirrorCacheRetiredDevices: () => getMirrorCache().listRetiredDevices(),
+    releaseMirrorCacheRetiredDevice: (deviceId) =>
+      getMirrorCache().releaseRetiredDevice(deviceId),
+    getDevicePresenceState,
+    nowMs: Date.now,
   };
 }
 
@@ -171,7 +190,51 @@ export async function handleListCloudInstances(
   deps: CloudInstanceIpcDeps,
 ): Promise<{ instances: CloudInstanceView[] }> {
   requireAuthenticated(deps);
-  return callClient(() => deps.client.list());
+  const result = await callClient(() => deps.client.list());
+  await reconcileRetiredMirrorCacheDevices(deps, result.instances);
+  return result;
+}
+
+async function reconcileRetiredMirrorCacheDevices(
+  deps: CloudInstanceIpcDeps,
+  instances: readonly CloudInstanceView[],
+): Promise<void> {
+  let retired: Array<{ deviceId: string; instanceId?: string; createdAtMs: number }>;
+  try {
+    retired = await deps.listMirrorCacheRetiredDevices();
+  } catch (error) {
+    log.warn('failed to read cloud device mirror-cache retirement tombstones', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  const currentDeviceIds = new Set(instances.map((instance) => instance.deviceId));
+  for (const tombstone of retired) {
+    const currentInstance = instances.find((instance) => instance.deviceId === tombstone.deviceId);
+    const reusedByControlPlane =
+      currentInstance !== undefined
+      && tombstone.instanceId !== undefined
+      && currentInstance.instanceId !== tombstone.instanceId;
+    const absentFromControlPlane = !currentDeviceIds.has(tombstone.deviceId);
+    const presence = deps.getDevicePresenceState(tombstone.deviceId);
+    const absentLongEnough =
+      absentFromControlPlane
+      && presence === 'unknown'
+      && deps.nowMs() - tombstone.createdAtMs >= CLOUD_DEVICE_RETIREMENT_UNKNOWN_PRESENCE_GRACE_MS;
+    // 正常解除要求 fresh list 已无旧 deviceId 且 relay 明确 offline。若控制面重新列出同一
+    // deviceId，则视为身份复用：最终清掉旧缓存后立即放行新权威数据。presence 永远 online
+    // 时不靠超时解除；unknown 仅在 fresh list 持续缺席 24h 后兜底，避免墓碑永久阻塞复用。
+    const retiredNormally = absentFromControlPlane && presence === 'offline';
+    if (!reusedByControlPlane && !retiredNormally && !absentLongEnough) continue;
+    try {
+      await deps.releaseMirrorCacheRetiredDevice(tombstone.deviceId);
+    } catch (error) {
+      log.warn(
+        `failed to release retired cloud device mirror cache (${tombstone.deviceId.slice(0, 8)})`,
+        { error: error instanceof Error ? error.message : String(error) },
+      );
+    }
+  }
 }
 
 /** Wake an explicit instance, or use the server's zero/one convenience path. */
@@ -291,7 +354,7 @@ export async function handleDeleteCloudInstance(
   // 设备名与远程会话镜像缓存,防止已删云端以幽灵设备 / 会话再现。
   void deps.forgetDeviceName(result.status.deviceId);
   try {
-    await deps.clearMirrorCacheDevice(result.status.deviceId);
+    await deps.retireMirrorCacheDevice(result.status.deviceId, deps.nowMs(), instanceId);
   } catch (error) {
     // 服务端删除已提交,本地缓存清理失败不能把成功反转成失败；保留诊断，账号
     // 边界的 clearAll 仍会在登出 / 切账号时兜底收敛。
@@ -305,6 +368,7 @@ export async function handleDeleteCloudInstance(
         error.remaining,
         error.barriers,
         error.tombstones,
+        error.retirements,
       ).catch((queueError: unknown) => {
         log.warn('failed to queue deleted cloud instance mirror-cache purge retry', {
           error: queueError instanceof Error ? queueError.message : String(queueError),
