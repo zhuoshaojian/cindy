@@ -1,13 +1,14 @@
 /**
  * RemoteControlSection —— 统一的「远程控制」设置页。
  *
- * 合并原「设备互联」(device-link)与「远端机器」(SSH)两个入口,两块功能在同一页内上下排列:
+ * 远程能力按用户心智拆成三个同级入口:
  *   1. 我的设备:同账号设备一处管理 —— 本机承载被控总开关 + relay 状态,其余设备逐台管
  *      「我控制它 / 允许它控制本机」+ 重命名 / 删除(MyDevicesPanel)
- *   2. SSH:原 RemoteSection 原样嵌入(showTitle=false,标题由本页统一给)
+ *   2. SSH 远程主机:连接用户自己的服务器或电脑(RemoteSection)
+ *   3. 云端 Cindy:托管实例的首次创建与生命周期管理(CloudInstancesPanel)
  * (Slack 连接子块已迁至「IM 机器人」页 Cindy 栏, 见 ImBotSection.tsx + HookConnectionsSection.tsx)
  *
- * 两个子块都是无上限列表,页面默认全部收起;收起态 header 右侧带状态摘要,
+ * 我的设备与 SSH 默认收起,云端 Cindy 默认展开;收起态 header 右侧带状态摘要,
  * 各子块独立展开,状态不持久化(刷新回默认,与 PinnedSection 先例一致)。
  * 「我的设备」的本机卡(被控总开关 + relay 状态)是全页最常用控件,以 pinned
  * 形式常驻折叠区外,折叠只收其它设备列表。收起只做 CSS 隐藏、内容保持挂载:
@@ -23,6 +24,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import { useDeviceLinkSettings, type DeviceLinkSettings } from '@/hooks/useDeviceLinkSettings';
+import { useCloudInstances } from '@/features/cloud-instance/useCloudInstances';
+import { CloudInstancesPanel } from './CloudInstancesPanel';
 import { MyDevicesPanel } from './MyDevicesPanel';
 import { RemoteSection } from './RemoteSection';
 import { useAuth } from '@/contexts/AuthContext';
@@ -98,7 +101,9 @@ function deviceSummary(
   t: (k: string, o?: Record<string, unknown>) => string,
 ): string | null {
   if (s.devices === null) return null;
-  const others = s.devices.filter((d) => !d.isSelf).length;
+  const others = s.devices.filter(
+    (device) => !device.isSelf && device.deviceInfo?.kind !== 'cloud',
+  ).length;
   return others === 0
     ? t('settings.remoteControl.summary.noOtherDevices')
     : t('settings.remoteControl.summary.otherDevices', { count: others });
@@ -141,12 +146,14 @@ export function RemoteControlSection() {
   const navigate = useNavigate();
   const deviceLinkAvailable = mode === 'cloud';
   const s = useDeviceLinkSettings(deviceLinkAvailable);
+  const cloud = useCloudInstances(deviceLinkAvailable);
 
   // 深链 ?section=devices 必须在首帧就是展开态:放到 effect 里会先画一帧收起,
   // 再把下方内容顶开一格。
   const [devicesOpen, setDevicesOpen] = useState(
     () => new URLSearchParams(location.search).get('section') === 'devices',
   );
+  const [cloudOpen, setCloudOpen] = useState(true);
   const [sshOpen, setSshOpen] = useState(false);
 
   // SSH 主机轻量快照 —— 只为收起态摘要服务。RemoteSection 内部自管自己的一份;
@@ -247,6 +254,21 @@ export function RemoteControlSection() {
               pinned={<MyDevicesPanel s={s} variant="self" />}
             >
               <MyDevicesPanel s={s} variant="others" visible={devicesOpen} />
+            </CollapsibleSubSection>
+            <div className="h-px w-full bg-[var(--border-default)]" />
+          </>
+        ) : null}
+
+        {deviceLinkAvailable && cloud.loadState !== 'unsupported' ? (
+          <>
+            <CollapsibleSubSection
+              title={t('settings.remoteControl.sections.cloudCindy')}
+              summary={null}
+              dotColor={null}
+              open={cloudOpen}
+              onToggle={() => setCloudOpen((open) => !open)}
+            >
+              <CloudInstancesPanel s={s} cloud={cloud} />
             </CollapsibleSubSection>
             <div className="h-px w-full bg-[var(--border-default)]" />
           </>

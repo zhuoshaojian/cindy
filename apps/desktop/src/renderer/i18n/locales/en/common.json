@@ -2795,6 +2795,7 @@
       },
       "sections": {
         "myDevices": "My devices",
+        "cloudCindy": "Cloud Cindy",
         "ssh": "SSH remote hosts",
         "hook": "Cindy IM bots"
       },
@@ -3014,6 +3015,10 @@
             "superseded": "Linked on another device"
           }
         }
+      },
+      "cloud": {
+        "empty": "No cloud instance yet. Wake Cloud to create one and use it from any device.",
+        "loadFailed": "Cloud Cindy could not be loaded. Check the connection and try again."
       },
       "summary": {
         "otherDevices": "{{count}} other device(s)",

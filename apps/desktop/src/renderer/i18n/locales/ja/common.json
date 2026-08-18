@@ -2794,6 +2794,7 @@
       },
       "sections": {
         "myDevices": "マイデバイス",
+        "cloudCindy": "クラウド Cindy",
         "ssh": "SSH リモートホスト",
         "hook": "Cindy IM ボット"
       },
@@ -3013,6 +3014,10 @@
             "superseded": "別のデバイスで連携済み"
           }
         }
+      },
+      "cloud": {
+        "empty": "クラウドインスタンスはまだありません。クラウドを起動すると自動で作成され、どのデバイスからでも利用できます。",
+        "loadFailed": "クラウド Cindy を読み込めませんでした。接続を確認して、もう一度お試しください。"
       },
       "summary": {
         "otherDevices": "他のデバイス {{count}} 台",
