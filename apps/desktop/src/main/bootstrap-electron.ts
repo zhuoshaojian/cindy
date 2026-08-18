@@ -1220,10 +1220,16 @@ async function teardownAuthAccountBoundary(reason: string): Promise<void> {
   } catch (err) {
     authBoundaryPurgeLog.error(`clear device-link mirror cache on ${reason} failed:`, err);
     if (err instanceof MirrorCachePurgeError) {
-      // remaining / barriers / tombstones 三样都要带上(同 IPC 侧的 queuePurgeRetry):
+      // remaining / barriers / tombstones / retirements 都要带上(同 IPC 侧的 queuePurgeRetry):
       // 只传 root 的话,补删成功后队列既不知道该补自增哪个作废计数,也不会退役 `_account`
       // 墓碑 —— 墓碑一直挂着就等于这个 owner 的缓存读被永久压住(review: codex P1)。
-      await enqueuePurge(err.root, err.remaining, err.barriers, err.tombstones).catch(
+      await enqueuePurge(
+        err.root,
+        err.remaining,
+        err.barriers,
+        err.tombstones,
+        err.retirements,
+      ).catch(
         (enqueueErr: unknown) => {
           authBoundaryPurgeLog.error('failed to enqueue mirror cache purge retry:', enqueueErr);
         },

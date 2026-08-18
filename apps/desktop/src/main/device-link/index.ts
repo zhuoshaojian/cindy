@@ -80,6 +80,7 @@ import {
   setControllerPlatform,
 } from './controllerPlatform';
 import { setBusyProbe, helloBusy, pollBusyChange, resetBusyDedupe } from './busyReporter';
+import { presenceOnlineByDevice } from './presenceState';
 import {
   DL_VOICE_DICTIONARY_SYNC_CHANNEL,
   broadcastDictionaryNow,
@@ -266,8 +267,6 @@ const CONTROLLER_CAPABILITIES = [
   // maker:event 订阅者零改动。
   CONTROLLER_CAPABILITY_MAKER_EVENT_BATCH_V1,
 ] as const;
-
-const presenceOnlineByDevice = new Map<string, boolean>();
 
 /**
  * 发送门禁判据:**当代 presence 已明确宣告**该设备离线(供 dispatch 的

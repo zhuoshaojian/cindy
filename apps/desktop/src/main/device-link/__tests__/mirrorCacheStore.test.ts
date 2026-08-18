@@ -1237,6 +1237,108 @@ describe('clearDevice / clearAll', () => {
     await c.writeMessages('dev-1', 'sess-1', [row('m1', '2026-01-01T00:00:00.000Z')]);
     expect((await c.readMessages('dev-1', 'sess-1')).map((m) => m.id)).toEqual(['m1']);
   });
+
+  it('retireDevice 持久拒绝旧设备的新同步写入,其它设备仍可读写', async () => {
+    const c = cache();
+    await c.writeMessages('dev-old', 'sess-1', [row('old', '2026-01-01T00:00:00.000Z')]);
+    await c.retireDevice('dev-old', 1234);
+
+    await c.writeMessages('dev-old', 'sess-2', [row('late', '2026-02-01T00:00:00.000Z')]);
+    await c.writeMessages('dev-new', 'sess-3', [row('new', '2026-03-01T00:00:00.000Z')]);
+    await c.writeSessionList([
+      { deviceId: 'dev-old', deviceName: 'Old', sessions: [{ id: 's-old', status: 'active' }] },
+      { deviceId: 'dev-new', deviceName: 'New', sessions: [{ id: 's-new', status: 'active' }] },
+    ]);
+
+    expect(await c.readMessages('dev-old', 'sess-1')).toEqual([]);
+    expect(await c.readMessages('dev-old', 'sess-2')).toEqual([]);
+    expect((await c.readMessages('dev-new', 'sess-3')).map((item) => item.id)).toEqual(['new']);
+    expect((await c.readSessionList()).map((device) => device.deviceId)).toEqual(['dev-new']);
+    expect(await c.listRetiredDevices()).toEqual([{ deviceId: 'dev-old', createdAtMs: 1234 }]);
+  });
+
+  it('retirement tombstone 跨 store 实例生效,release 最终清理后才恢复写入', async () => {
+    const first = cache();
+    await first.retireDevice('dev-reused', 5678);
+
+    const restarted = cache();
+    await restarted.writeMessages(
+      'dev-reused',
+      'sess-old',
+      [row('blocked', '2026-01-01T00:00:00.000Z')],
+    );
+    expect(await restarted.readMessages('dev-reused', 'sess-old')).toEqual([]);
+
+    await restarted.releaseRetiredDevice('dev-reused');
+    expect(await restarted.listRetiredDevices()).toEqual([]);
+    await restarted.writeMessages(
+      'dev-reused',
+      'sess-new',
+      [row('accepted', '2026-02-01T00:00:00.000Z')],
+    );
+    expect((await restarted.readMessages('dev-reused', 'sess-new')).map((item) => item.id)).toEqual([
+      'accepted',
+    ]);
+  });
+
+  it.skipIf(!canTestUnwritableDir)('release 最终清理失败时保留 retirement tombstone', async () => {
+    const c = cache();
+    await c.retireDevice('dev-old', 9876, 'instance-old');
+    await fsp.mkdir(messagesDir(), { recursive: true });
+    await fsp.chmod(messagesDir(), 0o000);
+    try {
+      await expect(c.releaseRetiredDevice('dev-old')).rejects.toBeInstanceOf(MirrorCachePurgeError);
+      expect(await c.listRetiredDevices()).toEqual([
+        { deviceId: 'dev-old', instanceId: 'instance-old', createdAtMs: 9876 },
+      ]);
+    } finally {
+      await fsp.chmod(messagesDir(), 0o700);
+    }
+  });
+
+  it('retirement tombstone 内容损坏时仍 fail-closed 拒绝目标设备读写', async () => {
+    const c = cache();
+    await c.retireDevice('dev-old', 1234);
+    const pendingDir = path.join(`${root}.control`, 'pending');
+    const [retirementFile] = (await fsp.readdir(pendingDir)).filter((name) =>
+      name.startsWith('retired-device-'),
+    );
+    await fsp.writeFile(path.join(pendingDir, retirementFile), '{broken', 'utf8');
+
+    await c.writeMessages('dev-old', 'sess-late', [row('late', '2026-02-01T00:00:00.000Z')]);
+    expect(await c.readMessages('dev-old', 'sess-late')).toEqual([]);
+    await expect(c.listRetiredDevices()).rejects.toThrow('malformed device retirement tombstone');
+  });
+
+  it('retirement tombstone 首次落盘失败时以内存闸拒写，并在后续 list 时补持久化', async () => {
+    const c = cache();
+    const rename = fsp.rename.bind(fsp);
+    const renameSpy = vi.spyOn(fsp, 'rename').mockImplementation(async (from, to) => {
+      if (String(to).includes(`${path.sep}pending${path.sep}retired-device-`)) {
+        throw Object.assign(new Error('temporary control-dir failure'), { code: 'EMFILE' });
+      }
+      return rename(from, to);
+    });
+    await expect(c.retireDevice('dev-memory', 2468, 'instance-old')).rejects.toBeInstanceOf(
+      MirrorCachePurgeError,
+    );
+    renameSpy.mockRestore();
+
+    await c.writeMessages(
+      'dev-memory',
+      'sess-late',
+      [row('late', '2026-02-01T00:00:00.000Z')],
+    );
+    expect(await c.readMessages('dev-memory', 'sess-late')).toEqual([]);
+    expect(await c.listRetiredDevices()).toEqual([
+      { deviceId: 'dev-memory', instanceId: 'instance-old', createdAtMs: 2468 },
+    ]);
+
+    const restarted = cache();
+    expect(await restarted.listRetiredDevices()).toEqual([
+      { deviceId: 'dev-memory', instanceId: 'instance-old', createdAtMs: 2468 },
+    ]);
+  });
 });
 
 describe('clearDevice 期间的写入', () => {

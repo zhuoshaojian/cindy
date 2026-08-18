@@ -65,6 +65,7 @@ import {
   type MirrorCache,
 } from './mirrorCacheStore';
 import { enqueuePurge, hasPendingPurgeRecords } from './mirrorCachePurgeQueue';
+import type { DeviceRetirementTombstone } from './mirrorCacheBarrier';
 import {
   recordSubscribe,
   recordUnsubscribe,
@@ -906,6 +907,7 @@ export async function handleMirrorCachePutMessages(
     paths?: readonly string[],
     barriers?: readonly string[],
     tombstones?: readonly string[],
+    retirements?: readonly DeviceRetirementTombstone[],
   ) => Promise<void> = enqueuePurge,
   expectedInvalidation?: unknown,
   expectedOwnerToken?: unknown,
@@ -992,6 +994,7 @@ export async function handleMirrorCachePutSessionList(
     paths?: readonly string[],
     barriers?: readonly string[],
     tombstones?: readonly string[],
+    retirements?: readonly DeviceRetirementTombstone[],
   ) => Promise<void> = enqueuePurge,
   expectedOwnerToken?: unknown,
   expectedAccountCounter?: unknown,
@@ -1057,6 +1060,7 @@ async function queuePurgeRetry(
     paths?: readonly string[],
     barriers?: readonly string[],
     tombstones?: readonly string[],
+    retirements?: readonly DeviceRetirementTombstone[],
   ) => Promise<void>,
   where: string,
 ): Promise<void> {
@@ -1066,7 +1070,13 @@ async function queuePurgeRetry(
   // put 迟到"的写入会在消化之后通过比对(见 MirrorCachePurgeError.barriers)。
   // tombstones = 还挂着的"清理没确认完成"墓碑 scope:补删成功后由队列撤掉,否则一次瞬时失败
   // 会让整个账号的缓存读永久不命中(见 MirrorCachePurgeError.tombstones)。
-  await enqueueRetry(err.root, err.remaining, err.barriers, err.tombstones).catch(
+  await enqueueRetry(
+    err.root,
+    err.remaining,
+    err.barriers,
+    err.tombstones,
+    err.retirements,
+  ).catch(
     (queueErr: unknown) => {
       log.error(`failed to queue ${where} purge retry`, queueErr);
     },
@@ -1090,6 +1100,7 @@ export async function handleMirrorCacheClear(
     paths?: readonly string[],
     barriers?: readonly string[],
     tombstones?: readonly string[],
+    retirements?: readonly DeviceRetirementTombstone[],
   ) => Promise<void> = enqueuePurge,
 ): Promise<{ ok: true }> {
   const device = requireCacheId(deviceId, 'deviceId');

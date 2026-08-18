@@ -56,3 +56,26 @@ export function resolveActiveConnectionIssue<T extends { kind: string }>(
   if (issue.kind === 'unstable') return issue;
   return linkStatus === 'online' ? null : issue;
 }
+
+export function resolveHiddenRelayCloudDeviceDuringRebuild(
+  relayCloudDeviceIds: readonly string[],
+  instances: readonly { instanceId: string; deviceId: string }[],
+  pending: { target: string; action: string } | null,
+): string | null {
+  if (pending?.action !== 'rebuild') return null;
+  const oldInstance = instances.find((instance) => instance.instanceId === pending.target);
+  if (oldInstance && relayCloudDeviceIds.includes(oldInstance.deviceId)) {
+    return oldInstance.deviceId;
+  }
+  // 控制面已删旧实例、relay 仍残留旧 Pod 时，旧卡已无法再按 instanceId join；只要控制面
+  // 已出现唯一 replacement，且 relay 也只有唯一 orphan cloud 卡，才把二者配成重建中间态。
+  // 多实例 / 多 orphan 时不猜，避免隐藏无关设备。pending 清除(成功 / 失败 / 300s 超时 /
+  // abort)后此派生过滤立即失效，旧卡不会被永久藏住。
+  const currentDeviceIds = new Set(instances.map((instance) => instance.deviceId));
+  const relayDeviceIds = new Set(relayCloudDeviceIds);
+  const orphanRelayIds = relayCloudDeviceIds.filter((deviceId) => !currentDeviceIds.has(deviceId));
+  const replacements = instances.filter(
+    (instance) => instance.instanceId !== pending.target && !relayDeviceIds.has(instance.deviceId),
+  );
+  return orphanRelayIds.length === 1 && replacements.length === 1 ? orphanRelayIds[0] : null;
+}
