@@ -9,7 +9,20 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const { deviceLinkSettings } = vi.hoisted(() => ({
+const { cloudInstances, deviceLinkSettings } = vi.hoisted(() => ({
+  cloudInstances: {
+    instances: [],
+    loadState: 'ready' as 'loading' | 'ready' | 'unsupported' | 'error',
+    pending: null,
+    onlineDeviceIds: new Set<string>(),
+    refresh: vi.fn(async () => undefined),
+    wake: vi.fn(async () => undefined),
+    stopInstance: vi.fn(async () => undefined),
+    upgradeInstance: vi.fn(async () => undefined),
+    rebuildInstance: vi.fn(async () => undefined),
+    setAutoUpdate: vi.fn(async () => true),
+    deleteInstance: vi.fn(async () => undefined),
+  },
   deviceLinkSettings: {
     enabled: true,
     linkStatus: 'online',
@@ -42,8 +55,14 @@ vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ mode: 'cloud' }) })
 vi.mock('../components/settings/MyDevicesPanel', () => ({
   MyDevicesPanel: () => <div data-testid="my-devices-panel" />,
 }));
+vi.mock('../components/settings/CloudInstancesPanel', () => ({
+  CloudInstancesPanel: () => <div data-testid="cloud-instances-panel" />,
+}));
 vi.mock('../components/settings/RemoteSection', () => ({
   RemoteSection: () => <div data-testid="remote-section" />,
+}));
+vi.mock('@/features/cloud-instance/useCloudInstances', () => ({
+  useCloudInstances: () => cloudInstances,
 }));
 
 import { RemoteControlSection } from '@/components/settings/RemoteControlSection';
@@ -51,6 +70,10 @@ import { RemoteControlSection } from '@/components/settings/RemoteControlSection
 // 收起态的 header 无障碍名里还会带上摘要文案,所以用前缀匹配。
 const devicesHeader = () =>
   screen.getByRole('button', { name: /^settings\.remoteControl\.sections\.myDevices/ });
+const cloudHeader = () =>
+  screen.getByRole('button', { name: /^settings\.remoteControl\.sections\.cloudCindy/ });
+const sshHeader = () =>
+  screen.getByRole('button', { name: /^settings\.remoteControl\.sections\.ssh/ });
 
 function DeepLinkTrigger() {
   const navigate = useNavigate();
@@ -69,6 +92,7 @@ function LocationProbe() {
 const currentSearch = () => screen.getByTestId('search').textContent ?? '';
 
 beforeEach(() => {
+  cloudInstances.loadState = 'ready';
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     value: {
@@ -86,6 +110,34 @@ afterEach(() => {
 });
 
 describe('RemoteControlSection devices deep link', () => {
+  it('renders cloud Cindy as a peer section, expanded by default, while SSH stays collapsed', () => {
+    render(
+      <MemoryRouter initialEntries={['/settings?tab=remote-control']}>
+        <RemoteControlSection />
+      </MemoryRouter>,
+    );
+
+    expect(devicesHeader()).toBeTruthy();
+    expect(cloudHeader().getAttribute('aria-expanded')).toBe('true');
+    expect(sshHeader().getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('cloud-instances-panel')).toBeTruthy();
+  });
+
+  it('hides the cloud Cindy section when the server does not support cloud instances', () => {
+    cloudInstances.loadState = 'unsupported';
+
+    render(
+      <MemoryRouter initialEntries={['/settings?tab=remote-control']}>
+        <RemoteControlSection />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.queryByRole('button', { name: /^settings\.remoteControl\.sections\.cloudCindy/ }),
+    ).toBeNull();
+    expect(screen.queryByTestId('cloud-instances-panel')).toBeNull();
+  });
+
   it('renders the devices section expanded on the very first paint', () => {
     // 用 SSR 渲染拿「effect 跑之前」的那一帧:放在 effect 里展开会先画一帧收起,
     // 再把下方内容顶开一格。render() 会同步冲掉 effect,分辨不出这一帧。

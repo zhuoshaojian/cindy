@@ -2793,6 +2793,7 @@
       },
       "sections": {
         "myDevices": "我的裝置",
+        "cloudCindy": "雲端 Cindy",
         "ssh": "SSH 遠端主機",
         "hook": "Cindy IM 機器人"
       },
@@ -3012,6 +3013,10 @@
             "superseded": "已關聯到另一臺裝置"
           }
         }
+      },
+      "cloud": {
+        "empty": "還沒有雲端實例。喚醒雲端後會自動建立，可從任意裝置使用。",
+        "loadFailed": "暫時無法載入雲端 Cindy，請檢查連線後重試。"
       },
       "summary": {
         "otherDevices": "其它裝置 {{count}} 臺",

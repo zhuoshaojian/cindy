@@ -2794,6 +2794,7 @@
       },
       "sections": {
         "myDevices": "내 기기",
+        "cloudCindy": "클라우드 Cindy",
         "ssh": "SSH 원격 호스트",
         "hook": "Cindy IM 봇"
       },
@@ -3013,6 +3014,10 @@
             "superseded": "다른 기기에서 연결됨"
           }
         }
+      },
+      "cloud": {
+        "empty": "아직 클라우드 인스턴스가 없습니다. 클라우드를 깨우면 자동으로 생성되며 어느 기기에서나 사용할 수 있습니다.",
+        "loadFailed": "클라우드 Cindy를 불러올 수 없습니다. 연결을 확인하고 다시 시도해 주세요."
       },
       "summary": {
         "otherDevices": "다른 기기 {{count}}대",
