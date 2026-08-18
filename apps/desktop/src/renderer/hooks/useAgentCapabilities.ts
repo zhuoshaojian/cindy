@@ -317,6 +317,12 @@ export type DeviceCapabilitiesEvent =
   | { status: 'error'; error: string };
 /** 已挂载的远程能力订阅者；key 同缓存，provider revision 后可原子换入新快照。 */
 const remoteListeners = new Map<CacheKey, Set<(event: DeviceCapabilitiesEvent) => void>>();
+/** 远程 runtime 注册表缓存；与 capabilities 一样按设备驱逐，避免并发预取重复探针。 */
+const registeredAgentsCache = new Map<string, ReadonlySet<AgentKind>>();
+const registeredAgentsInflight = new Map<
+  string,
+  Promise<ReadonlySet<AgentKind> | null>
+>();
 /**
  * 每被控设备的能力「代际」。`evictDeviceCapabilities` 时自增——在途的 fetchCapabilities 完成
  * 回调据此判断「本次请求是否已被驱逐」:被驱逐则**丢弃结果**,既不回写 cache、也不动 inflight
@@ -552,11 +558,59 @@ export function getCachedCapabilities(
 }
 
 /**
- * device-link:订阅某被控设备时预取其两个 agent 的能力,使首次打开远程会话时
+ * 读取被控端实际注册的 agent，供预取跳过明确不存在的可选 runtime。
+ *
+ * 老版本被控端可能还没有 list channel；查询失败或返回畸形时保持既有 fail-open，
+ * 仍预取全部 agent，让后续 maker:get-capabilities / 创建边界作最终裁决。
+ */
+async function listRegisteredAgentsForPrefetch(
+  deviceId: string,
+): Promise<ReadonlySet<AgentKind> | null> {
+  const cached = registeredAgentsCache.get(deviceId);
+  if (cached) return cached;
+  const existing = registeredAgentsInflight.get(deviceId);
+  if (existing) return existing;
+  const dl = getDeviceLink();
+  if (!dl) return null;
+  const startGen = deviceGen.get(deviceId) ?? 0;
+  const request = dl
+    .invoke(deviceId, 'maker:list-available-agents', [])
+    .then((raw) => {
+      if (!Array.isArray(raw)) return null;
+      const valid = raw.every(
+        (agent): agent is AgentKind =>
+          agent === 'claude-code' || agent === 'codex' || agent === 'pi',
+      );
+      // 畸形列表不能被解释成“这些 agent 明确未注册”，否则会把合法 runtime 全部隐藏。
+      if (!valid) return null;
+      const agents = new Set(raw);
+      if ((deviceGen.get(deviceId) ?? 0) === startGen) {
+        registeredAgentsCache.set(deviceId, agents);
+      }
+      return agents;
+    })
+    .catch(() => null)
+    .finally(() => {
+      if (registeredAgentsInflight.get(deviceId) === request) {
+        registeredAgentsInflight.delete(deviceId);
+      }
+    });
+  registeredAgentsInflight.set(deviceId, request);
+  return request;
+}
+
+/**
+ * device-link:订阅某被控设备时预取其已注册 agent 的能力,使首次打开远程会话时
  * 模型下拉 / fast / effort 不为空、modelDefinitions 同步层已热。失败 swallow(轮询/打开会话会再取)。
  */
 export async function prefetchDeviceCapabilities(deviceId: string): Promise<void> {
-  await Promise.allSettled(ALL_AGENT_KINDS.map((agent) => fetchCapabilities(agent, deviceId)));
+  const startGen = deviceGen.get(deviceId) ?? 0;
+  const registeredAgents = await listRegisteredAgentsForPrefetch(deviceId);
+  if ((deviceGen.get(deviceId) ?? 0) !== startGen) return;
+  const agents = registeredAgents
+    ? ALL_AGENT_KINDS.filter((agent) => registeredAgents.has(agent))
+    : ALL_AGENT_KINDS;
+  await Promise.allSettled(agents.map((agent) => fetchCapabilities(agent, deviceId)));
 }
 
 /** device-link:被控设备下线 / 断链时驱逐其能力缓存(只清该设备的 key)。 */
@@ -564,6 +618,8 @@ export function evictDeviceCapabilities(deviceId: string): void {
   const prefix = `${deviceId}:`;
   for (const k of [...cache.keys()]) if (k.startsWith(prefix)) cache.delete(k);
   for (const k of [...inflight.keys()]) if (k.startsWith(prefix)) inflight.delete(k);
+  registeredAgentsCache.delete(deviceId);
+  registeredAgentsInflight.delete(deviceId);
   // 代际自增:作废该设备所有在途 fetch 的回写(防其 .then 把陈旧能力复活回 cache)。
   deviceGen.set(deviceId, (deviceGen.get(deviceId) ?? 0) + 1);
   // 已挂载 hook 必须同步知道旧快照已失效；否则 provider 新快照先到时会拿旧 capabilities

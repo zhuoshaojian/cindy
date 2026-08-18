@@ -34,8 +34,10 @@ const caps = (label: string, ctx = 1): Caps => ({
 /** stub window.electronAPI.maker (local) + deviceLink (tunnel),返回两个 spy。 */
 function stubElectron() {
   const getCapabilities = vi.fn(async (k: string) => caps(`local:${k}`));
-  const invoke = vi.fn(async (deviceId: string, _channel: string, args: unknown[]) =>
-    caps(`${deviceId}:${String(args[0])}`),
+  const invoke = vi.fn(async (deviceId: string, channel: string, args: unknown[]) =>
+    channel === 'maker:list-available-agents'
+      ? ['claude-code', 'codex', 'pi']
+      : caps(`${deviceId}:${String(args[0])}`),
   );
   vi.stubGlobal('window', { electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } } });
   return { getCapabilities, invoke };
@@ -234,6 +236,62 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     expect(mod.getCachedCapabilities('claude-code')).toBeNull();
   });
 
+  it('远程预取只探测被控端已注册的 agent，跳过明确不存在的可选 Pi', async () => {
+    const invoke = vi.fn(async (_deviceId: string, channel: string, args: unknown[]) => {
+      if (channel === 'maker:list-available-agents') return ['claude-code', 'codex'];
+      return caps(`dev-1:${String(args[0])}`);
+    });
+    const getCapabilities = vi.fn(async (k: string) => caps(`local:${k}`));
+    vi.stubGlobal('window', {
+      electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
+    });
+    const mod = await import('@/hooks/useAgentCapabilities');
+
+    await mod.prefetchDeviceCapabilities('dev-1');
+
+    expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:list-available-agents', []);
+    expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['claude-code']);
+    expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['codex']);
+    expect(invoke).not.toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['pi']);
+    expect(mod.getCachedCapabilities('pi', 'dev-1')).toBeNull();
+  });
+
+  it('可用 agent 查询失败时预取保持 fail-open，不把合法 runtime 隐藏掉', async () => {
+    const invoke = vi.fn(async (_deviceId: string, channel: string, args: unknown[]) => {
+      if (channel === 'maker:list-available-agents') throw new Error('old host');
+      return caps(`dev-1:${String(args[0])}`);
+    });
+    const getCapabilities = vi.fn(async (k: string) => caps(`local:${k}`));
+    vi.stubGlobal('window', {
+      electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
+    });
+    const mod = await import('@/hooks/useAgentCapabilities');
+
+    await mod.prefetchDeviceCapabilities('dev-1');
+
+    expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['claude-code']);
+    expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['codex']);
+    expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['pi']);
+  });
+
+  it('可用 agent 列表畸形时保持 fail-open，不把未知值误判成注册表真相', async () => {
+    const invoke = vi.fn(async (_deviceId: string, channel: string, args: unknown[]) => {
+      if (channel === 'maker:list-available-agents') return ['claude-code', 'future-agent'];
+      return caps(`dev-1:${String(args[0])}`);
+    });
+    const getCapabilities = vi.fn(async (k: string) => caps(`local:${k}`));
+    vi.stubGlobal('window', {
+      electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
+    });
+    const mod = await import('@/hooks/useAgentCapabilities');
+
+    await mod.prefetchDeviceCapabilities('dev-1');
+
+    expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['claude-code']);
+    expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['codex']);
+    expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['pi']);
+  });
+
   it('远程 Pi capabilities 原样保留 BYOM 显式 effort 子集', async () => {
     const explicitPiCaps: Caps = {
       ...caps('dev-1:pi'),
@@ -413,8 +471,8 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
       mod.prefetchDeviceCapabilities('dev-1'),
       mod.prefetchDeviceCapabilities('dev-1'),
     ]);
-    // cc + codex + pi 各一次 = 3 次,而非 6 次
-    expect(invoke).toHaveBeenCalledTimes(3);
+    // 注册表探针 1 次 + cc / codex / pi 各一次 = 4 次；并发 prefetch 不重复任何一项。
+    expect(invoke).toHaveBeenCalledTimes(4);
   });
 
   it('驱逐:evict 只清该设备,本地与其它设备保留', async () => {
@@ -433,7 +491,11 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
   it('[New-E] evict 在途 prefetch → 结果丢弃,不复活缓存', async () => {
     // 受控 deferred invoke:两个 agent 的 fetch 都卡在 in-flight,evict 后再 resolve。
     const resolvers: Array<(v: Caps) => void> = [];
-    const invoke = vi.fn(() => new Promise<Caps>((r) => resolvers.push(r)));
+    const invoke = vi.fn((_deviceId: string, channel: string) =>
+      channel === 'maker:list-available-agents'
+        ? Promise.resolve(['claude-code', 'codex', 'pi'])
+        : new Promise<Caps>((r) => resolvers.push(r)),
+    );
     const getCapabilities = vi.fn(async (k: string) => caps(`local:${k}`));
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
@@ -441,6 +503,7 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     const mod = await import('@/hooks/useAgentCapabilities');
 
     const p = mod.prefetchDeviceCapabilities('dev-1'); // 在途(deps.invoke 未 resolve)
+    await vi.waitFor(() => expect(resolvers).toHaveLength(3));
     mod.evictDeviceCapabilities('dev-1'); // 设备下线 → 驱逐(代际自增)
     resolvers.forEach((r) => r(caps('dev-1:stale'))); // 在途请求随后才回来
     await p;
@@ -453,7 +516,11 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
   it('[New-E] evict 后的新一轮 fetch 不被旧在途回调误删 inflight,能正常落缓存', async () => {
     // 两轮:第一轮在途被 evict;evict 后第二轮 fetch 应正常完成并落缓存(代际匹配)。
     const resolvers: Array<(v: Caps) => void> = [];
-    const invoke = vi.fn(() => new Promise<Caps>((r) => resolvers.push(r)));
+    const invoke = vi.fn((_deviceId: string, channel: string) =>
+      channel === 'maker:list-available-agents'
+        ? Promise.resolve(['claude-code', 'codex', 'pi'])
+        : new Promise<Caps>((r) => resolvers.push(r)),
+    );
     const getCapabilities = vi.fn(async (k: string) => caps(`local:${k}`));
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
@@ -461,8 +528,10 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     const mod = await import('@/hooks/useAgentCapabilities');
 
     const p1 = mod.prefetchDeviceCapabilities('dev-1'); // 第一轮在途
+    await vi.waitFor(() => expect(resolvers).toHaveLength(3));
     mod.evictDeviceCapabilities('dev-1'); // 驱逐,代际 → 1
     const p2 = mod.prefetchDeviceCapabilities('dev-1'); // 第二轮(代际 1)
+    await vi.waitFor(() => expect(resolvers).toHaveLength(6));
     resolvers.forEach((r) => r(caps('dev-1:fresh'))); // 全部 resolve(含两轮)
     await Promise.all([p1, p2]);
 
@@ -498,7 +567,11 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
 
   it('revision 后新能力先完成、旧能力后完成时只通知并保留新快照', async () => {
     const resolvers: Array<(v: Caps) => void> = [];
-    const invoke = vi.fn(() => new Promise<Caps>((resolve) => resolvers.push(resolve)));
+    const invoke = vi.fn((_deviceId: string, channel: string) =>
+      channel === 'maker:list-available-agents'
+        ? Promise.resolve(['claude-code', 'codex', 'pi'])
+        : new Promise<Caps>((resolve) => resolvers.push(resolve)),
+    );
     const getCapabilities = vi.fn(async (k: string) => caps(`local:${k}`));
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
@@ -510,8 +583,10 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     mod.subscribeDeviceCapabilities('dev-1', 'codex', codexListener);
 
     const stale = mod.prefetchDeviceCapabilities('dev-1');
+    await vi.waitFor(() => expect(resolvers).toHaveLength(3));
     mod.evictDeviceCapabilities('dev-1');
     const fresh = mod.prefetchDeviceCapabilities('dev-1');
+    await vi.waitFor(() => expect(resolvers).toHaveLength(6));
     // 每轮按 ALL_AGENT_KINDS 顺序 push 三个 resolver(cc/codex/pi):
     // 第一轮(stale)= [0][1][2],第二轮(fresh)= [3][4][5]。
     resolvers[3](caps('fresh:claude'));
