@@ -56,21 +56,14 @@ import {
   type DeviceRetirementTombstone,
 } from './mirrorCacheBarrier';
 import { createLogger } from '../logger';
+import {
+  forgetVolatileDeviceRetirement,
+  hasVolatileDeviceRetirement,
+  listVolatileDeviceRetirements,
+  rememberVolatileDeviceRetirement,
+} from './mirrorCacheRetirementState';
 
 const log = createLogger('device-link:mirror-cache');
-
-// 落长期墓碑失败时的进程内 fail-closed 兜底。按 owner root 分桶，避免账号边界串扰；
-// listRetiredDevices 会持续补写到磁盘，恢复后即可重新获得跨进程 / 跨重启保护。
-const volatileRetirementsByRoot = new Map<string, Map<string, DeviceRetirementTombstone>>();
-
-function volatileRetirements(root: string): Map<string, DeviceRetirementTombstone> {
-  let entries = volatileRetirementsByRoot.get(root);
-  if (!entries) {
-    entries = new Map();
-    volatileRetirementsByRoot.set(root, entries);
-  }
-  return entries;
-}
 
 /** 每会话缓存的消息条数:对齐 local-db messages:list 的 DEFAULT_LIMIT(50)。 */
 export const MAX_CACHED_MESSAGES = 50;
@@ -532,7 +525,7 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
     try {
       return new Set([
         ...(await listDeviceRetirements(root)).map((item) => item.deviceId),
-        ...volatileRetirements(root).keys(),
+        ...listVolatileDeviceRetirements(root).map((item) => item.deviceId),
       ]);
     } catch (error) {
       log.warn('mirror cache: retirement tombstones unreadable; rejecting session-list access', {
@@ -544,7 +537,7 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
 
   async function isDeviceRetired(root: string, deviceId: string): Promise<boolean> {
     const id = deviceId.trim();
-    return volatileRetirements(root).has(id) || hasDeviceRetirement(root, id);
+    return hasVolatileDeviceRetirement(root, id) || hasDeviceRetirement(root, id);
   }
 
   /** 内容与上次成功落盘一致 → 可跳过。**不写入指纹**,记录留给写成功之后。 */
@@ -1430,7 +1423,7 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       // 先作废本进程在途写，再落长期墓碑；墓碑成功之后才开始删。后续旧 Pod 的新同步即使
       // 捕获了新 generation，也会在磁盘墓碑闸上被拒绝。
       generation += 1;
-      volatileRetirements(rootAtStart).set(id, tombstone);
+      rememberVolatileDeviceRetirement(rootAtStart, tombstone);
       try {
         await markDeviceRetirement(
           rootAtStart,
@@ -1451,7 +1444,7 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       // 墓碑仍举着时最后清一遍；只有清理成功才解除，避免清理失败却重新放行旧 Pod 回写。
       await this.clearDevice(id);
       await clearDeviceRetirement(rootAtStart, id);
-      volatileRetirements(rootAtStart).delete(id);
+      forgetVolatileDeviceRetirement(rootAtStart, id);
       warnedRetirementWrites.delete(`messages:${id}`);
       warnedRetirementWrites.delete(`session-list:${id}`);
     },
@@ -1460,7 +1453,7 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       const rootAtStart = resolveRoot();
       const persisted = await listDeviceRetirements(rootAtStart);
       const merged = new Map(persisted.map((item) => [item.deviceId, item]));
-      for (const tombstone of volatileRetirements(rootAtStart).values()) {
+      for (const tombstone of listVolatileDeviceRetirements(rootAtStart)) {
         merged.set(tombstone.deviceId, tombstone);
         if (persisted.some((item) => item.deviceId === tombstone.deviceId)) continue;
         try {

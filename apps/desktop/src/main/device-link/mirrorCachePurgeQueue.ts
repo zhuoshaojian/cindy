@@ -41,6 +41,7 @@ import {
   CLEARED_ACCOUNT,
   type DeviceRetirementTombstone,
 } from './mirrorCacheBarrier';
+import { rememberVolatileDeviceRetirement } from './mirrorCacheRetirementState';
 
 const log = createLogger('device-link:mirror-cache-purge');
 
@@ -579,6 +580,9 @@ async function enqueuePurgeLocked(
     if (entry.barriers?.length === 0) delete entry.barriers;
     if (entry.tombstones?.length === 0) delete entry.tombstones;
     if (entry.retirements?.length === 0) delete entry.retirements;
+    for (const retirement of entry.retirements ?? []) {
+      rememberVolatileDeviceRetirement(root, retirement);
+    }
     const key = entryKey(entry);
     const existing = (await readQueue()).find((candidate) => entryKey(candidate) === key);
     if (existing) {
@@ -719,6 +723,9 @@ async function drainPurgeQueueLocked(
         // 元数据交给本队列。这里必须先补墓碑再清缓存，保证进程重启 / 另一实例同步时仍
         // fail-closed。补写失败会抛出，整条记录继续保留。
         for (const retirement of safeRetirements(entry.retirements)) {
+          // 新进程从持久 purge queue 恢复时，必须先恢复进程内写闸。这样即使磁盘墓碑
+          // 继续写不下，当前进程的镜像同步也不会在下一轮 drain 前把旧设备画回来。
+          rememberVolatileDeviceRetirement(entry.root, retirement);
           await markDeviceRetirement(
             entry.root,
             retirement.deviceId,
