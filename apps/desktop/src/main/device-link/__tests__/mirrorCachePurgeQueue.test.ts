@@ -33,6 +33,10 @@ import {
   listDeviceRetirements,
   markDeviceRetirement,
 } from '../mirrorCacheBarrier';
+import {
+  forgetVolatileDeviceRetirement,
+  hasVolatileDeviceRetirement,
+} from '../mirrorCacheRetirementState';
 
 function queueFile(): string {
   return path.join(userData, __testing.queueFileName);
@@ -134,6 +138,10 @@ describe('enqueuePurge / drainPurgeQueue', () => {
     const target = path.join(root, 'messages', 'a.json');
     const retirement = { deviceId: 'cloud-device-old', createdAtMs: 9_876 };
     await enqueuePurge(root, [target], undefined, undefined, [retirement]);
+    // 模拟进程重启：内存态已丢，只剩持久 purge queue。
+    __testing.resetMemoryQueue();
+    forgetVolatileDeviceRetirement(root, retirement.deviceId);
+    expect(hasVolatileDeviceRetirement(root, retirement.deviceId)).toBe(false);
 
     const originalWriteFile = fsp.writeFile;
     const spy = vi.spyOn(fsp, 'writeFile').mockImplementation((async (
@@ -157,6 +165,7 @@ describe('enqueuePurge / drainPurgeQueue', () => {
 
     expect(fs.existsSync(target)).toBe(true);
     expect((await __testing.readQueue())[0]?.retirements).toEqual([retirement]);
+    expect(hasVolatileDeviceRetirement(root, retirement.deviceId)).toBe(true);
   });
 
   it('不可信队列里的畸形退役元数据会被拒绝', async () => {
