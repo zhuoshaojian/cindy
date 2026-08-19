@@ -19,6 +19,12 @@ import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore'
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { removeRemoteSessionActivityForDevice } from '@/features/device-link/remoteSessionActivityStore';
 import { setCloudCapability } from '@/features/device-link/cloudCapability';
+import { getDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
+import {
+  __resetCloudInstanceRendererAuthorityForTest,
+  markCloudInstanceRendererAuthorityUnknown,
+  publishCloudInstanceRendererAuthority,
+} from './cloudInstanceRendererAuthority';
 
 export { CloudInstanceActionTimeoutError } from '@cindy/maker-shared/cloud-instance';
 
@@ -220,11 +226,22 @@ function rendererIsVisible(): boolean {
 
 function fetchRefreshPatch(): Promise<Partial<CloudInstancesSnapshot>> {
   if (refreshInFlight) return refreshInFlight;
+  const ownerAtStart = getDataOwnerGeneration();
   refreshInFlight = (async () => {
     try {
       const { instances } = await window.electronAPI.cloudInstances.list();
+      const deviceIds = instances.map((instance) => instance.deviceId.trim());
+      // GET /instances is a complete, unpaginated membership list. Only a
+      // structurally complete success may become renderer authority; malformed
+      // rows degrade to unknown rather than retiring a live cloud peer.
+      if (deviceIds.every((deviceId) => deviceId.length > 0)) {
+        publishCloudInstanceRendererAuthority(ownerAtStart, deviceIds);
+      } else {
+        markCloudInstanceRendererAuthorityUnknown(ownerAtStart);
+      }
       return { instances, loadState: 'ready' };
     } catch (error) {
+      markCloudInstanceRendererAuthorityUnknown(ownerAtStart);
       if (isCloudInstancesUnsupportedError(error)) {
         return { instances: [], loadState: 'unsupported' };
       }
@@ -525,6 +542,7 @@ function resetCloudInstancesStore(): void {
   pollingConsumers = 0;
   onlineDeviceIdsSnapshot = new Set();
   subscribers.clear();
+  __resetCloudInstanceRendererAuthorityForTest();
 }
 
 /** 仅供单元测试隔离模块级单例;生产代码不得调用。 */
