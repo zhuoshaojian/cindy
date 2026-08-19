@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useDeviceLinkSettings } from '../useDeviceLinkSettings';
@@ -81,6 +81,53 @@ describe('useDeviceLinkSettings ownership state', () => {
     });
 
     expect(result.current.standby).toBe(true);
+    unmount();
+  });
+
+  it('returns an authoritative device list on refresh and null on failure', async () => {
+    const off = vi.fn();
+    const subscribe = vi.fn(() => off);
+    const refreshedDevice = { deviceId: 'device-new' } as DeviceLinkDeviceView;
+    const api = {
+      getState: vi.fn(async () => ({
+        remoteControlEnabled: true,
+        keepAwake: false,
+        linkStatus: 'online' as const,
+        connectionIssue: null,
+        standby: false,
+        controlledBy: [],
+        revokedControllers: [],
+        disabledControlDeviceIds: [],
+        unresponsiveDeviceIds: [],
+      })),
+      listDevices: vi.fn()
+        .mockResolvedValueOnce({ devices: [] })
+        .mockResolvedValueOnce({ devices: [refreshedDevice] })
+        .mockRejectedValueOnce(new Error('relay unavailable')),
+      onOwnershipChanged: subscribe,
+      onPresenceChanged: subscribe,
+      onStatusChanged: subscribe,
+      onConnectionIssue: subscribe,
+      onControlledState: subscribe,
+      onControlTargetChanged: subscribe,
+    };
+    (window as unknown as { electronAPI: { deviceLink: typeof api } }).electronAPI = {
+      deviceLink: api,
+    };
+
+    const { result, unmount } = renderHook(() => useDeviceLinkSettings());
+    await waitFor(() => expect(api.listDevices).toHaveBeenCalledTimes(1));
+
+    let devices: DeviceLinkDeviceView[] | null = null;
+    await act(async () => {
+      devices = await result.current.refresh(true);
+    });
+    expect(devices).toEqual([refreshedDevice]);
+
+    await act(async () => {
+      devices = await result.current.refresh(true);
+    });
+    expect(devices).toBeNull();
     unmount();
   });
 });

@@ -4,7 +4,6 @@ import {
   canBeControlledPlatform,
   controlToggleState,
   inboundToggleState,
-  resolveHiddenRelayCloudDeviceDuringRebuild,
   resolveActiveConnectionIssue,
 } from '@/components/settings/myDevicesModel';
 
@@ -71,43 +70,5 @@ describe('resolveActiveConnectionIssue（本机卡片的原因行）', () => {
     expect(resolveActiveConnectionIssue('connecting', authFailed)).toBe(authFailed);
     expect(resolveActiveConnectionIssue('online', authFailed)).toBeNull();
     expect(resolveActiveConnectionIssue('online', unstable)).toBe(unstable);
-  });
-});
-
-describe('resolveHiddenRelayCloudDeviceDuringRebuild（重建期间单卡）', () => {
-  const oldInstance = { instanceId: 'instance-old', deviceId: 'device-old' };
-  const replacement = { instanceId: 'instance-new', deviceId: 'device-new' };
-  const rebuilding = { target: 'instance-old', action: 'rebuild' };
-
-  it('隐藏按 oldInstanceId join 到的旧卡，并保留 replacement 卡', () => {
-    expect(
-      resolveHiddenRelayCloudDeviceDuringRebuild(
-        ['device-old', 'device-new'],
-        [oldInstance, replacement],
-        rebuilding,
-      ),
-    ).toBe('device-old');
-  });
-
-  it('旧实例已离开控制面但旧 Pod 仍在 relay 时，出现 replacement 即隐藏 orphan 旧卡', () => {
-    expect(
-      resolveHiddenRelayCloudDeviceDuringRebuild(['device-old'], [replacement], rebuilding),
-    ).toBe('device-old');
-  });
-
-  it('多实例下有多个 orphan 时不猜，不隐藏无关云端设备', () => {
-    expect(
-      resolveHiddenRelayCloudDeviceDuringRebuild(
-        ['device-old', 'device-unrelated'],
-        [replacement],
-        rebuilding,
-      ),
-    ).toBeNull();
-  });
-
-  it('失败、300s 超时或 abort 清掉 pending 后立即恢复旧卡', () => {
-    expect(
-      resolveHiddenRelayCloudDeviceDuringRebuild(['device-old'], [replacement], null),
-    ).toBeNull();
   });
 });

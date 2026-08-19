@@ -165,7 +165,7 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     mocks.pending = { action: 'wake', target: 'cloud-instance-a' };
     const view = render(<MachineSwitcherMenu />);
     expect(
-      screen.getByText('ccAgent.sidebar.cloud.waking')
+      screen.getByText('settings.devices.cloudInstance.waking')
         .closest('[role="menuitem"]')
         ?.getAttribute('aria-disabled'),
     ).toBe('true');
@@ -173,7 +173,7 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     mocks.pending = null;
     mocks.onlineDeviceIds = new Set(['cloud-device-a']);
     view.rerender(<MachineSwitcherMenu />);
-    expect(screen.queryByText('ccAgent.sidebar.cloud.waking')).toBeNull();
+    expect(screen.queryByText('settings.devices.cloudInstance.waking')).toBeNull();
     expect(screen.getByText('Cloud A')).toBeTruthy();
   });
 
@@ -182,26 +182,30 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     mocks.onlineDeviceIds = new Set();
     mocks.pending = { action: 'wake', target: 'new' };
     render(<MachineSwitcherMenu />);
-    const row = screen.getByText('ccAgent.sidebar.cloud.waking').closest('[role="menuitem"]');
+    const row = screen
+      .getByText('settings.devices.cloudInstance.waking')
+      .closest('[role="menuitem"]');
     expect(row?.getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('keeps non-wake actions disabled without relabeling, while any wake relabels the folded row', () => {
+  it('labels the folded row with the active lifecycle action while keeping it disabled', () => {
     mocks.onlineDeviceIds = new Set();
     mocks.pending = { action: 'stop', target: 'cloud-instance-a' };
     const view = render(<MachineSwitcherMenu />);
 
-    expect(screen.getByText('ccAgent.sidebar.cloud.wake')).toBeTruthy();
-    expect(screen.queryByText('ccAgent.sidebar.cloud.waking')).toBeNull();
     expect(
-      screen.getByText('ccAgent.sidebar.cloud.wake')
+      screen.getByText('settings.devices.cloudInstance.stopping')
         .closest('[role="menuitem"]')
         ?.getAttribute('aria-disabled'),
     ).toBe('true');
 
     mocks.pending = { action: 'wake', target: 'cloud-instance-other' };
     view.rerender(<MachineSwitcherMenu />);
-    expect(screen.getByText('ccAgent.sidebar.cloud.waking')).toBeTruthy();
+    expect(screen.getByText('settings.devices.cloudInstance.waking')).toBeTruthy();
+
+    mocks.pending = { action: 'rebuild', target: 'cloud-instance-a' };
+    view.rerender(<MachineSwitcherMenu />);
+    expect(screen.getByText('settings.devices.cloudInstance.rebuilding')).toBeTruthy();
   });
 
   it('keeps the folded row busy when the pending instance is no longer first offline', () => {
@@ -220,7 +224,9 @@ describe('MachineSwitcherMenu cloud update badge', () => {
 
     mocks.cloudInstances = [cloudB, cloudA];
     view.rerender(<MachineSwitcherMenu />);
-    const foldedRow = screen.getByText('ccAgent.sidebar.cloud.waking').closest('[role="menuitem"]')!;
+    const foldedRow = screen
+      .getByText('settings.devices.cloudInstance.waking')
+      .closest('[role="menuitem"]')!;
     expect(foldedRow.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(foldedRow);
     expect(mocks.wake).not.toHaveBeenCalled();
@@ -237,7 +243,7 @@ describe('MachineSwitcherMenu cloud update badge', () => {
       expect(mocks.toastError).toHaveBeenCalledWith('ccAgent.sidebar.cloud.wakeFailed');
     });
     expect(screen.getByText('ccAgent.sidebar.cloud.wake')).toBeTruthy();
-    expect(screen.queryByText('ccAgent.sidebar.cloud.waking')).toBeNull();
+    expect(screen.queryByText('settings.devices.cloudInstance.waking')).toBeNull();
   });
 
 });

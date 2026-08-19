@@ -48,7 +48,8 @@ export interface DeviceLinkSettings {
   disabledControlDeviceIds: string[];
   listError: string | null;
   refreshing: boolean;
-  refresh: (showSpinner?: boolean) => Promise<void>;
+  /** 刷新后的权威设备列表；未激活、卸载或请求失败时返回 null。 */
+  refresh: (showSpinner?: boolean) => Promise<DeviceLinkDeviceView[] | null>;
   setEnabled: (next: boolean) => Promise<void>;
   rename: (deviceId: string, name: string | null) => Promise<void>;
   /** 删除设备;返回是否真正删除成功(失败已内部 toast,调用方据此决定后续清理)。 */
@@ -95,23 +96,25 @@ export function useDeviceLinkSettings(active = true): DeviceLinkSettings {
   }, []);
 
   const refresh = useCallback(
-    async (showSpinner = false) => {
-      if (!active) return;
+    async (showSpinner = false): Promise<DeviceLinkDeviceView[] | null> => {
+      if (!active) return null;
       if (showSpinner) setRefreshing(true);
       try {
         const { devices: list } = await window.electronAPI.deviceLink.listDevices();
-        if (!mounted.current) return;
+        if (!mounted.current) return null;
         setDevices(list);
         setListError(null);
+        return list;
       } catch (err) {
         log.warn('listDevices failed', err);
-        if (!mounted.current) return;
+        if (!mounted.current) return null;
         const ipcErr = extractIpcError(err);
         setListError(
           ipcErr?.code === 'DEVICE_LINK_UNAVAILABLE'
             ? t('settings.devices.error.unavailable')
             : t('settings.devices.error.listFailed'),
         );
+        return null;
       } finally {
         if (mounted.current && showSpinner) setRefreshing(false);
       }
