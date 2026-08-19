@@ -57,6 +57,13 @@ export interface CloudInstanceIpcDeps {
   >;
   /** Final clear, then remove the target device's retirement tombstone. */
   releaseMirrorCacheRetiredDevice(deviceId: string): Promise<void>;
+  captureMirrorCacheOwnerScope(): Promise<{ ownerRoot: string; accountCounter: number }>;
+  /** Reconcile cloud session-list cache against a complete successful membership instance list. */
+  reconcileMirrorCacheCloudDevices(
+    activeDeviceIds: readonly string[],
+    expectedOwnerRoot: string,
+    expectedAccountCounter: number,
+  ): Promise<void>;
   getDevicePresenceState(deviceId: string): DevicePresenceState;
   nowMs(): number;
 }
@@ -72,6 +79,16 @@ export function defaultCloudInstanceIpcDeps(): CloudInstanceIpcDeps {
     listMirrorCacheRetiredDevices: () => getMirrorCache().listRetiredDevices(),
     releaseMirrorCacheRetiredDevice: (deviceId) =>
       getMirrorCache().releaseRetiredDevice(deviceId),
+    captureMirrorCacheOwnerScope: () => getMirrorCache().captureOwnerScope(),
+    reconcileMirrorCacheCloudDevices: (
+      activeDeviceIds,
+      expectedOwnerRoot,
+      expectedAccountCounter,
+    ) => getMirrorCache().reconcileCloudSessionList(
+      activeDeviceIds,
+      expectedOwnerRoot,
+      expectedAccountCounter,
+    ),
     getDevicePresenceState,
     nowMs: Date.now,
   };
@@ -190,7 +207,26 @@ export async function handleListCloudInstances(
   deps: CloudInstanceIpcDeps,
 ): Promise<{ instances: CloudInstanceView[] }> {
   requireAuthenticated(deps);
+  // 与网络请求同时绑定 owner root + account generation；list 在途期间切账号时，返回值不得
+  // 被发布到新 owner。计数不可读会得到 -1，reconcile 保持 unknown、不会删除任何缓存。
+  const ownerScope = await deps.captureMirrorCacheOwnerScope();
   const result = await callClient(() => deps.client.list());
+  // GET /instances 的契约是当前 membership 的完整、非分页未删除实例集（client 没有 cursor / page
+  // 入参，响应也没有 next token）。只有请求成功才把它发布为 owner-scoped 权威集；失败或首次
+  // 成功前保持 unknown，不能把控制面不可达误解成“账号下没有实例”而清掉有效冷缓存。
+  try {
+    await deps.reconcileMirrorCacheCloudDevices(
+      result.instances.map((instance) => instance.deviceId),
+      ownerScope.ownerRoot,
+      ownerScope.accountCounter,
+    );
+  } catch (error) {
+    // list 本身已经成功；本地缓存是可重建投影，收敛失败留给下一次成功 list 重试，不能反转
+    // 用户正在看的控制面结果。read/write 权威闸会在 reconcile 内先安装，减少再次投影窗口。
+    log.warn('failed to reconcile cloud device mirror-cache session list', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   await reconcileRetiredMirrorCacheDevices(deps, result.instances);
   return result;
 }

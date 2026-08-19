@@ -62,6 +62,11 @@ function fakeCache() {
       accountCounter: 0,
     })),
     writeSessionList: vi.fn(async () => undefined),
+    captureOwnerScope: vi.fn(async () => ({
+      ownerRoot: '/data/owners/owner-a/device-link-mirror-cache',
+      accountCounter: 0,
+    })),
+    reconcileCloudSessionList: vi.fn(async () => undefined),
     clearDevice: vi.fn(async () => undefined),
     retireDevice: vi.fn(async () => undefined),
     releaseRetiredDevice: vi.fn(async () => undefined),
@@ -74,6 +79,8 @@ function fakeCache() {
     readSessionList: ReturnType<typeof vi.fn>;
     readSessionListWithInvalidation: ReturnType<typeof vi.fn>;
     writeSessionList: ReturnType<typeof vi.fn>;
+    captureOwnerScope: ReturnType<typeof vi.fn>;
+    reconcileCloudSessionList: ReturnType<typeof vi.fn>;
     clearDevice: ReturnType<typeof vi.fn>;
     retireDevice: ReturnType<typeof vi.fn>;
     releaseRetiredDevice: ReturnType<typeof vi.fn>;
