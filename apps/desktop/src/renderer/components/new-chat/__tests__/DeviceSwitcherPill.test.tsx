@@ -70,7 +70,7 @@ describe('DeviceSwitcherPill 云端入口', () => {
     const onWake = vi.fn();
     const { onChange, onOpenChange } = renderPill({
       devices: [offlineCloud],
-      cloudWake: { busy: false, wakingTarget: null, onWake },
+      cloudWake: { busy: false, pending: null, onWake },
     });
 
     const row = screen.getByText('Cloud A').closest('button')!;
@@ -87,17 +87,57 @@ describe('DeviceSwitcherPill 云端入口', () => {
     const onWake = vi.fn();
     renderPill({
       devices: [offlineCloud],
-      cloudWake: { busy: true, wakingTarget: 'cloud-instance-a', onWake },
+      cloudWake: {
+        busy: true,
+        pending: { action: 'wake', target: 'cloud-instance-a' },
+        onWake,
+      },
     });
 
     const row = screen.getByText('Cloud A').closest('button')!;
     expect(row.disabled).toBe(true);
-    expect(screen.getByText('ccAgent.sidebar.cloud.waking')).toBeTruthy();
+    expect(screen.getByText('settings.devices.cloudInstance.waking')).toBeTruthy();
     expect(screen.getByTestId('create-agent-cloud-waking-icon').getAttribute('class')).toContain(
       'animate-pulse',
     );
     fireEvent.click(row);
     expect(onWake).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['stop', 'settings.devices.cloudInstance.stopping'],
+    ['rebuild', 'settings.devices.cloudInstance.rebuilding'],
+  ] as const)('%s 期间显示对应文案并禁止选择云端行', (action, progressKey) => {
+    const onWake = vi.fn();
+    const { onChange } = renderPill({
+      devices: [onlineCloud],
+      cloudWake: {
+        busy: true,
+        pending: { action, target: 'cloud-instance-a' },
+        onWake,
+      },
+    });
+
+    const row = screen.getByText('Cloud A').closest('button')!;
+    expect(row.disabled).toBe(true);
+    expect(screen.getByText(progressKey)).toBeTruthy();
+    fireEvent.click(row);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onWake).not.toHaveBeenCalled();
+  });
+
+  it('旧 instanceId 已换成唯一 replacement 时仍显示重建中', () => {
+    renderPill({
+      devices: [onlineCloud],
+      cloudWake: {
+        busy: true,
+        pending: { action: 'rebuild', target: 'cloud-instance-old' },
+        onWake: vi.fn(),
+      },
+    });
+
+    expect(screen.getByText('settings.devices.cloudInstance.rebuilding')).toBeTruthy();
+    expect(screen.getByText('Cloud A').closest('button')!.disabled).toBe(true);
   });
 
   it('普通离线设备仍置灰禁用', () => {
@@ -111,7 +151,7 @@ describe('DeviceSwitcherPill 云端入口', () => {
           online: false,
         },
       ],
-      cloudWake: { busy: false, wakingTarget: null, onWake },
+      cloudWake: { busy: false, pending: null, onWake },
     });
 
     const row = screen.getByText('Office Mac').closest('button')!;
@@ -125,7 +165,7 @@ describe('DeviceSwitcherPill 云端入口', () => {
     const onWake = vi.fn();
     const { onChange, onOpenChange, onOpenCloudSettings } = renderPill({
       devices: [{ ...onlineCloud, updateAvailable: true }],
-      cloudWake: { busy: false, wakingTarget: null, onWake },
+      cloudWake: { busy: false, pending: null, onWake },
     });
 
     fireEvent.click(screen.getByTestId('create-agent-cloud-update-badge'));
@@ -151,12 +191,27 @@ describe('DeviceSwitcherPill 云端入口', () => {
     const onWake = vi.fn();
     renderPill({
       devices: [],
-      cloudWake: { busy: false, wakingTarget: null, onWake },
+      cloudWake: { busy: false, pending: null, onWake },
     });
 
     expect(screen.getByTestId('create-agent-device-pill')).toBeTruthy();
     fireEvent.click(screen.getByText('ccAgent.sidebar.cloud.wake').closest('button')!);
     expect(onWake).toHaveBeenCalledWith();
+  });
+
+  it('重建切换实例的空窗期仍显示重建中而不是唤醒云端', () => {
+    renderPill({
+      devices: [],
+      cloudWake: {
+        busy: true,
+        pending: { action: 'rebuild', target: 'cloud-instance-old' },
+        onWake: vi.fn(),
+      },
+    });
+
+    const row = screen.getByText('settings.devices.cloudInstance.rebuilding').closest('button')!;
+    expect(row.disabled).toBe(true);
+    expect(screen.queryByText('ccAgent.sidebar.cloud.wake')).toBeNull();
   });
 
   it('没有设备且控制面不可用时维持原有不渲染行为', () => {

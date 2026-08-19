@@ -24,20 +24,26 @@ import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
 import type { DraftPillDevice } from '@/features/cloud-instance/cloudDraftTarget';
+import {
+  cloudInstanceLifecycleAction,
+  cloudInstanceLifecycleActionForTarget,
+  cloudInstanceLifecycleProgressKey,
+} from '@/features/cloud-instance/cloudLifecyclePresentation';
+import type { CloudInstancePendingState } from '@/features/cloud-instance/useCloudInstances';
 
 /** null = 本机。 */
 export type DeviceSwitcherValue = string | null;
 
 /**
- * 云端唤醒接线。busy 与 wakingTarget 由调用方从**同一份**在途判定派生
- * (含 pending / wake-watch / 发送在途),pill 不再自行拼装可用性 —— 曾因两处
+ * 云端生命周期接线。busy 与 pending 由调用方从**同一份**在途判定派生
+ * (含共享终态 watch / 发送在途),pill 不再自行拼装可用性 —— 曾因两处
  * 口径分叉出过「行看着可点、点了被 handler 静默吞掉」的缝。
  */
 export interface DeviceSwitcherCloudWake {
   /** 任一云端动作或发送在途:所有唤醒入口禁点防重。 */
   busy: boolean;
-  /** 唤醒中的目标:instanceId;'new' = 首次唤醒尚无实例身份;null = 无在途。 */
-  wakingTarget: string | 'new' | null;
+  /** 共享云端动作状态；用于呈现 wake / stop / rebuild 的真实进行中语义。 */
+  pending: CloudInstancePendingState;
   /** 省略 instanceId = 首次唤醒(控制面自动建实例)。 */
   onWake: (instanceId?: string) => void;
 }
@@ -206,7 +212,15 @@ function DeviceMenuList({
   // 行数组里没有云端行 ⟺ 控制面 0 实例(buildDraftPillDevices 保证一实例恰一行、
   // relay 幽灵行已排除),此时菜单尾部挂首次唤醒动作。
   const showFirstWake = cloudWake != null && !devices.some((d) => d.kind === 'cloud');
-  const wakingFirst = cloudWake?.wakingTarget === 'new';
+  const cloudInstanceIds = devices
+    .filter((device) => device.kind === 'cloud')
+    .map((device) => device.cloudInstanceId);
+  const firstWakeAction =
+    cloudInstanceLifecycleActionForTarget(
+      cloudWake?.pending ?? null,
+      'new',
+      cloudInstanceIds,
+    ) ?? cloudInstanceLifecycleAction(cloudWake?.pending ?? null);
 
   return (
     <>
@@ -228,34 +242,49 @@ function DeviceMenuList({
 
       <div className="pending-queue-scroll -mr-2 max-h-[216px] overflow-x-hidden overflow-y-auto overscroll-contain pr-2">
         {devices.map((device) => {
-          const waking =
-            device.kind === 'cloud' && cloudWake?.wakingTarget === device.cloudInstanceId;
+          const progressAction =
+            device.kind === 'cloud'
+              ? cloudInstanceLifecycleActionForTarget(
+                  cloudWake?.pending ?? null,
+                  device.cloudInstanceId,
+                  cloudInstanceIds,
+                )
+              : null;
           const Icon = device.kind !== 'cloud' ? Laptop : device.online ? Cloud : CloudOff;
           return (
             <DeviceRow
               key={device.deviceId}
               icon={
-                <Icon size={20} strokeWidth={2} className="shrink-0 text-[var(--folder-item-icon)]" />
+                <Icon
+                  size={20}
+                  strokeWidth={2}
+                  className="shrink-0 text-[var(--folder-item-icon)]"
+                />
               }
-              shimmer={waking}
+              shimmer={progressAction !== null}
               name={resolveDesktopCloudDeviceName(device.name, t)}
               hint={
-                device.online
-                  ? // 在线但没有可用模型凭据:这一行正在邀请用户建任务,不提示的话
-                    // 要到 agent 跑不动时才发现(modelAccess 不阻塞就绪,实例确实是 ready)。
-                    device.kind === 'cloud' && device.modelAccessStale
-                    ? t('newChat.deviceSwitcher.modelAccessStaleHint')
-                    : t('newChat.deviceSwitcher.onlineHint')
-                  : device.kind === 'cloud'
-                    ? t(waking ? 'ccAgent.sidebar.cloud.waking' : 'ccAgent.sidebar.cloud.wake')
-                    : t('newChat.deviceSwitcher.offlineHint')
+                progressAction
+                  ? t(cloudInstanceLifecycleProgressKey(progressAction))
+                  : device.online
+                    ? // 在线但没有可用模型凭据:这一行正在邀请用户建任务,不提示的话
+                      // 要到 agent 跑不动时才发现(modelAccess 不阻塞就绪,实例确实是 ready)。
+                      device.kind === 'cloud' && device.modelAccessStale
+                      ? t('newChat.deviceSwitcher.modelAccessStaleHint')
+                      : t('newChat.deviceSwitcher.onlineHint')
+                    : device.kind === 'cloud'
+                      ? t('ccAgent.sidebar.cloud.wake')
+                      : t('newChat.deviceSwitcher.offlineHint')
               }
               hintWarning={device.online && device.kind === 'cloud' && device.modelAccessStale}
               online={device.online}
               updateAvailable={device.kind === 'cloud' && device.updateAvailable}
               // 在线行 = 切换;云端离线行 = 唤醒(busy 期间禁点防重);普通离线行不可选。
               disabled={
-                device.online ? false : device.kind !== 'cloud' || cloudWake == null || cloudWake.busy
+                progressAction !== null ||
+                (device.online
+                  ? false
+                  : device.kind !== 'cloud' || cloudWake == null || cloudWake.busy)
               }
               selected={value === device.deviceId}
               onSelect={
@@ -273,7 +302,9 @@ function DeviceMenuList({
         })}
         {showFirstWake && (
           <>
-            {devices.length > 0 && <div className="mx-2 my-1 h-px bg-[var(--folder-picker-border)]" />}
+            {devices.length > 0 && (
+              <div className="mx-2 my-1 h-px bg-[var(--folder-picker-border)]" />
+            )}
             <DeviceRow
               icon={
                 <CloudOff
@@ -282,8 +313,12 @@ function DeviceMenuList({
                   className="shrink-0 text-[var(--folder-item-icon)]"
                 />
               }
-              shimmer={wakingFirst}
-              name={t(wakingFirst ? 'ccAgent.sidebar.cloud.waking' : 'ccAgent.sidebar.cloud.wake')}
+              shimmer={firstWakeAction !== null}
+              name={t(
+                firstWakeAction
+                  ? cloudInstanceLifecycleProgressKey(firstWakeAction)
+                  : 'ccAgent.sidebar.cloud.wake',
+              )}
               selected={false}
               disabled={cloudWake.busy}
               onSelect={() => cloudWake.onWake()}

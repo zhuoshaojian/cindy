@@ -1585,9 +1585,7 @@ describe('Shared create project picker', () => {
     expect(newMakerDraftRouteSource).not.toContain('cloudToggleState');
     expect(newMakerDraftRouteSource).not.toContain('handleCloudToggle');
     expect(newMakerDraftRouteSource).toContain('onWake: handleCloudWake');
-    expect(newMakerDraftRouteSource).toContain(
-      "const cloudWakeTarget = cloud.pending?.action === 'wake' ? cloud.pending.target : null;",
-    );
+    expect(newMakerDraftRouteSource).toContain('pending: cloud.pending,');
     expect(newMakerDraftRouteSource).toContain(
       'activateCloudDevice(result.deviceId, cloudNameOf(result));',
     );

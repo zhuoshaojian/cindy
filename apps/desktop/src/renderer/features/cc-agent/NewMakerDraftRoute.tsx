@@ -1095,7 +1095,6 @@ export function NewMakerDraftRoute() {
    * 不再反查 deviceId);busy 同时纳入发送在途——UI 可点性必须覆盖 handler 防重
    * 判定,否则会出现「行看着可点、点了被静默吞掉」的缝。
    */
-  const cloudWakeTarget = cloud.pending?.action === 'wake' ? cloud.pending.target : null;
   const draftRightSidebar = useMemo(
     () =>
       resolveNewMakerDraftRightSidebar({
@@ -2987,7 +2986,7 @@ export function NewMakerDraftRoute() {
   // busy 纳入发送在途/worktree 创建:UI 可点性必须覆盖 handleCloudWake 的防重判定,
   // 否则出现「行看着可点、点了被静默吞掉」的缝(pill 的 disabled 与 guard 同源)。
   const cloudWakeBusy =
-    cloudWakeTarget !== null || cloud.pending !== null || sendInFlight || wtCreating;
+    cloud.pending !== null || sendInFlight || wtCreating;
   const markSendInFlight = useCallback((value: boolean) => {
     sendInFlightRef.current = value;
     setSendInFlight(value);
@@ -4641,7 +4640,7 @@ export function NewMakerDraftRoute() {
                     cloud.loadState === 'ready'
                       ? {
                           busy: cloudWakeBusy,
-                          wakingTarget: cloudWakeTarget,
+                          pending: cloud.pending,
                           onWake: handleCloudWake,
                         }
                       : undefined

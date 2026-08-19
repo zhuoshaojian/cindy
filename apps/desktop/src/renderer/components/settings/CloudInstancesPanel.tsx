@@ -18,6 +18,10 @@ import {
   type UseCloudInstances,
 } from '@/features/cloud-instance/useCloudInstances';
 import { desktopCloudInstanceDisplayName } from '@/features/cloud-instance/cloudDeviceName';
+import {
+  cloudInstanceLifecycleActionForTarget,
+  cloudInstanceLifecycleProgressKey,
+} from '@/features/cloud-instance/cloudLifecyclePresentation';
 import { resolveCloudVersionPresentation } from '@/features/cloud-instance/cloudVersionPresentation';
 import type { DeviceLinkSettings } from '@/hooks/useDeviceLinkSettings';
 import { toast } from '@/lib/toast';
@@ -118,6 +122,7 @@ export function CloudInstancesPanel({
       .filter((device) => device.deviceInfo?.kind === 'cloud')
       .map((device) => [device.deviceId, device]),
   );
+  const cloudInstanceIds = cloud.instances.map((instance) => instance.instanceId);
 
   const refreshLists = async () => {
     if (refreshInFlightRef.current) return;
@@ -269,7 +274,12 @@ export function CloudInstancesPanel({
   }
 
   if (cloud.instances.length === 0) {
-    const waking = cloud.pending?.action === 'wake';
+    const firstWakeAction = cloudInstanceLifecycleActionForTarget(
+      cloud.pending,
+      'new',
+      cloudInstanceIds,
+    );
+    const waking = firstWakeAction === 'wake';
     return (
       <div className="rounded-xl border border-[var(--border-default)] px-4 py-5 text-center">
         <p className="text-12 text-[var(--text-tertiary)]">
@@ -283,7 +293,9 @@ export function CloudInstancesPanel({
           className="mt-3 inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-3 text-12 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Spinner icon={Sun} size={12} spinning={waking} />
-          {t(waking ? 'ccAgent.sidebar.cloud.waking' : 'ccAgent.sidebar.cloud.wake')}
+          {t(waking
+            ? cloudInstanceLifecycleProgressKey(firstWakeAction)
+            : 'ccAgent.sidebar.cloud.wake')}
         </button>
       </div>
     );
@@ -296,6 +308,14 @@ export function CloudInstancesPanel({
       <ul className="flex flex-col gap-2" aria-label={t('settings.remoteControl.sections.cloudCindy')}>
         {cloud.instances.map((cloudInstance) => {
           const device = cloudDevicesById.get(cloudInstance.deviceId);
+          const cloudProgressAction = cloudInstanceLifecycleActionForTarget(
+            cloud.pending,
+            cloudInstance.instanceId,
+            cloudInstanceIds,
+          );
+          const cloudProgressKey = cloudProgressAction
+            ? cloudInstanceLifecycleProgressKey(cloudProgressAction)
+            : null;
           const cloudUpgradePending =
             cloud.pending?.target === cloudInstance.instanceId
             && cloud.pending.action === 'upgrade';
@@ -313,12 +333,10 @@ export function CloudInstancesPanel({
           const cloudAutoUpdatePending =
             cloud.pending?.target === cloudInstance.instanceId
             && cloud.pending.action === 'autoUpdate';
-          const cloudLifecyclePending =
-            cloud.pending?.target === cloudInstance.instanceId
-            && (cloud.pending.action === 'wake' || cloud.pending.action === 'stop')
-              ? cloud.pending.action
-              : null;
-          const cloudLifecycleAction = cloudLifecyclePending ?? (device?.online ? 'stop' : 'wake');
+          const cloudLifecycleAction =
+            cloudProgressAction === 'wake' || cloudProgressAction === 'stop'
+              ? cloudProgressAction
+              : device?.online ? 'stop' : 'wake';
           const cloudVersion = resolveCloudVersionPresentation({
             image: cloudInstance.status.image,
             updateAvailable: cloudInstance.status.updateAvailable === true,
@@ -434,15 +452,11 @@ export function CloudInstancesPanel({
                       <Spinner
                         icon={Hammer}
                         size={12}
-                        spinning={
-                          cloud.pending?.target === cloudInstance.instanceId
-                          && cloud.pending.action === 'rebuild'
-                        }
+                        spinning={cloudProgressAction === 'rebuild'}
                       />
                       {t(
-                        cloud.pending?.target === cloudInstance.instanceId
-                        && cloud.pending.action === 'rebuild'
-                          ? 'settings.devices.cloudInstance.rebuilding'
+                        cloudProgressAction === 'rebuild' && cloudProgressKey
+                          ? cloudProgressKey
                           : 'settings.devices.cloudInstance.rebuild',
                       )}
                     </button>
@@ -457,15 +471,11 @@ export function CloudInstancesPanel({
                       <Spinner
                         icon={Moon}
                         size={12}
-                        spinning={
-                          cloud.pending?.target === cloudInstance.instanceId
-                          && cloud.pending.action === 'stop'
-                        }
+                        spinning={cloudProgressAction === 'stop'}
                       />
                       {t(
-                        cloud.pending?.target === cloudInstance.instanceId
-                        && cloud.pending.action === 'stop'
-                          ? 'settings.devices.cloudInstance.stopping'
+                        cloudProgressAction === 'stop' && cloudProgressKey
+                          ? cloudProgressKey
                           : 'settings.devices.cloudInstance.stop',
                       )}
                     </button>
@@ -479,15 +489,11 @@ export function CloudInstancesPanel({
                       <Spinner
                         icon={Sun}
                         size={12}
-                        spinning={
-                          cloud.pending?.target === cloudInstance.instanceId
-                          && cloud.pending.action === 'wake'
-                        }
+                        spinning={cloudProgressAction === 'wake'}
                       />
                       {t(
-                        cloud.pending?.target === cloudInstance.instanceId
-                        && cloud.pending.action === 'wake'
-                          ? 'settings.devices.cloudInstance.waking'
+                        cloudProgressAction === 'wake' && cloudProgressKey
+                          ? cloudProgressKey
                           : 'settings.devices.cloudInstance.wake',
                       )}
                     </button>
@@ -501,15 +507,11 @@ export function CloudInstancesPanel({
                     <Spinner
                       icon={Trash2}
                       size={12}
-                      spinning={
-                        cloud.pending?.target === cloudInstance.instanceId
-                        && cloud.pending.action === 'delete'
-                      }
+                      spinning={cloudProgressAction === 'delete'}
                     />
                     {t(
-                      cloud.pending?.target === cloudInstance.instanceId
-                      && cloud.pending.action === 'delete'
-                        ? 'settings.devices.cloudInstance.deleting'
+                      cloudProgressAction === 'delete' && cloudProgressKey
+                        ? cloudProgressKey
                         : 'settings.devices.cloudInstance.delete',
                     )}
                   </button>

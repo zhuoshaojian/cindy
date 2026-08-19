@@ -58,6 +58,15 @@ export type CloudInstancePendingState = {
   action: CloudInstanceAction;
 } | null;
 
+/**
+ * A successful rebuild has retired the old control-plane row, but relay may
+ * still expose the old device until its next authoritative directory refresh.
+ */
+export interface CloudInstanceRebuildRetirement {
+  oldInstanceId: string;
+  oldDeviceId: string;
+}
+
 /** Endpoint absence and server-side capability disablement both hide cloud UI. */
 export function isCloudInstancesUnsupportedError(error: unknown): boolean {
   const ipcError = extractIpcError(error);
@@ -68,6 +77,8 @@ export interface UseCloudInstances {
   instances: CloudInstanceView[];
   loadState: CloudInstancesLoadState;
   pending: CloudInstancePendingState;
+  rebuildRetirement: CloudInstanceRebuildRetirement | null;
+  clearRebuildRetirement: (oldInstanceId: string) => void;
   /** relay 上 online(可对话)的 deviceId 集合。 */
   onlineDeviceIds: Set<string>;
   /** Best-effort refresh for menus/panels becoming visible. */
@@ -84,12 +95,14 @@ interface CloudInstancesSnapshot {
   instances: CloudInstanceView[];
   loadState: CloudInstancesLoadState;
   pending: CloudInstancePendingState;
+  rebuildRetirement: CloudInstanceRebuildRetirement | null;
 }
 
 const initialSnapshot: CloudInstancesSnapshot = {
   instances: [],
   loadState: 'loading',
   pending: null,
+  rebuildRetirement: null,
 };
 let snapshot = initialSnapshot;
 let started = false;
@@ -152,6 +165,17 @@ function pendingEqual(
       && left.action === right.action);
 }
 
+function rebuildRetirementEqual(
+  left: CloudInstanceRebuildRetirement | null,
+  right: CloudInstanceRebuildRetirement | null,
+): boolean {
+  return left === right
+    || (left !== null
+      && right !== null
+      && left.oldInstanceId === right.oldInstanceId
+      && left.oldDeviceId === right.oldDeviceId);
+}
+
 function retargetPending(
   action: CloudInstanceAction,
   expectedTarget: string | 'new',
@@ -168,6 +192,7 @@ function updateSnapshot(next: Partial<CloudInstancesSnapshot>): void {
     instancesEqual(snapshot.instances, nextSnapshot.instances)
     && snapshot.loadState === nextSnapshot.loadState
     && pendingEqual(snapshot.pending, nextSnapshot.pending)
+    && rebuildRetirementEqual(snapshot.rebuildRetirement, nextSnapshot.rebuildRetirement)
   ) {
     return;
   }
@@ -301,6 +326,7 @@ async function runAction<T>(
   action: CloudInstanceAction,
   op: () => Promise<T>,
   terminalWatch?: (value: T) => CloudInstanceTerminalWatch,
+  onTerminalSuccess?: (value: T) => Promise<void>,
 ): Promise<T | undefined> {
   if (snapshot.pending) return undefined;
   updateSnapshot({ pending: { target, action } });
@@ -322,6 +348,7 @@ async function runAction<T>(
           refresh: refreshSnapshotDuringAction,
           signal: controller.signal,
         });
+        await onTerminalSuccess?.(value);
       } finally {
         if (terminalWatchAbortController === controller) terminalWatchAbortController = null;
       }
@@ -423,37 +450,68 @@ async function deleteInstance(instanceId: string): Promise<void> {
  * the existing delete (H7) and first-wake creation paths to pick up the current
  * runtime policy.
  */
-async function rebuildInstance(
-  instanceId: string,
-): Promise<CloudInstanceWakeResult | undefined> {
+async function rebuildInstance(instanceId: string): Promise<CloudInstanceWakeResult | undefined> {
   const target = snapshot.instances.find((instance) => instance.instanceId === instanceId);
   if (!target) throw new Error(`cloud instance not found: ${instanceId}`);
-  return runAction(instanceId, 'rebuild', async () => {
+  return runAction(
+    instanceId,
+    'rebuild',
+    async () => {
+      await window.electronAPI.cloudInstances.delete({ instanceId });
+      clearDeletedInstanceRendererState(target);
 
-    await window.electronAPI.cloudInstances.delete({ instanceId });
-    clearDeletedInstanceRendererState(target);
+      try {
+        const result = await window.electronAPI.cloudInstances.wake({
+          resourceTier: target.status.resourceTier,
+        });
+        return result;
+      } catch (error) {
+        // The destructive half already committed. Never leave the deleted card
+        // in renderer state even if the follow-up list request also fails.
+        const withoutDeleted = snapshot.instances.filter(
+          (instance) => instance.instanceId !== instanceId,
+        );
+        const patch = await refreshAfterMutation();
+        updateSnapshot({ instances: withoutDeleted, ...patch });
+        throw new CloudInstanceRebuildCreateError(error);
+      }
+    },
+    (result) => ({
+      action: 'rebuild',
+      oldInstanceId: instanceId,
+      newInstanceId: result.instanceId,
+      newDeviceId: result.deviceId,
+    }),
+    async () => {
+      const retirement: CloudInstanceRebuildRetirement = {
+        oldInstanceId: instanceId,
+        oldDeviceId: target.deviceId,
+      };
+      // Publish the successful handoff before pending is cleared. Consumers
+      // therefore never render a frame with neither the rebuild watch nor the
+      // retired-device filter active.
+      updateSnapshot({ rebuildRetirement: retirement });
 
-    try {
-      const result = await window.electronAPI.cloudInstances.wake({
-        resourceTier: target.status.resourceTier,
-      });
-      return result;
-    } catch (error) {
-      // The destructive half already committed. Never leave the deleted card
-      // in renderer state even if the follow-up list request also fails.
-      const withoutDeleted = snapshot.instances.filter(
-        (instance) => instance.instanceId !== instanceId,
-      );
+      // Confirm once more after the terminal edge. If the authoritative list
+      // still contains the old instance, restore it immediately rather than
+      // hiding a real server-side resource. A failed refresh is equally
+      // non-authoritative and also restores the row.
       const patch = await refreshAfterMutation();
-      updateSnapshot({ instances: withoutDeleted, ...patch });
-      throw new CloudInstanceRebuildCreateError(error);
-    }
-  }, (result) => ({
-    action: 'rebuild',
-    oldInstanceId: instanceId,
-    newInstanceId: result.instanceId,
-    newDeviceId: result.deviceId,
-  }));
+      const oldInstanceConfirmedAbsent =
+        patch.loadState === 'ready' &&
+        patch.instances !== undefined &&
+        !patch.instances.some((instance) => instance.instanceId === instanceId);
+      updateSnapshot({
+        ...patch,
+        rebuildRetirement: oldInstanceConfirmedAbsent ? retirement : null,
+      });
+    },
+  );
+}
+
+function clearRebuildRetirement(oldInstanceId: string): void {
+  if (snapshot.rebuildRetirement?.oldInstanceId !== oldInstanceId) return;
+  updateSnapshot({ rebuildRetirement: null });
 }
 
 function resetCloudInstancesStore(): void {
@@ -475,7 +533,10 @@ export function __resetCloudInstancesStoreForTest(): void {
 }
 
 export function useCloudInstances(enabled = true): UseCloudInstances {
-  const { instances, loadState, pending } = useSyncExternalStore(subscribe, getSnapshot);
+  const { instances, loadState, pending, rebuildRetirement } = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+  );
   const deviceList = useDeviceLinkDeviceList();
 
   useEffect(() => {
@@ -511,6 +572,8 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
       instances,
       loadState,
       pending,
+      rebuildRetirement,
+      clearRebuildRetirement,
       onlineDeviceIds,
       refresh: refreshSnapshot,
       wake,
@@ -520,6 +583,6 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
       setAutoUpdate,
       deleteInstance,
     }),
-    [instances, loadState, onlineDeviceIds, pending],
+    [instances, loadState, onlineDeviceIds, pending, rebuildRetirement],
   );
 }

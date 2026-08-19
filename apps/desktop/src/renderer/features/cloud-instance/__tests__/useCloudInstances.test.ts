@@ -19,11 +19,13 @@ import {
   useCloudInstances,
 } from '../useCloudInstances';
 
-const deviceListMock = vi.hoisted(() => ({ devices: [] as Array<{
-  deviceId: string;
-  online: boolean;
-  deviceInfo?: { kind?: string };
-}> }));
+const deviceListMock = vi.hoisted(() => ({
+  devices: [] as Array<{
+    deviceId: string;
+    online: boolean;
+    deviceInfo?: { kind?: string };
+  }>,
+}));
 vi.mock('@/features/device-link/useDeviceLinkDeviceList', () => ({
   useDeviceLinkDeviceList: () => deviceListMock.devices,
 }));
@@ -274,6 +276,38 @@ describe('useCloudInstances capability visibility', () => {
     );
     expect(rendererCacheMocks.clearRevoked).toHaveBeenCalledWith('cloud-device-a');
     expect(mounted.result.current.pending).toBeNull();
+    expect(mounted.result.current.rebuildRetirement).toEqual({
+      oldInstanceId: 'cloud-instance-a',
+      oldDeviceId: 'cloud-device-a',
+    });
+  });
+
+  it('restores the old card when the post-success authoritative refresh still contains it', async () => {
+    const replacement = cloudInstanceView();
+    replacement.instanceId = 'cloud-instance-b';
+    replacement.deviceId = 'cloud-device-b';
+    replacement.status.instanceId = 'cloud-instance-b';
+    replacement.status.deviceId = 'cloud-device-b';
+    cloudInstancesApi.list
+      .mockResolvedValueOnce({ instances: [cloudInstanceView()] })
+      .mockResolvedValueOnce({ instances: [replacement] })
+      .mockResolvedValueOnce({ instances: [cloudInstanceView(), replacement] });
+    deviceListMock.devices = [{ deviceId: 'cloud-device-b', online: true }];
+    cloudInstancesApi.delete.mockResolvedValue({ instanceId: 'cloud-instance-a' });
+    cloudInstancesApi.wake.mockResolvedValue({ ...replacement, created: true });
+    const mounted = renderHook(() => useCloudInstances());
+    await waitFor(() => expect(mounted.result.current.loadState).toBe('ready'));
+
+    await act(async () => {
+      await mounted.result.current.rebuildInstance('cloud-instance-a');
+    });
+
+    expect(mounted.result.current.pending).toBeNull();
+    expect(mounted.result.current.rebuildRetirement).toBeNull();
+    expect(mounted.result.current.instances.map((instance) => instance.instanceId)).toEqual([
+      'cloud-instance-a',
+      'cloud-instance-b',
+    ]);
   });
 
   it('keeps stop busy until runtime leaves running and presence is offline', async () => {
@@ -286,10 +320,14 @@ describe('useCloudInstances capability visibility', () => {
     cloudInstancesApi.stop.mockResolvedValue({ status: stopped.status });
     deviceListMock.devices = [{ deviceId: 'cloud-device-a', online: true }];
     const mounted = renderHook(() => useCloudInstances());
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     let action!: ReturnType<typeof mounted.result.current.stopInstance>;
-    act(() => { action = mounted.result.current.stopInstance('cloud-instance-a'); });
+    act(() => {
+      action = mounted.result.current.stopInstance('cloud-instance-a');
+    });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -315,10 +353,14 @@ describe('useCloudInstances capability visibility', () => {
       created: false,
     });
     const mounted = renderHook(() => useCloudInstances());
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     let action!: ReturnType<typeof mounted.result.current.wake>;
-    act(() => { action = mounted.result.current.wake('cloud-instance-a'); });
+    act(() => {
+      action = mounted.result.current.wake('cloud-instance-a');
+    });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -333,6 +375,7 @@ describe('useCloudInstances capability visibility', () => {
     });
     await timedOut;
     expect(mounted.result.current.pending).toBeNull();
+    expect(mounted.result.current.rebuildRetirement).toBeNull();
   });
 
   it('removes the deleted card and reports a distinct error when replacement creation fails', async () => {
@@ -371,10 +414,14 @@ describe('useCloudInstances capability visibility', () => {
       created: true,
     });
     const mounted = renderHook(() => useCloudInstances());
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     let action!: ReturnType<typeof mounted.result.current.rebuildInstance>;
-    act(() => { action = mounted.result.current.rebuildInstance('cloud-instance-a'); });
+    act(() => {
+      action = mounted.result.current.rebuildInstance('cloud-instance-a');
+    });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -390,6 +437,7 @@ describe('useCloudInstances capability visibility', () => {
     });
     await timedOut;
     expect(mounted.result.current.pending).toBeNull();
+    expect(mounted.result.current.rebuildRetirement).toBeNull();
   });
 
   it('aborting a rebuild watch clears the derived old-card filter state', async () => {
@@ -405,10 +453,14 @@ describe('useCloudInstances capability visibility', () => {
     cloudInstancesApi.delete.mockResolvedValue({ instanceId: 'cloud-instance-a' });
     cloudInstancesApi.wake.mockResolvedValue({ ...replacement, created: true });
     const mounted = renderHook(() => useCloudInstances());
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     let action!: ReturnType<typeof mounted.result.current.rebuildInstance>;
-    act(() => { action = mounted.result.current.rebuildInstance('cloud-instance-a'); });
+    act(() => {
+      action = mounted.result.current.rebuildInstance('cloud-instance-a');
+    });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -419,6 +471,7 @@ describe('useCloudInstances capability visibility', () => {
     await expect(action).rejects.toMatchObject({ name: 'AbortError' });
     const remounted = renderHook(() => useCloudInstances(false));
     expect(remounted.result.current.pending).toBeNull();
+    expect(remounted.result.current.rebuildRetirement).toBeNull();
     mounted.unmount();
     remounted.unmount();
   });
