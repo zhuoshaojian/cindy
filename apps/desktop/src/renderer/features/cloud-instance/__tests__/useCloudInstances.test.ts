@@ -18,6 +18,11 @@ import {
   type CloudInstanceView,
   useCloudInstances,
 } from '../useCloudInstances';
+import { getCloudInstanceRendererAuthority } from '../cloudInstanceRendererAuthority';
+import {
+  __testing as dataOwnerGenerationTesting,
+  setDataOwnerGeneration,
+} from '@/contexts/dataOwnerGeneration';
 
 const deviceListMock = vi.hoisted(() => ({
   devices: [] as Array<{
@@ -87,6 +92,8 @@ function cloudInstanceView(): CloudInstanceView {
 }
 
 beforeEach(() => {
+  dataOwnerGenerationTesting.reset();
+  setDataOwnerGeneration('owner-a', 1);
   __resetCloudInstancesStoreForTest();
   deviceListMock.devices = [];
   cloudInstancesApi.list.mockReset().mockImplementation(async () => ({
@@ -113,9 +120,32 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  dataOwnerGenerationTesting.reset();
 });
 
 describe('useCloudInstances capability visibility', () => {
+  it('publishes only complete successful lists and degrades failures to unknown', async () => {
+    const mounted = renderHook(() => useCloudInstances());
+    await waitFor(() => expect(mounted.result.current.loadState).toBe('ready'));
+    expect([...getCloudInstanceRendererAuthority().activeDeviceIds!]).toEqual([
+      'cloud-device-a',
+    ]);
+
+    cloudInstancesApi.list.mockRejectedValueOnce(new Error('control plane unavailable'));
+    await act(async () => {
+      await mounted.result.current.refresh();
+    });
+    expect(getCloudInstanceRendererAuthority().activeDeviceIds).toBeUndefined();
+
+    cloudInstancesApi.list.mockResolvedValueOnce({
+      instances: [{ ...cloudInstanceView(), deviceId: '' }],
+    });
+    await act(async () => {
+      await mounted.result.current.refresh();
+    });
+    expect(getCloudInstanceRendererAuthority().activeDeviceIds).toBeUndefined();
+  });
+
   it('treats endpoint absence and server-side disablement as unsupported', () => {
     const endpointError = Object.assign(new Error('cloud instance control is unavailable'), {
       code: 'UNSUPPORTED_CAPABILITY' as const,

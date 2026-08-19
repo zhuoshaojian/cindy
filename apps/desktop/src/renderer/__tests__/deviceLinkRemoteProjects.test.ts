@@ -14,9 +14,25 @@ import {
   useDeviceLinkRemoteProjects,
 } from '@/features/device-link/useDeviceLinkRemoteProjects';
 import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
+import {
+  __resetCloudInstanceRendererAuthorityForTest,
+  markCloudInstanceRendererAuthorityUnknown,
+  publishCloudInstanceRendererAuthority,
+} from '@/features/cloud-instance/cloudInstanceRendererAuthority';
+import {
+  __testing as dataOwnerGenerationTesting,
+  getDataOwnerGeneration,
+  setDataOwnerGeneration,
+} from '@/contexts/dataOwnerGeneration';
+import { readCachedSessionList } from '@/features/device-link/mirrorCacheClient';
 
+const authState = vi.hoisted(() => ({ dataOwnerId: 'owner-a' as string | null }));
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({ isAuthenticated: true, deviceId: 'self-device', dataOwnerId: null }),
+  useAuth: () => ({
+    isAuthenticated: true,
+    deviceId: 'self-device',
+    dataOwnerId: authState.dataOwnerId,
+  }),
 }));
 vi.mock('@/features/device-link/mirrorCacheClient', () => ({
   cancelSessionListPersist: vi.fn(),
@@ -42,16 +58,28 @@ vi.mock('@/hooks/useGitSafetySettings', () => ({
 type PresenceListener = (snapshot: DeviceLinkPresenceSnapshot) => void;
 let presenceListener: PresenceListener | null = null;
 let listDevices: ReturnType<typeof vi.fn>;
+let invoke: ReturnType<typeof vi.fn>;
+let subscribe: ReturnType<typeof vi.fn>;
+let unsubscribe: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  authState.dataOwnerId = 'owner-a';
+  dataOwnerGenerationTesting.reset();
+  setDataOwnerGeneration('owner-a', 1);
+  __resetCloudInstanceRendererAuthorityForTest();
   presenceListener = null;
-  listDevices = vi.fn();
+  listDevices = vi.fn(() => new Promise(() => {}));
+  invoke = vi.fn(() => new Promise(() => {}));
+  subscribe = vi.fn(async () => ({ ok: true }));
+  unsubscribe = vi.fn(async () => ({ ok: true }));
+  vi.mocked(readCachedSessionList).mockReset().mockResolvedValue([]);
   remoteProjectsStore.clear();
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     value: {
       deviceLink: {
         getState: vi.fn(() => new Promise(() => {})),
+        invoke,
         listDevices,
         onAccessRevoked: vi.fn(() => vi.fn()),
         onControlTargetChanged: vi.fn(() => vi.fn()),
@@ -62,8 +90,8 @@ beforeEach(() => {
         onRemotePush: vi.fn(() => vi.fn()),
         onResponsivenessChanged: vi.fn(() => vi.fn()),
         onStatusChanged: vi.fn(() => vi.fn()),
-        subscribe: vi.fn(async () => ({ ok: true })),
-        unsubscribe: vi.fn(async () => ({ ok: true })),
+        subscribe,
+        unsubscribe,
       },
     },
   });
@@ -72,6 +100,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   remoteProjectsStore.clear();
+  __resetCloudInstanceRendererAuthorityForTest();
+  dataOwnerGenerationTesting.reset();
   vi.useRealTimers();
 });
 
@@ -462,5 +492,199 @@ describe('successful device-directory reconciliation', () => {
     act(() => presenceListener?.(offlineCloud));
     await vi.advanceTimersByTimeAsync(300);
     expect(listDevices).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('owner-scoped cloud-instance authority', () => {
+  const cloudPresence = (deviceId: string, online: boolean): DeviceLinkPresenceSnapshot => ({
+    deviceId,
+    deviceName: 'Cloud',
+    online,
+    platform: 'linux',
+    appVersion: '1.0.0',
+    lastSeenAt: Date.now(),
+    remoteControlEnabled: online,
+    busy: false,
+    deviceInfo: { kind: 'cloud' },
+  });
+
+  it('removes a retired cloud shard and blocks a fresh-epoch rejoin without affecting another peer', async () => {
+    let resolveOldRefresh!: (value: unknown) => void;
+    invoke.mockImplementation(
+      (deviceId: string) =>
+        deviceId === 'cloud-old'
+          ? new Promise((resolve) => {
+              resolveOldRefresh = resolve;
+            })
+          : new Promise(() => {}),
+    );
+    const owner = getDataOwnerGeneration();
+    publishCloudInstanceRendererAuthority(owner, ['cloud-old', 'cloud-live']);
+    remoteProjectsStore.setDeviceSessions(
+      'cloud-old',
+      'Old Cloud',
+      [{ id: 'old-session', status: 'active' }] as never,
+      'active',
+      'cloud',
+    );
+    remoteProjectsStore.setDeviceSessions('desktop-peer', 'Desktop Peer', [
+      { id: 'desktop-session', status: 'active' },
+    ] as never);
+    remoteProjectsStore.setDeviceSessions(
+      'cloud-live',
+      'Live Cloud',
+      [{ id: 'live-session', status: 'active' }] as never,
+      'active',
+      'cloud',
+    );
+
+    const mounted = renderHook(() => useDeviceLinkRemoteProjects());
+    act(() => presenceListener?.(cloudPresence('cloud-old', true)));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      'cloud-old',
+      'local-db:sessions:list',
+      expect.any(Array),
+    );
+
+    act(() => publishCloudInstanceRendererAuthority(owner, ['cloud-live']));
+    expect(remoteProjectsStore.hasDevice('cloud-old')).toBe(false);
+    expect(remoteProjectsStore.hasDevice('desktop-peer')).toBe(true);
+    expect(remoteProjectsStore.hasDevice('cloud-live')).toBe(true);
+    expect(unsubscribe).toHaveBeenCalledWith('cloud-old', ['sessions']);
+    expect(unsubscribe).not.toHaveBeenCalledWith('desktop-peer', expect.anything());
+    expect(unsubscribe).not.toHaveBeenCalledWith('cloud-live', expect.anything());
+
+    // The request started while the old Pod was still eligible. Its response
+    // cannot rebuild the shard after authority invalidated that device epoch.
+    resolveOldRefresh([]);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(remoteProjectsStore.hasDevice('cloud-old')).toBe(false);
+
+    // A late online presence must not start a new epoch/refresh either.
+    const callsBeforeLatePresence = invoke.mock.calls.length;
+    act(() => presenceListener?.(cloudPresence('cloud-old', true)));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invoke).toHaveBeenCalledTimes(callsBeforeLatePresence);
+    expect(remoteProjectsStore.hasDevice('cloud-old')).toBe(false);
+    expect(remoteProjectsStore.hasDevice('desktop-peer')).toBe(true);
+    expect(remoteProjectsStore.hasDevice('cloud-live')).toBe(true);
+    mounted.unmount();
+  });
+
+  it('keeps a sleeping active cloud shard as a disconnected cache', () => {
+    publishCloudInstanceRendererAuthority(getDataOwnerGeneration(), ['cloud-sleeping']);
+    remoteProjectsStore.setDeviceSessions(
+      'cloud-sleeping',
+      'Sleeping Cloud',
+      [{ id: 'sleep-session', status: 'active' }] as never,
+      'active',
+      'cloud',
+    );
+
+    const mounted = renderHook(() => useDeviceLinkRemoteProjects());
+    act(() => presenceListener?.(cloudPresence('cloud-sleeping', false)));
+
+    expect(remoteProjectsStore.hasDevice('cloud-sleeping')).toBe(true);
+    expect(remoteProjectsStore.getDeviceSessions('cloud-sleeping')).toEqual([
+      expect.objectContaining({
+        id: 'sleep-session',
+        deviceLinkConnectionStatus: 'disconnected',
+      }),
+    ]);
+    expect(unsubscribe).not.toHaveBeenCalledWith('cloud-sleeping', expect.anything());
+    mounted.unmount();
+  });
+
+  it('fails open before the first successful list and after a later list failure', () => {
+    const owner = getDataOwnerGeneration();
+    remoteProjectsStore.setDeviceSessions(
+      'cloud-before-list',
+      'Cloud Before List',
+      [{ id: 'before-list-session', status: 'active' }] as never,
+      'active',
+      'cloud',
+    );
+    const mounted = renderHook(() => useDeviceLinkRemoteProjects());
+    act(() => presenceListener?.(cloudPresence('cloud-before-list', false)));
+    expect(remoteProjectsStore.hasDevice('cloud-before-list')).toBe(true);
+
+    publishCloudInstanceRendererAuthority(owner, ['cloud-active']);
+    markCloudInstanceRendererAuthorityUnknown(owner);
+    remoteProjectsStore.setDeviceSessions(
+      'cloud-during-outage',
+      'Cloud During Outage',
+      [{ id: 'outage-session', status: 'active' }] as never,
+      'active',
+      'cloud',
+    );
+    act(() => presenceListener?.(cloudPresence('cloud-during-outage', false)));
+    expect(remoteProjectsStore.hasDevice('cloud-during-outage')).toBe(true);
+    mounted.unmount();
+  });
+
+  it('does not apply a previous owner authority set after an account switch', () => {
+    publishCloudInstanceRendererAuthority(getDataOwnerGeneration(), []);
+    authState.dataOwnerId = 'owner-b';
+    setDataOwnerGeneration('owner-b', 2);
+    remoteProjectsStore.setDeviceSessions(
+      'cloud-owner-b',
+      'Owner B Cloud',
+      [{ id: 'owner-b-session', status: 'active' }] as never,
+      'active',
+      'cloud',
+    );
+
+    const mounted = renderHook(() => useDeviceLinkRemoteProjects());
+    act(() => presenceListener?.(cloudPresence('cloud-owner-b', false)));
+    expect(remoteProjectsStore.hasDevice('cloud-owner-b')).toBe(true);
+    mounted.unmount();
+  });
+
+  it('filters a retired cloud cache hydration but preserves active cloud and non-cloud caches', async () => {
+    let resolveCache!: (value: Awaited<ReturnType<typeof readCachedSessionList>>) => void;
+    vi.mocked(readCachedSessionList).mockReturnValue(
+      new Promise((resolve) => {
+        resolveCache = resolve;
+      }),
+    );
+    publishCloudInstanceRendererAuthority(getDataOwnerGeneration(), ['cloud-active']);
+    const mounted = renderHook(() => useDeviceLinkRemoteProjects());
+
+    resolveCache([
+      {
+        deviceId: 'cloud-retired',
+        deviceName: 'Retired Cloud',
+        kind: 'cloud',
+        sessions: [{ id: 'retired-session', status: 'active' }] as never,
+      },
+      {
+        deviceId: 'cloud-active',
+        deviceName: 'Active Cloud',
+        kind: 'cloud',
+        sessions: [{ id: 'active-session', status: 'active' }] as never,
+      },
+      {
+        deviceId: 'desktop-offline',
+        deviceName: 'Desktop Offline',
+        sessions: [{ id: 'desktop-session', status: 'active' }] as never,
+      },
+    ]);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(remoteProjectsStore.hasDevice('cloud-retired')).toBe(false);
+    expect(remoteProjectsStore.hasDevice('cloud-active')).toBe(true);
+    expect(remoteProjectsStore.hasDevice('desktop-offline')).toBe(true);
+    mounted.unmount();
   });
 });
