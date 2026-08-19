@@ -52,6 +52,11 @@ function deps(accessToken: string | null = 'resource-access-test'): CloudInstanc
     retireMirrorCacheDevice: vi.fn(async () => undefined),
     listMirrorCacheRetiredDevices: vi.fn(async () => []),
     releaseMirrorCacheRetiredDevice: vi.fn(async () => undefined),
+    captureMirrorCacheOwnerScope: vi.fn(async () => ({
+      ownerRoot: '/data/owners/owner-a/device-link-mirror-cache',
+      accountCounter: 7,
+    })),
+    reconcileMirrorCacheCloudDevices: vi.fn(async () => undefined),
     getDevicePresenceState: vi.fn(() => 'unknown' as const),
     nowMs: vi.fn(() => 1_000_000),
   };
@@ -80,6 +85,51 @@ describe('cloud instance IPC handlers', () => {
     await handleListCloudInstances(testDeps);
 
     expect(testDeps.releaseMirrorCacheRetiredDevice).toHaveBeenCalledWith('cloud-device-old');
+  });
+
+  it('reconciles mirror cache from the complete successful membership list before retirement release', async () => {
+    const testDeps = deps();
+    vi.mocked(testDeps.client.list).mockResolvedValue({
+      instances: [{ deviceId: 'cloud-device-a' }, { deviceId: 'cloud-device-b' }],
+    } as Awaited<ReturnType<CloudInstanceClient['list']>>);
+
+    await handleListCloudInstances(testDeps);
+
+    expect(testDeps.reconcileMirrorCacheCloudDevices).toHaveBeenCalledWith(
+      ['cloud-device-a', 'cloud-device-b'],
+      '/data/owners/owner-a/device-link-mirror-cache',
+      7,
+    );
+    expect(
+      vi.mocked(testDeps.captureMirrorCacheOwnerScope).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(testDeps.client.list).mock.invocationCallOrder[0]);
+    expect(
+      vi.mocked(testDeps.reconcileMirrorCacheCloudDevices).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(testDeps.listMirrorCacheRetiredDevices).mock.invocationCallOrder[0]);
+  });
+
+  it('does not publish an empty authority set when the control-plane list fails', async () => {
+    const testDeps = deps();
+    vi.mocked(testDeps.client.list).mockRejectedValue(new Error('offline'));
+
+    await expect(handleListCloudInstances(testDeps)).rejects.toMatchObject({
+      code: 'INTERNAL',
+    });
+
+    expect(testDeps.reconcileMirrorCacheCloudDevices).not.toHaveBeenCalled();
+  });
+
+  it('returns the successful list when local cloud session-list reconciliation fails', async () => {
+    const testDeps = deps();
+    vi.mocked(testDeps.reconcileMirrorCacheCloudDevices).mockRejectedValue(
+      new Error('cache locked'),
+    );
+
+    await expect(handleListCloudInstances(testDeps)).resolves.toEqual({ instances: [] });
+    expect(loggerMocks.warn).toHaveBeenCalledWith(
+      'failed to reconcile cloud device mirror-cache session list',
+      { error: 'cache locked' },
+    );
   });
 
   it('keeps a retired mirror device blocked while relay still reports it online', async () => {
