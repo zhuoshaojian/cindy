@@ -6958,7 +6958,12 @@
       "worktreeRepoHint": "Try picking the working directory again, and retry once the folder badge at the bottom right refreshes",
       "sessionInactive": "Session is no longer active",
       "remoteProjectBanner": "New session in {{project}} on {{device}}",
-      "remoteDialogueBanner": "New chat on {{device}} (no project)"
+      "remoteDialogueBanner": "New chat on {{device}} (no project)",
+      "cloudWaking": "Waking Cloud Cindy — you can keep typing",
+      "cloudWakingSendBlocked": "Cloud Cindy is waking up. You can send once it's ready.",
+      "cloudModelsLoading": "Loading Cloud models…",
+      "cloudWakeFailed": "Cloud Cindy could not be woken yet. Your draft is still here.",
+      "cloudWakeRetry": "Retry"
     },
     "jumpSession": {
       "emptyId": "Enter a sessionId to jump to",

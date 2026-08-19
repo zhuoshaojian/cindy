@@ -40,6 +40,8 @@ export interface DeviceSwitcherCloudWake {
   wakingTarget: string | 'new' | null;
   /** 省略 instanceId = 首次唤醒(控制面自动建实例)。 */
   onWake: (instanceId?: string) => void;
+  /** 产品上已经选中的云端目标；设备真正上线前不写入 value(deviceLinkDeviceId)。 */
+  selectedTarget?: { deviceId: string | null; name: string; waking: boolean };
 }
 
 interface Props {
@@ -93,15 +95,19 @@ export function DeviceSwitcherPill({
   if (devices.length === 0 && cloudWake == null) return null;
 
   const localLabel = t('ccAgent.sidebar.machineSwitcher.localMachine');
-  const current = value == null ? null : (devices.find((d) => d.deviceId === value) ?? null);
+  const displayValue = cloudWake?.selectedTarget?.deviceId ?? value;
+  const current = displayValue == null
+    ? null
+    : (devices.find((d) => d.deviceId === displayValue) ?? null);
   // 云端设备的 name 是 locale-neutral sentinel,展示前统一经翻译边界解析
   // (与机器切换菜单同口径);回调仍传原始 name,下游按需再解析。
-  const label = resolveDesktopCloudDeviceName(
-    value == null ? localLabel : (current?.name ?? value),
+  const label = cloudWake?.selectedTarget?.name ?? resolveDesktopCloudDeviceName(
+    displayValue == null ? localLabel : (current?.name ?? displayValue),
     t,
   );
   // 本机不画状态点(它永远在线,画了只是噪音)。
-  const showDot = current != null;
+  const showDot = current != null || cloudWake?.selectedTarget != null;
+  const selectedTargetWaking = cloudWake?.selectedTarget?.waking === true;
   // 当前值必须进 aria-label:compact 模式下按钮只剩图标 + 状态点、不渲染设备名文本,只报
   // 「设备」会让读屏用户完全不知道当前选的是哪台机器(Copilot review)。非 compact 时名字虽然
   // 可见,一并读出也不冗余 —— aria-label 会覆盖内文,不会重复播报。
@@ -135,9 +141,14 @@ export function DeviceSwitcherPill({
           {showDot && (
             <span
               aria-hidden
+              data-testid="create-agent-device-pill-status"
               className={cn(
                 'size-1.5 shrink-0 rounded-full',
-                current?.online ? 'bg-[var(--remote-status-ready)]' : 'bg-[var(--text-tertiary)]',
+                selectedTargetWaking
+                  ? 'session-status-breathing bg-[var(--remote-status-progress)]'
+                  : current?.online
+                    ? 'bg-[var(--remote-status-ready)]'
+                    : 'bg-[var(--text-tertiary)]',
               )}
             />
           )}
@@ -170,9 +181,19 @@ export function DeviceSwitcherPill({
             图标元素)只在真正展开时发生,而不是随父级每次渲染空转。 */}
         <DeviceMenuList
           devices={devices}
-          value={value}
+          value={displayValue}
+          localSelected={cloudWake?.selectedTarget == null && value == null}
           localLabel={localLabel}
-          cloudWake={cloudWake}
+          cloudWake={cloudWake == null
+            ? undefined
+            : {
+                ...cloudWake,
+                onWake: (instanceId) => {
+                  onOpenChange(false);
+                  if (instanceId === undefined) cloudWake.onWake();
+                  else cloudWake.onWake(instanceId);
+                },
+              }}
           onOpenCloudSettings={() => {
             onOpenChange(false);
             onOpenCloudSettings();
@@ -190,6 +211,7 @@ export function DeviceSwitcherPill({
 function DeviceMenuList({
   devices,
   value,
+  localSelected,
   localLabel,
   cloudWake,
   onOpenCloudSettings,
@@ -197,6 +219,7 @@ function DeviceMenuList({
 }: {
   devices: readonly DraftPillDevice[];
   value: DeviceSwitcherValue;
+  localSelected: boolean;
   localLabel: string;
   cloudWake?: DeviceSwitcherCloudWake;
   onOpenCloudSettings: () => void;
@@ -220,7 +243,7 @@ function DeviceMenuList({
         icon={<Laptop size={20} strokeWidth={2} className="shrink-0 text-[var(--folder-item-icon)]" />}
         name={localLabel}
         hint={t('newChat.deviceSwitcher.localHint')}
-        selected={value == null}
+        selected={localSelected}
         onSelect={() => onSelect(null, null)}
       />
 
@@ -235,7 +258,16 @@ function DeviceMenuList({
             <DeviceRow
               key={device.deviceId}
               icon={
-                <Icon size={20} strokeWidth={2} className="shrink-0 text-[var(--folder-item-icon)]" />
+                <Icon
+                  size={20}
+                  strokeWidth={2}
+                  className={cn(
+                    'shrink-0',
+                    waking
+                      ? 'text-[var(--remote-status-progress)]'
+                      : 'text-[var(--folder-item-icon)]',
+                  )}
+                />
               }
               shimmer={waking}
               name={resolveDesktopCloudDeviceName(device.name, t)}
@@ -252,10 +284,17 @@ function DeviceMenuList({
               }
               hintWarning={device.online && device.kind === 'cloud' && device.modelAccessStale}
               online={device.online}
+              statusWaking={waking}
               updateAvailable={device.kind === 'cloud' && device.updateAvailable}
-              // 在线行 = 切换;云端离线行 = 唤醒(busy 期间禁点防重);普通离线行不可选。
+              // 在线行 = 切换;云端离线行 = 唤醒。当前这台云端已经在唤醒时仍可点：
+              // 这是把用户从本机重新带回同一份 transient draft，不会再请求一次 wake。
+              // 其它在途云端动作才禁点；普通离线行始终不可选。
               disabled={
-                device.online ? false : device.kind !== 'cloud' || cloudWake == null || cloudWake.busy
+                device.online
+                  ? false
+                  : device.kind !== 'cloud'
+                    || cloudWake == null
+                    || (cloudWake.busy && !waking)
               }
               selected={value === device.deviceId}
               onSelect={
@@ -279,13 +318,20 @@ function DeviceMenuList({
                 <CloudOff
                   size={20}
                   strokeWidth={2}
-                  className="shrink-0 text-[var(--folder-item-icon)]"
+                  className={cn(
+                    'shrink-0',
+                    wakingFirst
+                      ? 'text-[var(--remote-status-progress)]'
+                      : 'text-[var(--folder-item-icon)]',
+                  )}
                 />
               }
               shimmer={wakingFirst}
+              statusWaking={wakingFirst}
               name={t(wakingFirst ? 'ccAgent.sidebar.cloud.waking' : 'ccAgent.sidebar.cloud.wake')}
               selected={false}
-              disabled={cloudWake.busy}
+              // 首次创建同理：用户切回本机后仍能重新选回正在创建的云端，不重复建实例。
+              disabled={cloudWake.busy && !wakingFirst}
               onSelect={() => cloudWake.onWake()}
             />
           </>
@@ -305,6 +351,7 @@ interface RowProps {
   /** 副文案按警示呈现(与设置页云端卡的凭据提示同一 token)。 */
   hintWarning?: boolean;
   online?: boolean;
+  statusWaking?: boolean;
   disabled?: boolean;
   selected: boolean;
   onSelect?: () => void;
@@ -319,6 +366,7 @@ function DeviceRow({
   hint,
   hintWarning = false,
   online,
+  statusWaking = false,
   disabled,
   selected,
   onSelect,
@@ -347,7 +395,7 @@ function DeviceRow({
       >
         <span
           data-testid={shimmer ? 'create-agent-cloud-waking-icon' : undefined}
-          className={cn('inline-flex shrink-0', shimmer && 'animate-pulse')}
+          className={cn('inline-flex shrink-0', shimmer && 'session-status-breathing')}
         >
           {icon}
         </span>
@@ -356,9 +404,14 @@ function DeviceRow({
             {online !== undefined && (
               <span
                 aria-hidden
+                data-testid={statusWaking ? 'create-agent-cloud-waking-status' : undefined}
                 className={cn(
                   'size-1.5 shrink-0 rounded-full',
-                  online ? 'bg-[var(--remote-status-ready)]' : 'bg-[var(--text-tertiary)]',
+                  statusWaking
+                    ? 'session-status-breathing bg-[var(--remote-status-progress)]'
+                    : online
+                      ? 'bg-[var(--remote-status-ready)]'
+                      : 'bg-[var(--text-tertiary)]',
                 )}
               />
             )}

@@ -36,6 +36,7 @@ vi.mock('react-i18next', async (importOriginal) => ({
         'newChat.modelSelector.hidden': '已隐藏',
         'newChat.modelSelector.pricing.free': '限时免费',
         'newChat.modelSelector.source.disconnected': '已断开',
+        'ccAgent.draft.cloudModelsLoading': '云端模型加载中…',
         'newChat.modelSelector.remoteLoading': '正在从远程设备读取模型…',
         'newChat.modelSelector.remoteLoadFailed': '无法读取远程设备上的模型。请检查连接后重试。',
         'newChat.modelSelector.remoteLoadFailedShort': '模型读取失败',
@@ -575,6 +576,27 @@ describe('ModelSelector trigger variants', () => {
       deviceProvidersRef.loading = false;
       visibleModelsRef.models = originalModels;
     }
+  });
+
+  it('transient cloud loading hides the local model presentation before a device id exists', () => {
+    render(
+      React.createElement(ModelSelector, {
+        modelId: 'claude-opus-4-8',
+        effort: 'high',
+        onModelChange: vi.fn(),
+        onEffortChange: vi.fn(),
+        vendorKey: 'cc',
+        currentProviderId: 'anthropic',
+        onProviderChange: vi.fn(),
+        loadingLabel: '云端模型加载中…',
+      }),
+    );
+
+    const trigger = screen.getByRole('button', { name: /云端模型加载中/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+    expect(trigger.textContent).toContain('云端模型加载中…');
+    expect(trigger.textContent).not.toContain('Opus 4.8');
+    expect(trigger.textContent).not.toContain('High');
   });
 
   it('remote failures show an explicit retry state instead of no matching models', async () => {

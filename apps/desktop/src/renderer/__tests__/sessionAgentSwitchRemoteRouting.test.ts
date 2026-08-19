@@ -872,8 +872,8 @@ describe('ChatInput 的入口门控与调用路由', () => {
     expect(onSend).toBeGreaterThan(sendRecheck);
     expect(sendFinish).toBeGreaterThan(onSend);
     expect(switchGuard).toBeGreaterThan(sendFinish);
-    expect(source).toContain(
-      'disabled || settingsLocked || agentSendDispatchInFlight || agentSwitchInFlight',
+    expect(source).toMatch(
+      /disabled \|\|\s*settingsLocked \|\|\s*Boolean\(modelLoadingLabel\) \|\|\s*agentSendDispatchInFlight \|\|\s*agentSwitchInFlight/,
     );
   });
 

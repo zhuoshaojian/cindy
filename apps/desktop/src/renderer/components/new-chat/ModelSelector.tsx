@@ -594,6 +594,11 @@ interface ModelSelectorProps {
   switching?: boolean;
   /** 禁用 trigger。用于断线远程会话等只读 composer 状态。 */
   disabled?: boolean;
+  /**
+   * 目标设备尚未上线、还拿不到其模型目录时的临时占位。非空会覆盖本机模型呈现并锁住
+   * 模型/来源选择，但不伪造 deviceId，也不触发远端目录请求。
+   */
+  loadingLabel?: string;
   /** 窄容器下把 trigger 字号/高度各压一档,默认 false。 */
   dense?: boolean;
   /** 窄 composer 的简略触发器:隐藏 effort / Fast 次要信息并限制模型名宽度。 */
@@ -2325,6 +2330,7 @@ export function ModelSelector({
   excludeChatBridgedCodex,
   switching = false,
   disabled = false,
+  loadingLabel,
   dense = false,
   compactToolbar = false,
   ultraCompactToolbar = false,
@@ -2347,6 +2353,8 @@ export function ModelSelector({
   agentSwitch,
 }: ModelSelectorProps) {
   const { t } = useTranslation();
+  const forcedLoading = Boolean(loadingLabel);
+  const selectorDisabled = disabled || forcedLoading;
   const [open, setOpen] = useState(false);
   const openRef = useRef(false);
   const [keepOpenForAgentConfirmation, setKeepOpenForAgentConfirmation] = useState(false);
@@ -2393,7 +2401,7 @@ export function ModelSelector({
   );
   const handleOpenChange = useCallback(
     (next: boolean): void => {
-      const nextOpen = disabled ? false : next;
+      const nextOpen = selectorDisabled ? false : next;
       const wasOpen = openRef.current;
       openRef.current = nextOpen;
       if (nextOpen && !wasOpen && !deviceId) {
@@ -2407,7 +2415,7 @@ export function ModelSelector({
       }
       setOpen(nextOpen);
     },
-    [deviceId, disabled, discovery, resetDiscoveryPresentation],
+    [deviceId, selectorDisabled, discovery, resetDiscoveryPresentation],
   );
 
   // AlertDialog 打开时会被 Popover 视作外部交互并请求关闭。Agent 分段确认期间
@@ -2449,7 +2457,7 @@ export function ModelSelector({
     pi,
     providers: remoteProviders,
   });
-  const remoteModelLoading = !!deviceId && remoteModelListStatus === 'loading';
+  const remoteModelLoading = forcedLoading || (!!deviceId && remoteModelListStatus === 'loading');
   const remoteModelLoadFailed = !!deviceId && remoteModelListStatus === 'error';
   const visibleModels = useMemo(
     () =>
@@ -2482,13 +2490,13 @@ export function ModelSelector({
   // 给出诊断性文案(通常是裸 id),行为与本组件接管前一致。
   // unknown label 空串/全空白按缺省处理(否则 ?? 不回落,trigger 渲染成空白)。
   const unknownLabel = modelId && unknownModelLabel ? unknownModelLabel(modelId).trim() : '';
-  const displayLabel = fallbackOption?.active
+  const displayLabel = loadingLabel ?? (fallbackOption?.active
     ? fallbackOption.label
     : (currentModel?.displayName ??
       (remoteModelLoading ? t('newChat.modelSelector.remoteLoading') : null) ??
       (remoteModelLoadFailed ? t('newChat.modelSelector.remoteLoadFailedShort') : null) ??
       (unknownLabel !== '' ? unknownLabel : null) ??
-      t('newChat.modelSelector.trigger.placeholder'));
+      t('newChat.modelSelector.trigger.placeholder')));
   const agentName =
     agentIdentity && !fallbackOption?.active
       ? agentIdentity.vendorKey === 'cc'
@@ -2504,7 +2512,7 @@ export function ModelSelector({
   const baseDisplayIdentityLabel = agentIdentityLabel
     ? `${agentIdentityLabel} · ${displayLabel}`
     : displayLabel;
-  const remoteStatusLabel = currentModel
+  const remoteStatusLabel = !forcedLoading && currentModel
     ? remoteModelLoading
       ? t('newChat.modelSelector.remoteLoading')
       : remoteModelLoadFailed
@@ -2514,7 +2522,7 @@ export function ModelSelector({
   const displayIdentityLabel = remoteStatusLabel
     ? `${baseDisplayIdentityLabel} · ${remoteStatusLabel}`
     : baseDisplayIdentityLabel;
-  const efforts = currentModel?.efforts ?? [];
+  const efforts = forcedLoading ? [] : (currentModel?.efforts ?? []);
 
   const currentAgentKind: AgentKind | null = useMemo(() => {
     if (agentKind) return agentKind;
@@ -2562,6 +2570,7 @@ export function ModelSelector({
   // 空態:当前模型一个已连接来源都没有 → trigger 改「连接来源」CTA。
   // device-link 远程会话不走此 CTA(控制端无法替被控端连来源;hasConnectedSource 是本机口径)。
   const noSource =
+    !forcedLoading &&
     !!onProviderChange &&
     !!onNavigateToProviders &&
     !deviceId &&
@@ -2594,10 +2603,11 @@ export function ModelSelector({
     triggerActiveProvider && currentAgentKind
       ? modelSupportsFastMode(triggerActiveProvider, modelId, currentAgentKind)
       : !!currentModel?.supportsFastMode;
-  const triggerFastOn = fastMode === true && triggerFastSupported;
+  const triggerFastOn = !forcedLoading && fastMode === true && triggerFastSupported;
   // 断开态仅在「非 noSource」时生效:全部来源都断开时 noSource CTA 优先(下拉已无可选行,
   // 跳设置才是正确恢复路径);还有别的已连接来源时,下拉换源就是恢复路径,trigger 保持可点。
-  const showSourceDisconnected = !noSource && sourceDisconnected && !!currentProviderId;
+  const showSourceDisconnected =
+    !forcedLoading && !noSource && sourceDisconnected && !!currentProviderId;
   const baseAriaLabel = noSource
     ? t('newChat.modelSelector.source.connect')
     : showSourceDisconnected
@@ -2624,7 +2634,7 @@ export function ModelSelector({
   const triggerTitle = showSourceDisconnected ? baseAriaLabel : displayIdentityLabel;
   // 多实例同屏(IM 目录偏好)时前置「字段名 · 行别名」,读屏才能区分行与行。
   const ariaLabel = ariaContext ? `${ariaContext}:${baseAriaLabel}` : baseAriaLabel;
-  const isBudget = modelId.startsWith('codex/');
+  const isBudget = !forcedLoading && modelId.startsWith('codex/');
   const isFieldTrigger = triggerVariant === 'field';
   const isCreateAgentVariant = visualVariant === 'create-agent';
   // compact 是 composer 容器宽度状态，不是 create-agent 的视觉私有状态。
@@ -2668,9 +2678,9 @@ export function ModelSelector({
   const trigger = (
     <button
       type="button"
-      disabled={switching || disabled}
+      disabled={switching || selectorDisabled}
       onClick={morphEnabled ? () => handleOpenChange(!openRef.current) : undefined}
-      aria-expanded={open && !disabled}
+      aria-expanded={open && !selectorDisabled}
       aria-haspopup="listbox"
       title={triggerTitle}
       className={cn(
@@ -2697,7 +2707,7 @@ export function ModelSelector({
               'hover:border-[var(--border-default)] hover:bg-[var(--composer-pill-bg,#FCFCFC)] dark:hover:bg-[var(--composer-pill-bg,#393838)]',
             ),
         // device-link 远程切换 in-flight:置灰 + 禁用点击(复用本文件 disabled 行的 opacity-50 习惯)。
-        (switching || disabled) && 'pointer-events-none opacity-50',
+        (switching || selectorDisabled) && 'pointer-events-none opacity-50',
       )}
       aria-label={ariaLabel}
     >
@@ -2782,7 +2792,7 @@ export function ModelSelector({
         </>
       ) : (
         <>
-          {!currentModel && remoteModelLoading && (
+          {(forcedLoading || (!currentModel && remoteModelLoading)) && (
             <span className="inline-flex shrink-0 animate-spinner text-[var(--text-tertiary)] motion-reduce:animate-none">
               <Loader2 size={dense ? 12 : 13} />
             </span>
@@ -2792,7 +2802,7 @@ export function ModelSelector({
           )}
           {/* 图标统一规则:模型条目 icon(AI Gateway / 目录设定)优先,缺省回落
                   当前真正路由的来源标(activeSourceId)——客户端不按 model id 猜厂牌。 */}
-          {activeSourceId && (
+          {!forcedLoading && activeSourceId && (
             <ModelIconMark
               icon={triggerModelIcon}
               providerId={activeSourceId}
@@ -2875,7 +2885,7 @@ export function ModelSelector({
               aria-label={t('newChat.modelSelector.meta.fastBadge')}
             />
           )}
-          {currentModel && remoteModelLoading && (
+          {!forcedLoading && currentModel && remoteModelLoading && (
             <span className="ml-0.5 inline-flex shrink-0 animate-spinner text-[var(--text-tertiary)] motion-reduce:animate-none">
               <Loader2 size={dense ? 11 : 12} />
             </span>
@@ -2928,7 +2938,7 @@ export function ModelSelector({
       fluidWidth={isFieldTrigger}
       agentSwitch={contentAgentSwitch}
       discoveringModels={showDiscoveryPending && discovery.pending}
-      interactionDisabled={switching || disabled}
+      interactionDisabled={switching || selectorDisabled}
       gatewayPricing={gatewayPricing}
       referencePricing={referencePricing}
       followSession={
@@ -2946,7 +2956,7 @@ export function ModelSelector({
   if (morphEnabled) {
     return (
       <MorphPopover
-        open={(open || keepOpenForAgentConfirmation) && !disabled}
+        open={(open || keepOpenForAgentConfirmation) && !selectorDisabled}
         onOpenChange={handleOpenChange}
         side={popoverSide}
         align="end"
@@ -2962,7 +2972,7 @@ export function ModelSelector({
 
   return (
     <Popover
-      open={(open || keepOpenForAgentConfirmation) && !disabled}
+      open={(open || keepOpenForAgentConfirmation) && !selectorDisabled}
       onOpenChange={handleOpenChange}
     >
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>

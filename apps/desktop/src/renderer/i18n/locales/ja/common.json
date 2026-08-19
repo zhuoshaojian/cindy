@@ -6946,7 +6946,12 @@
       "worktreeRepoHint": "作業ディレクトリを選び直し、右下のフォルダー表示が更新されてから再試行してください",
       "sessionInactive": "セッションはすでにアクティブではありません",
       "remoteProjectBanner": "{{device}} の {{project}} で新しいセッションを作成",
-      "remoteDialogueBanner": "{{device}} で新しい対話（プロジェクトなし）"
+      "remoteDialogueBanner": "{{device}} で新しい対話（プロジェクトなし）",
+      "cloudWaking": "クラウド Cindy を起動しています。入力は続けられます",
+      "cloudWakingSendBlocked": "クラウド Cindy を起動しています。起動が完了すると送信できます",
+      "cloudModelsLoading": "クラウドのモデルを読み込み中…",
+      "cloudWakeFailed": "クラウド Cindy を起動できませんでした。下書きは残っています。",
+      "cloudWakeRetry": "再試行"
     },
     "jumpSession": {
       "emptyId": "移動先の sessionId を入力してください",
