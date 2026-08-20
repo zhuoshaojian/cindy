@@ -88,6 +88,23 @@ function rebuildingCloud(): UseCloudInstances {
 afterEach(() => cleanup());
 
 describe('CloudInstancesPanel lifecycle progress', () => {
+  it('shows rebuilding during the zero-instance handoff instead of idle wake', () => {
+    const cloud = rebuildingCloud();
+    cloud.instances = [];
+
+    render(
+      <CloudInstancesPanel
+        s={settingsWithoutRelayDevice()}
+        cloud={cloud}
+      />,
+    );
+
+    const firstWakeButton = screen.getByTestId('cloud-instance-first-wake');
+    expect(firstWakeButton.textContent).toContain('settings.devices.cloudInstance.rebuilding');
+    expect(firstWakeButton.textContent).not.toContain('ccAgent.sidebar.cloud.wake');
+    expect(firstWakeButton.getAttribute('disabled')).not.toBeNull();
+  });
+
   it('shows rebuilding on an unregistered replacement card when pending targets the retired instance', () => {
     render(
       <CloudInstancesPanel

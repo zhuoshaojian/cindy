@@ -19,6 +19,7 @@ import {
 } from '@/features/cloud-instance/useCloudInstances';
 import { desktopCloudInstanceDisplayName } from '@/features/cloud-instance/cloudDeviceName';
 import {
+  cloudInstanceLifecycleAction,
   cloudInstanceLifecycleActionForTarget,
   cloudInstanceLifecycleProgressKey,
 } from '@/features/cloud-instance/cloudLifecyclePresentation';
@@ -274,12 +275,10 @@ export function CloudInstancesPanel({
   }
 
   if (cloud.instances.length === 0) {
-    const firstWakeAction = cloudInstanceLifecycleActionForTarget(
-      cloud.pending,
-      'new',
-      cloudInstanceIds,
-    );
-    const waking = firstWakeAction === 'wake';
+    const firstWakeAction =
+      cloudInstanceLifecycleActionForTarget(cloud.pending, 'new', cloudInstanceIds)
+      ?? cloudInstanceLifecycleAction(cloud.pending);
+    const lifecycleInProgress = firstWakeAction !== null;
     return (
       <div className="rounded-xl border border-[var(--border-default)] px-4 py-5 text-center">
         <p className="text-12 text-[var(--text-tertiary)]">
@@ -292,8 +291,8 @@ export function CloudInstancesPanel({
           disabled={cloud.pending !== null}
           className="mt-3 inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-3 text-12 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Spinner icon={Sun} size={12} spinning={waking} />
-          {t(waking
+          <Spinner icon={Sun} size={12} spinning={lifecycleInProgress} />
+          {t(lifecycleInProgress
             ? cloudInstanceLifecycleProgressKey(firstWakeAction)
             : 'ccAgent.sidebar.cloud.wake')}
         </button>
