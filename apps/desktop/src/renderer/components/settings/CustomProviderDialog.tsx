@@ -15,7 +15,15 @@
  */
 
 import * as Dialog from '@radix-ui/react-dialog';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, Plug, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 
@@ -514,7 +522,7 @@ export function CustomProviderDialog({
   const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
   // 嵌套 dismiss layer 互斥且由表单统一持有：Radix Popover 只负责呈现，
   // 不再让退场中的菜单与新打开的模型选择器同时成为 Escape owner。
-  const [childLayer, setChildLayer] = useState<DialogChildLayer>(null);
+  const [childLayer, setChildLayerState] = useState<DialogChildLayer>(null);
   // per-runtime 测试连接状态。
   const [test, setTest] = useState<Record<DialogAgentKind, TestState>>({
     'claude-code': IDLE_TEST,
@@ -548,6 +556,16 @@ export function CustomProviderDialog({
   const runtimeFillRef = useRef(runtimeFill);
   const savingRef = useRef(saving);
   const onCloseRef = useRef(onClose);
+  const setChildLayer = useCallback((next: SetStateAction<DialogChildLayer>) => {
+    const resolved = typeof next === 'function'
+      ? next(childLayerRef.current)
+      : next;
+    // Native capture listeners can run before React commits the state update.
+    // Publish the new topmost layer synchronously so a fast Escape dismisses
+    // that layer rather than falling through and closing the whole dialog.
+    childLayerRef.current = resolved;
+    setChildLayerState(resolved);
+  }, []);
   useLayoutEffect(() => {
     childLayerRef.current = childLayer;
     runtimeFillRef.current = runtimeFill;
@@ -616,7 +634,21 @@ export function CustomProviderDialog({
         ? document.activeElement
         : null;
     const frame = requestAnimationFrame(() => {
-      dialogPanelRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+      const panel = dialogPanelRef.current;
+      if (!panel) return;
+      // The user can focus and start typing into a later field before this
+      // deferred initial-focus frame runs, or open a child layer whose portal
+      // lives outside the panel. Never steal focus back to the first input in
+      // either case: typing would continue in the wrong controlled field, and
+      // a just-opened popover could be dismissed by the focus transfer.
+      if (
+        childLayerRef.current !== null
+        || runtimeFillRef.current !== null
+        || (document.activeElement instanceof HTMLElement && panel.contains(document.activeElement))
+      ) {
+        return;
+      }
+      panel.querySelector<HTMLInputElement>('input')?.focus();
     });
     return () => {
       cancelAnimationFrame(frame);

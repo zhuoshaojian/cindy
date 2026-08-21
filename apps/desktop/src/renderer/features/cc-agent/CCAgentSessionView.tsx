@@ -3683,12 +3683,31 @@ export function CCAgentSessionView({
       // 副本已在草稿路由登记 pending 的同一刻落下(见那里的注释),这里不再重复落 ——
       // 落在这里等于要求 effect 先跑起来,而这条 effect 要等 historyLoaded。
       //
-      // 锁要覆盖**整条交接**(消费 pending → 首轮发出),不能只包住开协同那段 await:
-      // 解锁后到 sendMessage 之间还有一次 await(命令派发),那个窗口里用户补发的消息
-      // 会抢在草稿提交的首条之前。远程交接才上锁 —— 本机交接没有远程等待。
-      const holdComposer = !!pending.remoteCollab;
+      // 锁要覆盖**整条交接**(消费 pending → 订阅 ACK → 首轮发出),不能只包住
+      // 开协同那段 await:视图引擎的 subscribeHeavy 是 fire-and-forget,mount 不等于被控端
+      // 已经登记 `session:<id>`。新建远程会话若在 ACK 前启动首轮,它的 maker:event /
+      // messages:created 会落在无订阅者的窗口里;被控端 DB 有结果,但运行中 renderer
+      // 永久缺行,只有进程级冷启动重拉历史才能看到。与下方 pending goal 的已有屏障对齐:
+      // 先用粘滞归属找到被控设备,显式等订阅 ACK,再发首轮。本机交接无远程订阅,
+      // 保持原有毫秒级路径。
+      const handoffDeviceId = getStickySessionDeviceId(sessionId);
+      const holdComposer = !!handoffDeviceId || !!pending.remoteCollab;
       if (holdComposer) setRemoteHandoffPreparing(true);
       try {
+        if (handoffDeviceId) {
+          try {
+            await window.electronAPI.deviceLink.subscribe(handoffDeviceId, [
+              `session:${sessionId}`,
+            ]);
+          } catch (err) {
+            // 旧被控端没有 device-link:subscribe,既有远程同步引擎会降级到
+            // pull / reconcile;不能因为控制端新增了 ACK 屏障就让旧设备连首条都发不出。
+            // 其它错误(断链 / 撤权 / 超时)不具备这个兼容语义,继续抛给外层
+            // 恢复正文,避免明知无订阅仍启动一轮用户看不到的推理。
+            if (extractIpcError(err)?.code !== 'DEVICE_LINK_CHANNEL_NOT_ALLOWED') throw err;
+            log.info('remote first-message subscription unsupported; using legacy reconcile');
+          }
+        }
         if (pending.remoteCollab) {
           const remoteCollab = await consumePendingRemoteCollab(pending.remoteCollab, {
             leadSessionId: sessionId,
@@ -3810,6 +3829,11 @@ export function CCAgentSessionView({
         } else if (deferredUiAssignment) {
           toast.error(t('newChat.collaboration.assignmentFailed'));
         }
+      } catch (err) {
+        // 订阅 / 协同 / 命令派发任一步失败都不能丢掉用户正文。远程草稿在
+        // 创建提交点已写了可恢复副本,此处把它放回 composer,由用户决定是否重发。
+        log.warn('pending first message handoff failed:', err);
+        restoreRecoverableHandoff('message');
       } finally {
         if (holdComposer) setRemoteHandoffPreparing(false);
       }
@@ -3825,8 +3849,8 @@ export function CCAgentSessionView({
   ]);
 
   // 远程草稿「新建目标」交接:draft route 只建会话 + 登记 pendingGoal,goal 首轮
-  // 在这里起(机制说明见 pendingFirstMessage.ts)。视图引擎的 subscribeHeavy 是
-  // fire-and-forget,mount ≠ 被控端已注册订阅 —— 消费前再显式 await 一次
+  // 在这里起(机制说明见 pendingFirstMessage.ts)。与上方首条消息同款:视图引擎的
+  // subscribeHeavy 是 fire-and-forget,mount ≠ 被控端已注册订阅 —— 消费前显式 await
   // deviceLink.subscribe(session:<id>)拿注册 ack(refcount 按 windowId 记集合,
   // 同窗口重复 subscribe 幂等且「总是转发」,await 到 resolve 即被控端登记完成;
   // 不配对 unsubscribe —— 订阅生命周期归视图引擎,拆多了会把它的订阅一起退掉),

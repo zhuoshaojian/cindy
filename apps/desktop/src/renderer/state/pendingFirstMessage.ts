@@ -12,8 +12,9 @@
  * 仅内存(模块级 Map):app 重启意味着发送链路被打断,丢弃不持久化。
  * 一次性消费(consume 即删):防止重复发送。
  *
- * 例外见文件末尾「远程协同交接的可恢复副本」:device-link 开协同那条路径在 consume
- * 之后还要等被控端起 Worker,等待期间正文另存一份到 localStorage,重启后回填输入框。
+ * 例外见文件末尾「远程交接的可恢复副本」:device-link 远程路径在 consume
+ * 之后还要等订阅 ACK(开协同时还要等被控端起 Worker),等待期间正文另存一份到
+ * localStorage,重启后回填输入框。
  */
 
 import type { AttachedFile, MentionedResource } from '@/lib/fileTypes';
@@ -116,14 +117,14 @@ export function consumePendingGoal(sessionId: string): PendingGoalPayload | null
   return v;
 }
 
-// ─── 远程协同交接的可恢复副本 ──────────────────────────────────────────────────
+// ─── 远程交接的可恢复副本 ──────────────────────────────────────────────────
 //
-// 为什么只有 remoteCollab 这条路径要落盘(greptile P1):
-// 其余创建路径的 setPending → navigate → mount → consume → sendMessage 是一串毫秒级
+// 为什么远程路径要落盘(greptile P1):
+// 本机创建路径的 setPending → navigate → mount → consume → sendMessage 是一串毫秒级
 // 步骤,内存 Map 与渲染进程同生共死不构成实际风险。而 **device-link 远程交接**这条不同 ——
-// consume 之后还要 await 隧道往返:开协同要等被控端起 Worker(正常一两秒,慢设备会一路走到
-// 30s 隧道超时再加 6×3s 回查),起目标之前还要先 await 一次 `deviceLink.subscribe`
-// (同样是 invoke,同样可能走到 30s)。这段时间用户输入只存在于渲染进程内存里,
+// consume 之后还要 await 隧道往返:首条消息和目标都要先等一次 `deviceLink.subscribe` ACK;
+// 开协同时还要等被控端起 Worker(正常一两秒,慢设备会一路走到 30s 隧道超时再加
+// 6×3s 回查)。这段时间用户输入只存在于渲染进程内存里,
 // app 被关掉就永久消失,被控端还留着一个没有首轮的空会话。
 //
 // 所以判据是「**这是不是一次远程交接**」,不是「开没开协同」:只挡在开协同那一段前面,

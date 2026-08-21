@@ -764,6 +764,7 @@ import {
   registerGlobalVoiceInputIpc,
 } from './voice-input/global.js';
 import { ensureMainAppPresence } from './appPresence.js';
+import { presentVisibleNativeStartupDialog } from './localDb/fatalDialogPolicy.js';
 import {
   registerDeepLinkProtocol,
   handleIncomingDeepLink,
@@ -1365,6 +1366,7 @@ const voicePowerBroadcastLog = createLogger('voice-input-power');
 const sessionDragPreviewLog = createLogger('session-drag-preview');
 const piSubagentLog = createLogger('pi-subagent');
 const headlessStartupLog = createLogger('headless-startup');
+const startupDialogLog = createLogger('startup-dialog');
 const headlessMode = isHeadlessMode(process.argv);
 let rendererBootGuard: RendererBootGuard | null = null;
 
@@ -7532,14 +7534,24 @@ app.on('ready', async () => {
   // moveToApplicationsFolder() would actually move the dev binary into
   // /Applications and break the developer's workspace.
   if (app.isPackaged && process.platform === 'darwin' && !app.isInApplicationsFolder()) {
-    const chosen = dialog.showMessageBoxSync({
-      type: 'info',
-      title: t('update.moveToApplications.title'),
-      message: t('update.moveToApplications.message'),
-      buttons: [t('update.moveToApplications.move'), t('update.moveToApplications.later')],
-      defaultId: 0,
-      cancelId: 1,
-    });
+    const chosen = presentVisibleNativeStartupDialog(
+      { event: 'startup.dialog.moveToApplications' },
+      {
+        logBeforePresent: (message) => startupDialogLog.info(message),
+        // Finder normally foregrounds this prompt already; avoid steal so a
+        // background launch cannot interrupt unrelated foreground work.
+        activateApp: () => app.focus(),
+        showNativeDialog: () =>
+          dialog.showMessageBoxSync({
+            type: 'info',
+            title: t('update.moveToApplications.title'),
+            message: t('update.moveToApplications.message'),
+            buttons: [t('update.moveToApplications.move'), t('update.moveToApplications.later')],
+            defaultId: 0,
+            cancelId: 1,
+          }),
+      },
+    );
     if (chosen === 0) {
       try {
         app.moveToApplicationsFolder();
