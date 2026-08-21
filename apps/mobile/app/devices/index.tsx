@@ -48,7 +48,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useAuth } from '@/auth/AuthContext';
-import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@/cloud-instance/cloudInstanceWake';
+import {
+  CLOUD_WAKE_WATCH_TIMEOUT_MS,
+  isSelectedCloudInstanceWaking,
+} from '@/cloud-instance/cloudInstanceWake';
 import { useCloudInstances, type UseCloudInstances } from '@/cloud-instance/useCloudInstances';
 import type { CloudInstanceView } from '@/api/cloudInstance';
 import { configureCollapseAnimation } from '@/utils/collapseAnimation';
@@ -77,6 +80,12 @@ import {
 } from '@/device-link/deviceIdentityStore';
 import { toDeviceListItems } from '@/device-link/devices';
 import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
+import { buildDeviceManagementRouteParams } from '@/device-link/deviceManagement';
+import {
+  buildCloudDeviceFilterItem,
+  projectCloudInstanceMenuItems,
+  projectDeviceMenuSources,
+} from '@/device-link/deviceMenuProjection';
 import {
   collectFreshPresenceDeviceIds,
   createPresenceFreshnessTracker,
@@ -231,6 +240,7 @@ export default function HomeScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { apiFetch, deviceId: selfDeviceId, user } = useAuth();
   const cloudInstances = useCloudInstances(apiFetch);
+  const refreshCloudInstances = cloudInstances.refresh;
   // 首页列表持久缓存按账号键控(401 掉线换号不串数据);首页仅登录后可达,user 理应非空。
   const homeCacheUserId = user?.id ?? '';
   const { connectionEpoch, connectionIssue, invoke, lastPresenceSnapshot, status, subscribe } = useDeviceLink();
@@ -750,6 +760,13 @@ export default function HomeScreen() {
   // 命中真实变化才会 setScheduleIndex(entries 等值比较),不触发无谓 re-render。
   useFocusEffect(
     useCallback(() => {
+      if (hasFocusedHomeRef.current) {
+        // Device management can rename/delete outside this mounted home screen.
+        // Re-read on return, while avoiding a duplicate request on the initial mount.
+        void loadHome({ visible: false });
+      } else {
+        hasFocusedHomeRef.current = true;
+      }
       for (const device of devicesRef.current) {
         const sessionIds = remoteSessionStore.getSessions()
           .filter((session) => session.deviceLinkDeviceId === device.deviceId)
@@ -757,7 +774,7 @@ export default function HomeScreen() {
         if (sessionIds.length === 0) continue;
         refreshDeviceScheduleIndex(device.deviceId, sessionIds);
       }
-    }, [refreshDeviceScheduleIndex]),
+    }, [loadHome, refreshDeviceScheduleIndex]),
   );
 
   // 初次加载 + 每次重连(connectionEpoch 变化)都全量刷新。presence 只在状态"变化"时广播、
@@ -838,73 +855,6 @@ export default function HomeScreen() {
     // hydrate's invoke clears the revoked mark on success; the tip-close effect handles dismissal.
   }, [hydrateDeviceSessions]);
 
-  const openRenameDevice = useCallback((item: MobileHomeDeviceFilterItem) => {
-    if (!item.deviceId) return;
-    // 不能在菜单还没卸载时直接挂重命名 Modal(见 pendingMenuActionRef 注释),先关菜单再延后打开。
-    pendingMenuActionRef.current = () => {
-      setRenameTarget(item);
-      setRenameDraft(item.label);
-      setError(null);
-    };
-    setDeviceMenuOpen(false);
-  }, []);
-
-  const runCloudStop = useCallback(async (instance: CloudInstanceView) => {
-    const result = await cloudInstances.stopInstance(instance.instanceId);
-    if (!result) return;
-    void loadHome({ visible: false });
-    Alert.alert(t('deviceLink.cloudInstance.stopped'));
-  }, [cloudInstances, loadHome, t]);
-
-  const runCloudDelete = useCallback(async (instance: CloudInstanceView) => {
-    const result = await cloudInstances.deleteInstance(instance.instanceId);
-    if (!result) return;
-    void loadHome({ visible: false });
-    Alert.alert(t('deviceLink.cloudInstance.deleted'));
-  }, [cloudInstances, loadHome, t]);
-
-  const confirmCloudDelete = useCallback((instance: CloudInstanceView) => {
-    Alert.alert(
-      t('deviceLink.cloudInstance.deleteConfirmTitle'),
-      t('deviceLink.cloudInstance.deleteConfirmDescription'),
-      [
-        { style: 'cancel', text: t('devices.common.cancel') },
-        {
-          onPress: () => void runCloudDelete(instance),
-          style: 'destructive',
-          text: t('deviceLink.cloudInstance.deleteConfirm'),
-        },
-      ],
-    );
-  }, [runCloudDelete, t]);
-
-  const openCloudInstanceActions = useCallback((instance: CloudInstanceView) => {
-    const descriptor = describeCloudInstanceName(instance);
-    const name = descriptor.kind === 'custom'
-      ? descriptor.label
-      : t('deviceLink.cloudInstance.cloud');
-    // DeviceMenuModal 关闭后再弹系统 Alert,与重命名/撤销提示共用同一兄弟 Modal 时序。
-    pendingMenuActionRef.current = () => {
-      Alert.alert(
-        t('deviceLink.cloudInstance.manageTitle', { name }),
-        t('deviceLink.cloudInstance.manageDescription'),
-        [
-          { style: 'cancel', text: t('devices.common.cancel') },
-          {
-            onPress: () => void runCloudStop(instance),
-            text: t('deviceLink.cloudInstance.stop'),
-          },
-          {
-            onPress: () => confirmCloudDelete(instance),
-            style: 'destructive',
-            text: t('deviceLink.cloudInstance.delete'),
-          },
-        ],
-      );
-    };
-    setDeviceMenuOpen(false);
-  }, [confirmCloudDelete, runCloudStop, t]);
-
   // 菜单 Modal 完全关闭(淡出结束 + 卸载)后,执行延后的弹窗动作。
   const handleDeviceMenuClosed = useCallback(() => {
     const action = pendingMenuActionRef.current;
@@ -925,8 +875,10 @@ export default function HomeScreen() {
     pendingMenuActionRef.current = null;
     setDisplaySettingsOpen(false);
     setChromeMenuOpen(false);
+    // 打开范围菜单时拉一次云端最新状态(菜单里要显示「更新可用」)。
+    void refreshCloudInstances();
     setDeviceMenuOpen(true);
-  }, []);
+  }, [refreshCloudInstances]);
 
   const openChromeMenu = useCallback(() => {
     pendingMenuActionRef.current = null;
@@ -1001,6 +953,23 @@ export default function HomeScreen() {
     })),
     [devices, t],
   );
+  const openDeviceManagement = useCallback((input: {
+    deviceId: string;
+    name: string;
+    cloudInstance?: CloudInstanceView | null;
+  }) => {
+    const device = displayDevices.find((item) => item.deviceId === input.deviceId) ?? null;
+    setDeviceMenuOpen(false);
+    guardedPush({
+      pathname: '/devices/manage/[deviceId]',
+      params: buildDeviceManagementRouteParams({
+        cloudInstance: input.cloudInstance,
+        device,
+        deviceId: input.deviceId,
+        name: input.name,
+      }),
+    });
+  }, [displayDevices, guardedPush]);
   const deviceRows = useMemo(
     () => toDeviceListItems(displayDevices, Date.now(), revokedDevices),
     [displayDevices, revokedDevices],
@@ -1107,22 +1076,49 @@ export default function HomeScreen() {
     () => new Set(displayDevices.filter((device) => device.online).map((device) => device.deviceId)),
     [displayDevices],
   );
-  // 云端唤醒 wake-watch:唤醒受理后到 Pod presence 上线之间有约一分钟空窗,此时
+  const onlineDeviceIdsRef = useRef(onlineDeviceIds);
+  onlineDeviceIdsRef.current = onlineDeviceIds;
+  // 云端唤醒 wake-watch:唤醒受理后到 Pod presence 上线之间可能有数分钟空窗,此时
   // cloudInstances.pending 已清、设备仍离线,「唤醒中」态若只看 pending 会提前回落成
   // 可再次点击。受理成功时记下 deviceId,presence 上线或超时兜底后解除;引导卡与
   // 设备菜单两个唤醒入口共用这一份状态。
-  const [cloudWakeWatchDeviceId, setCloudWakeWatchDeviceId] = useState<string | null>(null);
+  const [cloudWakeWatchDeviceId, setCloudWakeWatchDeviceIdState] = useState<string | null>(null);
+  const cloudWakeWatchDeviceIdRef = useRef<string | null>(null);
+  const setCloudWakeWatchDeviceId = useCallback((deviceId: string | null) => {
+    cloudWakeWatchDeviceIdRef.current = deviceId;
+    setCloudWakeWatchDeviceIdState(deviceId);
+  }, []);
   useEffect(() => {
     if (cloudWakeWatchDeviceId === null) return;
-    const timer = setTimeout(() => setCloudWakeWatchDeviceId(null), CLOUD_WAKE_WATCH_TIMEOUT_MS);
+    const watchedDeviceId = cloudWakeWatchDeviceId;
+    const timer = setTimeout(() => {
+      if (
+        cloudWakeWatchDeviceIdRef.current !== watchedDeviceId
+        || onlineDeviceIdsRef.current.has(watchedDeviceId)
+      ) {
+        return;
+      }
+      setCloudWakeWatchDeviceId(null);
+      Alert.alert(t('deviceLink.cloudInstance.wakeFailed'));
+    }, CLOUD_WAKE_WATCH_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [cloudWakeWatchDeviceId]);
+  }, [cloudWakeWatchDeviceId, setCloudWakeWatchDeviceId, t]);
   useEffect(() => {
     if (cloudWakeWatchDeviceId !== null && onlineDeviceIds.has(cloudWakeWatchDeviceId)) {
       setCloudWakeWatchDeviceId(null);
     }
-  }, [cloudWakeWatchDeviceId, onlineDeviceIds]);
+  }, [cloudWakeWatchDeviceId, onlineDeviceIds, setCloudWakeWatchDeviceId]);
   const cloudWaking = cloudInstances.pending?.action === 'wake' || cloudWakeWatchDeviceId !== null;
+  const selectedCloudInstance = cloudInstances.instances.find(
+    (instance) => instance.deviceId === selectedDeviceId,
+  ) ?? null;
+  const selectedCloudWaking = isSelectedCloudInstanceWaking({
+    deviceId: selectedCloudInstance?.deviceId ?? null,
+    instanceId: selectedCloudInstance?.instanceId ?? null,
+    online: selectedCloudInstance ? onlineDeviceIds.has(selectedCloudInstance.deviceId) : false,
+    pending: cloudInstances.pending,
+    wakeWatchDeviceId: cloudWakeWatchDeviceId,
+  });
   const revokedTipDeviceName = useMemo(
     () => revokedTipDeviceId
       ? deviceModels.find((item) => item.deviceId === revokedTipDeviceId)?.name ?? t('devices.list.thisComputer')
@@ -1237,6 +1233,10 @@ export default function HomeScreen() {
       setPriorityHoldEpoch((epoch) => epoch + 1);
     }, [priorityContext]),
   );
+  const renderedSections = useMemo(
+    () => selectedCloudWaking ? [] : sections,
+    [sections, selectedCloudWaking],
+  );
   const windowLayout = buildMainWindowLayout({
     actionCount: 1,
     kind: 'list',
@@ -1331,11 +1331,8 @@ export default function HomeScreen() {
   );
   const selectedDeviceLabel = useMemo(() => {
     if (!selectedDeviceId) return t('devices.list.allConversations');
-    const cloudInstance = cloudInstances.instances.find(
-      (instance) => instance.deviceId === selectedDeviceId,
-    );
-    if (cloudInstance) {
-      const descriptor = describeCloudInstanceName(cloudInstance);
+    if (selectedCloudInstance) {
+      const descriptor = describeCloudInstanceName(selectedCloudInstance);
       if (descriptor.kind === 'custom') return descriptor.label;
       return t('deviceLink.cloudInstance.cloud');
     }
@@ -1345,9 +1342,9 @@ export default function HomeScreen() {
       ?? t('devices.list.thisComputer');
     // memo 体内按 deviceId 查云端实例取展示名,依赖必须带上实例列表。
   }, [
-    cloudInstances.instances,
     home.deviceFilters,
     restoredDeviceName,
+    selectedCloudInstance,
     selectedDeviceId,
     t,
   ]);
@@ -1863,8 +1860,7 @@ export default function HomeScreen() {
       </View>
 
       <SectionList
-        sections={sections}
-        style={styles.homeList}
+        sections={renderedSections}
         keyExtractor={(item) => item.key}
         refreshControl={
           <RefreshControl
@@ -1918,8 +1914,20 @@ export default function HomeScreen() {
             <View style={styles.pinnedFooter} testID="home.pinnedFooter" />
           ) : null}
         ListEmptyComponent={
-          initialHomeLoading ? (
-            <HomeInitialLoadingState
+          selectedCloudWaking ? (
+            <HomeListLoadingState
+              label={t('deviceLink.cloudWaking')}
+              testID="home.cloudWaking"
+              style={{
+                marginTop: spacing.xxl,
+                minHeight: windowLayout.emptyMinHeight,
+                padding: windowLayout.emptyPadding,
+              }}
+            />
+          ) : initialHomeLoading ? (
+            <HomeListLoadingState
+              label={t('devices.list.loading')}
+              testID="home.loading"
               style={{
                 marginTop: spacing.xxl,
                 minHeight: windowLayout.emptyMinHeight,
@@ -2049,8 +2057,18 @@ export default function HomeScreen() {
             params: { deviceId: item.deviceId, name: item.label },
           });
         }}
-        onManageCloudInstance={openCloudInstanceActions}
-        onRenameDevice={openRenameDevice}
+        onOpenManage={(item) => {
+          if (!item.deviceId) return;
+          openDeviceManagement({
+            deviceId: item.deviceId,
+            name: item.label,
+          });
+        }}
+        onOpenCloudInstance={(instance, label) => openDeviceManagement({
+          cloudInstance: instance,
+          deviceId: instance.deviceId,
+          name: label,
+        })}
         onlineDeviceIds={onlineDeviceIds}
         selectedDeviceId={selectedDeviceId}
         onSelect={(item) => {
@@ -2132,14 +2150,21 @@ export default function HomeScreen() {
   );
 }
 
-function HomeInitialLoadingState({ style }: { style?: StyleProp<ViewStyle> }) {
+function HomeListLoadingState({
+  label,
+  style,
+  testID,
+}: {
+  label: string;
+  style?: StyleProp<ViewStyle>;
+  testID: string;
+}) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
-  const { t } = useTranslation();
   return (
-    <View style={[styles.initialLoadingState, style]} testID="home.loading">
+    <View style={[styles.initialLoadingState, style]} testID={testID}>
       <ActivityIndicator color={colors.textSecondary} size="small" />
-      <Text style={styles.initialLoadingText}>{t('devices.list.loading')}</Text>
+      <Text style={styles.initialLoadingText}>{label}</Text>
     </View>
   );
 }
@@ -2153,9 +2178,9 @@ function DeviceMenuModal({
   onClose,
   onClosed,
   onCloudWakeAccepted,
-  onManageCloudInstance,
+  onOpenCloudInstance,
   onOpenDevice,
-  onRenameDevice,
+  onOpenManage,
   onSelect,
   onToggleGroupByProject,
   onlineDeviceIds,
@@ -2174,9 +2199,11 @@ function DeviceMenuModal({
   onClosed?(): void;
   /** 唤醒请求被控制面受理后回报 deviceId,父级据此开始 wake-watch。 */
   onCloudWakeAccepted(deviceId: string): void;
-  onManageCloudInstance(instance: CloudInstanceView): void;
+  onOpenCloudInstance(instance: CloudInstanceView, label: string): void;
+  /** Opens the existing task-list detail route for an ordinary device. */
   onOpenDevice(item: MobileHomeDeviceFilterItem): void;
-  onRenameDevice(item: MobileHomeDeviceFilterItem): void;
+  /** Opens the dedicated device-management route. */
+  onOpenManage(item: MobileHomeDeviceFilterItem): void;
   onSelect(item: MobileHomeDeviceFilterItem): void;
   onToggleGroupByProject(): void;
   onlineDeviceIds: ReadonlySet<string>;
@@ -2203,21 +2230,17 @@ function DeviceMenuModal({
     () => new Set(cloud.instances.map((instance) => instance.deviceId)),
     [cloud.instances],
   );
-  // 云端实例行以控制面为唯一数据源;relay device filter 中的 cloud 项全部排除,
-  // 防止 online/offline 同一实例出现两行。双集合各防一种不一致窗口:
-  // cloudDeviceIds 按 relay 的 kind==='cloud' 标记排(控制面列表未返回/延迟时兜底),
-  // cloudInstanceDeviceIds 按控制面实例排(relay 侧 kind 标记缺失或尚未上报时兜底)。
-  const deviceFilters = useMemo(
-    () =>
-      filters.filter(
-        (item) =>
-          item.deviceId !== null
-          // 上游 2026-08:菜单只列当前能打开的电脑,离线 / 关远控 / 撤权的不占行。
-          && item.available
-          && !cloudDeviceIds.has(item.deviceId)
-          && !cloudInstanceDeviceIds.has(item.deviceId),
-      ),
-    [filters, cloudDeviceIds, cloudInstanceDeviceIds],
+  // 控制面实例行提供完整管理能力;relay kind==='cloud' 行在没有匹配实例时作为可见性兜底。
+  // projectDeviceMenuSources 负责去重:匹配到实例只留富行,控制面暂不可用或快照漏掉在线
+  // presence 时保留 relay 行,避免真实在线设备从菜单消失。
+  const { deviceFilters, fallbackCloudFilters } = useMemo(
+    () => projectDeviceMenuSources({
+      cloudDeviceIds,
+      cloudInstanceDeviceIds,
+      cloudLoadState: cloud.loadState,
+      filters,
+    }),
+    [cloud.loadState, cloudDeviceIds, cloudInstanceDeviceIds, filters],
   );
   // 本组件随父级每次渲染执行(visible 只控制原生 Modal 显隐),云端派生全部 memo,
   // 让开销只随数据变化而不是随父级重渲染频率。文案跟随 app 内当前语言偏好。
@@ -2226,6 +2249,8 @@ function DeviceMenuModal({
       cloud: t('deviceLink.cloudInstance.cloud'),
       deleting: t('deviceLink.cloudInstance.deleting'),
       stopping: t('deviceLink.cloudInstance.stopping'),
+      updateAvailable: t('deviceLink.cloudInstance.updateAvailable'),
+      updating: t('deviceLink.cloudInstance.updating'),
       wake: t('deviceLink.cloudWake'),
       waking: t('deviceLink.cloudWaking'),
     }),
@@ -2241,40 +2266,16 @@ function DeviceMenuModal({
     },
     [cloudMessages],
   );
-  const buildCloudFilterItem = useCallback(
-    (
-      view: Pick<CloudInstanceView, 'instanceId' | 'deviceId' | 'customLabel' | 'nameSequence'>,
-      state: { online: boolean; selected: boolean },
-    ): MobileHomeDeviceFilterItem => ({
-      available: state.online,
-      deviceId: view.deviceId,
-      id: `cloud:${view.instanceId}`,
-      label: cloudNameOf(view),
-      selected: state.selected,
-      sessionCount: 0,
-      state: state.online ? 'ready' : 'offline',
-      statusLabel: state.online ? 'online' : 'offline',
-      waitingCount: 0,
-    }),
-    [cloudNameOf],
-  );
   // 云端实例统一建模:每个实例恰好一行;online/offline 只由 relay presence 改变状态。
   const cloudItems = useMemo(() => {
     if (cloud.loadState !== 'ready') return [];
-    return cloud.instances.map((instance) => {
-      const online = onlineDeviceIds.has(instance.deviceId);
-      return {
-        instance,
-        label: cloudNameOf(instance),
-        pendingKey: instance.instanceId,
-        online,
-        filter: buildCloudFilterItem(instance, {
-          online,
-          selected: selectedDeviceId === instance.deviceId,
-        }),
-      };
+    return projectCloudInstanceMenuItems({
+      instances: cloud.instances,
+      nameOf: cloudNameOf,
+      onlineDeviceIds,
+      selectedDeviceId,
     });
-  }, [cloud.loadState, cloud.instances, onlineDeviceIds, cloudNameOf, buildCloudFilterItem, selectedDeviceId]);
+  }, [cloud.loadState, cloud.instances, onlineDeviceIds, cloudNameOf, selectedDeviceId]);
   return (
     <HomeMenuScrim
       backdropTestID="home.deviceMenu.backdrop"
@@ -2303,9 +2304,23 @@ function DeviceMenuModal({
                 dimmed={!item.available && item.state !== 'access_revoked'}
                 key={item.id}
                 label={item.label}
+                onDetails={item.deviceId ? () => onOpenManage(item) : undefined}
                 onLongPress={item.deviceId ? () => onOpenDevice(item) : undefined}
                 onPress={() => onSelect(item)}
-                onRename={item.deviceId ? () => onRenameDevice(item) : undefined}
+                selected={item.selected}
+                status={deviceMenuStatus(item)}
+                testID={item.deviceId ? `home.deviceChip.${sanitizeDeviceChipTestId(item.deviceId)}` : undefined}
+              />
+            ))}
+            {fallbackCloudFilters.map((item) => (
+              <DeviceMenuItem
+                connectionState={item.deviceId ? connectionStates[item.deviceId] ?? 'idle' : 'idle'}
+                dimmed={!item.available && item.state !== 'access_revoked'}
+                key={`cloud-fallback:${item.id}`}
+                label={item.label}
+                onDetails={item.deviceId ? () => onOpenManage(item) : undefined}
+                onLongPress={item.deviceId ? () => onOpenManage(item) : undefined}
+                onPress={() => onSelect(item)}
                 selected={item.selected}
                 status={deviceMenuStatus(item)}
                 testID={item.deviceId ? `home.deviceChip.${sanitizeDeviceChipTestId(item.deviceId)}` : undefined}
@@ -2314,23 +2329,29 @@ function DeviceMenuModal({
             {cloudItems.map((item) => {
               // watch 命中 = 唤醒已受理、Pod 尚未上线:pending 已清仍要显示「唤醒中」。
               const waking = cloudWakingDeviceId === item.instance.deviceId && !item.online;
-              const busy = cloud.pending?.target === item.pendingKey || waking;
-              const busyLabel = cloud.pending?.action === 'stop'
-                ? cloudMessages.stopping
-                : cloud.pending?.action === 'delete'
-                  ? cloudMessages.deleting
-                  : cloudMessages.waking;
+              const pendingThisInstance = cloud.pending?.target === item.pendingKey;
+              const busy = pendingThisInstance || waking || item.updating;
+              const busyLabel = item.updating || (pendingThisInstance && cloud.pending?.action === 'upgrade')
+                ? cloudMessages.updating
+                : cloud.pending?.action === 'stop'
+                  ? cloudMessages.stopping
+                  : cloud.pending?.action === 'delete'
+                    ? cloudMessages.deleting
+                    : cloudMessages.waking;
               return (
                 <DeviceMenuItem
+                  badge={
+                    item.instance.status.updateAvailable && !busy
+                      ? cloudMessages.updateAvailable
+                      : undefined
+                  }
+                  onBadgePress={() => onOpenCloudInstance(item.instance, item.label)}
                   busy={busy}
                   disabled={!item.online && cloud.pending !== null}
                   key={item.instance.instanceId}
                   label={busy ? busyLabel : item.label}
-                  onLongPress={
-                    cloud.pending === null
-                      ? () => onManageCloudInstance(item.instance)
-                      : undefined
-                  }
+                  onDetails={() => onOpenCloudInstance(item.instance, item.label)}
+                  onLongPress={() => onOpenCloudInstance(item.instance, item.label)}
                   onPress={() => {
                     if (item.online) {
                       onSelect(item.filter);
@@ -2368,7 +2389,11 @@ function DeviceMenuModal({
                   void cloud.wake().then((result) => {
                     if (!result) return;
                     onCloudWakeAccepted(result.deviceId);
-                    onSelect(buildCloudFilterItem(result, { online: false, selected: true }));
+                    onSelect(buildCloudDeviceFilterItem(result, {
+                      label: cloudNameOf(result),
+                      online: false,
+                      selected: true,
+                    }));
                   });
                 }}
                 selected={false}
@@ -2508,6 +2533,7 @@ function HomeDisplaySettingsModal({
 }
 
 function DeviceMenuItem({
+  badge,
   busy = false,
   checked = false,
   connectionState,
@@ -2515,13 +2541,15 @@ function DeviceMenuItem({
   icon,
   disabled = false,
   label,
+  onBadgePress,
+  onDetails,
   onLongPress,
   onPress,
-  onRename,
   selected,
   status,
   testID,
 }: {
+  badge?: string;
   busy?: boolean;
   checked?: boolean;
   connectionState?: HomeDeviceConnectionState;
@@ -2529,9 +2557,10 @@ function DeviceMenuItem({
   icon?: ReactNode;
   disabled?: boolean;
   label: string;
+  onBadgePress?: () => void;
+  onDetails?: () => void;
   onLongPress?: () => void;
   onPress(): void;
-  onRename?: () => void;
   selected: boolean;
   status?: 'online' | 'offline';
   testID?: string;
@@ -2551,9 +2580,9 @@ function DeviceMenuItem({
         disabled: rowDisabled,
         selected: selected || undefined,
       }}
-      disabled={rowDisabled && !onRename}
+      disabled={rowDisabled && !onDetails}
       onLongPress={
-        rowDisabled || !onLongPress
+        !onLongPress
           ? undefined
           : () => {
               longPressTriggeredRef.current = true;
@@ -2582,6 +2611,22 @@ function DeviceMenuItem({
         ) : null)}
       </View>
       <Text numberOfLines={1} style={styles.deviceMenuItemText}>{label}</Text>
+      {badge ? (
+        <Pressable
+          accessibilityLabel={t('deviceLink.cloudInstance.updateAvailableOpenDetails', { label })}
+          accessibilityRole="button"
+          disabled={!onBadgePress}
+          hitSlop={{ bottom: 10, top: 10 }}
+          onPress={(event) => {
+            event.stopPropagation();
+            onBadgePress?.();
+          }}
+          style={({ pressed }) => [styles.deviceMenuBadge, pressed && styles.pressed]}
+          testID={testID ? `${testID}.updateBadge` : undefined}
+        >
+          <Text numberOfLines={1} style={styles.deviceMenuBadgeText}>{badge}</Text>
+        </Pressable>
+      ) : null}
       {busy || status ? (
         <View style={styles.deviceMenuStatusSlot}>
           {busy ? (
@@ -2594,23 +2639,22 @@ function DeviceMenuItem({
           ) : null}
         </View>
       ) : null}
-      {/* 尾列固定宽槽:有重命名(常规设备)渲染铅笔,无重命名(云端等)留空,
-          保证状态点在各行同一水平位置、不因缺少铅笔而右移错位。 */}
-      {status || onRename ? (
-        <View style={styles.deviceMenuRenameSlot}>
-          {onRename ? (
+      {/* 尾列详情 affordance 打开管理页;长按目标由各行单独决定,行点击仍只切换设备筛选。 */}
+      {status || onDetails ? (
+        <View style={styles.deviceMenuDetailsSlot}>
+          {onDetails ? (
             <Pressable
-              accessibilityLabel={t('devices.list.a11y.renameDevice', { label })}
+              accessibilityLabel={t('devices.management.openDetails', { label })}
               accessibilityRole="button"
               hitSlop={8}
               onPress={(event) => {
                 event.stopPropagation();
-                onRename();
+                onDetails();
               }}
-              style={({ pressed }) => [styles.deviceMenuRenameButton, pressed && styles.pressed]}
-              testID={testID ? `${testID}.rename` : undefined}
+              style={({ pressed }) => [styles.deviceMenuDetailsButton, pressed && styles.pressed]}
+              testID={testID ? `${testID}.details` : undefined}
             >
-              <Pencil color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.regular} />
+              <ChevronRight color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.regular} />
             </Pressable>
           ) : null}
         </View>
@@ -3883,6 +3927,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     lineHeight: lineHeight.caption,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  deviceMenuBadge: {
+    backgroundColor: colors.surfaceChip,
+    borderRadius: radius.pill,
+    maxWidth: 120,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  deviceMenuBadgeText: {
+    color: colors.textSecondary,
+    fontSize: typeScale.micro,
+    fontWeight: fontWeight.medium,
+    lineHeight: lineHeight.micro,
   },
   deviceMenuStatusSlot: {
     alignItems: 'center',
@@ -3891,15 +3947,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'relative',
     width: 20,
   },
-  deviceMenuRenameButton: {
+  deviceMenuDetailsButton: {
     alignItems: 'center',
     borderRadius: radius.pill,
     height: 34,
     justifyContent: 'center',
     width: 34,
   },
-  // 尾列固定宽槽(与重命名按钮同宽):云端等无重命名的行留空占位,状态点跨行对齐。
-  deviceMenuRenameSlot: {
+  // 尾列固定宽槽:没有详情入口的特殊行留空占位,状态点跨行对齐。
+  deviceMenuDetailsSlot: {
     alignItems: 'center',
     height: 34,
     justifyContent: 'center',

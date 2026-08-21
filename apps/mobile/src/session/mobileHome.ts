@@ -19,10 +19,9 @@ export interface MobileHomeSourceDevice {
 }
 
 /**
- * Cloud capability is applied once at the mobile Home aggregation boundary.
- * Downstream device filters, session groups, recent projects, and new-session
- * options all consume these same sources, so unsupported cloud data cannot
- * leak through a separately rendered path.
+ * When control-plane capability is unavailable, live relay devices remain valid
+ * remote targets. Only cached cloud sessions without a current relay device are
+ * suppressed, so a transient control-plane failure cannot erase an online device.
  */
 export function selectMobileHomeSources<
   TDevice extends MobileHomeSourceDevice,
@@ -37,11 +36,11 @@ export function selectMobileHomeSources<
     devices.filter((device) => device.kind === 'cloud').map((device) => device.deviceId),
   );
   return {
-    devices: devices.filter((device) => device.kind !== 'cloud'),
-    sessions: sessions.filter(
-      (session) =>
-        !cloudDeviceIds.has(session.deviceLinkDeviceId ?? '')
-        && parseCloudDeviceName(session.deviceLinkDeviceName ?? '') === null,
-    ),
+    devices,
+    sessions: sessions.filter((session) => {
+      const deviceId = session.deviceLinkDeviceId ?? '';
+      if (cloudDeviceIds.has(deviceId)) return true;
+      return parseCloudDeviceName(session.deviceLinkDeviceName ?? '') === null;
+    }),
   };
 }

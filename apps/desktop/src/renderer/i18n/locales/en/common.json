@@ -3432,6 +3432,19 @@
         "stopping": "Sleeping…",
         "wake": "Wake Instance",
         "waking": "Waking…",
+        "updateAvailable": "Update Available",
+        "updateAvailableTag": "Update Available · {{tag}}",
+        "currentVersion": "Current version {{version}}",
+        "currentVersionUpToDate": "Current version {{version}} · Up to date",
+        "update": "Update Cloud",
+        "updating": "Updating…",
+        "updateRolledBack": "The last update failed and was rolled back automatically.",
+        "updateConfirm": {
+          "title": "Update Cloud Instance?",
+          "description": "Updating restarts the cloud instance and interrupts any running tasks.",
+          "confirm": "Update Cloud Instance",
+          "cancel": "Cancel"
+        },
         "delete": "Delete Instance",
         "deleting": "Deleting…",
         "deleteConfirm": {
@@ -3446,7 +3459,10 @@
           "stopFailed": "Failed to sleep the cloud instance. Try again.",
           "deleteFailed": "Failed to delete the cloud instance. Try again.",
           "woke": "Cloud instance is waking up.",
-          "wakeFailed": "Failed to wake the cloud instance. Try again."
+          "wakeFailed": "Failed to wake the cloud instance. Try again.",
+          "updateStarted": "Cloud instance update started",
+          "updateFailed": "Cloud instance update couldn't start. Try again.",
+          "noReleaseAvailable": "No release is available yet. Refresh and try again later."
         }
       },
       "error": {
@@ -7795,7 +7811,8 @@
       "cloud": {
         "wake": "Wake Cloud",
         "waking": "Waking…",
-        "wakeFailed": "Failed to wake the cloud instance. Try again."
+        "wakeFailed": "Failed to wake the cloud instance. Try again.",
+        "updateAvailable": "Update Available"
       },
       "machineSwitcher": {
         "allMachines": "All",

@@ -1,6 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CloudInstanceApiFetch } from '@/api/cloudInstance';
 
+function normalizedStatus(patch: Record<string, unknown> = {}) {
+  return {
+    ...patch,
+    image: typeof patch.image === 'string' && patch.image.trim() ? patch.image.trim() : null,
+    updateAvailable: patch.updateAvailable === true,
+    latestReleaseTag: typeof patch.latestReleaseTag === 'string' ? patch.latestReleaseTag : null,
+    lastFailedUpgradeImage:
+      typeof patch.lastFailedUpgradeImage === 'string' ? patch.lastFailedUpgradeImage : null,
+    upgrade: {
+      state: 'idle' as const,
+      targetImage: null,
+      previousImage: null,
+      deadlineAtMs: null,
+    },
+  };
+}
+
 async function loadCloudInstanceApi(baseUrl: string | undefined) {
   if (baseUrl === undefined) {
     delete process.env.EXPO_PUBLIC_XDT_CLOUD_INSTANCE_API_BASE_URL;
@@ -28,7 +45,10 @@ describe('mobile cloud-instance API', () => {
           deviceId: 'device-1',
           nameSequence: 2,
           customLabel: null,
-          status: { runtimeState: 'stopped' },
+          status: {
+            image: ' registry.example/public/cindy-cloud:0.1.7@sha256:abc ',
+            runtimeState: 'stopped',
+          },
         },
       ],
     }));
@@ -44,7 +64,10 @@ describe('mobile cloud-instance API', () => {
             deviceId: 'device-1',
             nameSequence: 2,
             customLabel: null,
-            status: { runtimeState: 'stopped' },
+            status: normalizedStatus({
+              image: 'registry.example/public/cindy-cloud:0.1.7@sha256:abc',
+              runtimeState: 'stopped',
+            }),
           },
         ],
       },
@@ -71,7 +94,7 @@ describe('mobile cloud-instance API', () => {
     const authenticatedFetch = apiFetch as unknown as CloudInstanceApiFetch;
     await expect(wakeCloudInstance(undefined, { apiFetch: authenticatedFetch })).resolves.toEqual({
       kind: 'ok',
-      value: response,
+      value: { ...response, status: normalizedStatus(response.status) },
     });
     await wakeCloudInstance('instance-1', { apiFetch: authenticatedFetch });
 
@@ -104,12 +127,12 @@ describe('mobile cloud-instance API', () => {
 
     await expect(stopCloudInstance('instance/a', { apiFetch: authenticatedFetch })).resolves.toEqual({
       kind: 'ok',
-      value: { status: { runtimeState: 'stopped' } },
+      value: { status: normalizedStatus({ runtimeState: 'stopped' }) },
     });
     await expect(deleteCloudInstance('instance/a', { apiFetch: authenticatedFetch })).resolves.toEqual({
       kind: 'ok',
       value: {
-        status: { runtimeState: 'deleted' },
+        status: normalizedStatus({ runtimeState: 'deleted' }),
         revocation: { status: 'revoked' },
         archiveCleanup: 'removed',
       },
@@ -122,6 +145,45 @@ describe('mobile cloud-instance API', () => {
     expect(apiFetch).toHaveBeenNthCalledWith(2, '/instances/instance%2Fa', {
       baseUrl: 'https://cloud.example.invalid',
       method: 'DELETE',
+      timeoutMs: 30_000,
+    });
+  });
+
+  it('upgrades without a client-selected image and normalizes release hints', async () => {
+    const { upgradeCloudInstance } = await loadCloudInstanceApi('https://cloud.example.invalid');
+    const apiFetch = vi.fn(async () => ({
+      status: {
+        runtimeState: 'running',
+        updateAvailable: true,
+        latestReleaseTag: 'v1.2.3',
+        upgrade: {
+          state: 'verifying',
+          targetImage: 'registry.example/cindy:v1.2.3',
+          previousImage: 'registry.example/cindy:v1.2.2',
+          deadlineAtMs: 1234,
+        },
+      },
+      outcome: 'verifying',
+    }));
+
+    await expect(
+      upgradeCloudInstance('instance/a', {
+        apiFetch: apiFetch as unknown as CloudInstanceApiFetch,
+      }),
+    ).resolves.toMatchObject({
+      kind: 'ok',
+      value: {
+        outcome: 'verifying',
+        status: {
+          updateAvailable: true,
+          latestReleaseTag: 'v1.2.3',
+          upgrade: { state: 'verifying' },
+        },
+      },
+    });
+    expect(apiFetch).toHaveBeenCalledWith('/instances/instance%2Fa/upgrade', {
+      baseUrl: 'https://cloud.example.invalid',
+      method: 'POST',
       timeoutMs: 30_000,
     });
   });
@@ -184,6 +246,7 @@ describe('mobile cloud-instance API', () => {
       deleteCloudInstance,
       listCloudInstances,
       stopCloudInstance,
+      upgradeCloudInstance,
       wakeCloudInstance,
     } = await loadCloudInstanceApi(undefined);
     const apiFetch = vi.fn();
@@ -196,6 +259,9 @@ describe('mobile cloud-instance API', () => {
       kind: 'unsupported',
     });
     await expect(stopCloudInstance('instance-1', { apiFetch: authenticatedFetch })).resolves.toEqual({
+      kind: 'unsupported',
+    });
+    await expect(upgradeCloudInstance('instance-1', { apiFetch: authenticatedFetch })).resolves.toEqual({
       kind: 'unsupported',
     });
     await expect(deleteCloudInstance('instance-1', { apiFetch: authenticatedFetch })).resolves.toEqual({

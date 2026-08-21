@@ -69,6 +69,7 @@ import {
   useCloudInstances,
   type CloudInstanceView,
 } from '@/features/cloud-instance/useCloudInstances';
+import { cloudInstanceHasAvailableUpdate } from '@/features/cloud-instance/cloudDraftTarget';
 import {
   desktopCloudInstanceDisplayName,
   resolveDesktopCloudDeviceName,
@@ -117,6 +118,13 @@ export function MachineSwitcherMenu({
   // 段头标题是远程任务读取状态的固定承载点。后台 bootstrap 时只更新这一行，
   // 不再把 loading 提示插入下方会话列表，避免列表整体上下跳动。
   const remoteSessionBootstrapLoading = useRemoteSessionBootstrapLoading(selectedDeviceId);
+  // 菜单是点击展开(上游 2026-08-13 定稿已去掉 hover 展开)。这里只为「打开时拉一次
+  // 最新云端状态」而受控:菜单里要显示「更新可用」等随时间变化的信息。
+  const refreshCloudInstances = cloud.refresh;
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (open) void refreshCloudInstances();
+  }, [open, refreshCloudInstances]);
   // 本行随 SidebarTopNav 在所有非 rail 视图常驻,但机器过滤只作用于会话列表侧栏——
   // 选机器后必须让过滤结果可见(Codex P2):
   //   - /settings 等非 view 路由 → navigateToView('cc-agent') 切回会话视图
@@ -268,7 +276,7 @@ export function MachineSwitcherMenu({
   // 点击展开(2026-08-13 定稿,推翻 2026-07-12 的 hover 展开——作为段头标题,
   // hover 扫过就弹菜单太吵)。modal={false}:侧栏是常驻面板,不锁列表滚动。
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -347,6 +355,15 @@ export function MachineSwitcherMenu({
                     key={instance.instanceId}
                     icon={<Cloud size={14} strokeWidth={2} />}
                     label={cloudNameOf(instance)}
+                    badge={
+                      cloudInstanceHasAvailableUpdate(instance)
+                        ? t('ccAgent.sidebar.cloud.updateAvailable')
+                        : undefined
+                    }
+                    onBadgeSelect={() => {
+                      setOpen(false);
+                      navigate('/settings?tab=remote-control&section=devices');
+                    }}
                     selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
                     onSelect={() => applySelect([instance.deviceId])}
                     onToggle={() => applyToggle(instance.deviceId)}
@@ -411,6 +428,8 @@ export function MachineSwitcherMenu({
 function MachineMenuItem({
   icon,
   label,
+  badge,
+  onBadgeSelect,
   selected,
   onSelect,
   onToggle,
@@ -420,6 +439,9 @@ function MachineMenuItem({
 }: {
   icon?: ReactNode;
   label: string;
+  badge?: string;
+  /** 行内附加动作；点击不触发行主体的机器选择。 */
+  onBadgeSelect?: () => void;
   selected: boolean;
   onSelect: () => void;
   /** 多选动作(勾选 / 取消勾选);不传则该项无复选框、无修饰键 toggle(「所有」/ 被拒项)。 */
@@ -476,6 +498,22 @@ function MachineMenuItem({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {badge && onBadgeSelect ? (
+        <button
+          type="button"
+          data-testid="machine-cloud-update-badge"
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onBadgeSelect();
+          }}
+          className="shrink-0 select-none rounded-full bg-[var(--surface-chip)] px-2 py-0.5 text-10 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+        >
+          {badge}
+        </button>
+      ) : null}
       {/* 右槽:恒定 w-4 占位(所有行都渲染),复选框浮现 / 消失只切 visibility / 边框——
           整行宽度与 label 截断位置在 hover 前后完全不变。
           已勾选且可多选 → 恒显 ✓,✓ 即取消勾选的点击目标(鼠标悬停到 ✓ 自身时才

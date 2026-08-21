@@ -307,19 +307,18 @@ describe('mobile home desktop-first surface', () => {
   });
 
   it('lets mobile rename account devices through the authoritative device-link API', () => {
-    const source = readSource('app/devices/index.tsx');
+    const homeSource = readSource('app/devices/index.tsx');
+    const detailSource = readSource('src/device-link/DeviceManagementScreen.tsx');
 
-    expect(source).toContain('const [renameTarget, setRenameTarget]');
-    expect(source).toContain('function RenameDeviceModal');
-    expect(source).toContain('onRenameDevice={openRenameDevice}');
-    expect(source).toContain('testID={testID ? `${testID}.rename` : undefined}');
-    expect(source).toContain('testID="home.renameDevice.input"');
-    expect(source).toContain("testID: 'home.renameDevice.save'");
-    expect(source).toContain('`/api/device-link/devices/${encodeURIComponent(target.deviceId)}`');
-    expect(source).toContain("method: 'PATCH'");
-    expect(source).toContain('body: { name }');
-    expect(source).toContain('remoteSessionStore.renameDevice(target.deviceId, nextName)');
-    expect(source).not.toContain('clearManualName');
+    expect(homeSource).toContain('buildDeviceManagementRouteParams({');
+    expect(homeSource).not.toContain('function RenameDeviceModal');
+    expect(detailSource).toContain('testID="deviceManagement.renameInput"');
+    expect(detailSource).toContain("testID: 'deviceManagement.renameSave'");
+    expect(detailSource).toContain('`/api/device-link/devices/${encodeURIComponent(props.deviceId)}`');
+    expect(detailSource).toContain("method: 'PATCH'");
+    expect(detailSource).toContain('body: { name }');
+    expect(detailSource).toContain('remoteSessionStore.renameDevice(props.deviceId, result.name)');
+    expect(detailSource).not.toContain('clearManualName');
   });
 
   it('scopes multi-device connection feedback to the affected device chip', () => {
@@ -527,5 +526,9 @@ describe('mobile home desktop-first surface', () => {
     expect(devicesSource).toContain('waking: cloudWaking');
     expect(devicesSource).toContain('CLOUD_WAKE_WATCH_TIMEOUT_MS');
     expect(devicesSource).toContain('cloudInstances.pending !== null || cloudWakeWatchDeviceId !== null');
+    expect(devicesSource).toContain('const selectedCloudWaking = isSelectedCloudInstanceWaking({');
+    expect(devicesSource).toContain('sections={renderedSections}');
+    expect(devicesSource).toContain('testID="home.cloudWaking"');
+    expect(devicesSource).toContain("Alert.alert(t('deviceLink.cloudInstance.wakeFailed'))");
   });
 });

@@ -1,10 +1,58 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  isSelectedCloudInstanceWaking,
   runCloudInstanceAction,
   runCloudInstanceWake,
   type CloudInstancePending,
 } from '@/cloud-instance/cloudInstanceWake';
+
+const cloudStatus = {
+  image: null,
+  updateAvailable: false,
+  latestReleaseTag: null,
+  lastFailedUpgradeImage: null,
+  upgrade: {
+    state: 'idle' as const,
+    targetImage: null,
+    previousImage: null,
+    deadlineAtMs: null,
+  },
+};
+
+describe('selected cloud waking placeholder', () => {
+  const base = {
+    deviceId: 'device-1',
+    instanceId: 'instance-1',
+    online: false,
+    pending: null,
+    wakeWatchDeviceId: null,
+  } as const;
+
+  it('covers the matching wake request and accepted wake-watch window', () => {
+    expect(isSelectedCloudInstanceWaking({
+      ...base,
+      pending: { action: 'wake', target: 'instance-1' },
+    })).toBe(true);
+    expect(isSelectedCloudInstanceWaking({
+      ...base,
+      wakeWatchDeviceId: 'device-1',
+    })).toBe(true);
+  });
+
+  it('does not hide tasks for online, unrelated, or idle cloud devices', () => {
+    expect(isSelectedCloudInstanceWaking({
+      ...base,
+      online: true,
+      wakeWatchDeviceId: 'device-1',
+    })).toBe(false);
+    expect(isSelectedCloudInstanceWaking({
+      ...base,
+      pending: { action: 'wake', target: 'instance-2' },
+    })).toBe(false);
+    expect(isSelectedCloudInstanceWaking(base)).toBe(false);
+  });
+});
 
 describe('runCloudInstanceWake', () => {
   it('blocks duplicate wake taps while pending and refreshes after success', async () => {
@@ -24,7 +72,7 @@ describe('runCloudInstanceWake', () => {
           nameSequence: 1,
           customLabel: null,
           created: false,
-          status: {},
+          status: cloudStatus,
         },
       };
     });
@@ -122,5 +170,36 @@ describe('runCloudInstanceWake', () => {
       null,
     ]);
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('refreshes silently when another client already started the upgrade', async () => {
+    const pendingRef: { current: CloudInstancePending } = { current: null };
+    const refresh = vi.fn(async () => undefined);
+    const onError = vi.fn(() => true);
+
+    await expect(
+      runCloudInstanceAction('instance-1', 'upgrade', {
+        pendingRef,
+        setPending: vi.fn(),
+        request: async () => ({
+          kind: 'error',
+          error: {
+            code: 'UPGRADE_IN_PROGRESS',
+            message: 'already updating',
+            status: 409,
+          },
+        }),
+        refresh,
+        onError,
+      }),
+    ).resolves.toBeNull();
+
+    expect(onError).toHaveBeenCalledWith('upgrade', {
+      code: 'UPGRADE_IN_PROGRESS',
+      message: 'already updating',
+      status: 409,
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(pendingRef.current).toBeNull();
   });
 });

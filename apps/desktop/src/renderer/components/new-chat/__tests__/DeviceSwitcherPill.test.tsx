@@ -26,6 +26,7 @@ const onlineCloud: DraftPillDevice = {
   online: true,
   kind: 'cloud',
   cloudInstanceId: 'cloud-instance-a',
+  updateAvailable: false,
 };
 
 const offlineCloud: DraftPillDevice = { ...onlineCloud, online: false };
@@ -39,6 +40,7 @@ function renderPill({
 } = {}) {
   const onChange = vi.fn();
   const onOpenChange = vi.fn();
+  const onOpenCloudSettings = vi.fn();
   render(
     <DeviceSwitcherPill
       devices={devices}
@@ -46,10 +48,11 @@ function renderPill({
       onChange={onChange}
       open
       onOpenChange={onOpenChange}
+      onOpenCloudSettings={onOpenCloudSettings}
       cloudWake={cloudWake}
     />,
   );
-  return { onChange, onOpenChange };
+  return { onChange, onOpenChange, onOpenCloudSettings };
 }
 
 describe('DeviceSwitcherPill 云端入口', () => {
@@ -117,6 +120,32 @@ describe('DeviceSwitcherPill 云端入口', () => {
     expect(onWake).not.toHaveBeenCalled();
   });
 
+  it('云端有更新时徽标点击只打开设备设置并收起菜单', () => {
+    const onWake = vi.fn();
+    const { onChange, onOpenChange, onOpenCloudSettings } = renderPill({
+      devices: [{ ...onlineCloud, updateAvailable: true }],
+      cloudWake: { busy: false, wakingTarget: null, onWake },
+    });
+
+    fireEvent.click(screen.getByTestId('create-agent-cloud-update-badge'));
+
+    expect(onOpenCloudSettings).toHaveBeenCalledOnce();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onWake).not.toHaveBeenCalled();
+  });
+
+  it('普通设备与无更新云端设备不显示更新徽标', () => {
+    renderPill({
+      devices: [
+        onlineCloud,
+        { deviceId: 'plain-device', name: 'Office Mac', platform: 'darwin', online: true },
+      ],
+    });
+
+    expect(screen.queryByTestId('create-agent-cloud-update-badge')).toBeNull();
+  });
+
   it('控制面 ready 且 0 实例时仍渲染 pill，并在尾部提供首次唤醒', () => {
     const onWake = vi.fn();
     renderPill({
@@ -137,6 +166,7 @@ describe('DeviceSwitcherPill 云端入口', () => {
         onChange={vi.fn()}
         open={false}
         onOpenChange={vi.fn()}
+        onOpenCloudSettings={vi.fn()}
       />,
     );
     expect(container.innerHTML).toBe('');

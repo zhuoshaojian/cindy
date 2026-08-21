@@ -15,6 +15,7 @@ import {
   type CloudInstanceEnableResult,
   type CloudInstanceRenameResult,
   type CloudInstanceStatus,
+  type CloudInstanceUpgradeResult,
   type CloudInstanceView,
   type CloudInstanceWakeInput,
 } from '../../shared/cloudInstanceIpc.js';
@@ -94,6 +95,18 @@ function rethrowCloudInstanceError(error: unknown): never {
     throwIpcError('UNSUPPORTED_CAPABILITY', 'cloud instance control is unavailable');
   }
   if (error instanceof ServerApiError) {
+    if (
+      error.code === 'UPGRADE_IN_PROGRESS'
+      || error.code === 'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS'
+    ) {
+      throwIpcError(
+        'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS',
+        'cloud instance upgrade is already in progress',
+      );
+    }
+    if (error.code === 'NO_RELEASE_AVAILABLE') {
+      throwIpcError('NO_RELEASE_AVAILABLE', 'no cloud instance release is available');
+    }
     if (error.statusCode === 0 || error.statusCode >= 500) {
       throwIpcError('CLOUD_INSTANCE_UNAVAILABLE', 'cloud instance service request failed');
     }
@@ -223,6 +236,16 @@ export async function handleStopCloudInstance(
   return callClient(() => deps.client.stop(instanceId));
 }
 
+/** Update one cloud instance to the latest release selected by the control plane. */
+export async function handleUpgradeCloudInstance(
+  deps: CloudInstanceIpcDeps,
+  rawInput: unknown,
+): Promise<CloudInstanceUpgradeResult> {
+  requireAuthenticated(deps);
+  const instanceId = requiredInstanceId(rawInput);
+  return callClient(() => deps.client.upgrade(instanceId));
+}
+
 /** Permanently delete one cloud instance and its account/relay identity. */
 export async function handleDeleteCloudInstance(
   deps: CloudInstanceIpcDeps,
@@ -264,6 +287,9 @@ export function registerCloudInstanceIpc(
   );
   registerTrustedHandler(CLOUD_INSTANCE_INVOKE.STOP, (_event, input) =>
     handleStopCloudInstance(deps, input),
+  );
+  registerTrustedHandler(CLOUD_INSTANCE_INVOKE.UPGRADE, (_event, input) =>
+    handleUpgradeCloudInstance(deps, input),
   );
   registerTrustedHandler(CLOUD_INSTANCE_INVOKE.DELETE, (_event, input) =>
     handleDeleteCloudInstance(deps, input),

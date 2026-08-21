@@ -7,6 +7,19 @@
     "deleting": "Deleting",
     "create": "New"
   },
+  "management": {
+    "eyebrow": "Device",
+    "rename": "Device Name",
+    "renameHint": "This name appears on your signed-in devices.",
+    "renameSaved": "Device name updated.",
+    "actions": "Actions",
+    "dangerZone": "Delete",
+    "online": "Online",
+    "offline": "Offline",
+    "unknown": "Unknown",
+    "memory": "{{count}} GB",
+    "openDetails": "Open details for {{label}}"
+  },
   "list": {
     "thisComputer": "This device",
     "allConversations": "All Sessions",
@@ -39,7 +52,6 @@
       "sync": "Sync again",
       "pinnedConversations": "{{count}} pinned sessions",
       "newRemoteConversation": "New remote session",
-      "renameDevice": "Rename {{label}}",
       "project": "Project {{title}}",
       "dialogue": "Chat",
       "openAutomationLatest": "Open the latest session of automation {{title}}",
@@ -76,9 +88,7 @@
     },
     "renameDevice": {
       "title": "Rename Device",
-      "placeholder": "Device name",
-      "savingA11y": "Saving device name",
-      "saveA11y": "Save device name"
+      "placeholder": "Device name"
     },
     "renameSession": {
       "title": "Rename Session",

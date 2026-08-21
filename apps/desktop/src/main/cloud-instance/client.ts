@@ -13,6 +13,7 @@ import type {
   CloudInstanceRenameResult,
   CloudInstanceResourceTier,
   CloudInstanceStatus,
+  CloudInstanceUpgradeResult,
   CloudInstanceView,
   CloudInstanceWakeInput,
 } from '../../shared/cloudInstanceIpc.js';
@@ -47,6 +48,7 @@ export interface CloudInstanceClient {
   rename(instanceId: string, customLabel: string | null): Promise<CloudInstanceRenameResult>;
   status(instanceId?: string): Promise<{ status: CloudInstanceStatus }>;
   stop(instanceId: string): Promise<{ status: CloudInstanceStatus }>;
+  upgrade(instanceId: string): Promise<CloudInstanceUpgradeResult>;
   delete(instanceId: string): Promise<CloudInstanceDeleteResult>;
 }
 
@@ -99,6 +101,11 @@ export function createCloudInstanceClient(deps: CloudInstanceClientDeps): CloudI
     stop: async (instanceId) =>
       deps.request<{ status: CloudInstanceStatus }>(
         `/instances/${encodeURIComponent(instanceId)}/stop`,
+        requestOptions(deps, { method: 'POST' }),
+      ),
+    upgrade: async (instanceId) =>
+      deps.request<CloudInstanceUpgradeResult>(
+        `/instances/${encodeURIComponent(instanceId)}/upgrade`,
         requestOptions(deps, { method: 'POST' }),
       ),
     delete: async (instanceId) =>

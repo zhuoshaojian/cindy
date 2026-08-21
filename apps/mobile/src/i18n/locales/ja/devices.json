@@ -7,6 +7,19 @@
     "deleting": "削除中",
     "create": "新規"
   },
+  "management": {
+    "eyebrow": "デバイス",
+    "rename": "デバイス名",
+    "renameHint": "この名前は同じアカウントのデバイスに表示されます。",
+    "renameSaved": "デバイス名を更新しました。",
+    "actions": "操作",
+    "dangerZone": "削除",
+    "online": "オンライン",
+    "offline": "オフライン",
+    "unknown": "不明",
+    "memory": "{{count}} GB",
+    "openDetails": "{{label}}の詳細を開く"
+  },
   "list": {
     "thisComputer": "このデバイス",
     "allConversations": "すべてのセッション",
@@ -39,7 +52,6 @@
       "sync": "再同期",
       "pinnedConversations": "ピン留めしたセッション {{count}} 件",
       "newRemoteConversation": "新しいリモートセッション",
-      "renameDevice": "{{label}} の名前を変更",
       "project": "プロジェクト {{title}}",
       "dialogue": "チャット",
       "openAutomationLatest": "自動化タスク {{title}} の最新セッションを開く",
@@ -76,9 +88,7 @@
     },
     "renameDevice": {
       "title": "デバイス名を変更",
-      "placeholder": "デバイス名",
-      "savingA11y": "デバイス名を保存中",
-      "saveA11y": "デバイス名を保存"
+      "placeholder": "デバイス名"
     },
     "renameSession": {
       "title": "セッションの名前を変更",

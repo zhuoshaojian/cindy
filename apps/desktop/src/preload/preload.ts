@@ -210,6 +210,8 @@ import {
   type CloudInstanceStatus,
   type CloudInstanceStatusInput,
   type CloudInstanceStopInput,
+  type CloudInstanceUpgradeInput,
+  type CloudInstanceUpgradeResult,
   type CloudInstanceView,
   type CloudInstanceWakeInput,
 } from '../shared/cloudInstanceIpc';
@@ -3936,6 +3938,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.STATUS, input),
     stop: (input: CloudInstanceStopInput): Promise<{ status: CloudInstanceStatus }> =>
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.STOP, input),
+    upgrade: (input: CloudInstanceUpgradeInput): Promise<CloudInstanceUpgradeResult> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.UPGRADE, input),
     delete: (input: CloudInstanceDeleteInput): Promise<CloudInstanceDeleteResult> =>
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.DELETE, input),
   },
