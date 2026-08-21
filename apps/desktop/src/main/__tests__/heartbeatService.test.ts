@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   } as TestAuthState,
   authListener: null as AuthListener | null,
   authRealm: 'cn' as 'cn' | 'global',
+  /** null = 按 realm 生成正常端点;字符串 = 直接用它(用于空串/空白的部署场景)。 */
+  heartbeatEndpointOverride: null as string | null,
   createHeartbeatClient: vi.fn(),
   heartbeatStop: vi.fn(),
   unsubscribeAuth: vi.fn(),
@@ -49,7 +51,8 @@ vi.mock('../authManager', () => ({
 }));
 
 vi.mock('../clientEndpointsService', () => ({
-  getClientEndpoint: () => `https://heartbeat.${mocks.authRealm}.example.test`,
+  getClientEndpoint: () =>
+    mocks.heartbeatEndpointOverride ?? `https://heartbeat.${mocks.authRealm}.example.test`,
 }));
 
 vi.mock('../lifecycle', () => ({
@@ -90,6 +93,7 @@ describe('heartbeat service app-mode isolation', () => {
     vi.resetModules();
     mocks.authState = authState('signed-out');
     mocks.authRealm = 'cn';
+    mocks.heartbeatEndpointOverride = null;
     mocks.authListener = null;
     mocks.onQuitDisposer = null;
     mocks.createHeartbeatClient.mockReset().mockReturnValue({
@@ -125,6 +129,47 @@ describe('heartbeat service app-mode isolation', () => {
     pushAuthState(authState('local'));
     expect(mocks.heartbeatStop).toHaveBeenCalledTimes(1);
     expect(options.host.getUid()).toBeNull();
+  });
+
+  // 回归钉子:自托管部署的清单里没有 heartbeatUrl,clientEndpointsService 按设计把它
+  // 归一为空串(不阻断启动)。此前这里照样启动客户端,而 heartbeat-client 会拼
+  // `${endpoint}/heartbeat` —— 空串拼出相对路径 /heartbeat,fetch 直接 TypeError,又因为
+  // 单次失败只 warn 不抛,日志里每个 interval 稳定刷一条且永不自愈。
+  it.each([
+    ['空串', ''],
+    ['纯空白', '   '],
+  ])('端点清单没有 heartbeatUrl(%s)时不启动心跳', async (_label, endpoint) => {
+    mocks.heartbeatEndpointOverride = endpoint;
+    mocks.authState = authState('cloud', 'cloud-user-1');
+    const { initHeartbeatService } = await loadService();
+    initHeartbeatService();
+
+    expect(mocks.createHeartbeatClient).not.toHaveBeenCalled();
+
+    // 后续 auth 事件不得把「不启动」变成反复重试(去重靠已记下的归属)。
+    pushAuthState(authState('cloud', 'cloud-user-1'));
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(mocks.createHeartbeatClient).not.toHaveBeenCalled();
+    expect(mocks.heartbeatStop).not.toHaveBeenCalled();
+  });
+
+  it('端点补齐后同一归属重新登录能正常起心跳', async () => {
+    mocks.heartbeatEndpointOverride = '';
+    mocks.authState = authState('cloud', 'cloud-user-1');
+    const { initHeartbeatService } = await loadService();
+    initHeartbeatService();
+    expect(mocks.createHeartbeatClient).not.toHaveBeenCalled();
+
+    // 离开 cloud 必须把记下的归属一起清掉,否则回到同一 uid 会被去重跳过、
+    // 即使清单已经补上 heartbeatUrl 也永远不再尝试。
+    pushAuthState(authState('local'));
+    mocks.heartbeatEndpointOverride = null;
+    pushAuthState(authState('cloud', 'cloud-user-1'));
+
+    expect(mocks.createHeartbeatClient).toHaveBeenCalledTimes(1);
+    expect(mocks.createHeartbeatClient.mock.calls[0][0].endpoint).toBe(
+      'https://heartbeat.cn.example.test',
+    );
   });
 
   it('restarts Cindy heartbeat when the verified cloud owner changes', async () => {

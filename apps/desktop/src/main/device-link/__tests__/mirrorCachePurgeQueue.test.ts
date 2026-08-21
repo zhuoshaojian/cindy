@@ -28,6 +28,15 @@ import {
   isPurgableRoot,
   __testing,
 } from '../mirrorCachePurgeQueue';
+import {
+  hasPendingClears,
+  listDeviceRetirements,
+  markDeviceRetirement,
+} from '../mirrorCacheBarrier';
+import {
+  forgetVolatileDeviceRetirement,
+  hasVolatileDeviceRetirement,
+} from '../mirrorCacheRetirementState';
 
 function queueFile(): string {
   return path.join(userData, __testing.queueFileName);
@@ -90,6 +99,98 @@ describe('enqueuePurge / drainPurgeQueue', () => {
     const entries = await __testing.readQueue();
     expect(entries).toHaveLength(1);
     expect(entries[0].attempts).toBe(2);
+  });
+
+  it('长期设备退役元数据会持久化,进程重启后仍能读回', async () => {
+    const root = await makeOwnerCache('owner-retirement-persisted');
+    const target = path.join(root, 'messages', 'a.json');
+    const retirement = {
+      deviceId: 'cloud-device-old',
+      instanceId: 'instance-old',
+      createdAtMs: 1_234,
+    };
+
+    await enqueuePurge(root, [target], undefined, undefined, [retirement]);
+    __testing.resetMemoryQueue();
+
+    expect((await __testing.readQueue())[0]?.retirements).toEqual([retirement]);
+  });
+
+  it('drain 先补长期设备墓碑再清缓存,成功后墓碑继续保留', async () => {
+    const root = await makeOwnerCache('owner-retirement-drain');
+    const target = path.join(root, 'messages', 'a.json');
+    const retirement = {
+      deviceId: 'cloud-device-old',
+      instanceId: 'instance-old',
+      createdAtMs: 5_678,
+    };
+
+    await enqueuePurge(root, [target], undefined, undefined, [retirement]);
+    expect(await listDeviceRetirements(root)).toEqual([]);
+
+    expect(await drainPurgeQueue()).toEqual({ purged: 1, pending: 0 });
+    expect(fs.existsSync(target)).toBe(false);
+    expect(await listDeviceRetirements(root)).toEqual([retirement]);
+  });
+
+  it('长期设备墓碑补写失败时保留队列记录,不先删缓存', async () => {
+    const root = await makeOwnerCache('owner-retirement-retry');
+    const target = path.join(root, 'messages', 'a.json');
+    const retirement = { deviceId: 'cloud-device-old', createdAtMs: 9_876 };
+    await enqueuePurge(root, [target], undefined, undefined, [retirement]);
+    // 模拟进程重启：内存态已丢，只剩持久 purge queue。
+    __testing.resetMemoryQueue();
+    forgetVolatileDeviceRetirement(root, retirement.deviceId);
+    expect(hasVolatileDeviceRetirement(root, retirement.deviceId)).toBe(false);
+
+    const originalWriteFile = fsp.writeFile;
+    const spy = vi.spyOn(fsp, 'writeFile').mockImplementation((async (
+      file: unknown,
+      ...rest: unknown[]
+    ) => {
+      if (
+        typeof file === 'string'
+        && file.includes(`${path.sep}pending${path.sep}retired-device-`)
+        && file.endsWith('.tmp')
+      ) {
+        throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      }
+      return (originalWriteFile as (...args: unknown[]) => Promise<void>)(file, ...rest);
+    }) as unknown as typeof fsp.writeFile);
+    try {
+      expect(await drainPurgeQueue()).toEqual({ purged: 0, pending: 1 });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(fs.existsSync(target)).toBe(true);
+    expect((await __testing.readQueue())[0]?.retirements).toEqual([retirement]);
+    expect(hasVolatileDeviceRetirement(root, retirement.deviceId)).toBe(true);
+  });
+
+  it('不可信队列里的畸形退役元数据会被拒绝', async () => {
+    const root = await makeOwnerCache('owner-retirement-untrusted');
+    const target = path.join(root, 'messages', 'a.json');
+    await fsp.writeFile(
+      queueFile(),
+      JSON.stringify({
+        version: 1,
+        entries: [{
+          root,
+          paths: [target],
+          retirements: [
+            { deviceId: '', createdAtMs: 1 },
+            { deviceId: 'bad-instance', instanceId: 42, createdAtMs: 2 },
+            { deviceId: 'bad-time', createdAtMs: Number.MAX_VALUE },
+          ],
+          since: 1,
+          attempts: 1,
+        }],
+      }),
+      'utf8',
+    );
+
+    expect((await __testing.readQueue())[0]?.retirements).toBeUndefined();
   });
 
   it('owners/ 之外的路径拒绝入队(不给自己造一把任意删除的武器)', async () => {
@@ -290,6 +391,69 @@ describe('文件级条目(clearDevice 删不掉时用)', () => {
     await enqueuePurge(root, [target], ['sess-a']);
     await enqueuePurge(root, [target], ['sess-b']);
     expect((await __testing.readQueue())[0]?.barriers).toEqual(['sess-a', 'sess-b']);
+  });
+
+  it('长期退役墓碑元数据持久入队并在重复登记时按 deviceId 合并', async () => {
+    const root = await makeOwnerCache('owner-1');
+    const target = path.join(root, 'messages', 'a.json');
+    const first = { deviceId: 'dev-old-a', instanceId: 'instance-a', createdAtMs: 100 };
+    const second = { deviceId: 'dev-old-b', instanceId: 'instance-b', createdAtMs: 200 };
+
+    await enqueuePurge(root, [target], [], [], [first]);
+    await enqueuePurge(root, [target], [], [], [second]);
+    __testing.resetMemoryQueue();
+
+    expect((await __testing.readQueue())[0]?.retirements).toEqual([first, second]);
+  });
+
+  it('整根 purge 只退役过程墓碑，不会撤掉长期设备退役墓碑', async () => {
+    const root = await makeOwnerCache('owner-1');
+    const retirement = {
+      deviceId: 'dev-old',
+      instanceId: 'instance-old',
+      createdAtMs: 1234,
+    };
+    await markDeviceRetirement(
+      root,
+      retirement.deviceId,
+      retirement.createdAtMs,
+      retirement.instanceId,
+    );
+    const processMark = path.join(`${root}.control`, 'pending', 'device-clear');
+    await fsp.writeFile(processMark, '1', 'utf8');
+    await enqueuePurge(root);
+
+    expect(await drainPurgeQueue()).toEqual({ purged: 1, pending: 0 });
+
+    expect(fs.existsSync(processMark)).toBe(false);
+    expect(await listDeviceRetirements(root)).toEqual([retirement]);
+  });
+
+  it('长期墓碑在枚举后并发解除时仍继续检查其它过程墓碑', async () => {
+    const root = await makeOwnerCache('owner-pending-race');
+    await markDeviceRetirement(root, 'dev-old', 1234, 'instance-old');
+    const pendingDir = path.join(`${root}.control`, 'pending');
+    const retirementFile = (await fsp.readdir(pendingDir)).find((name) =>
+      name.startsWith('retired-device-'),
+    );
+    expect(retirementFile).toBeTruthy();
+    await fsp.writeFile(path.join(pendingDir, 'device-clear'), '1', 'utf8');
+
+    const originalReadFile = fsp.readFile;
+    const spy = vi.spyOn(fsp, 'readFile').mockImplementation((async (
+      file: unknown,
+      ...rest: unknown[]
+    ) => {
+      if (file === path.join(pendingDir, retirementFile!)) {
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      }
+      return (originalReadFile as (...args: unknown[]) => Promise<unknown>)(file, ...rest);
+    }) as unknown as typeof fsp.readFile);
+    try {
+      expect(await hasPendingClears(root)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // review(codex P1):clearDevice 删不掉文件时刻意保留墓碑,而墓碑对整个 root 的读都生效 ——
@@ -569,6 +733,34 @@ describe('跨进程锁', () => {
     expect(result.purged).toBe(1);
     expect(fs.existsSync(root)).toBe(false);
     expect(fs.readdirSync(pendingDir).filter((n) => n.endsWith('.json'))).toEqual([]);
+  });
+
+  it('正本与追加目录的同一条记录合并退役设备元数据,不做 last-write-wins', async () => {
+    const root = await makeOwnerCache('owner-retirement-merge');
+    const target = path.join(root, 'messages', 'a.json');
+    const first = { deviceId: 'dev-old-a', instanceId: 'instance-a', createdAtMs: 100 };
+    const second = { deviceId: 'dev-old-b', instanceId: 'instance-b', createdAtMs: 200 };
+    await fsp.writeFile(
+      queueFile(),
+      JSON.stringify({
+        version: 1,
+        entries: [{ root, paths: [target], retirements: [first], since: 1, attempts: 1 }],
+      }),
+      'utf8',
+    );
+    const pendingDir = path.join(userData, __testing.pendingDirName);
+    await fsp.mkdir(pendingDir, { recursive: true });
+    await fsp.writeFile(
+      path.join(pendingDir, 'retirement.json'),
+      JSON.stringify({
+        version: 1,
+        entries: [{ root, paths: [target], retirements: [second], since: 2, attempts: 1 }],
+      }),
+      'utf8',
+    );
+    __testing.resetMemoryQueue();
+
+    expect((await __testing.readQueue())[0]?.retirements).toEqual([first, second]);
   });
 });
 
