@@ -88,6 +88,62 @@ export interface CloudInstanceView {
   status: CloudInstanceStatus;
 }
 
+export type CloudInstanceRebuildPhase =
+  | 'accepted'
+  | 'retiring'
+  | 'retirement-timeout'
+  | 'retired-awaiting-create'
+  | 'creating'
+  | 'starting'
+  | 'succeeded'
+  | 'delete-rejected'
+  | 'create-failed-after-delete'
+  | 'manual-wake-required';
+
+export type CloudInstanceRebuildOutcome =
+  | 'automatic-rebuild-succeeded'
+  | 'manual-wake-required'
+  | 'manual-recovery-succeeded'
+  | 'delete-rejected'
+  | 'create-failed-after-delete';
+
+export interface CloudInstanceRebuildView {
+  operationId: string;
+  oldInstanceId: string;
+  oldDeviceId: string;
+  resourceTier: CloudInstanceResourceTier;
+  phase: CloudInstanceRebuildPhase;
+  startedAt: number;
+  retireDeadline: number;
+  clientCreateDeadline: number | null;
+  createDeadline: number | null;
+  newInstanceId: string | null;
+  outcome: CloudInstanceRebuildOutcome | null;
+  updatedAt: number;
+}
+
+export interface CloudInstanceListResult {
+  instances: CloudInstanceView[];
+  rebuildOperations: CloudInstanceRebuildView[];
+}
+
+export interface CloudInstanceRebuildInput {
+  instanceId: string;
+  /** Latest delete-rejected operation for this same old instance, if any. */
+  retryOfOperationId?: string;
+}
+
+export interface CloudInstanceContinueRebuildInput {
+  operationId: string;
+  oldInstanceId: string;
+  /** Must match the seed used when this operation was first accepted. */
+  retryOfOperationId?: string;
+}
+
+export interface CloudInstanceRebuildResult {
+  rebuildOperation: CloudInstanceRebuildView;
+}
+
 /** Shared result of wake and explicit create operations. */
 export interface CloudInstanceEnableResult extends CloudInstanceView {
   created: boolean;
@@ -178,5 +234,7 @@ export const CLOUD_INSTANCE_INVOKE = {
   STATUS: 'cloud-instance:status',
   STOP: 'cloud-instance:stop',
   UPGRADE: 'cloud-instance:upgrade',
+  REBUILD: 'cloud-instance:rebuild',
+  CONTINUE_REBUILD: 'cloud-instance:continue-rebuild',
   DELETE: 'cloud-instance:delete',
 } as const;

@@ -6,12 +6,15 @@
  * every request and repeats that lookup after a TOKEN_EXPIRED refresh.
  */
 
+import { createHash } from 'node:crypto';
 import type {
   CloudInstanceCreateInput,
   CloudInstanceDeleteResult,
   CloudInstanceEnableResult,
   CloudInstancePatchInput,
   CloudInstanceRenameResult,
+  CloudInstanceListResult,
+  CloudInstanceRebuildResult,
   CloudInstanceResourceTier,
   CloudInstanceStatus,
   CloudInstanceUpgradeResult,
@@ -43,7 +46,7 @@ export class CloudInstanceClientNotConfiguredError extends Error {
 
 /** Main-process cloud control-plane operations exposed through pure IPC handlers. */
 export interface CloudInstanceClient {
-  list(): Promise<{ instances: CloudInstanceView[] }>;
+  list(): Promise<CloudInstanceListResult>;
   wake(input: CloudInstanceWakeInput): Promise<CloudInstanceEnableResult>;
   create(input: CloudInstanceCreateInput): Promise<CloudInstanceEnableResult>;
   rename(instanceId: string, customLabel: string | null): Promise<CloudInstanceRenameResult>;
@@ -51,7 +54,26 @@ export interface CloudInstanceClient {
   status(instanceId?: string): Promise<{ status: CloudInstanceStatus }>;
   stop(instanceId: string): Promise<{ status: CloudInstanceStatus }>;
   upgrade(instanceId: string): Promise<CloudInstanceUpgradeResult>;
+  rebuild(instanceId: string, retryOfOperationId?: string): Promise<CloudInstanceRebuildResult>;
+  continueRebuild(
+    operationId: string,
+    oldInstanceId: string,
+    retryOfOperationId?: string,
+  ): Promise<CloudInstanceRebuildResult>;
   delete(instanceId: string): Promise<CloudInstanceDeleteResult>;
+}
+
+/**
+ * Stable for one rebuild attempt across renderer/App restarts. A rejected
+ * delete becomes the seed for the next attempt, so retries do not replay the
+ * previous terminal operation forever.
+ */
+export function cloudInstanceRebuildIdempotencyKey(
+  oldInstanceId: string,
+  retryOfOperationId?: string,
+): string {
+  const material = `${oldInstanceId}\0${retryOfOperationId ?? ''}`;
+  return `cindy-rebuild-v2:${createHash('sha256').update(material).digest('hex')}`;
 }
 
 function requestOptions(
@@ -74,7 +96,7 @@ function requestOptions(
 export function createCloudInstanceClient(deps: CloudInstanceClientDeps): CloudInstanceClient {
   return {
     list: async () =>
-      deps.request<{ instances: CloudInstanceView[] }>(
+      deps.request<CloudInstanceListResult>(
         '/instances',
         requestOptions(deps, { method: 'GET' }),
       ),
@@ -115,6 +137,34 @@ export function createCloudInstanceClient(deps: CloudInstanceClientDeps): CloudI
       deps.request<CloudInstanceUpgradeResult>(
         `/instances/${encodeURIComponent(instanceId)}/upgrade`,
         requestOptions(deps, { method: 'POST' }),
+      ),
+    rebuild: async (instanceId, retryOfOperationId) =>
+      deps.request<CloudInstanceRebuildResult>(
+        `/instances/${encodeURIComponent(instanceId)}/rebuild`,
+        requestOptions(deps, {
+          method: 'POST',
+          body: {},
+          headers: {
+            'Idempotency-Key': cloudInstanceRebuildIdempotencyKey(
+              instanceId,
+              retryOfOperationId,
+            ),
+          },
+        }),
+      ),
+    continueRebuild: async (operationId, oldInstanceId, retryOfOperationId) =>
+      deps.request<CloudInstanceRebuildResult>(
+        '/instances',
+        requestOptions(deps, {
+          method: 'POST',
+          body: { rebuildOperationId: operationId },
+          headers: {
+            'Idempotency-Key': cloudInstanceRebuildIdempotencyKey(
+              oldInstanceId,
+              retryOfOperationId,
+            ),
+          },
+        }),
       ),
     delete: async (instanceId) =>
       deps.request<CloudInstanceDeleteResult>(

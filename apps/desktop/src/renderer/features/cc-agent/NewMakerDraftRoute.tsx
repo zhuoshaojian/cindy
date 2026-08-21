@@ -2483,9 +2483,11 @@ export function NewMakerDraftRoute() {
           // 已可用的云端重新标成失败，也不能弹一条与实际状态相反的 toast。
           if (latest?.requestId !== requestId) return;
           patchDraft({ pendingCloudTarget: { ...latest, status: 'failed' } });
-          toast.error(t(error instanceof CloudInstanceActionTimeoutError
-            ? 'ccAgent.sidebar.cloud.actionTimedOut'
-            : 'ccAgent.sidebar.cloud.wakeFailed'));
+          toast.error(t(extractIpcError(error)?.code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'
+            ? 'settings.devices.cloudInstance.toast.rebuildStillCleaning'
+            : error instanceof CloudInstanceActionTimeoutError
+              ? 'ccAgent.sidebar.cloud.actionTimedOut'
+              : 'ccAgent.sidebar.cloud.wakeFailed'));
         });
     },
     [
@@ -5271,6 +5273,7 @@ export function NewMakerDraftRoute() {
                       ? {
                           busy: cloudWakeBusy,
                           pending: cloud.pending,
+                          rebuildAttention: cloud.rebuildAttention,
                           onWake: handleCloudWake,
                           onReselectWake: handleCloudWake,
                           selectedTarget: pendingCloudTarget

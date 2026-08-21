@@ -22,6 +22,7 @@ const actions = [
   'wake',
   'stop',
   'upgrade',
+  'rebuild',
   'autoUpdate',
   'delete',
 ] as const satisfies readonly CloudInstanceAction[];
@@ -29,6 +30,7 @@ const actionErrorKeys = {
   wake: 'deviceLink.cloudInstance.wakeFailed',
   stop: 'deviceLink.cloudInstance.stopFailed',
   upgrade: 'deviceLink.cloudInstance.updateFailed',
+  rebuild: 'deviceLink.cloudInstance.rebuildFailed',
   autoUpdate: 'deviceLink.cloudInstance.autoUpdateFailed',
   delete: 'deviceLink.cloudInstance.deleteFailed',
 } as const satisfies Record<CloudInstanceAction, string>;

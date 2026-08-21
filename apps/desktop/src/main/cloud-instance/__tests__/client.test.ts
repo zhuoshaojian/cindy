@@ -16,6 +16,7 @@ vi.mock('../../serverApiClient.js', () => ({
 
 import {
   CloudInstanceClientNotConfiguredError,
+  cloudInstanceRebuildIdempotencyKey,
   createCloudInstanceClient,
   createDefaultCloudInstanceClient,
   type CloudInstanceRequest,
@@ -50,6 +51,8 @@ describe('cloud instance HTTP client', () => {
     await client.status('instance/a');
     await client.stop('instance/a');
     await client.upgrade('instance/a');
+    await client.rebuild('instance/a', 'rejected-operation-a');
+    await client.continueRebuild('operation-a', 'instance/a', 'rejected-operation-a');
     await client.delete('instance/a');
 
     expect(requestMock.mock.calls).toEqual([
@@ -130,6 +133,38 @@ describe('cloud instance HTTP client', () => {
         },
       ],
       [
+        '/instances/instance%2Fa/rebuild',
+        {
+          method: 'POST',
+          body: {},
+          headers: {
+            'Idempotency-Key': cloudInstanceRebuildIdempotencyKey(
+              'instance/a',
+              'rejected-operation-a',
+            ),
+          },
+          baseUrl: 'http://127.0.0.1:3343',
+          timeoutMs: 12_345,
+          logMetadataOnly: true,
+        },
+      ],
+      [
+        '/instances',
+        {
+          method: 'POST',
+          body: { rebuildOperationId: 'operation-a' },
+          headers: {
+            'Idempotency-Key': cloudInstanceRebuildIdempotencyKey(
+              'instance/a',
+              'rejected-operation-a',
+            ),
+          },
+          baseUrl: 'http://127.0.0.1:3343',
+          timeoutMs: 12_345,
+          logMetadataOnly: true,
+        },
+      ],
+      [
         '/instances/instance%2Fa',
         {
           method: 'DELETE',
@@ -142,6 +177,18 @@ describe('cloud instance HTTP client', () => {
     for (const [, options] of requestMock.mock.calls) {
       expect(options).not.toHaveProperty('token');
     }
+  });
+
+  it('keeps one attempt stable but rotates after a delete-rejected operation', () => {
+    expect(cloudInstanceRebuildIdempotencyKey('instance-a')).toBe(
+      cloudInstanceRebuildIdempotencyKey('instance-a'),
+    );
+    expect(cloudInstanceRebuildIdempotencyKey('instance-a', 'rejected-operation-a')).not.toBe(
+      cloudInstanceRebuildIdempotencyKey('instance-a'),
+    );
+    expect(cloudInstanceRebuildIdempotencyKey('instance-a', 'rejected-operation-a')).toBe(
+      cloudInstanceRebuildIdempotencyKey('instance-a', 'rejected-operation-a'),
+    );
   });
 
   it('fails closed when the endpoint manifest omits the service', async () => {

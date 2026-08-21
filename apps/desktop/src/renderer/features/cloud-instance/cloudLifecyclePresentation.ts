@@ -9,6 +9,7 @@ export type CloudInstanceLifecycleProgressKey =
   | 'settings.devices.cloudInstance.waking'
   | 'settings.devices.cloudInstance.stopping'
   | 'settings.devices.cloudInstance.rebuilding'
+  | 'settings.devices.cloudInstance.rebuildStatusUnknown'
   | 'settings.devices.cloudInstance.deleting';
 
 export function cloudInstanceLifecycleAction(
@@ -27,10 +28,15 @@ export function cloudInstanceLifecycleAction(
 
 export function cloudInstanceLifecycleProgressKey(
   action: CloudInstanceLifecycleAction,
+  pending?: CloudInstancePendingState,
 ): CloudInstanceLifecycleProgressKey {
   if (action === 'wake') return 'settings.devices.cloudInstance.waking';
   if (action === 'stop') return 'settings.devices.cloudInstance.stopping';
-  if (action === 'rebuild') return 'settings.devices.cloudInstance.rebuilding';
+  if (action === 'rebuild') {
+    return pending?.syncState === 'unknown'
+      ? 'settings.devices.cloudInstance.rebuildStatusUnknown'
+      : 'settings.devices.cloudInstance.rebuilding';
+  }
   return 'settings.devices.cloudInstance.deleting';
 }
 

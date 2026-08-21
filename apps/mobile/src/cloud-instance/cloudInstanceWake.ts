@@ -3,12 +3,45 @@ import type {
   CloudInstanceWakeResult,
 } from '@/api/cloudInstance';
 
-export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'autoUpdate' | 'delete';
+export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'rebuild' | 'autoUpdate' | 'delete';
 
 export type CloudInstancePending = {
   target: string | 'new';
   action: CloudInstanceAction;
 } | null;
+
+export interface CloudInstanceZeroInstancePresentation {
+  busy: boolean;
+  disabled: boolean;
+  labelKey: string;
+}
+
+/** Shared zero-instance presentation so every wake entry respects rebuild gating. */
+export function cloudInstanceZeroInstancePresentation(
+  pending: CloudInstancePending,
+): CloudInstanceZeroInstancePresentation {
+  if (!pending) {
+    return { busy: false, disabled: false, labelKey: 'deviceLink.cloudWake' };
+  }
+  const labelKey = pending.action === 'rebuild'
+    ? 'deviceLink.cloudInstance.rebuilding'
+    : pending.action === 'stop'
+      ? 'deviceLink.cloudInstance.stopping'
+      : pending.action === 'delete'
+        ? 'deviceLink.cloudInstance.deleting'
+        : pending.action === 'upgrade'
+          ? 'deviceLink.cloudInstance.updating'
+          : 'deviceLink.cloudWaking';
+  return { busy: true, disabled: true, labelKey };
+}
+
+/** Older successful snapshots cannot overwrite a newer successfully applied snapshot. */
+export function shouldApplyCloudInstanceRebuildSnapshot(
+  requestSequence: number,
+  latestAppliedSequence: number,
+): boolean {
+  return requestSequence >= latestAppliedSequence;
+}
 
 /** Whether the selected cloud device should replace cached tasks with a waking placeholder. */
 export function isSelectedCloudInstanceWaking(input: {
@@ -87,8 +120,12 @@ export async function runCloudInstanceAction<T>(
     deps.onOptimisticRollback?.();
     throw error;
   } finally {
-    deps.pendingRef.current = null;
-    deps.setPending(null);
+    // A successful refresh may have replaced this local action with an
+    // authoritative server-side rebuild. Never clear that hydrated guard.
+    if (deps.pendingRef.current?.action === pending.action) {
+      deps.pendingRef.current = null;
+      deps.setPending(null);
+    }
   }
 }
 
@@ -97,7 +134,7 @@ export interface RunCloudInstanceWakeDeps {
   setPending(value: CloudInstancePending): void;
   requestWake(instanceId?: string): Promise<CloudInstanceApiOutcome<CloudInstanceWakeResult>>;
   refresh(): Promise<void>;
-  onError(): void;
+  onError(error: Extract<CloudInstanceApiOutcome<CloudInstanceWakeResult>, { kind: 'error' }>['error']): boolean | void;
   onAccepted?(value: CloudInstanceWakeResult): void;
   waitForTerminal?(value: CloudInstanceWakeResult): Promise<void>;
   onTerminalError?(error: unknown): void;
@@ -112,7 +149,7 @@ export function runCloudInstanceWake(
     setPending: deps.setPending,
     request: () => deps.requestWake(instanceId),
     refresh: deps.refresh,
-    onError: () => deps.onError(),
+    onError: (_action, error) => deps.onError(error),
     onAccepted: deps.onAccepted,
     waitForTerminal: deps.waitForTerminal,
     onTerminalError: deps.onTerminalError,

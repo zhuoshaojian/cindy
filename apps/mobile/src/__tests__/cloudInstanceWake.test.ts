@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  cloudInstanceZeroInstancePresentation,
   isSelectedCloudInstanceWaking,
   runCloudInstanceAction,
   runCloudInstanceWake,
+  shouldApplyCloudInstanceRebuildSnapshot,
   type CloudInstancePending,
 } from '@/cloud-instance/cloudInstanceWake';
 
@@ -49,7 +51,83 @@ describe('selected cloud waking placeholder', () => {
   });
 });
 
+describe('serialized rebuild presentation', () => {
+  it('keeps every zero-instance wake entry busy and disabled during rebuild', () => {
+    expect(cloudInstanceZeroInstancePresentation({
+      action: 'rebuild',
+      target: 'old-instance',
+    })).toEqual({
+      busy: true,
+      disabled: true,
+      labelKey: 'deviceLink.cloudInstance.rebuilding',
+    });
+  });
+
+  it('does not let an older successful list response clear newer applied rebuild authority', () => {
+    expect(shouldApplyCloudInstanceRebuildSnapshot(1, 2)).toBe(false);
+    expect(shouldApplyCloudInstanceRebuildSnapshot(2, 2)).toBe(true);
+    expect(shouldApplyCloudInstanceRebuildSnapshot(2, 1)).toBe(true);
+  });
+});
+
 describe('runCloudInstanceWake', () => {
+  it('does not retry a wake rejected by an active desktop rebuild and preserves hydrated rebuild pending', async () => {
+    const pendingRef: { current: CloudInstancePending } = { current: null };
+    const setPending = vi.fn((value: CloudInstancePending) => {
+      pendingRef.current = value;
+    });
+    const requestWake = vi.fn(async () => ({
+      kind: 'error' as const,
+      error: { code: 'REBUILD_IN_PROGRESS', message: 'cleanup in progress', status: 409 },
+    }));
+    const refresh = vi.fn(async () => undefined);
+
+    await expect(runCloudInstanceWake(undefined, {
+      pendingRef,
+      setPending,
+      requestWake,
+      refresh,
+      onError: (error) => {
+        if (error.code !== 'REBUILD_IN_PROGRESS') return false;
+        setPending({ action: 'rebuild', target: 'old-instance' });
+        return true;
+      },
+    })).resolves.toBeNull();
+
+    expect(requestWake).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(pendingRef.current).toEqual({ action: 'rebuild', target: 'old-instance' });
+  });
+
+  it('clears a successful zero-instance wake after it retargets to the accepted instance', async () => {
+    const pendingRef: { current: CloudInstancePending } = { current: null };
+    const setPending = vi.fn((value: CloudInstancePending) => {
+      pendingRef.current = value;
+    });
+
+    await expect(runCloudInstanceWake(undefined, {
+      pendingRef,
+      setPending,
+      requestWake: async () => ({
+        kind: 'ok',
+        value: {
+          instanceId: 'instance-1',
+          deviceId: 'device-1',
+          nameSequence: 1,
+          customLabel: null,
+          created: true,
+          status: cloudStatus,
+        },
+      }),
+      refresh: vi.fn(async () => undefined),
+      onError: vi.fn(),
+      onAccepted: (value) => setPending({ action: 'wake', target: value.instanceId }),
+    })).resolves.toMatchObject({ instanceId: 'instance-1' });
+
+    expect(pendingRef.current).toBeNull();
+    expect(setPending).toHaveBeenLastCalledWith(null);
+  });
+
   it('blocks duplicate wake taps while pending and refreshes after success', async () => {
     let releaseWake!: () => void;
     const wakeGate = new Promise<void>((resolve) => {

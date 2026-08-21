@@ -122,6 +122,10 @@ export type IpcErrorCode =
   | 'CLOUD_INSTANCE_DISABLED' // 云端能力未为当前 membership 启用；Renderer 隐藏云端 UI
   | 'CLOUD_INSTANCE_UNAVAILABLE' // 云端实例 control-plane 网络不可达 / 5xx
   | 'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS' // 其它客户端已发起云端实例更新
+  | 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS' // 旧实例仍在串行退役，禁止并发创建/唤醒
+  | 'CLOUD_INSTANCE_REBUILD_OPERATION_NOT_FOUND' // 重建续做凭据与 operation 不匹配或已不存在
+  | 'CLOUD_INSTANCE_IDEMPOTENCY_KEY_REUSED' // 幂等键被复用于另一个旧实例
+  | 'CLOUD_INSTANCE_INVALID_IDEMPOTENCY_KEY' // 内部生成的重建幂等键不符合服务端契约
   | 'NO_RELEASE_AVAILABLE' // 控制面当前没有可更新的正式版
   // right-sidebar tabs(对标 Codex in-app browser sidebar 多 Tab 容器)
   | 'RIGHT_SIDEBAR_TOO_MANY_TABS' // 单 session 超 20 个 tab
@@ -332,6 +336,10 @@ const IPC_ERROR_CODES: ReadonlySet<IpcErrorCode> = new Set<IpcErrorCode>([
   'CLOUD_INSTANCE_DISABLED',
   'CLOUD_INSTANCE_UNAVAILABLE',
   'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS',
+  'CLOUD_INSTANCE_REBUILD_IN_PROGRESS',
+  'CLOUD_INSTANCE_REBUILD_OPERATION_NOT_FOUND',
+  'CLOUD_INSTANCE_IDEMPOTENCY_KEY_REUSED',
+  'CLOUD_INSTANCE_INVALID_IDEMPOTENCY_KEY',
   'NO_RELEASE_AVAILABLE',
   'RIGHT_SIDEBAR_TOO_MANY_TABS',
   'RIGHT_SIDEBAR_UNKNOWN_KIND',

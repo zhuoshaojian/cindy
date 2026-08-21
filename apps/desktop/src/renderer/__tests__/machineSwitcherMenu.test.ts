@@ -592,8 +592,9 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     // 段头恒在之后组件不再有可见性门控;云端入口不靠 return null 的宽窄决定去留。
     expect(menuSource).not.toContain('!cloudReady) return null');
     // wake / stop / rebuild 都显示自己的进行中文案；不再只认 wake 后回落成「唤醒云端」。
+    // 进度键的具体调用形态(带 pending)由下方「串行化重建」那条断言钉,这里只钉
+    // 「不再手写 pendingWake」这一条,避免两处重复钉同一个表达式。
     expect(menuSource).toContain('cloudInstanceLifecycleAction(cloud.pending)');
-    expect(menuSource).toContain('cloudInstanceLifecycleProgressKey(progressAction)');
     expect(menuSource).not.toContain('const pendingWake =');
     // 设备列表看非云端设备数;云端控制面可用时也要开这一段——「0 实例首次唤醒」
     // 的入口就在里面,没有任何远程设备时也必须出现。
@@ -657,7 +658,10 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     expect(menuSource).toContain("'ccAgent.sidebar.cloud.actionTimedOut'");
     // wake / stop / rebuild 都显示自己的进行中文案；不再只认 wake 后回落成「唤醒云端」。
     expect(menuSource).toContain('cloudInstanceLifecycleAction(cloud.pending)');
-    expect(menuSource).toContain('cloudInstanceLifecycleProgressKey(progressAction)');
+    // pending 一并传入共享层，断网/列表失败时 rebuild 必须显示「状态待同步」而非普通重建中。
+    expect(menuSource).toContain(
+      'cloudInstanceLifecycleProgressKey(progressAction, cloud.pending)',
+    );
     expect(menuSource).not.toContain('const pendingWake =');
     // 在线云端行只提示正式版更新;动作仍集中在设置页。
     expect(menuSource).toContain('cloudInstanceHasAvailableUpdate(instance)');

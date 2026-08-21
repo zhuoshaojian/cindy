@@ -22,6 +22,14 @@ describe('cloud lifecycle progress presentation', () => {
     expect(cloudInstanceLifecycleAction({ action: 'autoUpdate', target: 'instance-a' })).toBeNull();
   });
 
+  it('shows awaiting-sync wording without dropping rebuild progress', () => {
+    const pending = { action: 'rebuild', target: 'instance-old', syncState: 'unknown' } as const;
+    expect(cloudInstanceLifecycleAction(pending)).toBe('rebuild');
+    expect(cloudInstanceLifecycleProgressKey('rebuild', pending)).toBe(
+      'settings.devices.cloudInstance.rebuildStatusUnknown',
+    );
+  });
+
   it('transfers rebuild progress to a unique replacement after the old row disappears', () => {
     expect(
       cloudInstanceLifecycleActionForTarget(

@@ -228,8 +228,12 @@ import {
   type CloudInstanceDeleteInput,
   type CloudInstanceDeleteResult,
   type CloudInstanceEnableResult,
+  type CloudInstanceListResult,
   type CloudInstanceRenameInput,
   type CloudInstanceRenameResult,
+  type CloudInstanceRebuildInput,
+  type CloudInstanceContinueRebuildInput,
+  type CloudInstanceRebuildResult,
   type CloudInstancePatchInput,
   type CloudInstanceStatus,
   type CloudInstanceStatusInput,
@@ -4044,7 +4048,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Cloud instances (账号级云端实例 control-plane) ────────────────────
   // Token / endpoint / network stay in main; renderer only sees typed actions.
   cloudInstances: {
-    list: (): Promise<{ instances: CloudInstanceView[] }> =>
+    list: (): Promise<CloudInstanceListResult> =>
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.LIST),
     wake: (input: CloudInstanceWakeInput = {}): Promise<CloudInstanceEnableResult> =>
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.WAKE, input),
@@ -4060,6 +4064,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.STOP, input),
     upgrade: (input: CloudInstanceUpgradeInput): Promise<CloudInstanceUpgradeResult> =>
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.UPGRADE, input),
+    rebuild: (input: CloudInstanceRebuildInput): Promise<CloudInstanceRebuildResult> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.REBUILD, input),
+    continueRebuild: (
+      input: CloudInstanceContinueRebuildInput,
+    ): Promise<CloudInstanceRebuildResult> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.CONTINUE_REBUILD, input),
     delete: (input: CloudInstanceDeleteInput): Promise<CloudInstanceDeleteResult> =>
       ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.DELETE, input),
   },

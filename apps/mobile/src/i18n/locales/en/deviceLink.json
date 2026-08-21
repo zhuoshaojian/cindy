@@ -18,6 +18,9 @@
   "cloudInstance": {
     "cloud": "Cloud",
     "wakeFailed": "Failed to wake the cloud instance. Try again.",
+    "rebuilding": "Recreating…",
+    "rebuildFailed": "The cloud instance couldn't be recreated. Try again.",
+    "rebuildStillCleaning": "The old cloud instance is still being cleaned up. Wait for cleanup to finish before waking Cloud again.",
     "actionTimedOut": "This is taking longer than expected. Try again in a moment.",
     "updateAvailable": "Update Available",
     "updateAvailableOpenDetails": "Update available for {{label}}. Open details.",

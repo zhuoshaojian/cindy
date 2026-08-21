@@ -84,6 +84,15 @@ function mobileSession(
 }
 
 describe('mobile controllable device filter', () => {
+  it('wires the shared zero-instance presentation into every mobile wake entry', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
+    expect(source).toContain(
+      'const zeroCloudPresentation = cloudInstanceZeroInstancePresentation(cloudInstances.pending)',
+    );
+    expect(source).toContain('disabled={zeroCloudPresentation.disabled}');
+    expect(source).toContain('label={t(zeroCloudPresentation.labelKey)}');
+  });
+
   it('places cloud Pods after ordinary devices without changing stable order', () => {
     expect(sortCloudDevicesLast([
       { id: 'normal-a' },

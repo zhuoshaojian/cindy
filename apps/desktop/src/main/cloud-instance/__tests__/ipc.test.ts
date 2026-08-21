@@ -15,10 +15,12 @@ import { CloudInstanceClientNotConfiguredError, type CloudInstanceClient } from 
 import {
   CLOUD_DEVICE_RETIREMENT_UNKNOWN_PRESENCE_GRACE_MS,
   handleCloudInstanceStatus,
+  handleContinueCloudInstanceRebuild,
   handleCreateCloudInstance,
   handleDeleteCloudInstance,
   handleListCloudInstances,
   handlePatchCloudInstance,
+  handleRebuildCloudInstance,
   handleRenameCloudInstance,
   handleStopCloudInstance,
   handleUpgradeCloudInstance,
@@ -36,6 +38,38 @@ function client(): CloudInstanceClient {
     status: vi.fn().mockResolvedValue({ status: {} }),
     stop: vi.fn().mockResolvedValue({ status: {} }),
     upgrade: vi.fn().mockResolvedValue({ status: {} }),
+    rebuild: vi.fn().mockResolvedValue({
+      rebuildOperation: {
+        operationId: 'rebuild-operation-a',
+        oldInstanceId: 'instance-1',
+        oldDeviceId: 'cloud-device-a',
+        resourceTier: 'small',
+        phase: 'retiring',
+        startedAt: 1,
+        retireDeadline: 2,
+        clientCreateDeadline: null,
+        createDeadline: null,
+        newInstanceId: null,
+        outcome: null,
+        updatedAt: 1,
+      },
+    }),
+    continueRebuild: vi.fn().mockResolvedValue({
+      rebuildOperation: {
+        operationId: 'rebuild-operation-a',
+        oldInstanceId: 'instance-1',
+        oldDeviceId: 'cloud-device-a',
+        resourceTier: 'small',
+        phase: 'creating',
+        startedAt: 1,
+        retireDeadline: 2,
+        clientCreateDeadline: 3,
+        createDeadline: 4,
+        newInstanceId: 'instance-2',
+        outcome: null,
+        updatedAt: 2,
+      },
+    }),
     delete: vi.fn().mockResolvedValue({
       status: { deviceId: 'cloud-device-a' },
       revocation: { status: 'revoked' },
@@ -105,7 +139,8 @@ describe('cloud instance IPC handlers', () => {
     ).toBeLessThan(vi.mocked(testDeps.client.list).mock.invocationCallOrder[0]);
     expect(
       vi.mocked(testDeps.reconcileMirrorCacheCloudDevices).mock.invocationCallOrder[0],
-    ).toBeLessThan(vi.mocked(testDeps.listMirrorCacheRetiredDevices).mock.invocationCallOrder[0]);
+    ).toBeLessThan(vi.mocked(testDeps.releaseMirrorCacheRetiredDevice).mock.invocationCallOrder[0]
+      ?? Number.POSITIVE_INFINITY);
   });
 
   it('does not publish an empty authority set when the control-plane list fails', async () => {
@@ -117,6 +152,36 @@ describe('cloud instance IPC handlers', () => {
     });
 
     expect(testDeps.reconcileMirrorCacheCloudDevices).not.toHaveBeenCalled();
+  });
+
+  it('hydrates a missing mirror retirement tombstone from rebuild operations', async () => {
+    const testDeps = deps();
+    vi.mocked(testDeps.client.list).mockResolvedValue({
+      instances: [],
+      rebuildOperations: [{
+        operationId: 'rebuild-operation-a',
+        oldInstanceId: 'instance-old',
+        oldDeviceId: 'cloud-device-old',
+        resourceTier: 'small',
+        phase: 'retiring',
+        startedAt: 1234,
+        retireDeadline: 5678,
+        clientCreateDeadline: null,
+        createDeadline: null,
+        newInstanceId: null,
+        outcome: null,
+        updatedAt: 2345,
+      }],
+    });
+
+    await handleListCloudInstances(testDeps);
+
+    expect(testDeps.forgetDeviceName).toHaveBeenCalledWith('cloud-device-old');
+    expect(testDeps.retireMirrorCacheDevice).toHaveBeenCalledWith(
+      'cloud-device-old',
+      1234,
+      'instance-old',
+    );
   });
 
   it('returns the successful list when local cloud session-list reconciliation fails', async () => {
@@ -290,6 +355,65 @@ describe('cloud instance IPC handlers', () => {
     ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
   });
 
+  it('validates rebuild inputs, forwards the retry seed, and retires the old mirror', async () => {
+    const testDeps = deps();
+
+    await handleRebuildCloudInstance(testDeps, {
+      instanceId: ' instance-1 ',
+      retryOfOperationId: ' rejected-operation-a ',
+    });
+    await handleContinueCloudInstanceRebuild(testDeps, {
+      operationId: ' rebuild-operation-a ',
+      oldInstanceId: ' instance-1 ',
+      retryOfOperationId: ' rejected-operation-a ',
+    });
+
+    expect(testDeps.client.rebuild).toHaveBeenCalledWith(
+      'instance-1',
+      'rejected-operation-a',
+    );
+    expect(testDeps.client.continueRebuild).toHaveBeenCalledWith(
+      'rebuild-operation-a',
+      'instance-1',
+      'rejected-operation-a',
+    );
+    expect(testDeps.forgetDeviceName).toHaveBeenCalledWith('cloud-device-a');
+    expect(testDeps.retireMirrorCacheDevice).toHaveBeenCalledWith(
+      'cloud-device-a',
+      1_000_000,
+      'instance-1',
+    );
+    await expect(handleRebuildCloudInstance(testDeps, {
+      instanceId: 'instance-1',
+      retryOfOperationId: 'x'.repeat(129),
+    })).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
+  });
+
+  it('does not retire a live mirror when an idempotent replay reports delete-rejected', async () => {
+    const testDeps = deps();
+    vi.mocked(testDeps.client.rebuild).mockResolvedValue({
+      rebuildOperation: {
+        operationId: 'rebuild-operation-a',
+        oldInstanceId: 'instance-1',
+        oldDeviceId: 'cloud-device-a',
+        resourceTier: 'small',
+        phase: 'delete-rejected',
+        startedAt: 1,
+        retireDeadline: 2,
+        clientCreateDeadline: null,
+        createDeadline: null,
+        newInstanceId: null,
+        outcome: 'delete-rejected',
+        updatedAt: 2,
+      },
+    });
+
+    await handleRebuildCloudInstance(testDeps, { instanceId: 'instance-1' });
+
+    expect(testDeps.forgetDeviceName).not.toHaveBeenCalled();
+    expect(testDeps.retireMirrorCacheDevice).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['UPGRADE_IN_PROGRESS', 'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS'],
     ['CLOUD_INSTANCE_UPGRADE_IN_PROGRESS', 'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS'],
@@ -398,6 +522,10 @@ describe('cloud instance IPC handlers', () => {
     [new ServerApiError('FORBIDDEN', 403, 'forbidden'), 'PERMISSION_DENIED'],
     [new ServerApiError('CLOUD_INSTANCE_NOT_FOUND', 404, 'missing'), 'NOT_FOUND'],
     [new ServerApiError('MULTIPLE_INSTANCES_REQUIRE_ID', 400, 'ambiguous'), 'INVALID_PARAMS'],
+    [new ServerApiError('INVALID_IDEMPOTENCY_KEY', 400, 'bad key'), 'CLOUD_INSTANCE_INVALID_IDEMPOTENCY_KEY'],
+    [new ServerApiError('REBUILD_IN_PROGRESS', 409, 'busy'), 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'],
+    [new ServerApiError('IDEMPOTENCY_KEY_REUSED', 409, 'reused'), 'CLOUD_INSTANCE_IDEMPOTENCY_KEY_REUSED'],
+    [new ServerApiError('REBUILD_OPERATION_NOT_FOUND', 404, 'missing'), 'CLOUD_INSTANCE_REBUILD_OPERATION_NOT_FOUND'],
   ])('maps control-plane failure %# to a stable IPC code', async (error, code) => {
     const testDeps = deps();
     vi.mocked(testDeps.client.list).mockRejectedValue(error);
