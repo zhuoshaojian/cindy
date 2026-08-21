@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   chmod,
   copyFile,
@@ -83,11 +84,21 @@ if (!path.isAbsolute(developerDir)) {
     "[ios-simulator-sidecar] build failed: developer directory must be absolute",
   );
 }
-const simulatorKitFrameworks = path.join(
-  developerDir,
-  "Library",
-  "PrivateFrameworks",
+// Xcode 27 起 SimulatorKit 从 `Developer/Library/PrivateFrameworks` 搬到了 app 包的
+// `Contents/SharedFrameworks`。两处都探,按 Xcode 版本自然命中一处;都没有才报错并把
+// 探过的路径写进去 —— 只写「file not found」会让人以为是 Xcode 装坏了。
+const simulatorKitFrameworkCandidates = [
+  path.join(developerDir, "Library", "PrivateFrameworks"),
+  path.join(path.dirname(developerDir), "SharedFrameworks"),
+];
+const simulatorKitFrameworks = simulatorKitFrameworkCandidates.find((candidate) =>
+  existsSync(path.join(candidate, "SimulatorKit.framework", "SimulatorKit")),
 );
+if (!simulatorKitFrameworks) {
+  throw new Error(
+    `[ios-simulator-sidecar] build failed: SimulatorKit.framework not found under ${simulatorKitFrameworkCandidates.join(" or ")}`,
+  );
+}
 const simulatorKitBinary = path.join(
   simulatorKitFrameworks,
   "SimulatorKit.framework",
