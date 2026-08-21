@@ -115,6 +115,7 @@ type CloudInstanceDeleteResult = import('../shared/cloudInstanceIpc').CloudInsta
 type CloudInstanceEnableResult = import('../shared/cloudInstanceIpc').CloudInstanceEnableResult;
 type CloudInstanceRenameInput = import('../shared/cloudInstanceIpc').CloudInstanceRenameInput;
 type CloudInstanceRenameResult = import('../shared/cloudInstanceIpc').CloudInstanceRenameResult;
+type CloudInstancePatchInput = import('../shared/cloudInstanceIpc').CloudInstancePatchInput;
 type CloudInstanceStatus = import('../shared/cloudInstanceIpc').CloudInstanceStatus;
 type CloudInstanceStatusInput = import('../shared/cloudInstanceIpc').CloudInstanceStatusInput;
 type CloudInstanceStopInput = import('../shared/cloudInstanceIpc').CloudInstanceStopInput;
@@ -1141,6 +1142,7 @@ interface ElectronAPI {
     wake: (input?: CloudInstanceWakeInput) => Promise<CloudInstanceEnableResult>;
     create: (input?: CloudInstanceCreateInput) => Promise<CloudInstanceEnableResult>;
     rename: (input: CloudInstanceRenameInput) => Promise<CloudInstanceRenameResult>;
+    patch: (input: CloudInstancePatchInput) => Promise<void>;
     status: (input?: CloudInstanceStatusInput) => Promise<{ status: CloudInstanceStatus }>;
     stop: (input: CloudInstanceStopInput) => Promise<{ status: CloudInstanceStatus }>;
     upgrade: (input: CloudInstanceUpgradeInput) => Promise<CloudInstanceUpgradeResult>;
@@ -3777,6 +3779,7 @@ interface ElectronAPI {
         devices: Array<{
           deviceId: string;
           deviceName: string;
+          kind?: 'cloud';
           sessions: Record<string, unknown>[];
         }>;
         ownerToken?: string;
@@ -3786,6 +3789,7 @@ interface ElectronAPI {
         devices: ReadonlyArray<{
           deviceId: string;
           deviceName: string;
+          kind?: 'cloud';
           sessions: readonly Record<string, unknown>[];
         }>,
         expectedOwnerToken?: string,

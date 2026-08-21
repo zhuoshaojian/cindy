@@ -335,6 +335,7 @@ export function sessionCacheInvalidationToken(sessionId: string): number {
 export interface CachedDeviceSessionsSnapshot {
   deviceId: string;
   deviceName: string;
+  kind?: 'cloud';
   sessions: Session[];
 }
 
@@ -384,6 +385,7 @@ export async function readCachedSessionList(): Promise<CachedDeviceSessionsSnaps
     return result.devices.map((device) => ({
       deviceId: device.deviceId,
       deviceName: device.deviceName,
+      kind: device.kind,
       sessions: (device.sessions ?? []) as unknown as Session[],
     }));
   } catch (err) {
@@ -441,6 +443,7 @@ function writeSessionListNow(
       devices.map((device) => ({
         deviceId: device.deviceId,
         deviceName: device.deviceName,
+        kind: device.kind,
         sessions: device.sessions as unknown as Record<string, unknown>[],
       })),
       expectedOwnerToken,

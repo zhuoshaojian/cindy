@@ -1,5 +1,6 @@
 import type { CloudInstanceView } from '@/api/cloudInstance';
 import type { MobileHomeDeviceFilterItem } from '@/session/mobileHome';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 
 export type DeviceMenuCloudLoadState = 'loading' | 'ready' | 'unsupported' | 'error';
 
@@ -16,6 +17,13 @@ export interface CloudInstanceDeviceMenuItem {
   online: boolean;
   pendingKey: string;
   updating: boolean;
+}
+
+export function resolveDeviceMenuKind(
+  deviceId: string,
+  kind: 'cloud' | undefined,
+): 'cloud' | undefined {
+  return kind ?? (isCloudInstanceDeviceId(deviceId) ? 'cloud' : undefined);
 }
 
 export function buildCloudDeviceFilterItem(
@@ -78,13 +86,21 @@ export function projectDeviceMenuSources(input: {
   for (const item of input.filters) {
     const deviceId = item.deviceId;
     if (deviceId === null || input.cloudInstanceDeviceIds.has(deviceId)) continue;
-    if (!input.cloudDeviceIds.has(deviceId)) {
+    const liveCloudDevice = input.cloudDeviceIds.has(deviceId);
+    const cloudCandidate = liveCloudDevice || isCloudInstanceDeviceId(deviceId);
+    if (!cloudCandidate) {
       // 范围菜单只列当前能打开的电脑(上游 2026-08):离线 / 关远控 / 撤权的设备不占行,
       // 灰行点不进去只会吵。空态引导另走 RemoteAccessGuide。
       if (item.available) deviceFilters.push(item);
       continue;
     }
-    if (input.cloudLoadState !== 'ready' || item.available) fallbackCloudFilters.push(item);
+    // Prefix-only rows come from an orphaned session cache after the live device
+    // model has disappeared. Once the control plane is ready they must not sit
+    // beside the separate wake-cloud action; a live relay cloud row remains a
+    // valid fallback for a temporarily incomplete control-plane snapshot.
+    if (input.cloudLoadState !== 'ready' || (liveCloudDevice && item.available)) {
+      fallbackCloudFilters.push(item);
+    }
   }
 
   return { deviceFilters, fallbackCloudFilters };

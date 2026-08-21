@@ -63,6 +63,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ScreenBackButton } from '@/components/MobilePrimitives';
 import { PaperPlaneIcon } from '@/components/PaperPlaneIcon';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
+import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 import type {
   MobileAtResourceItem,
   MobileSlashCommand,
@@ -417,7 +418,7 @@ export default function NewRemoteSessionScreen() {
     visualDraft?: string;
   }>();
   const routeDeviceId = String(params.deviceId ?? '');
-  const routeDeviceName = String(params.deviceName ?? routeDeviceId);
+  const routeDeviceName = resolveMobileDeviceDisplayName(String(params.deviceName ?? routeDeviceId));
   const initialWorkingDir = readRouteString(params.workingDir);
   const visualFocusComposer = MOBILE_VISUAL_MOCK_ENABLED && readRouteString(params.visualFocusComposer) === '1';
   const visualInitialDraft = MOBILE_VISUAL_MOCK_ENABLED ? readRouteString(params.visualDraft) : null;
@@ -599,7 +600,7 @@ export default function NewRemoteSessionScreen() {
     if (stashed.notice) setAttachmentError(stashed.notice);
     if (stashed.deviceId) {
       setSelectedDeviceId(stashed.deviceId);
-      setSelectedDeviceName(stashed.deviceName || stashed.deviceId);
+      setSelectedDeviceName(resolveMobileDeviceDisplayName(stashed.deviceName || stashed.deviceId));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时领取一次信箱
   }, []);
@@ -840,7 +841,9 @@ export default function NewRemoteSessionScreen() {
     if (appliedDefaultDeviceKeyRef.current === key) return;
     appliedDefaultDeviceKeyRef.current = key;
     setSelectedDeviceId(preferredDefaultDevice?.deviceId ?? '');
-    setSelectedDeviceName(preferredDefaultDevice?.name ?? preferredDefaultDevice?.deviceId ?? '');
+    setSelectedDeviceName(resolveMobileDeviceDisplayName(
+      preferredDefaultDevice?.name ?? preferredDefaultDevice?.deviceId ?? '',
+    ));
     setDevicePickerOpen(false);
   }, [
     deviceOptions,
@@ -1626,7 +1629,7 @@ export default function NewRemoteSessionScreen() {
     userTouchedDeviceRef.current = true;
     explicitProviderModelSelectionRef.current = null;
     setSelectedDeviceId(option.deviceId);
-    setSelectedDeviceName(option.name || option.deviceId);
+    setSelectedDeviceName(resolveMobileDeviceDisplayName(option.name || option.deviceId));
     void saveNewSessionPreferences({
       device: {
         deviceId: option.deviceId,

@@ -28,8 +28,11 @@
     "updateRolledBack": "前回のアップデートに失敗し、自動的にロールバックされました。",
     "update": "クラウドをアップデート",
     "updating": "アップデート中…",
+    "autoUpdate": "アイドル時に自動アップデート",
+    "autoUpdateHint": "新しいバージョンがある場合、クラウドインスタンスはアイドル中またはスリープ中に自動アップデートされます。",
     "updateStarted": "クラウドインスタンスのアップデートを開始しました。",
     "updateFailed": "クラウドインスタンスのアップデートを開始できませんでした。もう一度お試しください。",
+    "autoUpdateFailed": "クラウドインスタンスの自動アップデート設定を保存できませんでした。もう一度お試しください。",
     "noReleaseAvailable": "利用可能な正式版はまだありません。更新してから、しばらくしてもう一度お試しください。",
     "updateConfirmTitle": "クラウドインスタンスをアップデートしますか？",
     "updateConfirmDescription": "アップデートするとクラウドインスタンスが再起動し、実行中のタスクが中断されます。",
@@ -46,7 +49,8 @@
     "deleteFailed": "クラウドインスタンスの削除に失敗しました。しばらくしてからもう一度お試しください。",
     "deleteConfirmTitle": "クラウドインスタンスを削除しますか？",
     "deleteConfirmDescription": "クラウド上のデータは削除され、元に戻せません。対応するデバイスも削除されます。",
-    "deleteConfirm": "インスタンスを削除"
+    "deleteConfirm": "インスタンスを削除",
+    "modelAccessStale": "クラウドのモデル資格情報の更新が必要です。モデルが一時的に利用できない場合があります"
   },
   "sectionFirstRun": "はじめに",
   "sectionOffline": "接続したデバイス",

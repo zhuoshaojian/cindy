@@ -44,6 +44,11 @@ import {
   listExecutableMediaModels,
   resetExecutableMediaModelCache,
 } from './mediaModels.js';
+import {
+  createHeadlessModelCatalogRecovery,
+  headlessModelAccessRetryDelayMs,
+  resolveModelAccessTransport,
+} from './headlessPolicy.js';
 export { isModelAccessReady } from './readiness.js';
 
 const log = createLogger('modelAccess');
@@ -65,6 +70,8 @@ const log = createLogger('modelAccess');
  */
 
 const CREDENTIALS_PATH = '/api/model-access/credentials';
+const modelAccessTransport = resolveModelAccessTransport(process.env);
+const headlessPodRuntime = modelAccessTransport.fetchImpl !== undefined;
 
 function notifyXdProviderKeyChanged(): void {
   getGhostSetupChangeBus().emitAll({
@@ -76,6 +83,7 @@ function notifyXdProviderKeyChanged(): void {
 function fetchCredentials(): Promise<CredentialsPayload> {
   return serverApiFetch<CredentialsPayload>(CREDENTIALS_PATH, {
     baseUrl: () => getClientEndpoint('modelAccessApiBaseUrl'),
+    ...modelAccessTransport,
   });
 }
 
@@ -83,6 +91,7 @@ function rotateCredentials(): Promise<CredentialsPayload> {
   return serverApiFetch<CredentialsPayload>(`${CREDENTIALS_PATH}/rotate`, {
     method: 'POST',
     baseUrl: () => getClientEndpoint('modelAccessApiBaseUrl'),
+    ...modelAccessTransport,
   });
 }
 
@@ -155,6 +164,12 @@ let modelsSyncRerunQueued = false;
 let authGeneration = 0;
 let lastAuthUserId: string | null = null;
 let lastAuthRealm: ReturnType<typeof authManager.getActiveAuthRealm> | null = null;
+const headlessModelsRecovery = headlessPodRuntime
+  ? createHeadlessModelCatalogRecovery({
+      isGenerationCurrent: (generation) => generation === authGeneration,
+      retry: scheduleModelsSync,
+    })
+  : null;
 
 function applyGatewayModels(
   models: ModelAccessGatewayModel[],
@@ -203,7 +218,7 @@ async function runModelsSync(
   myGen: number,
   authenticatedUserId: string,
   myAttempt: number,
-): Promise<void> {
+): Promise<'succeeded' | 'failed' | 'stale'> {
   // 新请求开始后，旧 LKG 仍可展示但不再能证明“当前账号明确没有某模型”。
   // 只有本次同认证世代的成功响应会重新把三态提升为 authoritative。
   markXdGatewayModelAccessUnknown();
@@ -211,28 +226,31 @@ async function runModelsSync(
   try {
     const request = buildModelsSyncRequest(() => getClientEndpoint('modelAccessApiBaseUrl'));
     const payload = await withModelsSyncOverallDeadline(
-      serverApiFetch<unknown>(request.path, request.options),
+      serverApiFetch<unknown>(request.path, {
+        ...request.options,
+        ...modelAccessTransport,
+      }),
     );
     const parsed = parseModelsSyncPayload(payload);
     if (!parsed.ok) {
       log.warn('xd gateway models response rejected (keeping last valid list)', {
         error: parsed.error,
       });
-      return;
+      return 'failed';
     }
     models = parsed.models;
   } catch (err) {
     log.warn('xd gateway models fetch failed (keeping last valid list)', {
       error: err instanceof Error ? err.message : String(err),
     });
-    return;
+    return 'failed';
   }
-  if (myGen !== authGeneration) return; // 响应归属旧账号,丢弃
+  if (myGen !== authGeneration) return 'stale'; // 响应归属旧账号,丢弃
   if (models.length === 0) {
     log.warn('xd gateway models fetch returned empty list; clearing current list');
     applyGatewayModels([], authenticatedUserId, true);
     lastModelsSyncSucceededAttempt = myAttempt;
-    return;
+    return 'succeeded';
   }
   log.info(`xd gateway models synced: ${models.length}`);
   applyGatewayModels(models, authenticatedUserId, true);
@@ -241,7 +259,9 @@ async function runModelsSync(
       includeDisabled: true,
       forceRefresh: true,
     });
-    if (myGen !== authGeneration) return;
+    // 认证世代已翻(切号 / 登出):本次结果不再代表当前账号,按 stale 返回,
+    // 让调用方区分「失败」与「被更新的请求取代」。
+    if (myGen !== authGeneration) return 'stale';
     // executable cache 已按当前客户端 Guide 能力重建；再次提升 catalog revision，
     // 让同步读取插件设置的界面从临时空清单刷新到可执行投影。
     setXdGatewayModels(models);
@@ -258,6 +278,7 @@ async function runModelsSync(
     });
   }
   lastModelsSyncSucceededAttempt = myAttempt;
+  return 'succeeded';
 }
 
 /** 触发一次模型目录同步(同世代 single-flight;旧世代在途时为新账号排队补发)。 */
@@ -286,10 +307,15 @@ function scheduleModelsSync(): void {
   modelsSyncGen = gen;
   const attempt = ++modelsSyncAttempt;
   modelsSyncInflight = runModelsSync(gen, authenticatedUserId, attempt)
+    .then((outcome) => {
+      if (outcome === 'succeeded') headlessModelsRecovery?.recordSuccess();
+      else if (outcome === 'failed') headlessModelsRecovery?.recordFailure(gen);
+    })
     .catch((err) => {
       log.warn('xd gateway models sync threw', {
         error: err instanceof Error ? err.message : String(err),
       });
+      headlessModelsRecovery?.recordFailure(gen);
     })
     .finally(() => {
       modelsSyncInflight = null;
@@ -314,6 +340,7 @@ function getSync(): CredentialsSync {
         // 凭据明确不可用时,旧模型清单也不再具备可用性证明。syncing 期间先保留
         // 已成功拉到的清单,最终成功会覆盖、失败会走这里清空。
         else if (['failed', 'disabled', 'unsupported', 'idle'].includes(status.state)) {
+          headlessModelsRecovery?.cancel();
           applyGatewayModels([]);
         }
       },
@@ -321,6 +348,7 @@ function getSync(): CredentialsSync {
         info: (msg, context) => log.info(msg, context),
         warn: (msg, context) => log.warn(msg, context),
       },
+      ...(headlessPodRuntime ? { nextRetryDelayMs: headlessModelAccessRetryDelayMs } : {}),
     });
   }
   return syncInstance;
@@ -415,6 +443,7 @@ export function initModelAccess(): void {
       )
     ) {
       authGeneration++;
+      headlessModelsRecovery?.cancel();
       // 旧身份模型清单不能跨账号/区域继续显示;新身份拉取成功后再注入。
       applyGatewayModels([]);
     }
@@ -458,6 +487,7 @@ export function initModelAccess(): void {
 
 /** 仅测试:重置单例。 */
 export function resetModelAccessForTest(): void {
+  headlessModelsRecovery?.cancel();
   syncInstance = null;
   modelsSyncInflight = null;
   modelsSyncGen = -1;

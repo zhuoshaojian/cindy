@@ -7,6 +7,7 @@ import {
   handleCreateCloudInstance,
   handleDeleteCloudInstance,
   handleListCloudInstances,
+  handlePatchCloudInstance,
   handleRenameCloudInstance,
   handleStopCloudInstance,
   handleUpgradeCloudInstance,
@@ -20,6 +21,7 @@ function client(): CloudInstanceClient {
     wake: vi.fn().mockResolvedValue({}),
     create: vi.fn().mockResolvedValue({}),
     rename: vi.fn().mockResolvedValue({}),
+    patch: vi.fn().mockResolvedValue(undefined),
     status: vi.fn().mockResolvedValue({ status: {} }),
     stop: vi.fn().mockResolvedValue({ status: {} }),
     upgrade: vi.fn().mockResolvedValue({ status: {} }),
@@ -93,6 +95,32 @@ describe('cloud instance IPC handlers', () => {
 
     expect(testDeps.client.rename).toHaveBeenNthCalledWith(1, 'instance-1', 'Build');
     expect(testDeps.client.rename).toHaveBeenNthCalledWith(2, 'instance-1', null);
+  });
+
+  it('validates and forwards mutable instance settings', async () => {
+    const testDeps = deps();
+    await handlePatchCloudInstance(testDeps, {
+      instanceId: ' instance-1 ',
+      autoUpdate: true,
+    });
+    await handlePatchCloudInstance(testDeps, {
+      instanceId: 'instance-1',
+      customLabel: '  Build  ',
+    });
+
+    expect(testDeps.client.patch).toHaveBeenNthCalledWith(1, 'instance-1', {
+      autoUpdate: true,
+    });
+    expect(testDeps.client.patch).toHaveBeenNthCalledWith(2, 'instance-1', {
+      customLabel: 'Build',
+    });
+    await expect(handlePatchCloudInstance(testDeps, {
+      instanceId: 'instance-1',
+    })).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
+    await expect(handlePatchCloudInstance(testDeps, {
+      instanceId: 'instance-1',
+      autoUpdate: 'yes',
+    })).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
   });
 
   it('validates and forwards stop/upgrade/delete inputs', async () => {

@@ -36,6 +36,7 @@ const cloudInstancesApi = {
   wake: vi.fn(),
   stop: vi.fn(),
   upgrade: vi.fn(),
+  patch: vi.fn(),
   delete: vi.fn(),
 };
 
@@ -65,6 +66,7 @@ function cloudInstanceView(): CloudInstanceView {
         previousImage: null,
         deadlineAtMs: null,
       },
+      autoUpdate: false,
       updatedAtMs: 1_000,
     },
   };
@@ -78,6 +80,7 @@ beforeEach(() => {
   cloudInstancesApi.wake.mockReset();
   cloudInstancesApi.stop.mockReset();
   cloudInstancesApi.upgrade.mockReset();
+  cloudInstancesApi.patch.mockReset();
   cloudInstancesApi.delete.mockReset();
   rendererCacheMocks.clearRevoked.mockReset();
   rendererCacheMocks.removeDevice.mockReset();
@@ -170,6 +173,38 @@ describe('useCloudInstances capability visibility', () => {
       instanceId: 'cloud-instance-a',
     });
     expect(cloudInstancesApi.list).toHaveBeenCalledTimes(2);
+    expect(mounted.result.current.pending).toBeNull();
+  });
+
+  it('optimistically patches auto-update and rolls back when the write fails', async () => {
+    let rejectPatch!: (error: Error) => void;
+    cloudInstancesApi.patch.mockReturnValue(new Promise<void>((_resolve, reject) => {
+      rejectPatch = reject;
+    }));
+    const mounted = renderHook(() => useCloudInstances());
+    await waitFor(() => expect(mounted.result.current.loadState).toBe('ready'));
+
+    let action!: ReturnType<typeof mounted.result.current.setAutoUpdate>;
+    act(() => {
+      action = mounted.result.current.setAutoUpdate('cloud-instance-a', true);
+    });
+    await waitFor(() => {
+      expect(mounted.result.current.instances[0]?.status.autoUpdate).toBe(true);
+      expect(mounted.result.current.pending).toEqual({
+        target: 'cloud-instance-a',
+        action: 'autoUpdate',
+      });
+    });
+    expect(cloudInstancesApi.patch).toHaveBeenCalledWith({
+      instanceId: 'cloud-instance-a',
+      autoUpdate: true,
+    });
+
+    rejectPatch(new Error('write failed'));
+    await act(async () => {
+      await expect(action).rejects.toThrow('write failed');
+    });
+    expect(mounted.result.current.instances[0]?.status.autoUpdate).toBe(false);
     expect(mounted.result.current.pending).toBeNull();
   });
 

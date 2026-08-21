@@ -84,6 +84,8 @@ const SESSION_LIST_FILE = 'session-list.json';
 export interface CachedDeviceSessions {
   deviceId: string;
   deviceName: string;
+  /** Optional for cache files written before cloud identity was persisted. */
+  kind?: 'cloud';
   sessions: Record<string, unknown>[];
 }
 
@@ -296,7 +298,8 @@ export function normalizeDeviceSessions(
       typeof item.deviceName === 'string' && item.deviceName.trim()
         ? truncateText(item.deviceName.trim())
         : deviceId;
-    devices.push({ deviceId, deviceName, sessions });
+    const kind = item.kind === 'cloud' ? 'cloud' : undefined;
+    devices.push({ deviceId, deviceName, kind, sessions });
   }
   return devices
     .sort((a, b) => lastActivityTime(b.sessions[0]) - lastActivityTime(a.sessions[0]))

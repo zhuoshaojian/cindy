@@ -3494,6 +3494,8 @@
         "currentVersionUpToDate": "Current version {{version}} · Up to date",
         "update": "Update Cloud",
         "updating": "Updating…",
+        "autoUpdate": "Automatically Update When Idle",
+        "autoUpdateHint": "When a new release is available, the cloud instance updates automatically while idle or sleeping.",
         "updateRolledBack": "The last update failed and was rolled back automatically.",
         "updateConfirm": {
           "title": "Update Cloud Instance?",
@@ -3518,8 +3520,10 @@
           "wakeFailed": "Failed to wake the cloud instance. Try again.",
           "updateStarted": "Cloud instance update started",
           "updateFailed": "Cloud instance update couldn't start. Try again.",
+          "autoUpdateFailed": "The cloud instance auto-update setting couldn't be saved. Try again.",
           "noReleaseAvailable": "No release is available yet. Refresh and try again later."
-        }
+        },
+        "modelAccessStale": "Cloud model credentials need a refresh; cloud models may be temporarily unavailable"
       },
       "error": {
         "unavailable": "Device Link service is unavailable (not enabled on server or network error)",

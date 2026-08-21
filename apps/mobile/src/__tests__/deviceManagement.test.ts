@@ -6,6 +6,7 @@ import type { DeviceView } from '@cindy/device-link';
 import {
   buildDeviceManagementRouteParams,
   cloudInstanceDetailActionState,
+  resolveCloudManagementTarget,
 } from '@/device-link/deviceManagement';
 
 const device: DeviceView = {
@@ -53,15 +54,23 @@ describe('device management route and cloud action state', () => {
 
     expect(source).toContain('useFocusEffect(useCallback(() => {');
     expect(source).toContain('void refreshCloudInstances();');
-    expect(source).toContain('cloud.instances.find((item) => item.deviceId === deviceId)');
+    expect(source).toContain('useCloudInstances(apiFetch, cloudCandidate)');
+    expect(source).toContain('resolvedInstance={cloudTarget.instance}');
+    expect(source).toContain('cloudTarget.isCloud ?');
     expect(source).toContain("t('deviceLink.cloudInstance.updateConfirmDescription')");
     expect(source).toContain('parseCloudInstanceImageTag(status?.image ?? fallbackImage)');
     expect(source).toContain('testID="deviceManagement.cloudCurrentVersion"');
     expect(source).toContain("t('deviceLink.cloudInstance.currentVersionUpToDate'");
     expect(source).toContain("t('deviceLink.cloudInstance.deleteConfirmDescription')");
     expect(source).toContain("testID: 'deviceManagement.cloudUpdate'");
+    expect(source).toContain('testID="deviceManagement.cloudAutoUpdate"');
+    expect(source).toContain("typeof status?.autoUpdate === 'boolean'");
+    expect(source).toContain('cloud.setAutoUpdate(instanceId, enabled)');
     expect(source).toContain("testID: 'deviceManagement.cloudDelete'");
     expect(source).toContain("testID: `deviceManagement.cloud${actionState.lifecycleAction === 'wake' ? 'Wake' : 'Stop'}`");
+    // 模型凭据陈旧的观测提示:只在 not-ready 时显示,不影响任何操作可用性。
+    expect(source).toContain("status?.modelAccess === 'not-ready'");
+    expect(source).toContain('testID="deviceManagement.cloudModelAccessStale"');
   });
 
   it('pins device metadata and cloud release state into the management route', () => {
@@ -75,6 +84,7 @@ describe('device management route and cloud action state', () => {
         instanceId: 'cloud-instance-a',
         nameSequence: 1,
         status: {
+          autoUpdate: true,
           image: 'registry.example/cindy-cloud:0.1.6@sha256:abc',
           lastFailedUpgradeImage: null,
           latestReleaseTag: '0.1.6',
@@ -88,6 +98,8 @@ describe('device management route and cloud action state', () => {
         },
       },
     })).toEqual({
+      autoUpdate: '1',
+      cloudCandidate: '1',
       cloudInstanceId: 'cloud-instance-a',
       cpuLabel: 'Xeon',
       deviceId: 'cloud-device-a',
@@ -104,15 +116,87 @@ describe('device management route and cloud action state', () => {
     });
   });
 
+  it('omits the auto-update route flag for legacy control-plane rows', () => {
+    const params = buildDeviceManagementRouteParams({
+      device,
+      deviceId: device.deviceId,
+      name: 'Cloud',
+      cloudInstance: {
+        customLabel: null,
+        deviceId: device.deviceId,
+        instanceId: 'cloud-instance-a',
+        nameSequence: 1,
+        status: {
+          image: null,
+          lastFailedUpgradeImage: null,
+          latestReleaseTag: null,
+          updateAvailable: false,
+          upgrade: {
+            deadlineAtMs: null,
+            previousImage: null,
+            state: 'idle',
+            targetImage: null,
+          },
+        },
+      },
+    });
+
+    expect(params).not.toHaveProperty('autoUpdate');
+  });
+
   it('keeps relay-only cloud metadata routable while the control-plane row catches up', () => {
     expect(buildDeviceManagementRouteParams({
       device,
       deviceId: device.deviceId,
       name: 'Cloud',
     })).toMatchObject({
+      cloudCandidate: '1',
       deviceId: 'cloud-device-a',
       kind: 'cloud',
       online: '1',
+    });
+  });
+
+  it('restores cloud management for an offline fallback row from the control-plane deviceId', () => {
+    const cloudInstance = {
+      customLabel: null,
+      deviceId: 'cloud-device-a',
+      instanceId: 'cloud-instance-a',
+      nameSequence: 1,
+      status: {
+        autoUpdate: true,
+        image: null,
+        lastFailedUpgradeImage: null,
+        latestReleaseTag: null,
+        updateAvailable: false,
+        upgrade: {
+          deadlineAtMs: null,
+          previousImage: null,
+          state: 'idle' as const,
+          targetImage: null,
+        },
+      },
+    };
+    const params = buildDeviceManagementRouteParams({
+      cloudCandidate: true,
+      device: { ...device, deviceInfo: undefined, online: false },
+      deviceId: device.deviceId,
+      name: 'Cloud',
+    });
+
+    expect(params).toMatchObject({
+      cloudCandidate: '1',
+      deviceId: 'cloud-device-a',
+      online: '0',
+    });
+    expect(resolveCloudManagementTarget({
+      cloudCandidate: params.cloudCandidate === '1',
+      deviceId: params.deviceId,
+      instances: [cloudInstance],
+      kind: params.kind,
+    })).toEqual({
+      instance: cloudInstance,
+      isCloud: true,
     });
   });
 

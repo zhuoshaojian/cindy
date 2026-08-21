@@ -195,7 +195,8 @@
       "doneUnread": "已完成未读",
       "running": "运行中",
       "close": "关闭",
-      "cancelRename": "取消重命名"
+      "cancelRename": "取消重命名",
+      "renameDevice": "重命名 {{label}}"
     },
     "menu": {
       "groupByProject": "按项目分组",
@@ -259,7 +260,9 @@
     },
     "renameDevice": {
       "title": "重命名设备",
-      "placeholder": "设备名称"
+      "placeholder": "设备名称",
+      "savingA11y": "正在保存设备名",
+      "saveA11y": "保存设备名"
     },
     "renameSession": {
       "title": "重命名任务",

@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { initializePodUserServices } from '../cloud-runtime/pod-initialization.js';
+import {
+  initializePodUserServices,
+  startPodAccountProviderReadiness,
+} from '../cloud-runtime/pod-initialization.js';
+import {
+  createAccountProviderReadinessBarrier,
+} from '../maker-host/account-provider-readiness-barrier.js';
 
 describe('Pod user services initialization', () => {
   it('refreshes account-scoped providers, starts embedding, and triggers pricing prewarm', async () => {
@@ -34,5 +40,35 @@ describe('Pod user services initialization', () => {
       logger: { warn },
     });
     await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(3));
+  });
+
+  it('arms the real provider barrier without blocking Pod startup', async () => {
+    const calls: string[] = [];
+    let finishRefresh: () => void = () => {
+      throw new Error('refresh resolver was not installed');
+    };
+    const refreshPending = new Promise<void>((resolve) => {
+      finishRefresh = resolve;
+    });
+    const barrier = createAccountProviderReadinessBarrier();
+
+    startPodAccountProviderReadiness({
+      scopeKey: 'owner:membership-1',
+      refreshModels: async () => {
+        calls.push('models');
+        await refreshPending;
+      },
+      // 与生产适配器同形:直传 barrier.start 才能把 handle 交到 task 手里。
+      startReadiness: (scopeKey, task, onError) => barrier.start(scopeKey, task, onError),
+      logger: { warn: vi.fn() },
+    });
+
+    const readiness = barrier.waitForScope('owner:membership-1');
+    await Promise.resolve();
+    expect(calls).toEqual(['models']);
+    expect(await Promise.race([readiness.then(() => 'settled'), Promise.resolve('startup-free')]))
+      .toBe('startup-free');
+    finishRefresh();
+    await expect(readiness).resolves.toBe(true);
   });
 });

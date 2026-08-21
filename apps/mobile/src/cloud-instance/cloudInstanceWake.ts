@@ -3,7 +3,7 @@ import type {
   CloudInstanceWakeResult,
 } from '@/api/cloudInstance';
 
-export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'delete';
+export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'autoUpdate' | 'delete';
 
 export { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance';
 export type CloudInstancePending = {
@@ -38,6 +38,8 @@ interface RunCloudInstanceActionDeps<T> {
   refresh(): Promise<void>;
   /** Return true when the error is an expected conflict that should refresh silently. */
   onError(action: CloudInstanceAction, error: Extract<CloudInstanceApiOutcome<T>, { kind: 'error' }>['error']): boolean | void;
+  onOptimisticStart?(): void;
+  onOptimisticRollback?(): void;
 }
 
 /**
@@ -55,9 +57,11 @@ export async function runCloudInstanceAction<T>(
   const pending = { target, action } satisfies Exclude<CloudInstancePending, null>;
   deps.pendingRef.current = pending;
   deps.setPending(pending);
+  deps.onOptimisticStart?.();
   try {
     const result = await deps.request();
     if (result.kind === 'unsupported') {
+      deps.onOptimisticRollback?.();
       deps.onError(action, {
         code: 'UNSUPPORTED_CAPABILITY',
         message: 'Cloud instance control is unavailable',
@@ -66,11 +70,15 @@ export async function runCloudInstanceAction<T>(
       return null;
     }
     if (result.kind === 'error') {
+      deps.onOptimisticRollback?.();
       if (deps.onError(action, result.error)) await deps.refresh();
       return null;
     }
     await deps.refresh();
     return result.value;
+  } catch (error) {
+    deps.onOptimisticRollback?.();
+    throw error;
   } finally {
     deps.pendingRef.current = null;
     deps.setPending(null);

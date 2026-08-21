@@ -4,6 +4,7 @@ import { Alert, AppState } from 'react-native';
 import {
   deleteCloudInstance,
   listCloudInstances,
+  patchCloudInstance,
   stopCloudInstance,
   upgradeCloudInstance,
   wakeCloudInstance,
@@ -33,6 +34,7 @@ export const CLOUD_INSTANCE_ACTION_ERROR_KEYS = {
   wake: 'deviceLink.cloudInstance.wakeFailed',
   stop: 'deviceLink.cloudInstance.stopFailed',
   upgrade: 'deviceLink.cloudInstance.updateFailed',
+  autoUpdate: 'deviceLink.cloudInstance.autoUpdateFailed',
   delete: 'deviceLink.cloudInstance.deleteFailed',
 } as const satisfies Record<CloudInstanceAction, string>;
 
@@ -44,11 +46,15 @@ export interface UseCloudInstances {
   wake(instanceId?: string): Promise<CloudInstanceWakeResult | null>;
   stopInstance(instanceId: string): Promise<CloudInstanceStopResult | null>;
   upgradeInstance(instanceId: string): Promise<CloudInstanceUpgradeResult | null>;
+  setAutoUpdate(instanceId: string, enabled: boolean): Promise<true | null>;
   deleteInstance(instanceId: string): Promise<CloudInstanceDeleteResult | null>;
 }
 
 /** Account-level cloud instances for the mobile device menu. */
-export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInstances {
+export function useCloudInstances(
+  apiFetch: CloudInstanceApiFetch,
+  enabled = true,
+): UseCloudInstances {
   const [instances, setInstances] = useState<CloudInstanceView[]>([]);
   const [loadState, setLoadState] = useState<CloudInstancesLoadState>('loading');
   const [pending, setPending] = useState<CloudInstancePending>(null);
@@ -62,6 +68,7 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
   const refreshLoopRef = useRef<CloudInstanceRefreshLoop | null>(null);
 
   const requestRefresh = useCallback(async (silentFailure: boolean, allowPending = false) => {
+    if (!enabled) return;
     if (!allowPending && pendingRef.current !== null) return;
     const request = refreshInFlightRef.current ?? listCloudInstances({ apiFetch });
     refreshInFlightRef.current = request;
@@ -88,7 +95,7 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
       status: result.error.status,
     });
     if (!silentFailure) setLoadState('error');
-  }, [apiFetch]);
+  }, [apiFetch, enabled]);
 
   refreshRef.current = requestRefresh;
   if (!refreshLoopRef.current) {
@@ -111,10 +118,12 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
   );
 
   useEffect(() => {
+    if (!enabled) return;
     void requestRefresh(false, true);
-  }, [requestRefresh]);
+  }, [enabled, requestRefresh]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     const loop = refreshLoopRef.current;
     if (!loop) return undefined;
     loop.start();
@@ -126,7 +135,7 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
       subscription.remove();
       loop.stop();
     };
-  }, []);
+  }, [enabled]);
 
   const verifying = instances.some((instance) => instance.status.upgrade.state === 'verifying');
   useEffect(() => {
@@ -200,10 +209,41 @@ export function useCloudInstances(apiFetch: CloudInstanceApiFetch): UseCloudInst
     [apiFetch, onActionError, refreshAfterAction],
   );
 
+  const setAutoUpdate = useCallback(
+    (instanceId: string, enabled: boolean) => {
+      const previous = instances.find((instance) => instance.instanceId === instanceId)?.status.autoUpdate;
+      if (typeof previous !== 'boolean') return Promise.resolve(null);
+      const patchInstances = (value: boolean) => setInstances((current) => current.map((instance) =>
+        instance.instanceId === instanceId
+          ? { ...instance, status: { ...instance.status, autoUpdate: value } }
+          : instance));
+      return runCloudInstanceAction(instanceId, 'autoUpdate', {
+        pendingRef,
+        setPending,
+        request: () => patchCloudInstance(instanceId, { autoUpdate: enabled }, { apiFetch }),
+        refresh: refreshAfterAction,
+        onError: onActionError,
+        onOptimisticStart: () => patchInstances(enabled),
+        onOptimisticRollback: () => patchInstances(previous),
+      });
+    },
+    [apiFetch, instances, onActionError, refreshAfterAction],
+  );
+
   // 稳定对象身份:消费端整体透传给 DeviceMenuModal,memo 化后不随无关渲染变化。
   return useMemo(
-    () => ({ instances, loadState, pending, refresh, wake, stopInstance, upgradeInstance, deleteInstance }),
-    [deleteInstance, instances, loadState, pending, refresh, stopInstance, upgradeInstance, wake],
+    () => ({
+      instances,
+      loadState,
+      pending,
+      refresh,
+      wake,
+      stopInstance,
+      upgradeInstance,
+      setAutoUpdate,
+      deleteInstance,
+    }),
+    [deleteInstance, instances, loadState, pending, refresh, setAutoUpdate, stopInstance, upgradeInstance, wake],
   );
 }
 

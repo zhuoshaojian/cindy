@@ -13,6 +13,7 @@ import {
   type CloudInstanceCreateInput,
   type CloudInstanceDeleteResult,
   type CloudInstanceEnableResult,
+  type CloudInstancePatchInput,
   type CloudInstanceRenameResult,
   type CloudInstanceStatus,
   type CloudInstanceUpgradeResult,
@@ -87,6 +88,18 @@ function optionalResourceTier(value: unknown): CloudInstanceCreateInput['resourc
     throwIpcError('INVALID_PARAMS', 'resourceTier must be small, medium, or large');
   }
   return value as NonNullable<CloudInstanceCreateInput['resourceTier']>;
+}
+
+function customLabel(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !value.trim()) {
+    throwIpcError('INVALID_PARAMS', 'customLabel must be a non-empty string or null');
+  }
+  const label = value.trim();
+  if (label.length > 64) {
+    throwIpcError('INVALID_PARAMS', 'customLabel exceeds 64 characters');
+  }
+  return label;
 }
 
 function rethrowCloudInstanceError(error: unknown): never {
@@ -192,19 +205,31 @@ export async function handleRenameCloudInstance(
   assertOnlyKeys(payload, ['instanceId', 'customLabel']);
   const instanceId = optionalInstanceId(payload.instanceId);
   if (!instanceId) throwIpcError('INVALID_PARAMS', 'instanceId is required');
-  const rawLabel = payload.customLabel;
-  let customLabel: string | null;
-  if (rawLabel === null) {
-    customLabel = null;
-  } else if (typeof rawLabel === 'string' && rawLabel.trim()) {
-    customLabel = rawLabel.trim();
-    if (customLabel.length > 64) {
-      throwIpcError('INVALID_PARAMS', 'customLabel exceeds 64 characters');
+  return callClient(() => deps.client.rename(instanceId, customLabel(payload.customLabel)));
+}
+
+/** Patch mutable cloud-instance settings without exposing auth/network to renderer. */
+export async function handlePatchCloudInstance(
+  deps: CloudInstanceIpcDeps,
+  rawInput: unknown,
+): Promise<void> {
+  requireAuthenticated(deps);
+  const payload = objectPayload(rawInput);
+  assertOnlyKeys(payload, ['instanceId', 'customLabel', 'autoUpdate']);
+  const instanceId = optionalInstanceId(payload.instanceId);
+  if (!instanceId) throwIpcError('INVALID_PARAMS', 'instanceId is required');
+  const patch: Omit<CloudInstancePatchInput, 'instanceId'> = {};
+  if (Object.hasOwn(payload, 'customLabel')) patch.customLabel = customLabel(payload.customLabel);
+  if (Object.hasOwn(payload, 'autoUpdate')) {
+    if (typeof payload.autoUpdate !== 'boolean') {
+      throwIpcError('INVALID_PARAMS', 'autoUpdate must be a boolean');
     }
-  } else {
-    throwIpcError('INVALID_PARAMS', 'customLabel must be a non-empty string or null');
+    patch.autoUpdate = payload.autoUpdate;
   }
-  return callClient(() => deps.client.rename(instanceId, customLabel));
+  if (!Object.hasOwn(patch, 'customLabel') && !Object.hasOwn(patch, 'autoUpdate')) {
+    throwIpcError('INVALID_PARAMS', 'at least one mutable field is required');
+  }
+  await callClient(() => deps.client.patch(instanceId, patch));
 }
 
 /** Read one instance status; omission is valid only when the server finds one instance. */
@@ -281,6 +306,9 @@ export function registerCloudInstanceIpc(
   );
   registerTrustedHandler(CLOUD_INSTANCE_INVOKE.RENAME, (_event, input) =>
     handleRenameCloudInstance(deps, input),
+  );
+  registerTrustedHandler(CLOUD_INSTANCE_INVOKE.PATCH, (_event, input) =>
+    handlePatchCloudInstance(deps, input),
   );
   registerTrustedHandler(CLOUD_INSTANCE_INVOKE.STATUS, (_event, input) =>
     handleCloudInstanceStatus(deps, input),

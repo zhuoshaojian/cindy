@@ -5,8 +5,10 @@ import type { DeviceView } from '@cindy/device-link';
 import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import { i18n } from '@/i18n';
 import {
+  buildMobileHomePresentation,
   selectMobileHomeSources,
   type MobileHomeDeviceFilterItem,
+  type MobileHomeSessionLike,
 } from '@/session/mobileHome';
 import {
   deviceAccessState,
@@ -18,6 +20,7 @@ import {
 import {
   projectCloudInstanceMenuItems,
   projectDeviceMenuSources,
+  resolveDeviceMenuKind,
 } from '@/device-link/deviceMenuProjection';
 
 beforeAll(async () => {
@@ -56,6 +59,30 @@ function deviceFilter(
   };
 }
 
+function mobileSession(
+  id: string,
+  patch: Partial<MobileHomeSessionLike> = {},
+): MobileHomeSessionLike {
+  return {
+    agentKind: 'cc',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    effort: 'medium',
+    fastMode: false,
+    id,
+    model: 'claude-sonnet-4-6',
+    permissionMode: 'ask',
+    pinnedAt: null,
+    status: 'active',
+    title: id,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    userId: 'user-1',
+    userSendAt: null,
+    workspaceKind: 'project',
+    workingDir: '/repo/app',
+    ...patch,
+  };
+}
+
 describe('mobile controllable device filter', () => {
   it('places cloud Pods after ordinary devices without changing stable order', () => {
     expect(sortCloudDevicesLast([
@@ -77,13 +104,20 @@ describe('mobile controllable device filter', () => {
     expect(source).toContain('params: { deviceId: item.deviceId, name: item.label }');
     expect(source).toContain('onLongPress={item.deviceId ? () => onOpenDevice(item) : undefined}');
     expect(source).toContain('onDetails={item.deviceId ? () => onOpenManage(item) : undefined}');
-    expect(source).toContain('onLongPress={item.deviceId ? () => onOpenManage(item) : undefined}');
+    expect(source).toContain('onDetails={item.deviceId ? () => onOpenManage(item, true) : undefined}');
+    expect(source).toContain('onLongPress={item.deviceId ? () => onOpenManage(item, true) : undefined}');
+    expect(source).toContain('cloudCandidate,');
     expect(source).toContain('onOpenCloudInstance={(instance, label) => openDeviceManagement({');
     expect(source).toContain("pathname: '/devices/manage/[deviceId]'");
     expect(source).toContain('testID={testID ? `${testID}.details` : undefined}');
     expect(source).toContain('projectDeviceMenuSources({');
     expect(source).toContain('fallbackCloudFilters.map((item) => (');
-    expect(source).not.toContain('onRenameDevice');
+    // 常规设备保留行内重命名(铅笔)入口;云端行(rich/兜底)不提供重命名。
+    expect(source).toContain('onRename={item.deviceId ? () => onRenameDevice(item) : undefined}');
+    expect(source.match(/onRename=\{/g)).toHaveLength(1);
+    expect(source).toContain('testID="home.renameDevice.modal"');
+    // 带更新徽标的云端行让出空铅笔占位,窄面板里名字与徽标必须并存可见。
+    expect(source).toContain('{(status || onRename) && !badge ? (');
   });
 
   it('does not render a cloud icon in the home device menu', () => {
@@ -185,6 +219,67 @@ describe('mobile controllable device filter', () => {
     })).toEqual({
       deviceFilters: [regular],
       fallbackCloudFilters: [],
+    });
+  });
+
+  it('casts live prefix devices at the model boundary and hides only a reachable orphan cache row', () => {
+    const liveModels = [
+      {
+        canOpen: true,
+        deviceId: 'cloud-device-live',
+        kind: resolveDeviceMenuKind('cloud-device-live', undefined),
+        name: 'Cloud',
+        state: 'ready',
+        statusLabel: 'online',
+      },
+    ];
+    const liveHome = buildMobileHomePresentation({ devices: liveModels, sessions: [] });
+    const liveCloudDeviceIds = new Set(
+      liveModels.filter((item) => item.kind === 'cloud').map((item) => item.deviceId),
+    );
+    const liveCloud = liveHome.deviceFilters.find(
+      (item) => item.deviceId === 'cloud-device-live',
+    );
+    expect(liveCloud).toBeDefined();
+    expect(projectDeviceMenuSources({
+      cloudDeviceIds: liveCloudDeviceIds,
+      cloudInstanceDeviceIds: new Set(),
+      cloudLoadState: 'ready',
+      filters: [liveCloud!],
+    }).fallbackCloudFilters).toEqual([liveCloud!]);
+
+    const home = buildMobileHomePresentation({
+      devices: [],
+      sessions: [mobileSession('stale-cloud', {
+        deviceLinkDeviceId: 'cloud-device-deleted',
+        deviceLinkDeviceName: '__cindy_cloud_device_name__',
+      })],
+    });
+    const staleCloud = home.deviceFilters.find(
+      (item) => item.deviceId === 'cloud-device-deleted',
+    );
+    expect(staleCloud).toBeDefined();
+
+    expect(projectDeviceMenuSources({
+      cloudDeviceIds: new Set(),
+      cloudInstanceDeviceIds: new Set(),
+      cloudLoadState: 'ready',
+      filters: [staleCloud!],
+    })).toEqual({
+      deviceFilters: [],
+      fallbackCloudFilters: [],
+    });
+
+    // Without an authoritative control-plane result, preserve the existing
+    // offline-cache fallback instead of guessing that the instance was deleted.
+    expect(projectDeviceMenuSources({
+      cloudDeviceIds: new Set(),
+      cloudInstanceDeviceIds: new Set(),
+      cloudLoadState: 'error',
+      filters: [staleCloud!],
+    })).toEqual({
+      deviceFilters: [],
+      fallbackCloudFilters: [staleCloud!],
     });
   });
 

@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { formatCloudDeviceName } from '@cindy/maker-shared/device-list';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -432,6 +433,64 @@ describe('MobileDownloadDialog', () => {
     expect(onOpenDevices).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: /sidebar\.mobileDownload\.allowControl/ }));
     expect(onOpenRemoteSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not leak a cloud-device sentinel in the linked device preview', async () => {
+    const sentinelName = formatCloudDeviceName(5);
+    listDevices.mockResolvedValueOnce({
+      devices: [
+        {
+          deviceId: 'desktop-device-1',
+          name: 'Studio Mac',
+          platform: 'darwin',
+          appVersion: '1.0.0',
+          lastSeenAt: null,
+          online: true,
+          busy: false,
+          remoteControlEnabled: true,
+          controlEnabled: true,
+          isSelf: true,
+        },
+        {
+          deviceId: 'mobile-device-1',
+          name: 'My iPhone',
+          platform: 'ios',
+          appVersion: '1.0.0',
+          lastSeenAt: null,
+          online: true,
+          busy: false,
+          remoteControlEnabled: false,
+          controlEnabled: true,
+          isSelf: false,
+        },
+        {
+          deviceId: 'cloud-device-1',
+          name: sentinelName,
+          platform: 'linux',
+          appVersion: '1.0.0',
+          lastSeenAt: null,
+          online: true,
+          busy: false,
+          remoteControlEnabled: true,
+          controlEnabled: true,
+          isSelf: false,
+        },
+      ],
+    });
+
+    render(
+      <MobileDownloadDialog
+        open
+        onOpenChange={vi.fn()}
+        remoteAvailable
+        onOpenRemoteSettings={vi.fn()}
+        onOpenDevices={vi.fn()}
+        triggerRef={detachedTriggerRef}
+      />,
+    );
+
+    expect(await screen.findByText('settings.devices.cloudDeviceName')).toBeTruthy();
+    expect(screen.queryByText(sentinelName)).toBeNull();
   });
 
   it('preserves the linked layout when a later device-list refresh fails', async () => {

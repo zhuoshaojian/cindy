@@ -96,6 +96,10 @@ describe('MyDevicesPanel rename guards', () => {
     expect(source).toContain("'settings.devices.cloudInstance.currentVersionUpToDate'");
     expect(source).toContain("'settings.devices.cloudInstance.currentVersion'");
     expect(source).toContain('data-testid="cloud-instance-current-version"');
+    // 模型凭据陈旧观测提示:只认 not-ready,unknown/缺省不打扰用户。
+    expect(source).toContain("cloudInstance?.status.readiness?.modelAccess === 'not-ready'");
+    expect(source).toContain('data-testid="cloud-instance-model-access-stale"');
+    expect(source).toContain("t('settings.devices.cloudInstance.modelAccessStale')");
 
     for (const locale of ['zh-CN', 'en', 'ja', 'ko']) {
       const messages = JSON.parse(
@@ -107,5 +111,17 @@ describe('MyDevicesPanel rename guards', () => {
       expect(messages.settings.devices.cloudInstance.currentVersion).toBeTruthy();
       expect(messages.settings.devices.cloudInstance.currentVersionUpToDate).toBeTruthy();
     }
+  });
+
+  it('only renders the cloud auto-update setting when the server exposes the field', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/settings/MyDevicesPanel.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain("typeof cloudInstance?.status.autoUpdate === 'boolean'");
+    expect(source).toContain('checked={cloudInstance.status.autoUpdate === true}');
+    expect(source).toContain('await cloud.setAutoUpdate(instanceId, enabled)');
+    expect(source).toContain('data-testid="cloud-instance-auto-update"');
   });
 });

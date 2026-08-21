@@ -195,7 +195,8 @@
       "doneUnread": "完了・未読",
       "running": "実行中",
       "close": "閉じる",
-      "cancelRename": "名前の変更をキャンセル"
+      "cancelRename": "名前の変更をキャンセル",
+      "renameDevice": "{{label}} の名前を変更"
     },
     "menu": {
       "groupByProject": "プロジェクトごとにグループ化",
@@ -259,7 +260,9 @@
     },
     "renameDevice": {
       "title": "デバイス名を変更",
-      "placeholder": "デバイス名"
+      "placeholder": "デバイス名",
+      "savingA11y": "デバイス名を保存中",
+      "saveA11y": "デバイス名を保存"
     },
     "renameSession": {
       "title": "セッションの名前を変更",

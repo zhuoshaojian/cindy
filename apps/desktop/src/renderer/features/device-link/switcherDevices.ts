@@ -15,6 +15,7 @@ import type { RemoteDeviceSummary } from './remoteProjectsStore';
 import {
   compareDevicesByName,
   deviceDisplayName,
+  isCloudInstanceDeviceId,
   isMobilePlatform,
 } from '@cindy/maker-shared/device-list';
 
@@ -98,7 +99,14 @@ export function buildSwitcherDevices({
     devices.push({
       deviceId,
       name: nameById.get(deviceId) || deviceId,
-      kind: kindById.get(deviceId),
+      // Cloud device ids live in a reserved namespace. Preserve that identity
+      // while the directory and cached shard converge after deletion; otherwise
+      // the shard briefly degrades into an ordinary remote row.
+      kind:
+        kindById.get(deviceId) ??
+        cachedDevice?.kind ??
+        // TODO: remove this migration fallback after pre-kind mirror caches have aged out.
+        (isCloudInstanceDeviceId(deviceId) ? 'cloud' : undefined),
       status,
     });
   }

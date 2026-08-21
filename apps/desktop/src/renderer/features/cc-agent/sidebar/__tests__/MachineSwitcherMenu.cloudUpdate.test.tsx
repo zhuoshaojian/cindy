@@ -61,9 +61,9 @@ vi.mock('@/features/cloud-instance/useCloudInstances', () => ({
 vi.mock('@/features/device-link/useMachineSwitcher', () => ({
   useRemoteSessionBootstrapLoading: () => false,
   useMachineSwitcher: () => ({
-    devices: [],
+    devices: mocks.machineDevices,
     selectedDeviceId: 'all',
-    hasRemote: false,
+    hasRemote: mocks.machineDevices.length > 0,
     select: mocks.select,
     toggle: mocks.toggle,
   }),

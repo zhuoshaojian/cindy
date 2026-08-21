@@ -18,6 +18,10 @@ export interface CloudInstanceStatus {
   latestReleaseTag: string | null;
   lastFailedUpgradeImage: string | null;
   upgrade: CloudInstanceUpgradeStatus;
+  /** Missing on older control planes; consumers hide the setting in that case. */
+  autoUpdate?: boolean;
+  /** 观测项:Pod 模型凭据同步状态透传;缺省(旧控制面/非运行态)时不提示。 */
+  modelAccess?: 'ready' | 'not-ready' | 'unknown';
   [key: string]: unknown;
 }
 
@@ -109,6 +113,23 @@ export async function wakeCloudInstance(
       throw invalidResponse();
     }
     return { ...parseCloudInstance(payload), created: payload.created };
+  });
+}
+
+/** Patch mutable cloud-instance settings. */
+export async function patchCloudInstance(
+  instanceId: string,
+  patch: { customLabel?: string | null; autoUpdate?: boolean },
+  deps: CloudInstanceApiDeps,
+): Promise<CloudInstanceApiOutcome<true>> {
+  return requestCloudInstances(async (baseUrl) => {
+    await deps.apiFetch<unknown>(`/instances/${encodeURIComponent(instanceId)}`, {
+      baseUrl,
+      method: 'PATCH',
+      timeoutMs: CLOUD_INSTANCE_REQUEST_TIMEOUT_MS,
+      body: patch,
+    });
+    return true as const;
   });
 }
 
@@ -265,6 +286,15 @@ function parseCloudInstanceStatus(value: unknown): CloudInstanceStatus {
         : state === 'rolled-back' && typeof rawUpgrade.targetImage === 'string'
           ? rawUpgrade.targetImage
           : null,
+    ...(typeof value.autoUpdate === 'boolean' ? { autoUpdate: value.autoUpdate } : {}),
+    ...(() => {
+      // readiness.modelAccess 是观测透传;仅认识的取值进入视图,其余按缺省处理。
+      const readiness = isRecord(value.readiness) ? value.readiness : {};
+      const modelAccess = readiness.modelAccess;
+      return modelAccess === 'ready' || modelAccess === 'not-ready' || modelAccess === 'unknown'
+        ? { modelAccess }
+        : {};
+    })(),
     upgrade: {
       state,
       targetImage: typeof rawUpgrade.targetImage === 'string' ? rawUpgrade.targetImage : null,

@@ -47,3 +47,14 @@ export function resolveDesktopCloudDeviceName(
     translate,
   );
 }
+
+/** Format relay device names for user-visible multi-device labels. */
+export function formatDesktopDeviceNameList(
+  names: readonly string[],
+  locale: string,
+  translate: CloudDeviceNameTranslator,
+): string {
+  return new Intl.ListFormat(locale, { style: 'short', type: 'conjunction' }).format(
+    names.map((name) => resolveDesktopCloudDeviceName(name, translate)),
+  );
+}

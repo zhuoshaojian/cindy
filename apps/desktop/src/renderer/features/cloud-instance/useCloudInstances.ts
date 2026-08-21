@@ -27,7 +27,7 @@ export type CloudInstanceWakeResult = Awaited<
 /** 端点未配置 → unsupported(隐藏入口);首次加载 → loading;正常 → ready;其它 → error。 */
 export type CloudInstancesLoadState = 'loading' | 'ready' | 'unsupported' | 'error';
 
-export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'delete';
+export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'autoUpdate' | 'delete';
 
 /** in-flight 动作:target 为 instanceId,首次唤醒(自动建)为 'new';空闲为 null。 */
 export type CloudInstancePendingState = {
@@ -52,6 +52,7 @@ export interface UseCloudInstances {
   wake: (instanceId?: string) => Promise<CloudInstanceWakeResult | undefined>;
   stopInstance: (instanceId: string) => Promise<void>;
   upgradeInstance: (instanceId: string) => Promise<void>;
+  setAutoUpdate: (instanceId: string, enabled: boolean) => Promise<boolean>;
   deleteInstance: (instanceId: string) => Promise<void>;
 }
 
@@ -109,6 +110,7 @@ function instancesEqual(left: readonly CloudInstanceView[], right: readonly Clou
       && (instance.status.lastFailedUpgradeImage ?? null) === (other.status.lastFailedUpgradeImage ?? null)
       && (instance.status.updateAvailable ?? false) === (other.status.updateAvailable ?? false)
       && (instance.status.latestReleaseTag ?? null) === (other.status.latestReleaseTag ?? null)
+      && instance.status.autoUpdate === other.status.autoUpdate
       && instance.status.updatedAtMs === other.status.updatedAtMs;
   });
 }
@@ -297,6 +299,31 @@ async function upgradeInstance(instanceId: string): Promise<void> {
   });
 }
 
+function withAutoUpdate(
+  instances: readonly CloudInstanceView[],
+  instanceId: string,
+  enabled: boolean,
+): CloudInstanceView[] {
+  return instances.map((instance) => instance.instanceId === instanceId
+    ? { ...instance, status: { ...instance.status, autoUpdate: enabled } }
+    : instance);
+}
+
+async function setAutoUpdate(instanceId: string, enabled: boolean): Promise<boolean> {
+  const result = await runAction(instanceId, 'autoUpdate', async () => {
+    const previousInstances = snapshot.instances;
+    updateSnapshot({ instances: withAutoUpdate(previousInstances, instanceId, enabled) });
+    try {
+      await window.electronAPI.cloudInstances.patch({ instanceId, autoUpdate: enabled });
+      return true;
+    } catch (error) {
+      updateSnapshot({ instances: previousInstances });
+      throw error;
+    }
+  });
+  return result === true;
+}
+
 async function deleteInstance(instanceId: string): Promise<void> {
   await runAction(instanceId, 'delete', async () => {
     const target = snapshot.instances.find((instance) => instance.instanceId === instanceId);
@@ -367,6 +394,7 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
       wake,
       stopInstance,
       upgradeInstance,
+      setAutoUpdate,
       deleteInstance,
     }),
     [instances, loadState, onlineDeviceIds, pending],

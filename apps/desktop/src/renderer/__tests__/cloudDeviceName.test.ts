@@ -5,9 +5,11 @@ import {
   formatCloudDeviceName,
 } from '@cindy/maker-shared/device-list';
 import {
+  formatDesktopDeviceNameList,
   resolveDesktopCloudDeviceName,
   translateDesktopCloudInstanceName,
 } from '@/features/cloud-instance/cloudDeviceName';
+import zhCN from '../i18n/locales/zh-CN/common.json';
 
 const translate = (key: string): string => {
   if (key === 'settings.devices.cloudDeviceName') return '云端';
@@ -40,5 +42,23 @@ describe('desktop cloud device name presentation', () => {
       { kind: 'fallback', name: CLOUD_DEVICE_NAME_SENTINEL },
       translate,
     )).toBe('云端');
+  });
+
+  it('formats loading and failure banner device lists without leaking cloud sentinels', () => {
+    const rawNames = [CLOUD_DEVICE_NAME_SENTINEL, formatCloudDeviceName(5), 'Build Pod'];
+    const deviceLabel = formatDesktopDeviceNameList(rawNames, 'zh-CN', translate);
+    const failureBanner = zhCN.ccAgent.sidebar.machineSwitcher.tasksLoadFailed.replace(
+      '{{device}}',
+      deviceLabel,
+    );
+    const partialFailureBanner = zhCN.ccAgent.sidebar.machineSwitcher.tasksPartiallyFailed.replace(
+      '{{device}}',
+      deviceLabel,
+    );
+
+    expect(deviceLabel).toContain('云端');
+    expect(deviceLabel).toContain('Build Pod');
+    expect(failureBanner).not.toContain(CLOUD_DEVICE_NAME_SENTINEL);
+    expect(partialFailureBanner).not.toContain(formatCloudDeviceName(5));
   });
 });

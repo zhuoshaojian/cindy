@@ -22,12 +22,14 @@ const actions = [
   'wake',
   'stop',
   'upgrade',
+  'autoUpdate',
   'delete',
 ] as const satisfies readonly CloudInstanceAction[];
 const actionErrorKeys = {
   wake: 'deviceLink.cloudInstance.wakeFailed',
   stop: 'deviceLink.cloudInstance.stopFailed',
   upgrade: 'deviceLink.cloudInstance.updateFailed',
+  autoUpdate: 'deviceLink.cloudInstance.autoUpdateFailed',
   delete: 'deviceLink.cloudInstance.deleteFailed',
 } as const satisfies Record<CloudInstanceAction, string>;
 const useCloudInstancesSource = readFileSync(

@@ -788,6 +788,11 @@ export class DeviceLinkClient {
     return !!peer && this.isPeerSendReady(peer) && peer.receiveReady;
   }
 
+  /** Whether this peer has already negotiated the reliable transport tier. */
+  hasReliableTransport(dst: string): boolean {
+    return this.peerTransport.get(dst)?.reliable === true;
+  }
+
   /**
    * 本机是否有仍在等该设备回包的**业务**请求(invoke,等 invoke-result)。
    *
