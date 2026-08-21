@@ -173,6 +173,8 @@ import {
 import { useSelectedMachineId } from '@/features/device-link/selectedMachineStore';
 import {
   ChevronDown,
+  Cloud,
+  CloudOff,
   Code2,
   Hammer,
   MessageSquare,
@@ -1175,6 +1177,8 @@ export function NewMakerDraftRoute() {
    * 判定,否则会出现「行看着可点、点了被静默吞掉」的缝。
    */
   const cloudWakeTarget = cloud.pending?.action === 'wake' ? cloud.pending.target : null;
+  const pendingCloudTarget = draft.pendingCloudTarget;
+  const cloudWakeStatus = pendingCloudTarget?.status ?? 'ready';
   const draftRightSidebar = useMemo(
     () =>
       resolveNewMakerDraftRightSidebar({
@@ -1277,6 +1281,7 @@ export function NewMakerDraftRoute() {
       : capabilitiesLoading || deviceProvidersLoading || !capabilities
         ? 'loading'
         : 'ready';
+  const cloudModelsLoading = cloudWakeStatus === 'waking' || remoteModelListStatus === 'loading';
 
   // 草稿当前**生效来源 id**(= ModelSelector 高亮 / ChatInput effectiveSourceId 同口径):显式选中且
   // 仍可连、并提供当前模型 → 它;否则只在当前模型的可用来源中取原生默认。fast/effort 的
@@ -2305,6 +2310,7 @@ export function NewMakerDraftRoute() {
         // (防本地项目被误当远程),不带就会在换项目时把设备悄悄清回本机。
         deviceLinkDeviceId: req.deviceId,
         deviceLinkDeviceName: req.deviceName,
+        pendingCloudTarget: null,
         workingDir: req.workingDir,
         // device-link 与 SSH 互斥。
         remoteHostId: null,
@@ -2352,9 +2358,13 @@ export function NewMakerDraftRoute() {
     (deviceId: string, deviceName: string) => {
       setManualLocalOverride(false);
       if (effectiveDeviceLinkDeviceId === deviceId) {
-        if (effectiveDeviceLinkDeviceName !== deviceName) {
-          patchDraft({ deviceLinkDeviceName: deviceName });
-        }
+        patchDraft({
+          deviceLinkDeviceName:
+            effectiveDeviceLinkDeviceName === deviceName
+              ? effectiveDeviceLinkDeviceName
+              : deviceName,
+          pendingCloudTarget: null,
+        });
         return;
       }
       // 本机目录不能直接投射到云端；切设备先落 dialogue，随后用户可从云端最近项目选目录。
@@ -2362,6 +2372,36 @@ export function NewMakerDraftRoute() {
     },
     [applyDraftTarget, effectiveDeviceLinkDeviceId, effectiveDeviceLinkDeviceName],
   );
+
+  // relay 上线后还要等现有 wake terminal watch 收口，才把「用户选中的云端」提升为
+  // 可访问的 device-link 草稿。presence 会比远端 maker/provider 端点早一拍；抢在全局 wake
+  // 完成前挂载远端模型 hooks，会把启动尾声的一次瞬态失败固化成“模型读取失败”。
+  // pendingCloudTarget 被切本机/其它设备清掉后，迟到的上线事件不会把用户强行拉回云端。
+  useEffect(() => {
+    if (!pendingCloudTarget?.deviceId) return;
+    if (!cloud.onlineDeviceIds.has(pendingCloudTarget.deviceId)) return;
+    if (cloud.pending?.action === 'wake') return;
+    activateCloudDevice(pendingCloudTarget.deviceId, pendingCloudTarget.deviceName);
+  }, [activateCloudDevice, cloud.onlineDeviceIds, cloud.pending, pendingCloudTarget]);
+
+  // 首次创建实例时点击瞬间还没有稳定身份；控制面把全局 pending 从 new 重定向到
+  // instanceId 后，用实例列表补全 deviceId，随后复用上面的上线提升流程。
+  useEffect(() => {
+    if (!pendingCloudTarget || pendingCloudTarget.instanceId !== 'new') return;
+    if (cloudWakeTarget === null || cloudWakeTarget === 'new') return;
+    const instance = cloud.instances.find((item) => item.instanceId === cloudWakeTarget);
+    if (!instance) return;
+    const current = getDraft().pendingCloudTarget;
+    if (!current || current.requestId !== pendingCloudTarget.requestId) return;
+    patchDraft({
+      pendingCloudTarget: {
+        ...current,
+        instanceId: instance.instanceId,
+        deviceId: instance.deviceId,
+        deviceName: cloudNameOf(instance),
+      },
+    });
+  }, [cloud.instances, cloudNameOf, cloudWakeTarget, pendingCloudTarget]);
 
   // 全局机器过滤若恰好单选一台在线云端设备，沿用它作为隐式默认。
   // 手动切回本机优先，且离线实例不提前写入草稿，避免把不可达设备当成可创建目标。
@@ -2383,20 +2423,83 @@ export function NewMakerDraftRoute() {
 
   const handleCloudWake = useCallback(
     (instanceId?: string) => {
-      if (cloud.pending || sendInFlightRef.current) return;
+      if (sendInFlightRef.current) return;
+      // 用户可以在唤醒过程中切回本机，再从设备菜单选回**同一台**云端。那不是第二次
+      // wake，而是把本页草稿重新附着到已在跑的控制面动作。其它云端动作/其它实例仍保持
+      // 单一 in-flight 锁，避免跨实例误切或重复请求。
+      const pendingWakeForTarget =
+        cloud.pending?.action === 'wake'
+        && cloud.pending.target === (instanceId ?? 'new');
+      if (cloud.pending && !pendingWakeForTarget) return;
+      const instance = instanceId
+        ? cloud.instances.find((item) => item.instanceId === instanceId)
+        : undefined;
+      const previous = getDraft().pendingCloudTarget;
+      const sameTarget = previous != null
+        && (
+          previous.instanceId === (instanceId ?? 'new')
+          || (instance?.deviceId != null && previous.deviceId === instance.deviceId)
+        );
+      const requestId = crypto.randomUUID();
+
+      if (!sameTarget) {
+        // 目标文件系统将从本机切到云端：项目相对 mention 与非图片绝对路径附件都不能
+        // 偷偷带过去。图片走 Cindy 媒体协议，可以保留。
+        if (effectiveDeviceLinkDeviceId == null) {
+          stripProjectRelativeMentions();
+          dropPathBackedAttachments();
+        }
+        applyDraftTarget({ deviceId: null, deviceName: null, workingDir: null });
+      }
+      patchDraft({
+        pendingCloudTarget: {
+          requestId,
+          instanceId: instanceId ?? 'new',
+          deviceId: instance?.deviceId ?? previous?.deviceId ?? null,
+          deviceName:
+            (instance ? cloudNameOf(instance) : previous?.deviceName)
+            ?? t('settings.devices.cloudDeviceName'),
+          status: 'waking',
+        },
+      });
+      if (pendingWakeForTarget) return;
       void cloud
         .wake(instanceId)
         .then((result) => {
           if (!result) return;
-          activateCloudDevice(result.deviceId, cloudNameOf(result));
+          const latest = getDraft().pendingCloudTarget;
+          if (!latest || latest.requestId !== requestId) return;
+          patchDraft({
+            pendingCloudTarget: {
+              ...latest,
+              instanceId: result.instanceId,
+              deviceId: result.deviceId,
+              deviceName: cloudNameOf(result),
+            },
+          });
         })
         .catch((error) => {
+          const latest = getDraft().pendingCloudTarget;
+          // relay 可能已经先一步上线并完成提升；此时 wake() 的超时是迟到结果，不能把
+          // 已可用的云端重新标成失败，也不能弹一条与实际状态相反的 toast。
+          if (latest?.requestId !== requestId) return;
+          patchDraft({ pendingCloudTarget: { ...latest, status: 'failed' } });
           toast.error(t(error instanceof CloudInstanceActionTimeoutError
             ? 'ccAgent.sidebar.cloud.actionTimedOut'
             : 'ccAgent.sidebar.cloud.wakeFailed'));
         });
     },
-    [activateCloudDevice, cloud.pending, cloud.wake, cloudNameOf, t],
+    [
+      applyDraftTarget,
+      cloud.instances,
+      cloud.pending,
+      cloud.wake,
+      cloudNameOf,
+      dropPathBackedAttachments,
+      effectiveDeviceLinkDeviceId,
+      stripProjectRelativeMentions,
+      t,
+    ],
   );
 
   // 弹窗确认添加后的落点:SSH 立即建会话 + navigate;device-link 把当前草稿指向被控端项目,
@@ -3070,10 +3173,12 @@ export function NewMakerDraftRoute() {
       // 结果会话建在旧设备上、导航过去,同时把用户刚选的新设备上下文重置掉。ref 在这里是必需的
       // (它即时可读,不像 state 要等下一次渲染);pill 也会用同步的 sendInFlight 禁用,双保险。
       if (sendInFlightRef.current) return;
-      // 点已选中的那一行(包括本机时点「本机」)只是确认当前选择,不该有任何副作用。
+      // 点已选中的那一行通常只是确认当前选择,不该有任何副作用。唯一例外是「云端
+      // 正在唤醒但尚未拿到正式 deviceLinkDeviceId」：此时 formal target 仍是 null，
+      // 用户点本机是在解除本页草稿对云端的附着，不能误当作重复选择而 early return。
       // 下面会剥 mention chip、丢路径型附件并清 workingDir / extraDirs —— 重选同一设备时执行这些,
       // 等于用户点一下就静默丢掉已选的项目、附件和部分已写好的消息。必须先早返回。
-      if (deviceId === (effectiveDeviceLinkDeviceId ?? null)) return;
+      if (deviceId === (effectiveDeviceLinkDeviceId ?? null) && pendingCloudTarget == null) return;
       if (deviceId == null) setManualLocalOverride(true);
       // 换完停在这台设备的「对话」(workingDir=null):上一台的项目路径在新机器上基本不存在,
       // 留着会让用户以为项目跟过来了、发送时才在被控端 path guard 上失败。与 mobile 切设备后
@@ -3086,7 +3191,7 @@ export function NewMakerDraftRoute() {
       // 早返回掉,deviceId 必然变化 → hook effect 必然重跑 → evict 后必然 cache miss 并自行 fetch。
       applyDraftTarget({ deviceId, deviceName, workingDir: null });
     },
-    [effectiveDeviceLinkDeviceId, applyDraftTarget],
+    [effectiveDeviceLinkDeviceId, applyDraftTarget, pendingCloudTarget],
   );
   const handleOpenRemoteProject = useCallback((deviceId?: string) => {
     setAddRemoteProjectDeviceId(deviceId ?? null);
@@ -3374,7 +3479,11 @@ export function NewMakerDraftRoute() {
   // 否则出现「行看着可点、点了被静默吞掉」的缝(pill 的 disabled 与 guard 同源)。
   // sendInFlight / markSendInFlight 已由上游提供,不再重复定义。
   const cloudWakeBusy =
-    cloudWakeTarget !== null || cloud.pending !== null || sendInFlight || wtCreating;
+    cloudWakeStatus === 'waking'
+    || cloudWakeTarget !== null
+    || cloud.pending !== null
+    || sendInFlight
+    || wtCreating;
   const wtRef = useRef({
     enabled: wtEnabled,
     name: wtName,
@@ -3418,6 +3527,7 @@ export function NewMakerDraftRoute() {
       },
     ): Promise<boolean | undefined> => {
       if (sendInFlightRef.current) return false;
+      if (cloudWakeStatus !== 'ready') return false;
       const agentAvailabilityError = guardDraftAgentAvailability();
       if (agentAvailabilityError) {
         toast.warning(agentAvailabilityError);
@@ -4369,6 +4479,7 @@ export function NewMakerDraftRoute() {
       attachmentState,
       refreshWorktrees,
       guardDraftAgentAvailability,
+      cloudWakeStatus,
       t,
     ],
   );
@@ -4395,6 +4506,9 @@ export function NewMakerDraftRoute() {
       // 抛出去则走 save() 的 catch:弹窗保持打开、内联显示原因、objective 原样留在输入框。
       if (sendInFlightRef.current) {
         throw new Error(t('goal.newGoalDialog.busy'));
+      }
+      if (cloudWakeStatus !== 'ready') {
+        throw new Error(t('ccAgent.draft.cloudWaking'));
       }
       const agentAvailabilityError = guardDraftAgentAvailability();
       if (agentAvailabilityError) throw new Error(agentAvailabilityError);
@@ -4985,6 +5099,7 @@ export function NewMakerDraftRoute() {
       patchCollab,
       refreshWorktrees,
       guardDraftAgentAvailability,
+      cloudWakeStatus,
       navigate,
       t,
     ],
@@ -5156,8 +5271,18 @@ export function NewMakerDraftRoute() {
                     cloud.loadState === 'ready'
                       ? {
                           busy: cloudWakeBusy,
-                          wakingTarget: cloudWakeTarget,
+                          wakingTarget:
+                            pendingCloudTarget?.status === 'waking'
+                              ? pendingCloudTarget.instanceId
+                              : cloudWakeTarget,
                           onWake: handleCloudWake,
+                          selectedTarget: pendingCloudTarget
+                              ? {
+                                deviceId: pendingCloudTarget.deviceId,
+                                name: pendingCloudTarget.deviceName,
+                                waking: pendingCloudTarget.status === 'waking',
+                              }
+                            : undefined,
                         }
                       : undefined
                   }
@@ -5244,6 +5369,9 @@ export function NewMakerDraftRoute() {
                     compactToolbar
                     placeholder={t('newChat.chatInput.createAgentPlaceholder')}
                     sessionId={undefined}
+                    sendDisabled={cloudWakeStatus !== 'ready'}
+                    sendDisabledReason={cloudWakeStatus === 'waking' ? t('ccAgent.draft.cloudWakingSendBlocked') : undefined}
+                    modelLoadingLabel={cloudModelsLoading ? t('ccAgent.draft.cloudModelsLoading') : undefined}
                     initialWorkingDir={effectiveWorkingDir}
                     remoteHostId={draft.remoteHostId ?? null}
                     deviceLinkDeviceId={effectiveDeviceLinkDeviceId ?? null}
@@ -5278,7 +5406,7 @@ export function NewMakerDraftRoute() {
                           onChange={handleVendorChange}
                           visualVariant="create-agent"
                           className="shrink-0"
-                          disabled={wtCreating}
+                          disabled={wtCreating || cloudModelsLoading}
                           hiddenVendors={hiddenSwitcherVendors}
                         />
                       )
@@ -5335,7 +5463,7 @@ export function NewMakerDraftRoute() {
                           iconOnly
                           visualVariant="create-agent"
                           className="shrink-0"
-                          disabled={wtCreating}
+                          disabled={wtCreating || cloudModelsLoading}
                           hiddenVendors={hiddenSwitcherVendors}
                         />
                       )
@@ -5367,6 +5495,47 @@ export function NewMakerDraftRoute() {
                     }
                   />
                 </div>
+                {pendingCloudTarget && (
+                  <div
+                    role="status"
+                    data-testid="new-maker-cloud-wake-status"
+                    className="mt-3 flex max-w-full items-center gap-2 self-center rounded-full border border-[var(--border-default)] bg-[var(--surface-chip)] px-3 py-1.5 text-12 text-[var(--text-secondary)]"
+                  >
+                    {pendingCloudTarget.status === 'waking' ? (
+                      <Cloud
+                        size={14}
+                        strokeWidth={2}
+                        className="shrink-0 session-status-breathing text-[var(--remote-status-progress)] motion-reduce:animate-none"
+                      />
+                    ) : (
+                      <CloudOff
+                        size={14}
+                        strokeWidth={2}
+                        className="shrink-0 text-[var(--error-fg)]"
+                      />
+                    )}
+                    <span className="min-w-0 truncate">
+                      {t(
+                        pendingCloudTarget.status === 'waking'
+                          ? 'ccAgent.draft.cloudWaking'
+                          : 'ccAgent.draft.cloudWakeFailed',
+                      )}
+                    </span>
+                    {pendingCloudTarget.status === 'failed' && (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-full px-2 py-0.5 font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--create-agent-control-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--create-agent-focus-ring)]"
+                        onClick={() => handleCloudWake(
+                          pendingCloudTarget.instanceId === 'new'
+                            ? undefined
+                            : pendingCloudTarget.instanceId,
+                        )}
+                      >
+                        {t('ccAgent.draft.cloudWakeRetry')}
+                      </button>
+                    )}
+                  </div>
+                )}
                 {/* device-link:为远程设备项目新建对话时的明显标识。让用户清楚这条对话会建在
                     被控设备上、属于那台机器的项目,而不是本机。放输入框正下方并与其水平居中
                     (父列 items-start,靠 self-center 相对 w-full 的输入框居中)。 */}

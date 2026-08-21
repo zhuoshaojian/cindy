@@ -66,7 +66,7 @@ describe('DeviceSwitcherPill 云端入口', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('离线云端行可点击唤醒且不提前切草稿目标', () => {
+  it('离线云端行可点击唤醒、立即收起菜单且不提前切草稿目标', () => {
     const onWake = vi.fn();
     const { onChange, onOpenChange } = renderPill({
       devices: [offlineCloud],
@@ -80,10 +80,10 @@ describe('DeviceSwitcherPill 云端入口', () => {
 
     expect(onWake).toHaveBeenCalledWith('cloud-instance-a');
     expect(onChange).not.toHaveBeenCalled();
-    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('wake watch 期间显示 pulse 与唤醒中文案并禁止重复触发', () => {
+  it('wake watch 期间显示 pulse 与唤醒中文案，仍允许用户重新选中同一云端', () => {
     const onWake = vi.fn();
     renderPill({
       devices: [offlineCloud],
@@ -91,13 +91,50 @@ describe('DeviceSwitcherPill 云端入口', () => {
     });
 
     const row = screen.getByText('Cloud A').closest('button')!;
-    expect(row.disabled).toBe(true);
+    expect(row.disabled).toBe(false);
     expect(screen.getByText('ccAgent.sidebar.cloud.waking')).toBeTruthy();
-    expect(screen.getByTestId('create-agent-cloud-waking-icon').getAttribute('class')).toContain(
-      'animate-pulse',
+    const icon = screen.getByTestId('create-agent-cloud-waking-icon');
+    expect(icon.getAttribute('class')).toContain('session-status-breathing');
+    expect(icon.firstElementChild?.getAttribute('class')).toContain(
+      'text-[var(--remote-status-progress)]',
     );
+    const status = screen.getByTestId('create-agent-cloud-waking-status');
+    expect(status.getAttribute('class')).toContain('session-status-breathing');
+    expect(status.getAttribute('class')).toContain('bg-[var(--remote-status-progress)]');
     fireEvent.click(row);
-    expect(onWake).not.toHaveBeenCalled();
+    expect(onWake).toHaveBeenCalledWith('cloud-instance-a');
+  });
+
+  it('草稿选中正在唤醒的云端时，pill 状态点使用进行中橙色呼吸', () => {
+    renderPill({
+      devices: [offlineCloud],
+      cloudWake: {
+        busy: true,
+        wakingTarget: 'cloud-instance-a',
+        onWake: vi.fn(),
+        selectedTarget: { deviceId: 'cloud-device', name: 'Cloud A', waking: true },
+      },
+    });
+
+    const dot = screen.getByTestId('create-agent-device-pill-status');
+    expect(dot.getAttribute('class')).toContain('bg-[var(--remote-status-progress)]');
+    expect(dot.getAttribute('class')).toContain('session-status-breathing');
+  });
+
+  it('其它云端正在唤醒时，不把当前非唤醒草稿的 pill 误标为进行中', () => {
+    renderPill({
+      devices: [offlineCloud],
+      cloudWake: {
+        busy: true,
+        wakingTarget: 'another-cloud-instance',
+        onWake: vi.fn(),
+        selectedTarget: { deviceId: 'cloud-device', name: 'Cloud A', waking: false },
+      },
+    });
+
+    const dot = screen.getByTestId('create-agent-device-pill-status');
+    expect(dot.getAttribute('class')).not.toContain('bg-[var(--remote-status-progress)]');
+    expect(dot.getAttribute('class')).not.toContain('session-status-breathing');
   });
 
   it('普通离线设备仍置灰禁用', () => {
@@ -149,7 +186,7 @@ describe('DeviceSwitcherPill 云端入口', () => {
 
   it('控制面 ready 且 0 实例时仍渲染 pill，并在尾部提供首次唤醒', () => {
     const onWake = vi.fn();
-    renderPill({
+    const { onOpenChange } = renderPill({
       devices: [],
       cloudWake: { busy: false, wakingTarget: null, onWake },
     });
@@ -157,6 +194,7 @@ describe('DeviceSwitcherPill 云端入口', () => {
     expect(screen.getByTestId('create-agent-device-pill')).toBeTruthy();
     fireEvent.click(screen.getByText('ccAgent.sidebar.cloud.wake').closest('button')!);
     expect(onWake).toHaveBeenCalledWith();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it('没有设备且控制面不可用时维持原有不渲染行为', () => {

@@ -50,6 +50,7 @@ import {
   hasFocusMovedToInteractiveElement,
   useComposerSendFocusRestore,
 } from './useComposerSendFocusRestore';
+import { useSendDisabledNotice } from './useSendDisabledNotice';
 import {
   setVoiceInputDraftDecoration,
   VoiceInputDraftDecoration,
@@ -526,6 +527,12 @@ interface ChatInputProps {
   onWorkingDirChange?: (dir: string | null) => void;
   /** When true, the input is disabled (e.g. during streaming). */
   disabled?: boolean;
+  /** 只关闭提交入口，不锁编辑器、附件或草稿保存。用于目标环境尚未就绪的 transient draft。 */
+  sendDisabled?: boolean;
+  /** 提交入口被关闭时向用户解释原因；键盘提交每轮只提示一次，按钮 hover 持续可见。 */
+  sendDisabledReason?: string;
+  /** 目标设备尚未上线时覆盖模型 trigger，避免把本机模型误显示成远端配置。 */
+  modelLoadingLabel?: string;
   /** Freeze model/provider/effort/permission controls for audit-only tasks. */
   settingsLocked?: boolean;
   /** When true, shows Stop button instead of Send button. */
@@ -1048,6 +1055,9 @@ export function ChatInput({
   onFastModeChange,
   onWorkingDirChange,
   disabled,
+  sendDisabled = false,
+  sendDisabledReason,
+  modelLoadingLabel,
   settingsLocked = false,
   isStreaming = false,
   isAgentBusy,
@@ -4864,6 +4874,14 @@ export function ChatInput({
 
   // ── Send / Stop wiring ─────────────────────────────────────────────
   const dispatchSendInFlightKeysRef = useRef(new Set<string>());
+  const showSendDisabledNotice = useCallback((message: string) => {
+    toast.warning(message);
+  }, []);
+  const notifySendDisabled = useSendDisabledNotice({
+    active: sendDisabled,
+    message: sendDisabledReason,
+    onNotify: showSendDisabledNotice,
+  });
   const dispatchSendRef = useRef<(deliveryMode?: MessageDeliveryMode) => void | Promise<void>>(
     () => {},
   );
@@ -4871,6 +4889,10 @@ export function ChatInput({
     async (deliveryMode: MessageDeliveryMode = 'queue') => {
       if (!editor) return;
       if (disabled) return;
+      if (sendDisabled) {
+        notifySendDisabled();
+        return;
+      }
       // React 的 disabled 状态可能尚未完成下一帧渲染；同步读协调器兜住点击、快捷键、
       // 语音发送等所有入口，确保 host 已登记切换意图后才允许 maker:send。
       if (sessionId && hasPendingAgentSendDispatch(sessionId)) return;
@@ -5588,6 +5610,8 @@ export function ChatInput({
       editor,
       disabled,
       sessionId,
+      sendDisabled,
+      notifySendDisabled,
       onSend,
       activeModel,
       activeEffort,
@@ -7516,6 +7540,7 @@ export function ChatInput({
   const [voiceReleaseToSendActive, setVoiceReleaseToSendActive] = useState(false);
   const sendButtonDisabled = Boolean(
     disabled ||
+    sendDisabled ||
     // 空態:当前 agent 无已连接来源 → Send 禁用(设计 Q7NYAD「send 置灰」),引导用户先去连接来源。
     noConnectedSource ||
     // 会话显式选中的来源已断开 → Send 禁用(trigger 同步显示「已断开」错误态说明原因)。
@@ -8279,8 +8304,13 @@ export function ChatInput({
                     onProviderChange={handleProviderChange}
                     onNavigateToProviders={handleNavigateToProviders}
                     switching={remoteSwitchInFlight}
+                    loadingLabel={modelLoadingLabel}
                     disabled={
-                      disabled || settingsLocked || agentSendDispatchInFlight || agentSwitchInFlight
+                      disabled ||
+                      settingsLocked ||
+                      Boolean(modelLoadingLabel) ||
+                      agentSendDispatchInFlight ||
+                      agentSwitchInFlight
                     }
                     visualVariant={isCreateAgentVariant ? 'create-agent' : 'default'}
                     compactToolbar={useNarrowToolbar}
@@ -8366,17 +8396,26 @@ export function ChatInput({
                                     })
                                 : !sendButtonDisabled
                                   ? `${t('newChat.sendButton.send')} · ${composerSendShortcutLabel}`
-                                  : selectedSourceDisconnected
-                                    ? t('newChat.sourceDisconnected.sendBlocked')
-                                    : null
+                                  : sendDisabledReason
+                                    ? sendDisabledReason
+                                    : selectedSourceDisconnected
+                                      ? t('newChat.sourceDisconnected.sendBlocked')
+                                      : null
                         }
                         side="top"
+                        delay={sendDisabledReason ? 0 : undefined}
                         forceOpen={voiceReleaseToSendActive}
                       >
                         {/* Tip 的 trigger 放在稳定 wrapper 上，而不是 button 本身。
                             disabled button 不会可靠地产生 hover/focus 事件；曾经因此让
                             running 时“排队/快捷键插话”提示完全不出现。 */}
-                        <span className="inline-flex rounded-full">
+                        <span
+                          className={cn(
+                            'inline-flex rounded-full',
+                            sendButtonDisabled && '[&>button]:pointer-events-none',
+                            sendButtonDisabled && 'cursor-not-allowed',
+                          )}
+                        >
                           <SendButton
                             disabled={sendButtonDisabled}
                             highlighted={voiceReleaseToSendActive}
