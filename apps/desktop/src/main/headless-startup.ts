@@ -127,6 +127,14 @@ export interface HeadlessStartupDeps {
   exit: (code: number) => void;
 }
 
+/** Fatal local startup failures must not enter the Pod's transient retry loop. */
+export class HeadlessStartupFatalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'HeadlessStartupFatalError';
+  }
+}
+
 function retryWait(
   policy: HeadlessStartupRetryPolicy,
   delayMs: number,
@@ -193,6 +201,11 @@ export async function runHeadlessStartup(deps: HeadlessStartupDeps): Promise<boo
         }
         break;
       } catch (err) {
+        if (err instanceof HeadlessStartupFatalError) {
+          return fail('headless Pod provisioning failed fatally', {
+            error: err.message,
+          });
+        }
         if (!deps.provisionRetry) {
           return fail('headless Pod provisioning failed', {
             error: err instanceof Error ? err.message : String(err),

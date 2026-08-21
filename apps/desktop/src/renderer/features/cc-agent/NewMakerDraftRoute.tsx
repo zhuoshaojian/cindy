@@ -162,13 +162,15 @@ import {
   desktopCloudInstanceDisplayName,
   resolveDesktopCloudDeviceName,
 } from '@/features/cloud-instance/cloudDeviceName';
-import { useCloudInstances } from '@/features/cloud-instance/useCloudInstances';
+import {
+  CloudInstanceActionTimeoutError,
+  useCloudInstances,
+} from '@/features/cloud-instance/useCloudInstances';
 import {
   buildDraftPillDevices,
   getSingleSelectedCloudInstance,
 } from '@/features/cloud-instance/cloudDraftTarget';
 import { useSelectedMachineId } from '@/features/device-link/selectedMachineStore';
-import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance';
 import {
   ChevronDown,
   Code2,
@@ -236,6 +238,7 @@ import {
 } from '@/hooks/useAgentCapabilities';
 import { useProviders } from '@/hooks/useProviders';
 import { useAvailableAgents } from '@/hooks/useAvailableAgents';
+import { resolveDraftAgentAvailability } from './draftAgentAvailability';
 import {
   useDeviceProviders,
   evictDeviceProviders,
@@ -330,9 +333,6 @@ function isWorktreeBranchPreferenceChannelUnsupported(error: unknown): boolean {
   return error instanceof Error
     && /\[(?:DEVICE_LINK_)?CHANNEL_NOT_ALLOWED\]/.test(error.message);
 }
-// 云端唤醒后等待 presence 上线的最长时间:与手机端 wake-watch 同一常量(共享层),
-// 本地 Docker 首启(重建 prebundle)约 90s,生产镜像更快,3 分钟覆盖慢路径。
-const WAKE_ACTIVATION_TIMEOUT_MS = CLOUD_WAKE_WATCH_TIMEOUT_MS;
 // F-COLLAB (2026-05): 老的 vendor='orca' 入口已退役,OrcaHeaderStrip 组件随之
 // 删除(它是给 isOrca 分支的 ChatInput.topSlot 用的)。Lead/Worker 协作组合现在
 // 由 ChatInput「+」菜单里的协同模式项控制,Lead 是当前 vendor 本身,
@@ -624,12 +624,6 @@ export function NewMakerDraftRoute() {
   const selectedMachineId = useSelectedMachineId();
   // 用户在本次草稿手动切回本机后，不再被全局机器单选自动点亮；离开草稿页即重置。
   const [manualLocalOverride, setManualLocalOverride] = useState(false);
-  // wake API 成功到 relay presence online 之间保留目标意图；期间不提前把离线设备写进草稿。
-  const [wakeActivation, setWakeActivation] = useState<{
-    instanceId: string;
-    deviceId: string;
-    deviceName: string;
-  } | null>(null);
   const navigate = useNavigate();
   const dialogueTargetRequest = useMemo(
     () => readNewMakerDialogueTargetRequest(location.state),
@@ -894,9 +888,11 @@ export function NewMakerDraftRoute() {
   // null,agent map 无 pi,但模型目录仍投影 Pi → 需按 maker:list-available-agents 过滤,
   // 否则一路创建到 requireAgent 的 not-registered 报错,codex review P2)。远程草稿以被控端
   // 的注册结果为准(hook 传 deviceId 走隧道)。未加载完成时不隐藏任何入口(fail-open)。
-  const { availableVendors, loaded: availableAgentsLoaded } = useAvailableAgents(
-    effectiveDeviceLinkDeviceId,
-  );
+  const {
+    availableVendors,
+    loaded: availableAgentsLoaded,
+    status: availableAgentsStatus,
+  } = useAvailableAgents(effectiveDeviceLinkDeviceId);
   const hiddenSwitcherVendors = useMemo<MakerVendor[]>(() => {
     if (!availableAgentsLoaded) return [];
     return (['cc', 'codex', 'pi'] as const).filter((vendor) => !availableVendors.has(vendor));
@@ -1173,9 +1169,7 @@ export function NewMakerDraftRoute() {
    * 不再反查 deviceId);busy 同时纳入发送在途——UI 可点性必须覆盖 handler 防重
    * 判定,否则会出现「行看着可点、点了被静默吞掉」的缝。
    */
-  const cloudWakeTarget =
-    wakeActivation?.instanceId
-    ?? (cloud.pending?.action === 'wake' ? cloud.pending.target : null);
+  const cloudWakeTarget = cloud.pending?.action === 'wake' ? cloud.pending.target : null;
   const draftRightSidebar = useMemo(
     () =>
       resolveNewMakerDraftRightSidebar({
@@ -2347,7 +2341,6 @@ export function NewMakerDraftRoute() {
   const activateCloudDevice = useCallback(
     (deviceId: string, deviceName: string) => {
       setManualLocalOverride(false);
-      setWakeActivation(null);
       if (effectiveDeviceLinkDeviceId === deviceId) {
         if (effectiveDeviceLinkDeviceName !== deviceName) {
           patchDraft({ deviceLinkDeviceName: deviceName });
@@ -2378,42 +2371,22 @@ export function NewMakerDraftRoute() {
     selectedFilterCloudInstance,
   ]);
 
-  // 唤醒先走控制面，presence 真正 online 后才切草稿目标；缓存会话与项目列表在此期间保持原样。
-  useEffect(() => {
-    if (!wakeActivation || !cloud.onlineDeviceIds.has(wakeActivation.deviceId)) return;
-    activateCloudDevice(wakeActivation.deviceId, wakeActivation.deviceName);
-  }, [activateCloudDevice, cloud.onlineDeviceIds, wakeActivation]);
-
-  // 兜底:wake 已受理但 Pod 迟迟未上线(容器启动失败等)时,超时放弃 waking 态,
-  // 设备行回落为可唤醒，避免永久卡在「唤醒中」不可点。
-  useEffect(() => {
-    if (!wakeActivation) return;
-    const timer = window.setTimeout(() => {
-      setWakeActivation(null);
-      toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
-    }, WAKE_ACTIVATION_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, [t, wakeActivation]);
-
   const handleCloudWake = useCallback(
     (instanceId?: string) => {
-      if (cloud.pending || wakeActivation || sendInFlightRef.current) return;
+      if (cloud.pending || sendInFlightRef.current) return;
       void cloud
         .wake(instanceId)
         .then((result) => {
           if (!result) return;
-          setWakeActivation({
-            instanceId: result.instanceId,
-            deviceId: result.deviceId,
-            deviceName: cloudNameOf(result),
-          });
+          activateCloudDevice(result.deviceId, cloudNameOf(result));
         })
-        .catch(() => {
-          setWakeActivation(null);
-          toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
+        .catch((error) => {
+          toast.error(t(error instanceof CloudInstanceActionTimeoutError
+            ? 'ccAgent.sidebar.cloud.actionTimedOut'
+            : 'ccAgent.sidebar.cloud.wakeFailed'));
         });
     },
-    [cloud.pending, cloud.wake, cloudNameOf, t, wakeActivation],
+    [activateCloudDevice, cloud.pending, cloud.wake, cloudNameOf, t],
   );
 
   // 弹窗确认添加后的落点:SSH 立即建会话 + navigate;device-link 把当前草稿指向被控端项目,
@@ -2663,19 +2636,43 @@ export function NewMakerDraftRoute() {
     [currentPrefs],
   );
 
+  /**
+   * 创建边界再核一次 runtime 注册结果。仅靠下方 effect 收敛不够：权威列表返回后的
+   * render 与 effect 提交之间仍有一帧，首次加载期间也可能先按持久化的 Pi 草稿点击发送。
+   * 这两种竞态都会把未注册 Agent 送进 maker:create-session。查询失败保持既有 fail-open，
+   * 由 main 的 requireAgent 作最终裁决；只有尚在加载时等待、已知不可用时切到首个可用项。
+   */
+  const guardDraftAgentAvailability = useCallback((): string | null => {
+    const decision = resolveDraftAgentAvailability(
+      draft.vendor,
+      availableVendors,
+      availableAgentsStatus,
+    );
+    if (decision.kind === 'proceed') return null;
+    if (decision.kind === 'wait') return t('ccAgent.draft.agentAvailabilityLoading');
+    if (decision.kind === 'switch') {
+      handleVendorChange(decision.vendor);
+      return t('ccAgent.draft.agentUnavailableAutoSwitch', {
+        agent: decision.vendor === 'cc' ? 'Claude' : decision.vendor === 'codex' ? 'Codex' : 'Pi',
+      });
+    }
+    return t('ccAgent.draft.createSessionFailed');
+  }, [availableAgentsStatus, availableVendors, draft.vendor, handleVendorChange, t]);
+
   // 当前草稿选中的 vendor 变为不可用(如 Pi 未注册 / 被控端无 Pi)时,coerce 到首个可用来源
   // (优先 cc),避免 tablist 卡在被隐藏段、且防止创建出注定 requireAgent 报错的会话。
   // 只在已加载可用性后收敛;fallback 一定可见,收敛一次即稳定(switchVendor 同值早返,不成环)。
   useEffect(() => {
     if (!availableAgentsLoaded) return;
-    if (!hiddenSwitcherVendors.includes(draft.vendor)) return;
-    const fallback = (['cc', 'codex', 'pi'] as const).find((vendor) =>
-      availableVendors.has(vendor),
+    const decision = resolveDraftAgentAvailability(
+      draft.vendor,
+      availableVendors,
+      availableAgentsStatus,
     );
-    if (fallback && fallback !== draft.vendor) handleVendorChange(fallback);
+    if (decision.kind === 'switch') handleVendorChange(decision.vendor);
   }, [
     availableAgentsLoaded,
-    hiddenSwitcherVendors,
+    availableAgentsStatus,
     availableVendors,
     draft.vendor,
     handleVendorChange,
@@ -3068,7 +3065,6 @@ export function NewMakerDraftRoute() {
       // 等于用户点一下就静默丢掉已选的项目、附件和部分已写好的消息。必须先早返回。
       if (deviceId === (effectiveDeviceLinkDeviceId ?? null)) return;
       if (deviceId == null) setManualLocalOverride(true);
-      setWakeActivation(null);
       // 换完停在这台设备的「对话」(workingDir=null):上一台的项目路径在新机器上基本不存在,
       // 留着会让用户以为项目跟过来了、发送时才在被控端 path guard 上失败。与 mobile 切设备后
       // 工作区回落的行为一致。其余连带清理全部由 applyDraftTarget 按「设备变了」推导。
@@ -3410,6 +3406,11 @@ export function NewMakerDraftRoute() {
       },
     ): Promise<boolean | undefined> => {
       if (sendInFlightRef.current) return false;
+      const agentAvailabilityError = guardDraftAgentAvailability();
+      if (agentAvailabilityError) {
+        toast.warning(agentAvailabilityError);
+        return false;
+      }
       if (effectiveCollab.enabled && collabPolicy.loading) {
         toast.warning(t('newChat.collaboration.loadingHint'));
         return false;
@@ -4356,6 +4357,7 @@ export function NewMakerDraftRoute() {
       crossAgentDialog.runMigrationFlow,
       attachmentState,
       refreshWorktrees,
+      guardDraftAgentAvailability,
       t,
     ],
   );
@@ -4383,6 +4385,8 @@ export function NewMakerDraftRoute() {
       if (sendInFlightRef.current) {
         throw new Error(t('goal.newGoalDialog.busy'));
       }
+      const agentAvailabilityError = guardDraftAgentAvailability();
+      if (agentAvailabilityError) throw new Error(agentAvailabilityError);
       markSendInFlight(true);
       let goalSessionId: string | null = null;
       let optimisticGoalTitle: string | null = null;
@@ -4970,6 +4974,7 @@ export function NewMakerDraftRoute() {
       localProvidersLoading,
       patchCollab,
       refreshWorktrees,
+      guardDraftAgentAvailability,
       navigate,
       t,
     ],

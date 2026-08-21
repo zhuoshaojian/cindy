@@ -5,7 +5,6 @@ import type {
 
 export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'autoUpdate' | 'delete';
 
-export { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance';
 export type CloudInstancePending = {
   target: string | 'new';
   action: CloudInstanceAction;
@@ -17,14 +16,10 @@ export function isSelectedCloudInstanceWaking(input: {
   instanceId: string | null;
   online: boolean;
   pending: CloudInstancePending;
-  wakeWatchDeviceId: string | null;
 }): boolean {
   if (!input.deviceId || !input.instanceId || input.online) return false;
-  return input.wakeWatchDeviceId === input.deviceId
-    || (
-      input.pending?.action === 'wake'
-      && input.pending.target === input.instanceId
-    );
+  return input.pending?.action === 'wake'
+    && input.pending.target === input.instanceId;
 }
 
 interface PendingRef {
@@ -40,6 +35,9 @@ interface RunCloudInstanceActionDeps<T> {
   onError(action: CloudInstanceAction, error: Extract<CloudInstanceApiOutcome<T>, { kind: 'error' }>['error']): boolean | void;
   onOptimisticStart?(): void;
   onOptimisticRollback?(): void;
+  onAccepted?(value: T): void;
+  waitForTerminal?(value: T): Promise<void>;
+  onTerminalError?(error: unknown): void;
 }
 
 /**
@@ -74,7 +72,16 @@ export async function runCloudInstanceAction<T>(
       if (deps.onError(action, result.error)) await deps.refresh();
       return null;
     }
+    deps.onAccepted?.(result.value);
     await deps.refresh();
+    if (deps.waitForTerminal) {
+      try {
+        await deps.waitForTerminal(result.value);
+      } catch (error) {
+        deps.onTerminalError?.(error);
+        return null;
+      }
+    }
     return result.value;
   } catch (error) {
     deps.onOptimisticRollback?.();
@@ -91,6 +98,9 @@ export interface RunCloudInstanceWakeDeps {
   requestWake(instanceId?: string): Promise<CloudInstanceApiOutcome<CloudInstanceWakeResult>>;
   refresh(): Promise<void>;
   onError(): void;
+  onAccepted?(value: CloudInstanceWakeResult): void;
+  waitForTerminal?(value: CloudInstanceWakeResult): Promise<void>;
+  onTerminalError?(error: unknown): void;
 }
 
 export function runCloudInstanceWake(
@@ -103,5 +113,8 @@ export function runCloudInstanceWake(
     request: () => deps.requestWake(instanceId),
     refresh: deps.refresh,
     onError: () => deps.onError(),
+    onAccepted: deps.onAccepted,
+    waitForTerminal: deps.waitForTerminal,
+    onTerminalError: deps.onTerminalError,
   });
 }

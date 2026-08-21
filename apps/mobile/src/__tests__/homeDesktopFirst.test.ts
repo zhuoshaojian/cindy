@@ -525,14 +525,15 @@ describe('mobile home desktop-first surface', () => {
       "state: cloudInstances.loadState === 'ready' ? 'ready' : 'unsupported'",
     );
     expect(devicesSource).toContain('.wake(cloudInstances.instances[0]?.instanceId)');
-    // 唤醒受理到 presence 上线之间约一分钟空窗:wake-watch 在此期间维持「唤醒中」
-    // (busy + 不可重复点击),presence 上线或超时兜底解除;引导卡与设备菜单共用一份状态。
+    // 终态 watch 已下沉到 useCloudInstances；首页只消费统一 pending 表达 busy。
     expect(devicesSource).toContain('waking: cloudWaking');
-    expect(devicesSource).toContain('CLOUD_WAKE_WATCH_TIMEOUT_MS');
-    expect(devicesSource).toContain('cloudInstances.pending !== null || cloudWakeWatchDeviceId !== null');
+    expect(devicesSource).toContain("const cloudWaking = cloudInstances.pending?.action === 'wake';");
+    expect(devicesSource).toContain('cloudInstances.updateOnlineDeviceIds(onlineDeviceIds);');
+    expect(devicesSource).not.toContain('cloudWakeWatchDeviceId');
+    expect(devicesSource).toContain('const busy = pendingThisInstance || item.updating;');
+    expect(devicesSource).toContain('disabled={!item.online && cloud.pending !== null}');
     expect(devicesSource).toContain('const selectedCloudWaking = isSelectedCloudInstanceWaking({');
     expect(devicesSource).toContain('sections={renderedSections}');
     expect(devicesSource).toContain('testID="home.cloudWaking"');
-    expect(devicesSource).toContain("Alert.alert(t('deviceLink.cloudInstance.wakeFailed'))");
   });
 });

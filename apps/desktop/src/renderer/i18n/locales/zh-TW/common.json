@@ -3437,6 +3437,9 @@
         "currentVersionUpToDate": "目前版本 {{version}} · 已是最新版本",
         "update": "更新雲端",
         "updating": "更新中…",
+        "rebuild": "重建實例",
+        "rebuilding": "重建中…",
+        "unregisteredStatus": "實例尚未完成啟動，暫時無法連線。",
         "autoUpdate": "空閒時自動更新",
         "autoUpdateHint": "有新版本時，雲端實例會在空閒或休眠時自動更新。",
         "updateRolledBack": "上次更新失敗，已自動回滾。",
@@ -3444,6 +3447,12 @@
           "title": "更新雲端實例？",
           "description": "更新會重新啟動雲端實例，並中斷正在執行的任務。",
           "confirm": "更新雲端實例",
+          "cancel": "取消"
+        },
+        "rebuildConfirm": {
+          "title": "重建雲端實例？",
+          "description": "重建會先刪除目前的雲端實例及其中的資料，再使用目前的執行環境建立新實例。正在執行的任務會中斷，刪除的資料無法復原。",
+          "confirm": "重建實例",
           "cancel": "取消"
         },
         "delete": "刪除實例",
@@ -3461,8 +3470,12 @@
           "deleteFailed": "刪除雲端實例失敗，請稍後重試",
           "woke": "雲端實例正在喚醒",
           "wakeFailed": "喚醒雲端實例失敗，請稍後重試",
+          "actionTimedOut": "操作耗時較長，請稍後重試。",
           "updateStarted": "雲端實例已開始更新",
           "updateFailed": "無法開始更新雲端實例，請稍後重試",
+          "rebuilt": "雲端實例已重新建立",
+          "rebuildFailed": "無法重建雲端實例，請稍後重試",
+          "rebuildCreateFailed": "原雲端實例已刪除，但新實例建立失敗。請從機器選單重新喚醒雲端。",
           "autoUpdateFailed": "無法儲存雲端實例的自動更新設定，請稍後重試",
           "noReleaseAvailable": "目前沒有可用的正式版，請重新整理後稍後重試"
         },
@@ -6729,6 +6742,7 @@
       "label": "裝置",
       "localHint": "在這臺電腦上執行",
       "onlineHint": "已連線，可在其上建立",
+      "modelAccessStaleHint": "模型憑證需要重新整理",
       "offlineHint": "離線 · 連上後可用",
       "attachmentsDropped": "已移除 {{count}} 個附件：它們是上一臺裝置上的檔案",
       "attachmentsRemoteUnsupported": "遠端裝置暫不支援檔案附件，已跳過 {{count}} 個（圖片可以）"
@@ -7788,6 +7802,8 @@
       "remoteProviderUnsupported": "該供應商不支援 SSH 遠端會話，請更換來源",
       "remoteNativeOauthUnavailable": "未連線 Claude.ai 訂閱，請先連線或選擇閘道器模型",
       "deviceStillLoading": "遠端裝置仍在載入中，請稍候",
+      "agentAvailabilityLoading": "正在檢查可用 Agent，請稍候",
+      "agentUnavailableAutoSwitch": "所選 Agent 目前不可用，已切換到 {{agent}}。請重新傳送。",
       "remoteDefaultsLoadFailed": "無法讀取遠端裝置配置。請檢查連線，Cindy 正在重試。",
       "worktreeMissingRepo": "無法開 worktree：缺少當前目錄的倉庫根",
       "worktreeRepoHint": "可嘗試重新選一次工作目錄，等右下角資料夾標識重新整理後再試",
@@ -7804,6 +7820,7 @@
         "wake": "喚醒雲端",
         "waking": "喚醒中…",
         "wakeFailed": "喚醒雲端失敗，請稍後重試",
+        "actionTimedOut": "操作耗時較長，請稍後重試。",
         "updateAvailable": "有可用更新"
       },
       "machineSwitcher": {

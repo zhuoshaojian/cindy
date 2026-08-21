@@ -26,17 +26,12 @@ describe('selected cloud waking placeholder', () => {
     instanceId: 'instance-1',
     online: false,
     pending: null,
-    wakeWatchDeviceId: null,
   } as const;
 
-  it('covers the matching wake request and accepted wake-watch window', () => {
+  it('covers the matching wake request for the full terminal-watch window', () => {
     expect(isSelectedCloudInstanceWaking({
       ...base,
       pending: { action: 'wake', target: 'instance-1' },
-    })).toBe(true);
-    expect(isSelectedCloudInstanceWaking({
-      ...base,
-      wakeWatchDeviceId: 'device-1',
     })).toBe(true);
   });
 
@@ -44,7 +39,7 @@ describe('selected cloud waking placeholder', () => {
     expect(isSelectedCloudInstanceWaking({
       ...base,
       online: true,
-      wakeWatchDeviceId: 'device-1',
+      pending: { action: 'wake', target: 'instance-1' },
     })).toBe(false);
     expect(isSelectedCloudInstanceWaking({
       ...base,
@@ -103,6 +98,77 @@ describe('runCloudInstanceWake', () => {
       { target: 'instance-1', action: 'wake' },
       null,
     ]);
+    expect(pendingRef.current).toBeNull();
+  });
+
+  it('keeps pending after request acceptance until terminal observation completes', async () => {
+    let finishTerminal!: () => void;
+    const terminal = new Promise<void>((resolve) => {
+      finishTerminal = resolve;
+    });
+    const pendingRef: { current: CloudInstancePending } = { current: null };
+    const setPending = vi.fn();
+    const requestWake = vi.fn(async () => ({
+      kind: 'ok' as const,
+      value: {
+        instanceId: 'instance-1',
+        deviceId: 'device-1',
+        nameSequence: 1,
+        customLabel: null,
+        created: false,
+        status: cloudStatus,
+      },
+    }));
+    const waitForTerminal = vi.fn(() => terminal);
+
+    const first = runCloudInstanceWake('instance-1', {
+      pendingRef,
+      setPending,
+      requestWake,
+      refresh: vi.fn(async () => undefined),
+      onError: vi.fn(),
+      waitForTerminal,
+    });
+    await vi.waitFor(() => expect(waitForTerminal).toHaveBeenCalledTimes(1));
+    expect(pendingRef.current).toEqual({ target: 'instance-1', action: 'wake' });
+
+    await expect(runCloudInstanceWake('instance-1', {
+      pendingRef,
+      setPending,
+      requestWake,
+      refresh: vi.fn(async () => undefined),
+      onError: vi.fn(),
+    })).resolves.toBeNull();
+    expect(requestWake).toHaveBeenCalledTimes(1);
+
+    finishTerminal();
+    await expect(first).resolves.toMatchObject({ deviceId: 'device-1' });
+    expect(pendingRef.current).toBeNull();
+  });
+
+  it('clears pending and reports terminal-watch timeout without success', async () => {
+    const pendingRef: { current: CloudInstancePending } = { current: null };
+    const onTerminalError = vi.fn();
+    await expect(runCloudInstanceWake('instance-1', {
+      pendingRef,
+      setPending: vi.fn(),
+      requestWake: async () => ({
+        kind: 'ok',
+        value: {
+          instanceId: 'instance-1',
+          deviceId: 'device-1',
+          nameSequence: 1,
+          customLabel: null,
+          created: false,
+          status: cloudStatus,
+        },
+      }),
+      refresh: vi.fn(async () => undefined),
+      onError: vi.fn(),
+      waitForTerminal: async () => { throw new Error('timed out'); },
+      onTerminalError,
+    })).resolves.toBeNull();
+    expect(onTerminalError).toHaveBeenCalledTimes(1);
     expect(pendingRef.current).toBeNull();
   });
 

@@ -18,6 +18,7 @@
   "cloudInstance": {
     "cloud": "Cloud",
     "wakeFailed": "Failed to wake the cloud instance. Try again.",
+    "actionTimedOut": "This is taking longer than expected. Try again in a moment.",
     "updateAvailable": "Update Available",
     "updateAvailableOpenDetails": "Update available for {{label}}. Open details.",
     "updateAvailableTag": "Update Available · {{tag}}",

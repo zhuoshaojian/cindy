@@ -551,10 +551,11 @@ describe('Shared create project picker', () => {
     expect(availableAgentsHookSource).toContain(
       "dl.invoke(deviceId, 'maker:list-available-agents', [])",
     );
-    // claude-code → cc 归一,fail-open(未加载不隐藏)。
+    // claude-code → cc 归一,fail-open(查询失败不隐藏)。
     expect(availableAgentsHookSource).toContain("agent === 'claude-code' ? 'cc' : agent");
-    // 未加载完成时不隐藏任何入口(loaded 保持 false → 空 hidden)。
+    // loaded 继续服务展示层；status 额外区分「仍在加载」与「查询失败后 fail-open」。
     expect(availableAgentsHookSource).toMatch(/loaded/);
+    expect(availableAgentsHookSource).toContain('status: AvailableAgentsStatus');
 
     // 开关按 hiddenVendors 过滤 OPTIONS,但保留当前选中段避免"无选中"过渡帧。
     expect(vendorSwitcherSource).toContain('hiddenVendors');
@@ -566,12 +567,9 @@ describe('Shared create project picker', () => {
     expect(newMakerDraftRouteSource).toMatch(
       /useAvailableAgents\(\s*effectiveDeviceLinkDeviceId,?\s*\)/,
     );
-    expect(newMakerDraftRouteSource).toMatch(/hiddenSwitcherVendors\.includes\(draft\.vendor\)/);
-
     // 2026-08-12 统一模型选择器(M5):新会话工具条上的引擎下拉常态已撤除(只在
-    // device-link 老被控端的降级分支里保留),上面那条 hiddenVendors 断言因此不再是
-    // 常态路径的门禁。**门禁没放松,只是换了承载物**:ChatInput 按同一个 runtime 注册
-    // 结果算出 unifiedAgents 交给联合列表,未注册的引擎连行都不出现。
+    // device-link 老被控端的降级分支里保留)。**门禁没放松,只是换了承载物**:ChatInput
+    // 按同一个 runtime 注册结果算出 unifiedAgents 交给联合列表,未注册的引擎连行都不出现。
     expect(newMakerDraftRouteSource).toContain('hiddenVendors={hiddenSwitcherVendors}');
     expect(chatInputSource).toMatch(/useAvailableAgents\(deviceLinkDeviceId\)/);
     expect(chatInputSource).toContain('unifiedAgents={effectiveUnifiedAgents}');
@@ -580,6 +578,14 @@ describe('Shared create project picker', () => {
     expect(chatInputSource).toContain(
       'kind === agentKind || runtimeAvailableVendors.has(agentKindToVendor(kind)),',
     );
+    // 草稿侧的 `hiddenSwitcherVendors.includes(draft.vendor)` 内联判定已被抽取成
+    // resolveDraftAgentAvailability + guardDraftAgentAvailability:内联判定只在 render 后
+    // 的 effect 里收敛,创建瞬间仍可能用不可用的 agent 建会话。断言随之搬到下面三条。
+    expect(newMakerDraftRouteSource).toContain('if (!availableAgentsLoaded) return;');
+    // 创建边界必须复核，不能只依赖 render 后的 effect 收敛；Send 与 Goal 共用同一 guard。
+    expect(newMakerDraftRouteSource).toContain('const guardDraftAgentAvailability = useCallback(');
+    expect(newMakerDraftRouteSource.match(/guardDraftAgentAvailability\(\)/g)).toHaveLength(2);
+    expect(newMakerDraftRouteSource).toContain('resolveDraftAgentAvailability(');
   });
 
   it('does not hide SSH targets for Pi (Pi SSH remote runtime landed)', () => {
@@ -1715,17 +1721,18 @@ describe('Shared create project picker', () => {
     );
   });
 
-  it('云端创建入口只由设备 pill 承载，并复用既有 presence 上线状态机', () => {
+  it('云端创建入口只由设备 pill 承载，并消费共享 hook 的终态在途状态', () => {
     expect(newMakerDraftRouteSource).not.toContain('create-agent-cloud-toggle');
     expect(newMakerDraftRouteSource).not.toContain('cloudToggleState');
     expect(newMakerDraftRouteSource).not.toContain('handleCloudToggle');
     expect(newMakerDraftRouteSource).toContain('onWake: handleCloudWake');
     expect(newMakerDraftRouteSource).toContain(
-      'if (!wakeActivation || !cloud.onlineDeviceIds.has(wakeActivation.deviceId)) return;',
+      "const cloudWakeTarget = cloud.pending?.action === 'wake' ? cloud.pending.target : null;",
     );
     expect(newMakerDraftRouteSource).toContain(
-      'activateCloudDevice(wakeActivation.deviceId, wakeActivation.deviceName);',
+      'activateCloudDevice(result.deviceId, cloudNameOf(result));',
     );
+    expect(newMakerDraftRouteSource).not.toContain('wakeActivation');
     expect(deviceSwitcherPillSource).toContain("device.kind === 'cloud'");
     expect(deviceSwitcherPillSource).toContain('cloudWake?.onWake(device.cloudInstanceId)');
   });

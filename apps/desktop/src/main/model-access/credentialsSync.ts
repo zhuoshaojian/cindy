@@ -138,17 +138,23 @@ export function createCredentialsSync(deps: CredentialsSyncDeps): CredentialsSyn
   function snapshot(
     state: ModelAccessStatus['state'],
     errorCode?: string,
+    consecutiveFailures?: number,
   ): ModelAccessStatus {
     return {
       state,
       ...(errorCode ? { errorCode } : {}),
+      ...(consecutiveFailures ? { consecutiveFailures } : {}),
       source: deps.store.getSource(),
       endpoint: deps.store.getServerEndpoint(),
     };
   }
 
-  function setStatus(state: ModelAccessStatus['state'], errorCode?: string): ModelAccessStatus {
-    status = snapshot(state, errorCode);
+  function setStatus(
+    state: ModelAccessStatus['state'],
+    errorCode?: string,
+    consecutiveFailures?: number,
+  ): ModelAccessStatus {
+    status = snapshot(state, errorCode, consecutiveFailures);
     deps.onStatusChange(status);
     return status;
   }
@@ -158,9 +164,10 @@ export function createCredentialsSync(deps: CredentialsSyncDeps): CredentialsSyn
     myEpoch: number,
     state: ModelAccessStatus['state'],
     errorCode?: string,
+    consecutiveFailures?: number,
   ): ModelAccessStatus {
     if (myEpoch !== epoch) return status;
-    return setStatus(state, errorCode);
+    return setStatus(state, errorCode, consecutiveFailures);
   }
 
   /** 单次拉取 + 落盘。可重试结果保留服务端子码，最终状态与日志不丢诊断信息。 */
@@ -233,16 +240,22 @@ export function createCredentialsSync(deps: CredentialsSyncDeps): CredentialsSyn
   async function runSync(myEpoch: number): Promise<ModelAccessStatus> {
     if (myEpoch !== epoch) return status;
     setStatus('syncing');
+    let consecutiveFailures = 0;
     for (let attempt = 0; ; attempt++) {
       const result = await attemptOnce(myEpoch);
       if (result === 'stale' || myEpoch !== epoch) return status; // 登出/换账号,放弃本轮
       if (!('kind' in result)) return result;
+      consecutiveFailures += 1;
       const retryDelayMs = deps.nextRetryDelayMs
         ? deps.nextRetryDelayMs(attempt)
         : (retryDelays[attempt] ?? null);
       if (retryDelayMs === null) {
         return setStatusIfFresh(myEpoch, 'failed', result.errorCode);
       }
+      // 还要继续重试:把「失败了几次、上次什么码」写进可观测状态。Pod 的退避永不
+      // 耗尽,上面的 `failed` 分支不可达,不记在这里就只剩日志(status.json 看不到)。
+      // 状态只报事实,「几次算持续故障」的策略在 cloud-runtime/model-access.ts。
+      setStatusIfFresh(myEpoch, 'syncing', result.errorCode, consecutiveFailures);
       await sleep(retryDelayMs);
       if (myEpoch !== epoch) return status;
     }

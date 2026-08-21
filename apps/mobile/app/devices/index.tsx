@@ -48,10 +48,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useAuth } from '@/auth/AuthContext';
-import {
-  CLOUD_WAKE_WATCH_TIMEOUT_MS,
-  isSelectedCloudInstanceWaking,
-} from '@/cloud-instance/cloudInstanceWake';
+import { isSelectedCloudInstanceWaking } from '@/cloud-instance/cloudInstanceWake';
 import { useCloudInstances, type UseCloudInstances } from '@/cloud-instance/useCloudInstances';
 import type { CloudInstanceView } from '@/api/cloudInstance';
 import { configureCollapseAnimation } from '@/utils/collapseAnimation';
@@ -161,7 +158,10 @@ import {
   pruneHomePeerReady,
   type HomePeerRecoveryRefresh,
 } from '@/session/homePeerRecovery';
-import { serializeNewSessionDeviceOptions } from '@/session/newSession';
+import {
+  cloudInstanceModelAccessStale,
+  serializeNewSessionDeviceOptions,
+} from '@/session/newSession';
 import {
   buildRemoteSessionCardPreview,
   buildSessionMessagePreviewIndex,
@@ -1213,39 +1213,10 @@ export default function HomeScreen() {
     () => new Set(displayDevices.filter((device) => device.online).map((device) => device.deviceId)),
     [displayDevices],
   );
-  const onlineDeviceIdsRef = useRef(onlineDeviceIds);
-  onlineDeviceIdsRef.current = onlineDeviceIds;
-  // 云端唤醒 wake-watch:唤醒受理后到 Pod presence 上线之间可能有数分钟空窗,此时
-  // cloudInstances.pending 已清、设备仍离线,「唤醒中」态若只看 pending 会提前回落成
-  // 可再次点击。受理成功时记下 deviceId,presence 上线或超时兜底后解除;引导卡与
-  // 设备菜单两个唤醒入口共用这一份状态。
-  const [cloudWakeWatchDeviceId, setCloudWakeWatchDeviceIdState] = useState<string | null>(null);
-  const cloudWakeWatchDeviceIdRef = useRef<string | null>(null);
-  const setCloudWakeWatchDeviceId = useCallback((deviceId: string | null) => {
-    cloudWakeWatchDeviceIdRef.current = deviceId;
-    setCloudWakeWatchDeviceIdState(deviceId);
-  }, []);
   useEffect(() => {
-    if (cloudWakeWatchDeviceId === null) return;
-    const watchedDeviceId = cloudWakeWatchDeviceId;
-    const timer = setTimeout(() => {
-      if (
-        cloudWakeWatchDeviceIdRef.current !== watchedDeviceId
-        || onlineDeviceIdsRef.current.has(watchedDeviceId)
-      ) {
-        return;
-      }
-      setCloudWakeWatchDeviceId(null);
-      Alert.alert(t('deviceLink.cloudInstance.wakeFailed'));
-    }, CLOUD_WAKE_WATCH_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [cloudWakeWatchDeviceId, setCloudWakeWatchDeviceId, t]);
-  useEffect(() => {
-    if (cloudWakeWatchDeviceId !== null && onlineDeviceIds.has(cloudWakeWatchDeviceId)) {
-      setCloudWakeWatchDeviceId(null);
-    }
-  }, [cloudWakeWatchDeviceId, onlineDeviceIds, setCloudWakeWatchDeviceId]);
-  const cloudWaking = cloudInstances.pending?.action === 'wake' || cloudWakeWatchDeviceId !== null;
+    cloudInstances.updateOnlineDeviceIds(onlineDeviceIds);
+  }, [cloudInstances.updateOnlineDeviceIds, onlineDeviceIds]);
+  const cloudWaking = cloudInstances.pending?.action === 'wake';
   const selectedCloudInstance = cloudInstances.instances.find(
     (instance) => instance.deviceId === selectedDeviceId,
   ) ?? null;
@@ -1254,7 +1225,6 @@ export default function HomeScreen() {
     instanceId: selectedCloudInstance?.instanceId ?? null,
     online: selectedCloudInstance ? onlineDeviceIds.has(selectedCloudInstance.deviceId) : false,
     pending: cloudInstances.pending,
-    wakeWatchDeviceId: cloudWakeWatchDeviceId,
   });
   const revokedTipDeviceName = useMemo(
     () => revokedTipDeviceId
@@ -1470,16 +1440,25 @@ export default function HomeScreen() {
   // 「可用」项,但缓存设备不能当 live 设备直接开新会话——列表先画出来,新建入口等 live 数据。
   const currentHomeSettled = initialHomeSettled || selectedPeerRecoveryReady;
   const newSessionDisabled = !home.primaryDevice || (!currentHomeSettled && !hasOpenableLiveDevice);
-  const newSessionDeviceOptions = useMemo(
-    () => deviceModels
+  const newSessionDeviceOptions = useMemo(() => {
+    const cloudInstanceByDeviceId = new Map(
+      cloudInstances.instances.map((instance) => [instance.deviceId, instance] as const),
+    );
+    return deviceModels
       .filter((item) => item.canOpen)
       .map((item) => ({
         deviceId: item.deviceId,
         name: item.name,
-        ...(item.kind === 'cloud' ? { kind: 'cloud' as const } : {}),
-      })),
-    [deviceModels],
-  );
+        ...(item.kind === 'cloud'
+          ? {
+              kind: 'cloud' as const,
+              modelAccessStale: cloudInstanceModelAccessStale(
+                cloudInstanceByDeviceId.get(item.deviceId),
+              ),
+            }
+          : {}),
+      }));
+  }, [cloudInstances.instances, deviceModels]);
   const selectedDeviceLabel = useMemo(() => {
     if (!selectedDeviceId) return t('devices.list.allConversations');
     if (selectedCloudInstance) {
@@ -2108,13 +2087,10 @@ export default function HomeScreen() {
                 state: remoteGuideCloudState,
                 waking: cloudWaking,
                 onWake: () => {
-                  if (cloudInstances.pending !== null || cloudWakeWatchDeviceId !== null) return;
+                  if (cloudInstances.pending !== null) return;
                   void cloudInstances
                     .wake(cloudInstances.instances[0]?.instanceId)
-                    .then((result) => {
-                      if (result) setCloudWakeWatchDeviceId(result.deviceId);
-                      return loadHome({ visible: true });
-                    });
+                    .then(() => loadHome({ visible: true }));
                 },
               }}
               context={home.emptyNoDevice}
@@ -2194,8 +2170,6 @@ export default function HomeScreen() {
       <DeviceMenuModal
         cloud={cloudInstances}
         cloudDeviceIds={cloudDeviceIds}
-        cloudWakingDeviceId={cloudWakeWatchDeviceId}
-        onCloudWakeAccepted={setCloudWakeWatchDeviceId}
         connectionStates={deviceConnectionStates}
         filters={home.deviceFilters}
         onClose={() => setDeviceMenuOpen(false)}
@@ -2325,12 +2299,10 @@ function HomeListLoadingState({
 function DeviceMenuModal({
   cloud,
   cloudDeviceIds,
-  cloudWakingDeviceId,
   connectionStates,
   filters,
   onClose,
   onClosed,
-  onCloudWakeAccepted,
   onOpenCloudInstance,
   onOpenDevice,
   onOpenManage,
@@ -2344,15 +2316,11 @@ function DeviceMenuModal({
 }: {
   cloud: UseCloudInstances;
   cloudDeviceIds: ReadonlySet<string>;
-  /** wake-watch:唤醒已受理、Pod 尚未上线的实例 deviceId(父级维护,超时/上线后解除)。 */
-  cloudWakingDeviceId: string | null;
   connectionStates: Record<string, HomeDeviceConnectionState>;
   filters: readonly MobileHomeDeviceFilterItem[];
   onClose(): void;
   /** 淡出动画完成、Modal 真正卸载后触发;父级用它把「打开第二个 Modal」延后到菜单卸载之后。 */
   onClosed?(): void;
-  /** 唤醒请求被控制面受理后回报 deviceId,父级据此开始 wake-watch。 */
-  onCloudWakeAccepted(deviceId: string): void;
   onOpenCloudInstance(instance: CloudInstanceView, label: string): void;
   /** Opens the existing task-list detail route for an ordinary device. */
   onOpenDevice(item: MobileHomeDeviceFilterItem): void;
@@ -2484,10 +2452,8 @@ function DeviceMenuModal({
               />
             ))}
             {cloudItems.map((item) => {
-              // watch 命中 = 唤醒已受理、Pod 尚未上线:pending 已清仍要显示「唤醒中」。
-              const waking = cloudWakingDeviceId === item.instance.deviceId && !item.online;
               const pendingThisInstance = cloud.pending?.target === item.pendingKey;
-              const busy = pendingThisInstance || waking || item.updating;
+              const busy = pendingThisInstance || item.updating;
               const busyLabel = item.updating || (pendingThisInstance && cloud.pending?.action === 'upgrade')
                 ? cloudMessages.updating
                 : cloud.pending?.action === 'stop'
@@ -2516,11 +2482,7 @@ function DeviceMenuModal({
                     }
                     // 发起唤醒后立即切过滤,不等待 Pod 上线;presence 回来后状态点自然变绿。
                     // waking 空窗内重复点击只切过滤,不重复发唤醒请求。
-                    if (!waking) {
-                      void cloud.wake(item.instance.instanceId).then((result) => {
-                        if (result) onCloudWakeAccepted(result.deviceId);
-                      });
-                    }
+                    if (!pendingThisInstance) void cloud.wake(item.instance.instanceId);
                     onSelect(item.filter);
                   }}
                   selected={item.filter.selected}
@@ -2545,7 +2507,6 @@ function DeviceMenuModal({
                 onPress={() => {
                   void cloud.wake().then((result) => {
                     if (!result) return;
-                    onCloudWakeAccepted(result.deviceId);
                     onSelect(buildCloudDeviceFilterItem(result, {
                       label: cloudNameOf(result),
                       online: false,
