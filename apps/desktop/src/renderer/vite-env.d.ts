@@ -113,8 +113,12 @@ type CloudInstanceCreateInput = import('../shared/cloudInstanceIpc').CloudInstan
 type CloudInstanceDeleteInput = import('../shared/cloudInstanceIpc').CloudInstanceDeleteInput;
 type CloudInstanceDeleteResult = import('../shared/cloudInstanceIpc').CloudInstanceDeleteResult;
 type CloudInstanceEnableResult = import('../shared/cloudInstanceIpc').CloudInstanceEnableResult;
+type CloudInstanceListResult = import('../shared/cloudInstanceIpc').CloudInstanceListResult;
 type CloudInstanceRenameInput = import('../shared/cloudInstanceIpc').CloudInstanceRenameInput;
 type CloudInstanceRenameResult = import('../shared/cloudInstanceIpc').CloudInstanceRenameResult;
+type CloudInstanceRebuildInput = import('../shared/cloudInstanceIpc').CloudInstanceRebuildInput;
+type CloudInstanceContinueRebuildInput = import('../shared/cloudInstanceIpc').CloudInstanceContinueRebuildInput;
+type CloudInstanceRebuildResult = import('../shared/cloudInstanceIpc').CloudInstanceRebuildResult;
 type CloudInstancePatchInput = import('../shared/cloudInstanceIpc').CloudInstancePatchInput;
 type CloudInstanceStatus = import('../shared/cloudInstanceIpc').CloudInstanceStatus;
 type CloudInstanceStatusInput = import('../shared/cloudInstanceIpc').CloudInstanceStatusInput;
@@ -1130,7 +1134,7 @@ interface ElectronAPI {
   onLocaleChanged?: (cb: (locale: import('../shared/locale').SupportedLocale) => void) => () => void;
   /** 账号级云端实例 control-plane；鉴权和网络均封装在 main。 */
   cloudInstances: {
-    list: () => Promise<{ instances: CloudInstanceView[] }>;
+    list: () => Promise<CloudInstanceListResult>;
     wake: (input?: CloudInstanceWakeInput) => Promise<CloudInstanceEnableResult>;
     create: (input?: CloudInstanceCreateInput) => Promise<CloudInstanceEnableResult>;
     rename: (input: CloudInstanceRenameInput) => Promise<CloudInstanceRenameResult>;
@@ -1138,6 +1142,8 @@ interface ElectronAPI {
     status: (input?: CloudInstanceStatusInput) => Promise<{ status: CloudInstanceStatus }>;
     stop: (input: CloudInstanceStopInput) => Promise<{ status: CloudInstanceStatus }>;
     upgrade: (input: CloudInstanceUpgradeInput) => Promise<CloudInstanceUpgradeResult>;
+    rebuild: (input: CloudInstanceRebuildInput) => Promise<CloudInstanceRebuildResult>;
+    continueRebuild: (input: CloudInstanceContinueRebuildInput) => Promise<CloudInstanceRebuildResult>;
     delete: (input: CloudInstanceDeleteInput) => Promise<CloudInstanceDeleteResult>;
   };
   getDeviceId: () => Promise<string>;

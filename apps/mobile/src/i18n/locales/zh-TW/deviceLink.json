@@ -18,6 +18,9 @@
   "cloudInstance": {
     "cloud": "雲端",
     "wakeFailed": "喚醒雲端失敗，請稍後重試",
+    "rebuilding": "重建中…",
+    "rebuildFailed": "無法重建雲端實例，請稍後重試",
+    "rebuildStillCleaning": "舊雲端實例仍在清理中，請等待清理完成後再喚醒。",
     "actionTimedOut": "操作耗時較長，請稍後重試。",
     "updateAvailable": "有可用更新",
     "updateAvailableOpenDetails": "「{{label}}」有可用更新。開啟詳情",

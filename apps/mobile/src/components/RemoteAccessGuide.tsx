@@ -39,6 +39,7 @@ export interface RemoteAccessGuideCloud {
   /** 'ready' = 云端能力已启用(有无实例都算,0 实例首唤醒即创建);其余显示预告。 */
   state: 'ready' | 'unsupported';
   waking?: boolean;
+  busyLabel?: string;
   onWake?(): void;
 }
 
@@ -176,7 +177,7 @@ export function RemoteAccessGuide({
               action={{
                 busy: cloud.waking === true,
                 label: cloud.waking === true
-                  ? t('deviceLink.cloudWaking')
+                  ? (cloud.busyLabel ?? t('deviceLink.cloudWaking'))
                   : t('deviceLink.cloudWake'),
                 onPress: cloud.onWake,
                 testID: 'home.remoteGuide.wakeCloud',

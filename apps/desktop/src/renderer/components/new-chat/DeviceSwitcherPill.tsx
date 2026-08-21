@@ -30,6 +30,7 @@ import {
   cloudInstanceLifecycleProgressKey,
 } from '@/features/cloud-instance/cloudLifecyclePresentation';
 import type { CloudInstancePendingState } from '@/features/cloud-instance/useCloudInstances';
+import type { CloudInstanceRebuildAttention } from '@/features/cloud-instance/useCloudInstances';
 
 /** null = 本机。 */
 export type DeviceSwitcherValue = string | null;
@@ -44,6 +45,7 @@ export interface DeviceSwitcherCloudWake {
   busy: boolean;
   /** 共享云端动作状态；用于呈现 wake / stop / rebuild 的真实进行中语义。 */
   pending: CloudInstancePendingState;
+  rebuildAttention?: CloudInstanceRebuildAttention | null;
   /** 省略 instanceId = 首次唤醒(控制面自动建实例)。 */
   onWake: (instanceId?: string) => void;
   /** 已有 wake 在途时只重新附着 transient draft，不再次发起 wake。 */
@@ -302,7 +304,7 @@ function DeviceMenuList({
               name={resolveDesktopCloudDeviceName(device.name, t)}
               hint={
                 progressAction
-                  ? t(cloudInstanceLifecycleProgressKey(progressAction))
+                  ? t(cloudInstanceLifecycleProgressKey(progressAction, cloudWake?.pending))
                   : device.online
                     ? // 在线但没有可用模型凭据:这一行正在邀请用户建任务,不提示的话
                       // 要到 agent 跑不动时才发现(modelAccess 不阻塞就绪,实例确实是 ready)。
@@ -364,8 +366,10 @@ function DeviceMenuList({
               statusWaking={firstWakeAction !== null}
               name={t(
                 firstWakeAction
-                  ? cloudInstanceLifecycleProgressKey(firstWakeAction)
-                  : 'ccAgent.sidebar.cloud.wake',
+                  ? cloudInstanceLifecycleProgressKey(firstWakeAction, cloudWake.pending)
+                  : cloudWake.rebuildAttention
+                    ? 'settings.devices.cloudInstance.manualWakeAction'
+                    : 'ccAgent.sidebar.cloud.wake',
               )}
               selected={false}
               // 首次创建同理：用户切回本机后仍能重新选回正在创建的云端，不重复建实例。

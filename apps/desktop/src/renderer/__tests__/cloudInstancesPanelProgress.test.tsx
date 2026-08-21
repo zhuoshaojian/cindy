@@ -72,8 +72,6 @@ function rebuildingCloud(): UseCloudInstances {
     instances: [replacementInstance()],
     loadState: 'ready',
     pending: { target: 'instance-old', action: 'rebuild' },
-    rebuildRetirement: null,
-    clearRebuildRetirement: vi.fn(),
     onlineDeviceIds: new Set(),
     refresh: vi.fn(async () => undefined),
     wake: vi.fn(async () => undefined),
@@ -117,5 +115,22 @@ describe('CloudInstancesPanel lifecycle progress', () => {
     const rebuildButton = within(card).getByTestId('cloud-instance-rebuild');
     expect(rebuildButton.textContent).toContain('settings.devices.cloudInstance.rebuilding');
     expect(rebuildButton.textContent).not.toBe('settings.devices.cloudInstance.rebuild');
+  });
+
+  it('keeps the recovery message visible after automatic rebuild gives up', () => {
+    const cloud = rebuildingCloud();
+    cloud.instances = [];
+    cloud.pending = null;
+    cloud.rebuildAttention = {
+      kind: 'manual-wake-required',
+      oldInstanceId: 'instance-old',
+    };
+
+    render(<CloudInstancesPanel s={settingsWithoutRelayDevice()} cloud={cloud} />);
+
+    expect(screen.getByText('settings.devices.cloudInstance.manualWakeRequired')).toBeTruthy();
+    expect(screen.getByTestId('cloud-instance-first-wake').textContent).toContain(
+      'settings.devices.cloudInstance.manualWakeAction',
+    );
   });
 });

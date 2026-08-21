@@ -70,6 +70,7 @@ describe('mobile cloud-instance API', () => {
             }),
           },
         ],
+        rebuildOperations: [],
       },
     });
     expect(apiFetch).toHaveBeenCalledWith('/instances', {
@@ -77,6 +78,29 @@ describe('mobile cloud-instance API', () => {
       method: 'GET',
       timeoutMs: 30_000,
     });
+  });
+
+  it('parses active rebuild operations from the atomic instance snapshot', async () => {
+    const { listCloudInstances } = await loadCloudInstanceApi('https://cloud.example.invalid/');
+    const operation = {
+      operationId: 'op-1',
+      oldInstanceId: 'old-1',
+      oldDeviceId: 'device-old-1',
+      resourceTier: 'small',
+      phase: 'retiring',
+      startedAt: 1,
+      retireDeadline: 2,
+      clientCreateDeadline: null,
+      createDeadline: null,
+      newInstanceId: null,
+      outcome: null,
+      updatedAt: 3,
+    };
+    const apiFetch = vi.fn(async () => ({ instances: [], rebuildOperations: [operation] }));
+
+    await expect(
+      listCloudInstances({ apiFetch: apiFetch as unknown as CloudInstanceApiFetch }),
+    ).resolves.toEqual({ kind: 'ok', value: { instances: [], rebuildOperations: [operation] } });
   });
 
   it('wakes the zero-instance path with an empty body and a targeted instance with its id', async () => {

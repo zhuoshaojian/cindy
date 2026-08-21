@@ -13,8 +13,10 @@ import {
   type CloudInstanceCreateInput,
   type CloudInstanceDeleteResult,
   type CloudInstanceEnableResult,
+  type CloudInstanceListResult,
   type CloudInstancePatchInput,
   type CloudInstanceRenameResult,
+  type CloudInstanceRebuildResult,
   type CloudInstanceStatus,
   type CloudInstanceUpgradeResult,
   type CloudInstanceView,
@@ -121,6 +123,16 @@ function optionalInstanceId(value: unknown): string | undefined {
   return value.trim();
 }
 
+function optionalOpaqueId(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !value.trim()) {
+    throwIpcError('INVALID_PARAMS', `${fieldName} must be a non-empty string`);
+  }
+  const id = value.trim();
+  if (id.length > 128) throwIpcError('INVALID_PARAMS', `${fieldName} exceeds 128 characters`);
+  return id;
+}
+
 function optionalResourceTier(value: unknown): CloudInstanceCreateInput['resourceTier'] {
   if (value === undefined) return undefined;
   if (
@@ -182,12 +194,36 @@ function rethrowCloudInstanceError(error: unknown): never {
       );
     }
     if (error.statusCode === 404) {
+      if (error.code === 'REBUILD_OPERATION_NOT_FOUND') {
+        throwIpcError(
+          'CLOUD_INSTANCE_REBUILD_OPERATION_NOT_FOUND',
+          'cloud instance rebuild operation was not found',
+        );
+      }
       throwIpcError('NOT_FOUND', 'cloud instance was not found');
     }
     if (error.statusCode === 409) {
+      if (error.code === 'REBUILD_IN_PROGRESS') {
+        throwIpcError(
+          'CLOUD_INSTANCE_REBUILD_IN_PROGRESS',
+          'the previous cloud instance is still being cleaned up',
+        );
+      }
+      if (error.code === 'IDEMPOTENCY_KEY_REUSED') {
+        throwIpcError(
+          'CLOUD_INSTANCE_IDEMPOTENCY_KEY_REUSED',
+          'cloud instance rebuild idempotency key was reused',
+        );
+      }
       throwIpcError('ALREADY_EXISTS', 'cloud instance request conflicts with the current state');
     }
     if (error.statusCode === 400) {
+      if (error.code === 'INVALID_IDEMPOTENCY_KEY') {
+        throwIpcError(
+          'CLOUD_INSTANCE_INVALID_IDEMPOTENCY_KEY',
+          'cloud instance rebuild idempotency key was rejected',
+        );
+      }
       throwIpcError('INVALID_PARAMS', 'cloud instance request was rejected');
     }
   }
@@ -205,12 +241,13 @@ async function callClient<T>(operation: () => Promise<T>): Promise<T> {
 /** List every instance owned by the signed-in membership. */
 export async function handleListCloudInstances(
   deps: CloudInstanceIpcDeps,
-): Promise<{ instances: CloudInstanceView[] }> {
+): Promise<CloudInstanceListResult> {
   requireAuthenticated(deps);
   // 与网络请求同时绑定 owner root + account generation；list 在途期间切账号时，返回值不得
   // 被发布到新 owner。计数不可读会得到 -1，reconcile 保持 unknown、不会删除任何缓存。
   const ownerScope = await deps.captureMirrorCacheOwnerScope();
   const result = await callClient(() => deps.client.list());
+  await ensureRebuildMirrorRetirements(deps, result.rebuildOperations ?? []);
   // GET /instances 的契约是当前 membership 的完整、非分页未删除实例集（client 没有 cursor / page
   // 入参，响应也没有 next token）。只有请求成功才把它发布为 owner-scoped 权威集；失败或首次
   // 成功前保持 unknown，不能把控制面不可达误解成“账号下没有实例”而清掉有效冷缓存。
@@ -229,6 +266,39 @@ export async function handleListCloudInstances(
   }
   await reconcileRetiredMirrorCacheDevices(deps, result.instances);
   return result;
+}
+
+async function ensureRebuildMirrorRetirements(
+  deps: CloudInstanceIpcDeps,
+  operations: readonly CloudInstanceRebuildResult['rebuildOperation'][],
+): Promise<void> {
+  let existing: Array<{ deviceId: string; instanceId?: string; createdAtMs: number }>;
+  try {
+    existing = await deps.listMirrorCacheRetiredDevices();
+  } catch (error) {
+    log.warn('failed to read cloud device mirror-cache retirement tombstones', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  for (const operation of operations) {
+    if (operation.phase === 'delete-rejected') continue;
+    if (existing.some((tombstone) =>
+      tombstone.deviceId === operation.oldDeviceId
+      && tombstone.instanceId === operation.oldInstanceId)) continue;
+    void deps.forgetDeviceName(operation.oldDeviceId);
+    try {
+      await deps.retireMirrorCacheDevice(
+        operation.oldDeviceId,
+        operation.startedAt,
+        operation.oldInstanceId,
+      );
+    } catch (error) {
+      log.warn('failed to hydrate rebuilding cloud instance mirror retirement', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
 async function reconcileRetiredMirrorCacheDevices(
@@ -378,6 +448,56 @@ export async function handleUpgradeCloudInstance(
   return callClient(() => deps.client.upgrade(instanceId));
 }
 
+/** Start the durable serialized rebuild owned by the control plane. */
+export async function handleRebuildCloudInstance(
+  deps: CloudInstanceIpcDeps,
+  rawInput: unknown,
+): Promise<CloudInstanceRebuildResult> {
+  requireAuthenticated(deps);
+  const payload = objectPayload(rawInput);
+  assertOnlyKeys(payload, ['instanceId', 'retryOfOperationId']);
+  const instanceId = optionalInstanceId(payload.instanceId);
+  if (!instanceId) throwIpcError('INVALID_PARAMS', 'instanceId is required');
+  const retryOfOperationId = optionalOpaqueId(payload.retryOfOperationId, 'retryOfOperationId');
+  const result = await callClient(() => deps.client.rebuild(instanceId, retryOfOperationId));
+  if (result.rebuildOperation.phase !== 'delete-rejected') {
+    void deps.forgetDeviceName(result.rebuildOperation.oldDeviceId);
+    try {
+      await deps.retireMirrorCacheDevice(
+        result.rebuildOperation.oldDeviceId,
+        deps.nowMs(),
+        result.rebuildOperation.oldInstanceId,
+      );
+    } catch (error) {
+      log.warn('failed to retire rebuilding cloud instance mirror cache', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return result;
+}
+
+/** Continue replacement creation after the server proves old runtime absence. */
+export async function handleContinueCloudInstanceRebuild(
+  deps: CloudInstanceIpcDeps,
+  rawInput: unknown,
+): Promise<CloudInstanceRebuildResult> {
+  requireAuthenticated(deps);
+  const payload = objectPayload(rawInput);
+  assertOnlyKeys(payload, ['operationId', 'oldInstanceId', 'retryOfOperationId']);
+  const operationId = optionalOpaqueId(payload.operationId, 'operationId');
+  const oldInstanceId = optionalInstanceId(payload.oldInstanceId);
+  const retryOfOperationId = optionalOpaqueId(payload.retryOfOperationId, 'retryOfOperationId');
+  if (!operationId || !oldInstanceId) {
+    throwIpcError('INVALID_PARAMS', 'operationId and oldInstanceId are required');
+  }
+  return callClient(() => deps.client.continueRebuild(
+    operationId,
+    oldInstanceId,
+    retryOfOperationId,
+  ));
+}
+
 /** Permanently delete one cloud instance and its account/relay identity. */
 export async function handleDeleteCloudInstance(
   deps: CloudInstanceIpcDeps,
@@ -448,6 +568,12 @@ export function registerCloudInstanceIpc(
   );
   registerTrustedHandler(CLOUD_INSTANCE_INVOKE.UPGRADE, (_event, input) =>
     handleUpgradeCloudInstance(deps, input),
+  );
+  registerTrustedHandler(CLOUD_INSTANCE_INVOKE.REBUILD, (_event, input) =>
+    handleRebuildCloudInstance(deps, input),
+  );
+  registerTrustedHandler(CLOUD_INSTANCE_INVOKE.CONTINUE_REBUILD, (_event, input) =>
+    handleContinueCloudInstanceRebuild(deps, input),
   );
   registerTrustedHandler(CLOUD_INSTANCE_INVOKE.DELETE, (_event, input) =>
     handleDeleteCloudInstance(deps, input),

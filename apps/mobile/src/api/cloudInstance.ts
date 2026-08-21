@@ -34,6 +34,40 @@ export interface CloudInstanceView {
   status: CloudInstanceStatus;
 }
 
+export type CloudInstanceRebuildPhase =
+  | 'accepted'
+  | 'retiring'
+  | 'retirement-timeout'
+  | 'retired-awaiting-create'
+  | 'creating'
+  | 'starting'
+  | 'succeeded'
+  | 'delete-rejected'
+  | 'create-failed-after-delete'
+  | 'manual-wake-required';
+
+export type CloudInstanceRebuildOutcome =
+  | 'automatic-rebuild-succeeded'
+  | 'manual-wake-required'
+  | 'manual-recovery-succeeded'
+  | 'delete-rejected'
+  | 'create-failed-after-delete';
+
+export interface CloudInstanceRebuildView {
+  operationId: string;
+  oldInstanceId: string;
+  oldDeviceId: string;
+  resourceTier: 'small' | 'medium' | 'large';
+  phase: CloudInstanceRebuildPhase;
+  startedAt: number;
+  retireDeadline: number;
+  clientCreateDeadline: number | null;
+  createDeadline: number | null;
+  newInstanceId: string | null;
+  outcome: CloudInstanceRebuildOutcome | null;
+  updatedAt: number;
+}
+
 /** Result returned after waking an existing instance or atomically creating the first one. */
 export interface CloudInstanceWakeResult extends CloudInstanceView {
   created: boolean;
@@ -84,7 +118,10 @@ export type CloudInstanceApiOutcome<T> =
 /** Fetch the caller's cloud instances from the standalone control plane. */
 export async function listCloudInstances(
   deps: CloudInstanceApiDeps,
-): Promise<CloudInstanceApiOutcome<{ instances: CloudInstanceView[] }>> {
+): Promise<CloudInstanceApiOutcome<{
+  instances: CloudInstanceView[];
+  rebuildOperations: CloudInstanceRebuildView[];
+}>> {
   return requestCloudInstances(async (baseUrl) => {
     const payload = await deps.apiFetch<unknown>('/instances', {
       baseUrl,
@@ -94,7 +131,15 @@ export async function listCloudInstances(
     if (!isRecord(payload) || !Array.isArray(payload.instances)) {
       throw invalidResponse();
     }
-    return { instances: payload.instances.map(parseCloudInstance) };
+    const rebuildOperations = payload.rebuildOperations === undefined
+      ? []
+      : Array.isArray(payload.rebuildOperations)
+        ? payload.rebuildOperations.map(parseCloudInstanceRebuildOperation)
+        : (() => { throw invalidResponse(); })();
+    return {
+      instances: payload.instances.map(parseCloudInstance),
+      rebuildOperations,
+    };
   });
 }
 
@@ -262,6 +307,44 @@ function parseCloudInstance(value: unknown): CloudInstanceView {
     customLabel: value.customLabel,
     status: parseCloudInstanceStatus(value.status),
   };
+}
+
+function parseCloudInstanceRebuildOperation(value: unknown): CloudInstanceRebuildView {
+  if (
+    !isRecord(value)
+    || typeof value.operationId !== 'string'
+    || typeof value.oldInstanceId !== 'string'
+    || typeof value.oldDeviceId !== 'string'
+    || !['small', 'medium', 'large'].includes(String(value.resourceTier))
+    || ![
+      'accepted',
+      'retiring',
+      'retirement-timeout',
+      'retired-awaiting-create',
+      'creating',
+      'starting',
+      'succeeded',
+      'delete-rejected',
+      'create-failed-after-delete',
+      'manual-wake-required',
+    ].includes(String(value.phase))
+    || typeof value.startedAt !== 'number'
+    || typeof value.retireDeadline !== 'number'
+    || (value.clientCreateDeadline !== null && typeof value.clientCreateDeadline !== 'number')
+    || (value.createDeadline !== null && typeof value.createDeadline !== 'number')
+    || (value.newInstanceId !== null && typeof value.newInstanceId !== 'string')
+    || (value.outcome !== null && ![
+      'automatic-rebuild-succeeded',
+      'manual-wake-required',
+      'manual-recovery-succeeded',
+      'delete-rejected',
+      'create-failed-after-delete',
+    ].includes(String(value.outcome)))
+    || typeof value.updatedAt !== 'number'
+  ) {
+    throw invalidResponse();
+  }
+  return value as unknown as CloudInstanceRebuildView;
 }
 
 function parseCloudInstanceStatus(value: unknown): CloudInstanceStatus {

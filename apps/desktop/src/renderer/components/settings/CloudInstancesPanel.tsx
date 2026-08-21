@@ -14,7 +14,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import {
   CloudInstanceActionTimeoutError,
-  CloudInstanceRebuildCreateError,
   type UseCloudInstances,
 } from '@/features/cloud-instance/useCloudInstances';
 import { desktopCloudInstanceDisplayName } from '@/features/cloud-instance/cloudDeviceName';
@@ -147,9 +146,11 @@ export function CloudInstancesPanel({
       void s.refresh(true);
       toast.success(t('settings.devices.cloudInstance.toast.woke'));
     } catch (error) {
-      toast.error(t(error instanceof CloudInstanceActionTimeoutError
-        ? 'settings.devices.cloudInstance.toast.actionTimedOut'
-        : 'settings.devices.cloudInstance.toast.wakeFailed'));
+      toast.error(t(extractIpcError(error)?.code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'
+        ? 'settings.devices.cloudInstance.toast.rebuildStillCleaning'
+        : error instanceof CloudInstanceActionTimeoutError
+          ? 'settings.devices.cloudInstance.toast.actionTimedOut'
+          : 'settings.devices.cloudInstance.toast.wakeFailed'));
     }
   };
 
@@ -171,9 +172,11 @@ export function CloudInstancesPanel({
       void s.refresh(true);
       toast.success(t('settings.devices.cloudInstance.toast.woke'));
     } catch (error) {
-      toast.error(t(error instanceof CloudInstanceActionTimeoutError
-        ? 'settings.devices.cloudInstance.toast.actionTimedOut'
-        : 'settings.devices.cloudInstance.toast.wakeFailed'));
+      toast.error(t(extractIpcError(error)?.code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'
+        ? 'settings.devices.cloudInstance.toast.rebuildStillCleaning'
+        : error instanceof CloudInstanceActionTimeoutError
+          ? 'settings.devices.cloudInstance.toast.actionTimedOut'
+          : 'settings.devices.cloudInstance.toast.wakeFailed'));
     }
   };
 
@@ -226,15 +229,10 @@ export function CloudInstancesPanel({
     try {
       await cloud.rebuildInstance(instanceId);
       void s.refresh(true);
-      toast.success(t('settings.devices.cloudInstance.toast.rebuilt'));
+      toast.success(t('settings.devices.cloudInstance.toast.rebuildStarted'));
     } catch (error) {
       if (error instanceof CloudInstanceActionTimeoutError) {
         toast.error(t('settings.devices.cloudInstance.toast.actionTimedOut'));
-        return;
-      }
-      if (error instanceof CloudInstanceRebuildCreateError) {
-        void s.refresh(true);
-        toast.error(t('settings.devices.cloudInstance.toast.rebuildCreateFailed'));
         return;
       }
       toast.error(t('settings.devices.cloudInstance.toast.rebuildFailed'));
@@ -282,7 +280,9 @@ export function CloudInstancesPanel({
     return (
       <div className="rounded-xl border border-[var(--border-default)] px-4 py-5 text-center">
         <p className="text-12 text-[var(--text-tertiary)]">
-          {t('settings.remoteControl.cloud.empty')}
+          {t(cloud.rebuildAttention
+            ? 'settings.devices.cloudInstance.manualWakeRequired'
+            : 'settings.remoteControl.cloud.empty')}
         </p>
         <button
           type="button"
@@ -293,8 +293,10 @@ export function CloudInstancesPanel({
         >
           <Spinner icon={Sun} size={12} spinning={lifecycleInProgress} />
           {t(lifecycleInProgress
-            ? cloudInstanceLifecycleProgressKey(firstWakeAction)
-            : 'ccAgent.sidebar.cloud.wake')}
+            ? cloudInstanceLifecycleProgressKey(firstWakeAction, cloud.pending)
+            : cloud.rebuildAttention
+              ? 'settings.devices.cloudInstance.manualWakeAction'
+              : 'ccAgent.sidebar.cloud.wake')}
         </button>
       </div>
     );
@@ -313,7 +315,7 @@ export function CloudInstancesPanel({
             cloudInstanceIds,
           );
           const cloudProgressKey = cloudProgressAction
-            ? cloudInstanceLifecycleProgressKey(cloudProgressAction)
+            ? cloudInstanceLifecycleProgressKey(cloudProgressAction, cloud.pending)
             : null;
           const cloudUpgradePending =
             cloud.pending?.target === cloudInstance.instanceId

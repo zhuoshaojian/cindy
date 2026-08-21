@@ -296,7 +296,10 @@ describe('mobile home desktop-first surface', () => {
     const localSmokeSource = readSource('scripts/local-device-link-smoke.mjs');
     const deviceDetailFlow = readSource('e2e/maestro/session_list_controls.yaml');
 
-    expect(source).toContain('item.deviceId !== null && item.available');
+    // 「只列当前能打开的电脑」这条判定已收敛到 deviceMenuProjection 单一来源
+    // (云端行改由控制面驱动后,首页与菜单两处必须用同一份过滤,不能各写一遍)。
+    const menuProjectionSource = readSource('src/device-link/deviceMenuProjection.ts');
+    expect(menuProjectionSource).toContain('if (item.available) deviceFilters.push(item)');
     expect(source).toContain('`home.deviceChip.${sanitizeDeviceChipTestId(item.deviceId)}`');
     expect(source).toContain('function sanitizeDeviceChipTestId');
     expect(source).toContain("return value.replace(/[^A-Za-z0-9_-]/g, '_');");
@@ -525,9 +528,14 @@ describe('mobile home desktop-first surface', () => {
       "state: cloudInstances.loadState === 'ready' ? 'ready' : 'unsupported'",
     );
     expect(devicesSource).toContain('.wake(cloudInstances.instances[0]?.instanceId)');
-    // 终态 watch 已下沉到 useCloudInstances；首页只消费统一 pending 表达 busy。
-    expect(devicesSource).toContain('waking: cloudWaking');
-    expect(devicesSource).toContain("const cloudWaking = cloudInstances.pending?.action === 'wake';");
+    // 终态 watch 已下沉到 useCloudInstances；首页统一消费零实例投影，active rebuild
+    // 不能回落成空闲唤醒，且 RemoteAccessGuide 必须拿到对应的进行中文案。
+    expect(devicesSource).toContain(
+      'const zeroCloudPresentation = cloudInstanceZeroInstancePresentation(cloudInstances.pending);',
+    );
+    expect(devicesSource).toContain('waking: zeroCloudPresentation.busy');
+    expect(devicesSource).toContain('busyLabel: zeroCloudPresentation.busy');
+    expect(devicesSource).toContain('t(zeroCloudPresentation.labelKey)');
     expect(devicesSource).toContain('cloudInstances.updateOnlineDeviceIds(onlineDeviceIds);');
     expect(devicesSource).not.toContain('cloudWakeWatchDeviceId');
     expect(devicesSource).toContain('const busy = pendingThisInstance || item.updating;');

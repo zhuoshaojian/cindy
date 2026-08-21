@@ -48,7 +48,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useAuth } from '@/auth/AuthContext';
-import { isSelectedCloudInstanceWaking } from '@/cloud-instance/cloudInstanceWake';
+import {
+  cloudInstanceZeroInstancePresentation,
+  isSelectedCloudInstanceWaking,
+} from '@/cloud-instance/cloudInstanceWake';
 import { useCloudInstances, type UseCloudInstances } from '@/cloud-instance/useCloudInstances';
 import type { CloudInstanceView } from '@/api/cloudInstance';
 import { configureCollapseAnimation } from '@/utils/collapseAnimation';
@@ -317,6 +320,8 @@ export default function HomeScreen() {
   // 菜单关闭动画完成(Modal 卸载)后要执行的动作。iOS 上两个兄弟 Modal 重叠时,第二个 Modal
   // 是叠在菜单 Modal 的 VC 上 present 的,菜单淡出后卸载会把它连带 dismiss 掉——所以从菜单里
   // 打开重命名 / 撤销授权弹窗必须等菜单完全卸载(onClosed)后再挂载,不能同一帧直接 set。
+  // 首页首次获得焦点只做一次初始化(重复触发会重放 hydrate)。
+  const hasFocusedHomeRef = useRef(false);
   const pendingMenuActionRef = useRef<(() => void) | null>(null);
   const [renameTarget, setRenameTarget] = useState<MobileHomeDeviceFilterItem | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -1042,52 +1047,6 @@ export default function HomeScreen() {
     setDeviceMenuOpen(false);
   }, []);
 
-  const closeRenameDevice = useCallback(() => {
-    if (renameSaving) return;
-    setRenameTarget(null);
-    setRenameDraft('');
-  }, [renameSaving]);
-
-  const confirmRenameDevice = useCallback(async () => {
-    const target = renameTarget;
-    const name = renameDraft.trim();
-    if (!target?.deviceId || !name || renameSaving) return;
-    if (name === target.label.trim()) {
-      setRenameTarget(null);
-      setRenameDraft('');
-      return;
-    }
-
-    setRenameSaving(true);
-    try {
-      const res = await apiFetch<{ deviceId: string; name: string }>(
-        `/api/device-link/devices/${encodeURIComponent(target.deviceId)}`,
-        {
-          baseUrl: DEVICE_LINK_API_BASE_URL,
-          body: { name },
-          method: 'PATCH',
-          timeoutMs: DEVICE_LIST_TIMEOUT_MS,
-        },
-      );
-      const nextName = res.name;
-      setDevices((current) => {
-        const nextRaw = current.map((device) =>
-          device.deviceId === target.deviceId ? { ...device, name: nextName } : device);
-        const next = reconcileDeviceViews(nextRaw).devices;
-        devicesRef.current = next;
-        return next;
-      });
-      remoteSessionStore.renameDevice(target.deviceId, nextName);
-      setRenameTarget(null);
-      setRenameDraft('');
-      void loadHome({ visible: false });
-    } catch (err) {
-      setError(formatRemoteError(err));
-    } finally {
-      setRenameSaving(false);
-    }
-  }, [apiFetch, loadHome, reconcileDeviceViews, renameDraft, renameSaving, renameTarget]);
-
   const openDeviceManagement = useCallback((input: {
     deviceId: string;
     name: string;
@@ -1216,7 +1175,7 @@ export default function HomeScreen() {
   useEffect(() => {
     cloudInstances.updateOnlineDeviceIds(onlineDeviceIds);
   }, [cloudInstances.updateOnlineDeviceIds, onlineDeviceIds]);
-  const cloudWaking = cloudInstances.pending?.action === 'wake';
+  const zeroCloudPresentation = cloudInstanceZeroInstancePresentation(cloudInstances.pending);
   const selectedCloudInstance = cloudInstances.instances.find(
     (instance) => instance.deviceId === selectedDeviceId,
   ) ?? null;
@@ -2044,9 +2003,11 @@ export default function HomeScreen() {
             <View style={styles.pinnedFooter} testID="home.pinnedFooter" />
           ) : null}
         ListEmptyComponent={
-          selectedCloudWaking ? (
+          selectedCloudWaking || (zeroCloudPresentation.busy && cloudInstances.instances.length === 0) ? (
             <HomeListLoadingState
-              label={t('deviceLink.cloudWaking')}
+              label={t(selectedCloudWaking
+                ? 'deviceLink.cloudWaking'
+                : zeroCloudPresentation.labelKey)}
               testID="home.cloudWaking"
               style={{
                 marginTop: spacing.xxl,
@@ -2085,7 +2046,10 @@ export default function HomeScreen() {
               // 首唤醒由 wake() 原子创建),仅 unsupported 显示「筹备中」预告。
               cloud={{
                 state: remoteGuideCloudState,
-                waking: cloudWaking,
+                waking: zeroCloudPresentation.busy,
+                busyLabel: zeroCloudPresentation.busy
+                  ? t(zeroCloudPresentation.labelKey)
+                  : undefined,
                 onWake: () => {
                   if (cloudInstances.pending !== null) return;
                   void cloudInstances
@@ -2308,7 +2272,6 @@ function DeviceMenuModal({
   onOpenManage,
   onRenameDevice,
   onSelect,
-  onToggleGroupByProject,
   onlineDeviceIds,
   selectedDeviceId,
   topOffset,
@@ -2329,7 +2292,6 @@ function DeviceMenuModal({
   /** 常规设备行内重命名(铅笔)入口;云端行不提供。 */
   onRenameDevice(item: MobileHomeDeviceFilterItem): void;
   onSelect(item: MobileHomeDeviceFilterItem): void;
-  onToggleGroupByProject(): void;
   onlineDeviceIds: ReadonlySet<string>;
   selectedDeviceId: string | null;
   topOffset: number;
@@ -2372,6 +2334,7 @@ function DeviceMenuModal({
     () => ({
       cloud: t('deviceLink.cloudInstance.cloud'),
       deleting: t('deviceLink.cloudInstance.deleting'),
+      rebuilding: t('deviceLink.cloudInstance.rebuilding'),
       stopping: t('deviceLink.cloudInstance.stopping'),
       updateAvailable: t('deviceLink.cloudInstance.updateAvailable'),
       updating: t('deviceLink.cloudInstance.updating'),
@@ -2380,6 +2343,7 @@ function DeviceMenuModal({
     }),
     [t],
   );
+  const zeroCloudPresentation = cloudInstanceZeroInstancePresentation(cloud.pending);
   // 云端命名与 filter DTO 构造各自单一来源:cloudItems 与「首次唤醒成功」分支共用,
   // MobileHomeDeviceFilterItem 加字段时只需改这一处。
   const cloudNameOf = useCallback(
@@ -2460,7 +2424,9 @@ function DeviceMenuModal({
                   ? cloudMessages.stopping
                   : cloud.pending?.action === 'delete'
                     ? cloudMessages.deleting
-                    : cloudMessages.waking;
+                    : cloud.pending?.action === 'rebuild'
+                      ? cloudMessages.rebuilding
+                      : cloudMessages.waking;
               return (
                 <DeviceMenuItem
                   badge={
@@ -2493,17 +2459,9 @@ function DeviceMenuModal({
             })}
             {cloud.loadState === 'ready' && cloud.instances.length === 0 ? (
               <DeviceMenuItem
-                busy={cloud.pending?.target === 'new'}
-                disabled={cloud.pending !== null}
-                label={
-                  cloud.pending?.target === 'new'
-                    ? cloud.pending.action === 'stop'
-                      ? cloudMessages.stopping
-                      : cloud.pending.action === 'delete'
-                        ? cloudMessages.deleting
-                        : cloudMessages.waking
-                    : cloudMessages.wake
-                }
+                busy={zeroCloudPresentation.busy}
+                disabled={zeroCloudPresentation.disabled}
+                label={t(zeroCloudPresentation.labelKey)}
                 onPress={() => {
                   void cloud.wake().then((result) => {
                     if (!result) return;
@@ -2872,74 +2830,6 @@ function RenameDeviceModal({
   );
 }
 
-/**
- * 会话重命名弹窗:与 RenameDeviceModal 平行的轻量组件,复用同一套 renameDevice* 样式。
- */
-function RenameSessionModal({
-  draft,
-  onCancel,
-  onChangeDraft,
-  onConfirm,
-  saving,
-  visible,
-}: {
-  draft: string;
-  onCancel(): void;
-  onChangeDraft(value: string): void;
-  onConfirm(): void;
-  saving: boolean;
-  visible: boolean;
-}) {
-  const styles = useThemedStyles(makeStyles);
-  const { colors } = useTheme();
-  const { t } = useTranslation();
-  const canSave = draft.trim().length > 0 && !saving;
-  return (
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={onCancel}>
-      <Pressable style={styles.renameDeviceBackdrop} onPress={onCancel} testID="home.renameDevice.backdrop">
-        <Pressable style={styles.renameDeviceCard} onPress={() => undefined} testID="home.renameDevice.modal">
-          <Text style={styles.renameDeviceTitle}>{t('devices.list.renameDevice.title')}</Text>
-          <TextInput
-            autoFocus
-            editable={!saving}
-            maxLength={64}
-            onChangeText={onChangeDraft}
-            onSubmitEditing={() => {
-              if (canSave) onConfirm();
-            }}
-            placeholder={t('devices.list.renameDevice.placeholder')}
-            placeholderTextColor={colors.textTertiary}
-            returnKeyType="done"
-            selectTextOnFocus
-            style={styles.renameDeviceInput}
-            testID="home.renameDevice.input"
-            value={draft}
-          />
-          {/* 确认对统一规则:共享满宽纵排组(保存在上/取消居底),置于卡片底部。 */}
-          <MainWindowActionGroup
-            primaryActions={[{
-              accessibilityLabel: saving ? t('devices.list.renameDevice.savingA11y') : t('devices.list.renameDevice.saveA11y'),
-              busy: saving,
-              disabled: !canSave,
-              label: saving ? t('devices.common.saving') : t('devices.common.save'),
-              onPress: onConfirm,
-              testID: 'home.renameDevice.save',
-              tone: 'primary',
-            }]}
-            cancelAction={{
-              accessibilityLabel: t('devices.list.a11y.cancelRename'),
-              disabled: saving,
-              label: t('devices.common.cancel'),
-              onPress: onCancel,
-              testID: 'home.renameDevice.cancel',
-            }}
-            testID="home.renameDevice.actions"
-          />
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
 
 function RevokedAccessTip({
   deviceName,
@@ -4139,6 +4029,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     lineHeight: lineHeight.caption,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
   deviceMenuBadge: {
     backgroundColor: colors.surfaceChip,
     borderRadius: radius.pill,

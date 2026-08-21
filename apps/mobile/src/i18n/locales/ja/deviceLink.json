@@ -18,6 +18,9 @@
   "cloudInstance": {
     "cloud": "クラウド",
     "wakeFailed": "クラウドの起動に失敗しました。しばらくしてからもう一度お試しください。",
+    "rebuilding": "再作成中…",
+    "rebuildFailed": "クラウドインスタンスを再作成できませんでした。もう一度お試しください。",
+    "rebuildStillCleaning": "以前のクラウドインスタンスをまだクリーンアップしています。完了後にもう一度起動してください。",
     "actionTimedOut": "処理に時間がかかっています。しばらくしてからもう一度お試しください。",
     "updateAvailable": "アップデートあり",
     "updateAvailableOpenDetails": "{{label}}にアップデートがあります。詳細を開く",

@@ -64,6 +64,7 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
+import { extractIpcError } from '@/utils/ipcError';
 import {
   CloudInstanceActionTimeoutError,
   useCloudInstances,
@@ -162,9 +163,11 @@ export function MachineSwitcherMenu({
   const cloudNameOf = (instance: CloudInstanceView): string =>
     desktopCloudInstanceDisplayName(instance, t);
   const onWakeFailed = (error: unknown): void => {
-    toast.error(t(error instanceof CloudInstanceActionTimeoutError
-      ? 'ccAgent.sidebar.cloud.actionTimedOut'
-      : 'ccAgent.sidebar.cloud.wakeFailed'));
+    toast.error(t(extractIpcError(error)?.code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'
+      ? 'settings.devices.cloudInstance.toast.rebuildStillCleaning'
+      : error instanceof CloudInstanceActionTimeoutError
+        ? 'ccAgent.sidebar.cloud.actionTimedOut'
+        : 'ccAgent.sidebar.cloud.wakeFailed'));
   };
   const wakeCloud = (instanceId: string, deviceId: string): void => {
     const wake = cloud.wake(instanceId);
@@ -319,7 +322,7 @@ export function MachineSwitcherMenu({
                     key={instance.instanceId}
                     icon={<Cloud size={14} strokeWidth={2} />}
                     label={progressAction
-                      ? t(cloudInstanceLifecycleProgressKey(progressAction))
+                      ? t(cloudInstanceLifecycleProgressKey(progressAction, cloud.pending))
                       : cloudNameOf(instance)}
                     shimmer={progressAction !== null}
                     disabled={progressAction !== null}
@@ -352,8 +355,10 @@ export function MachineSwitcherMenu({
                   <MachineMenuItem
                     icon={<CloudOff size={14} strokeWidth={2} />}
                     label={progressAction
-                      ? t(cloudInstanceLifecycleProgressKey(progressAction))
-                      : t('ccAgent.sidebar.cloud.wake')}
+                      ? t(cloudInstanceLifecycleProgressKey(progressAction, cloud.pending))
+                      : t(cloud.rebuildAttention
+                        ? 'settings.devices.cloudInstance.manualWakeAction'
+                        : 'ccAgent.sidebar.cloud.wake')}
                     selected={false}
                     shimmer={waking}
                     disabled={cloud.pending !== null}

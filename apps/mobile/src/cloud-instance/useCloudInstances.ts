@@ -18,11 +18,13 @@ import {
   type CloudInstanceStopResult,
   type CloudInstanceUpgradeResult,
   type CloudInstanceView,
+  type CloudInstanceRebuildView,
   type CloudInstanceWakeResult,
 } from '@/api/cloudInstance';
 import {
   runCloudInstanceAction,
   runCloudInstanceWake,
+  shouldApplyCloudInstanceRebuildSnapshot,
   type CloudInstanceAction,
   type CloudInstancePending,
 } from '@/cloud-instance/cloudInstanceWake';
@@ -31,6 +33,11 @@ import {
   createCloudInstanceRefreshLoop,
   type CloudInstanceRefreshLoop,
 } from '@/cloud-instance/cloudInstanceRefreshLoop';
+import {
+  getMobileAuthOwner,
+  isMobileAuthOwnerCurrent,
+  type MobileAuthOwnerGeneration,
+} from '@/auth/authOwnerGeneration';
 
 export type CloudInstancesLoadState = 'loading' | 'ready' | 'unsupported' | 'error';
 export type { CloudInstancePending } from '@/cloud-instance/cloudInstanceWake';
@@ -41,13 +48,54 @@ export const CLOUD_INSTANCE_ACTION_ERROR_KEYS = {
   upgrade: 'deviceLink.cloudInstance.updateFailed',
   autoUpdate: 'deviceLink.cloudInstance.autoUpdateFailed',
   delete: 'deviceLink.cloudInstance.deleteFailed',
+  rebuild: 'deviceLink.cloudInstance.rebuildFailed',
 } as const satisfies Record<CloudInstanceAction, string>;
+
+const ACTIVE_REBUILD_PHASES = new Set<CloudInstanceRebuildView['phase']>([
+  'accepted',
+  'retiring',
+  'retirement-timeout',
+  'retired-awaiting-create',
+  'creating',
+  'starting',
+]);
+
+function latestActiveRebuild(
+  operations: readonly CloudInstanceRebuildView[],
+): CloudInstanceRebuildView | null {
+  return operations
+    .filter((operation) => ACTIVE_REBUILD_PHASES.has(operation.phase))
+    .reduce<CloudInstanceRebuildView | null>(
+      (latest, operation) => !latest || operation.updatedAt > latest.updatedAt ? operation : latest,
+      null,
+    );
+}
 
 // Mobile 的 Home 与设备详情会同时挂在导航栈中；动作锁必须跨 hook 挂载共享，
 // 否则从一个页面发起长动作后切到另一个页面仍可重复提交。
 const sharedPendingRef: { current: CloudInstancePending } = { current: null };
 const sharedPendingSubscribers = new Set<(value: CloudInstancePending) => void>();
 let sharedTerminalWatchAbortController: AbortController | null = null;
+let sharedRebuildRefreshSequence = 0;
+let sharedRebuildAppliedSequence = 0;
+let sharedPendingOwner: MobileAuthOwnerGeneration = getMobileAuthOwner();
+
+function sameOwner(
+  left: MobileAuthOwnerGeneration,
+  right: MobileAuthOwnerGeneration,
+): boolean {
+  return left.accountId === right.accountId && left.generation === right.generation;
+}
+
+function adoptCurrentPendingOwner(): { owner: MobileAuthOwnerGeneration; changed: boolean } {
+  const owner = getMobileAuthOwner();
+  if (sameOwner(owner, sharedPendingOwner)) return { owner, changed: false };
+  sharedPendingOwner = owner;
+  sharedPendingRef.current = null;
+  sharedTerminalWatchAbortController?.abort();
+  sharedTerminalWatchAbortController = null;
+  return { owner, changed: true };
+}
 
 function publishSharedPending(value: CloudInstancePending): void {
   sharedPendingRef.current = value;
@@ -72,6 +120,7 @@ export function useCloudInstances(
   apiFetch: CloudInstanceApiFetch,
   enabled = true,
 ): UseCloudInstances {
+  const pendingOwner = adoptCurrentPendingOwner();
   const [instances, setInstances] = useState<CloudInstanceView[]>([]);
   const [loadState, setLoadState] = useState<CloudInstancesLoadState>('loading');
   const [pending, setPending] = useState<CloudInstancePending>(sharedPendingRef.current);
@@ -84,6 +133,13 @@ export function useCloudInstances(
     async () => undefined,
   );
   const refreshLoopRef = useRef<CloudInstanceRefreshLoop | null>(null);
+
+  useEffect(() => {
+    if (pendingOwner.changed) {
+      sharedPendingSubscribers.forEach((subscriber) => subscriber(null));
+    }
+    setPending(sharedPendingRef.current);
+  }, [pendingOwner.changed, pendingOwner.owner.accountId, pendingOwner.owner.generation]);
 
   useEffect(() => {
     const subscriber = (value: CloudInstancePending) => setPending(value);
@@ -100,17 +156,36 @@ export function useCloudInstances(
 
   const requestRefresh = useCallback(async (silentFailure: boolean, allowPending = false) => {
     if (!enabled) return;
-    if (!allowPending && sharedPendingRef.current !== null) return;
+    if (
+      !allowPending
+      && sharedPendingRef.current !== null
+      && sharedPendingRef.current.action !== 'rebuild'
+    ) return;
+    const ownerAtStart = getMobileAuthOwner();
+    const rebuildRefreshSequence = ++sharedRebuildRefreshSequence;
     const request = refreshInFlightRef.current ?? listCloudInstances({ apiFetch });
     refreshInFlightRef.current = request;
     const result = await request.finally(() => {
       if (refreshInFlightRef.current === request) refreshInFlightRef.current = null;
     });
+    if (!isMobileAuthOwnerCurrent(ownerAtStart)) return;
     if (result.kind === 'ok') {
       instancesRef.current = result.value.instances;
       setInstances((current) => (
         cloudInstancesEqual(current, result.value.instances) ? current : result.value.instances
       ));
+      if (shouldApplyCloudInstanceRebuildSnapshot(
+        rebuildRefreshSequence,
+        sharedRebuildAppliedSequence,
+      )) {
+        sharedRebuildAppliedSequence = rebuildRefreshSequence;
+        const activeRebuild = latestActiveRebuild(result.value.rebuildOperations);
+        if (activeRebuild) {
+          publishSharedPending({ action: 'rebuild', target: activeRebuild.oldInstanceId });
+        } else if (sharedPendingRef.current?.action === 'rebuild') {
+          publishSharedPending(null);
+        }
+      }
       setLoadState('ready');
       return;
     }
@@ -173,7 +248,8 @@ export function useCloudInstances(
     };
   }, [enabled]);
 
-  const verifying = instances.some((instance) => instance.status.upgrade.state === 'verifying');
+  const verifying = instances.some((instance) => instance.status.upgrade.state === 'verifying')
+    || pending?.action === 'rebuild';
   useEffect(() => {
     verifyingRef.current = verifying;
     refreshLoopRef.current?.instancesChanged();
@@ -213,7 +289,18 @@ export function useCloudInstances(
         setPending: publishSharedPending,
         requestWake: (target) => wakeCloudInstance(target, { apiFetch }),
         refresh: refreshAfterAction,
-        onError: () => Alert.alert(i18n.t('deviceLink.cloudInstance.wakeFailed')),
+        onError: (error) => {
+          if (error.code === 'REBUILD_IN_PROGRESS') {
+            // The gate response is authoritative even if the follow-up list is
+            // offline: preserve a rebuild guard instead of flashing idle and
+            // allowing repeated wake attempts.
+            publishSharedPending({ action: 'rebuild', target: instanceId ?? 'new' });
+            Alert.alert(i18n.t('deviceLink.cloudInstance.rebuildStillCleaning'));
+            return true;
+          }
+          Alert.alert(i18n.t('deviceLink.cloudInstance.wakeFailed'));
+          return false;
+        },
         onAccepted: (result) => {
           if (sharedPendingRef.current?.action !== 'wake' || sharedPendingRef.current.target !== 'new') return;
           const accepted = { action: 'wake' as const, target: result.instanceId };
