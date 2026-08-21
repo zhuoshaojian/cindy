@@ -125,6 +125,17 @@ describe('toSelectableDevices', () => {
       { deviceId: 'off', name: 'Off', platform: 'darwin', online: false },
     ]);
   });
+
+  it('携带 relay 的 cloud kind 标记(供 pill 排除 relay 云端行)', () => {
+    const out = toSelectableDevices([
+      dev({ deviceId: 'cloud', deviceInfo: { kind: 'cloud' } }),
+      dev({ deviceId: 'plain' }),
+    ]);
+    expect(out.map((d) => [d.deviceId, d.kind])).toEqual([
+      ['cloud', 'cloud'],
+      ['plain', undefined],
+    ]);
+  });
 });
 
 describe('sameSelectableList(掉线/上线必须触发重渲染)', () => {
@@ -135,6 +146,9 @@ describe('sameSelectableList(掉线/上线必须触发重渲染)', () => {
   });
   it('online 翻转 → false(否则状态点不更新、离线行点不动却看着可点)', () => {
     expect(sameSelectableList([a], [{ ...a, online: false }])).toBe(false);
+  });
+  it('kind 翻转 → false(relay 补报 cloud 标记后 pill 才能重新排除该行)', () => {
+    expect(sameSelectableList([a], [{ ...a, kind: 'cloud' as const }])).toBe(false);
   });
 });
 

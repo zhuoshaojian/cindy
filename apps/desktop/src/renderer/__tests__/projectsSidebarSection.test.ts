@@ -175,4 +175,19 @@ describe('Projects sidebar section', () => {
       'onAutomationGroupCollapsedChange={setAutomationGroupCollapsed}',
     );
   });
+
+  it('translates the cloud device sentinel in the device group header', () => {
+    // remoteDeviceIndex 存的是 relay 原名(重命名/复位要用它做权威值),云端设备的原名
+    // 是 locale-neutral 哨兵。段头是展示位,必须过渲染边界翻译器 —— 否则界面直接漏出
+    // `__cindy_cloud_device_name__:<序号>`(2026-08-21 打包实机撞到过:设备分组是
+    // 上游 08-13 才加的,云端设备名此前没有消费方需要翻译)。
+    expect(projectsSectionSource).toContain(
+      "import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName'",
+    );
+    expect(projectsSectionSource).toContain(
+      'resolveDesktopCloudDeviceName(device?.name ?? section.deviceId, t)',
+    );
+    // 兜底路径也不能绕过翻译:段头取名只有这一处出口。
+    expect(projectsSectionSource).not.toContain('(device?.name ?? section.deviceId)\n');
+  });
 });

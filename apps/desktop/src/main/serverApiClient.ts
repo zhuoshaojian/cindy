@@ -68,6 +68,8 @@ export interface ApiFetchOptions {
    * by the caller.
    */
   allowedRedactedErrorCodes?: readonly string[];
+  /** 只记录 method/path/status/code，供携带敏感配置或凭证物料的调用方使用。 */
+  logMetadataOnly?: boolean;
 }
 
 interface RawResponse<T> {
@@ -114,6 +116,14 @@ async function rawFetch<T>(apiPath: string, opts: ApiFetchOptions): Promise<RawR
         'serverApiFetch.redacted_network_error',
         'path=' + (opts.logLabel ?? redactedLogPath(apiPath)),
         'method=' + method,
+      );
+    } else if (opts.logMetadataOnly) {
+      log.error(
+        'serverApiFetch.network_error',
+        'path=' + apiPath,
+        'method=' + method,
+        'status=0',
+        'code=NETWORK_ERROR',
       );
     } else {
       log.error('fetch failed', opts.logLabel ?? apiPath, err);
@@ -169,6 +179,14 @@ export async function serverApiFetch<T>(apiPath: string, opts: ApiFetchOptions):
         'method=' + (opts.method ?? 'GET'),
         'status=' + result.status,
         'code=' + statusToCode(result.status),
+      );
+    } else if (opts.logMetadataOnly) {
+      log.warn(
+        'serverApiFetch.not_ok',
+        'path=' + apiPath,
+        'method=' + (opts.method ?? 'GET'),
+        'status=' + result.status,
+        'code=' + errCode,
       );
     } else {
       // logLabel 表示 path 里带身份;上游 `msg` 同样可能回显身份(如「skill <name> not found」),

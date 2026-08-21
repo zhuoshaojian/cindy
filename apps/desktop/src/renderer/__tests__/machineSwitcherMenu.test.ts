@@ -503,7 +503,9 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
   it('云端设备使用 Cloud 图标', () => {
     expect(menuSource).toContain("import {");
     expect(menuSource).toContain('Cloud,');
-    expect(menuSource).toContain("device.kind === 'cloud'");
+    expect(menuSource).toContain("devices.filter((device) => device.kind !== 'cloud')");
+    // 机器列表只渲染在线云端实例;离线实例折叠进「唤醒云端」动作行。
+    expect(menuSource).toContain('.filter((instance) => cloud.onlineDeviceIds.has(instance.deviceId))');
     expect(menuSource).toContain('<Cloud size={14} strokeWidth={2} />');
   });
 
@@ -585,8 +587,13 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     expect(menuSource).not.toMatch(
       /if \(!hasRemote\) \{\s*\n\s*return <span className=\{SCOPE_TITLE_CLASS\}>/,
     );
-    // 设备列表只看当前 devices.length,不把「目录已空、raw 仍记远端」当成还有远程。
-    expect(menuSource).toContain('const showDeviceList = devices.length > 0');
+    // 段头恒在之后组件不再有可见性门控;云端入口不靠 return null 的宽窄决定去留。
+    expect(menuSource).not.toContain('!cloudReady) return null');
+    // 设备列表看非云端设备数;云端控制面可用时也要开这一段——「0 实例首次唤醒」
+    // 的入口就在里面,没有任何远程设备时也必须出现。
+    expect(menuSource).toContain(
+      'const showDeviceList = remoteDevices.length > 0 || cloudReady',
+    );
     expect(menuSource).toContain('{showDeviceList ? (');
     expect(menuSource).toContain('{settingsItems}');
     expect(menuSource).toContain('MACHINE_ALL');
@@ -611,6 +618,32 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     );
     const displaySettingsIndex = menuSource.indexOf("t('ccAgent.sidebar.organizeSidebar')");
     expect(displaySettingsIndex).toBeGreaterThan(remoteSettingsIndex);
+  });
+
+  it('服务端禁用云端时沿用 unsupported 门控，菜单不渲染云端入口', () => {
+    expect(menuSource).toContain('const cloudReady = cloud.loadState === \'ready\'');
+    // 段头恒在(菜单本身不再 return null),云端入口的去留只由 cloudReady 决定:
+    // 在线实例行、折叠唤醒行都挂在 cloudReady 之下,unsupported 时整段不渲染。
+    expect(menuSource).toContain('{cloudReady &&');
+    expect(menuSource).not.toContain('!cloudReady) return null');
+  });
+
+  it('云端唤醒项并入机器菜单(0 实例首次唤醒 + offline 实例再唤醒,不独立占行)', () => {
+    expect(menuSource).toContain('useCloudInstances');
+    expect(menuSource).toContain("devices.filter((device) => device.kind !== 'cloud')");
+    // 离线实例不以「一台机器」出现:折叠为「唤醒云端」动作行,目标取第一个离线实例。
+    expect(menuSource).toContain('wakeCloud(offlineInstance.instanceId, offlineInstance.deviceId)');
+    expect(menuSource).toContain('wakeFirstCloud');
+    expect(menuSource).toContain('applySelect([result.deviceId])');
+    expect(menuSource).toContain('const selectedCloud = cloud.instances.find');
+    // 在线/离线由图标本体表达(Cloud / CloudOff),云端行不再叠 StatusDot 双信号。
+    expect(menuSource).toContain('<CloudOff size={14} strokeWidth={2} />');
+    expect(menuSource).not.toContain("status={online ? 'online' : 'offline'}");
+    // 在线实例行恒可多选;离线折叠行是动作项,无 toggle。
+    expect(menuSource).toContain('onToggle={() => applyToggle(instance.deviceId)}');
+    expect(menuSource).not.toContain('CloudWakeMenuItem');
+    // 唤醒失败不许静默,必须有用户可见反馈。
+    expect(menuSource).toContain("t('ccAgent.sidebar.cloud.wakeFailed')");
   });
 
   it('非会话视图选机器时切回会话视图(与新建 / 搜索行同惯例,Codex P2)', () => {

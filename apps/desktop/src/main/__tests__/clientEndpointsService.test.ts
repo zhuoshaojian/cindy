@@ -205,6 +205,69 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
       { kind: 'cdn' },
     ],
     [
+      'packaged Pod 使用显式挂载清单',
+      {
+        isPackaged: true,
+        headlessPodRuntime: true,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
+          XDT_POD_DEVICE_ID: 'pod-endpoints',
+          XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE: '/run/secrets/account-refresh-token',
+        },
+      },
+      { kind: 'file', filePath: path.resolve(REPO_ROOT, '/run/config/endpoint.json') },
+    ],
+    [
+      'packaged 非 headless 即使完整 Pod env 也不能用文件覆写',
+      {
+        isPackaged: true,
+        headlessPodRuntime: false,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
+          XDT_POD_DEVICE_ID: 'pod-endpoints',
+          XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE: '/run/secrets/account-refresh-token',
+        },
+      },
+      { kind: 'cdn' },
+    ],
+    [
+      'packaged headless 缺 token file 时不能用文件覆写',
+      {
+        isPackaged: true,
+        headlessPodRuntime: false,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
+          XDT_POD_DEVICE_ID: 'pod-endpoints',
+        },
+      },
+      { kind: 'cdn' },
+    ],
+    [
+      'packaged headless 缺 device id 时不能用文件覆写',
+      {
+        isPackaged: true,
+        headlessPodRuntime: false,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
+          XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE: '/run/secrets/account-refresh-token',
+        },
+      },
+      { kind: 'cdn' },
+    ],
+    [
+      'packaged Pod 只接受绝对清单路径',
+      {
+        isPackaged: true,
+        headlessPodRuntime: true,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: 'config/endpoint.json',
+          XDT_POD_DEVICE_ID: 'pod-endpoints',
+          XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE: '/run/secrets/account-refresh-token',
+        },
+      },
+      { kind: 'cdn' },
+    ],
+    [
       'dev 默认读仓内 cn 正本',
       { isPackaged: false, env: {} },
       { kind: 'file', filePath: DEFAULT_FILE },

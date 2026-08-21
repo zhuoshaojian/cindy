@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { app, safeStorage } from 'electron';
+import { CURRENT_CINDY_REGION } from '../../shared/brandRegion.js';
 
 vi.mock('node-machine-id', () => ({ machineIdSync: () => 'test-machine-id' }));
 vi.mock('../canaryFlagSync', () => ({
@@ -71,12 +72,16 @@ describe('authManager provisioned session', () => {
     unsubscribe();
 
     const storageDir = path.join(userDataDir, 'safe-storage');
-    expect(
+    expect(JSON.parse(
       Buffer.from(
-        fs.readFileSync(path.join(storageDir, 'cindy_auth_refresh_token.enc'), 'utf8'),
+        fs.readFileSync(path.join(storageDir, 'cindy_auth_session_v1.enc'), 'utf8'),
         'base64',
       ).toString('utf8'),
-    ).toBe('resource-refresh-test');
+    )).toMatchObject({
+      version: 1,
+      realm: CURRENT_CINDY_REGION,
+      refreshToken: 'resource-refresh-test',
+    });
   });
 
   it('rejects a session minted for a different device', async () => {

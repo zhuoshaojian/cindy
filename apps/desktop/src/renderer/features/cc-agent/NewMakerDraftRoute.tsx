@@ -159,6 +159,17 @@ import {
 import { CrossAgentConvertDialog } from '@/components/ui/cross-agent-convert-dialog';
 import type { MakerVendor } from '@/lib/ccAgent.types';
 import {
+  desktopCloudInstanceDisplayName,
+  resolveDesktopCloudDeviceName,
+} from '@/features/cloud-instance/cloudDeviceName';
+import { useCloudInstances } from '@/features/cloud-instance/useCloudInstances';
+import {
+  buildDraftPillDevices,
+  getSingleSelectedCloudInstance,
+} from '@/features/cloud-instance/cloudDraftTarget';
+import { useSelectedMachineId } from '@/features/device-link/selectedMachineStore';
+import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance';
+import {
   ChevronDown,
   Code2,
   Hammer,
@@ -255,6 +266,7 @@ import {
 } from '@cindy/model-providers';
 import { isSubscriptionDirectModel } from '../../../shared/subscriptionModels';
 import {
+  coerceModelToRoutableSource,
   resolveDeviceLinkDraftDefaults,
   shouldReseedDeviceLinkDraftDefaults,
   type DeviceLinkDraftSelection,
@@ -318,6 +330,9 @@ function isWorktreeBranchPreferenceChannelUnsupported(error: unknown): boolean {
   if (extractIpcError(error)?.code === 'DEVICE_LINK_CHANNEL_NOT_ALLOWED') return true;
   return error instanceof Error && /\[(?:DEVICE_LINK_)?CHANNEL_NOT_ALLOWED\]/.test(error.message);
 }
+// 云端唤醒后等待 presence 上线的最长时间:与手机端 wake-watch 同一常量(共享层),
+// 本地 Docker 首启(重建 prebundle)约 90s,生产镜像更快,3 分钟覆盖慢路径。
+const WAKE_ACTIVATION_TIMEOUT_MS = CLOUD_WAKE_WATCH_TIMEOUT_MS;
 // F-COLLAB (2026-05): 老的 vendor='orca' 入口已退役,OrcaHeaderStrip 组件随之
 // 删除(它是给 isOrca 分支的 ChatInput.topSlot 用的)。Lead/Worker 协作组合现在
 // 由 ChatInput「+」菜单里的协同模式项控制,Lead 是当前 vendor 本身,
@@ -606,6 +621,16 @@ export function NewMakerDraftRoute() {
   const { dataOwnerId } = useAuth();
   const draft = useNewMakerDraft();
   const location = useLocation();
+  const cloud = useCloudInstances();
+  const selectedMachineId = useSelectedMachineId();
+  // 用户在本次草稿手动切回本机后，不再被全局机器单选自动点亮；离开草稿页即重置。
+  const [manualLocalOverride, setManualLocalOverride] = useState(false);
+  // wake API 成功到 relay presence online 之间保留目标意图；期间不提前把离线设备写进草稿。
+  const [wakeActivation, setWakeActivation] = useState<{
+    instanceId: string;
+    deviceId: string;
+    deviceName: string;
+  } | null>(null);
   const navigate = useNavigate();
   const dialogueTargetRequest = useMemo(
     () => readNewMakerDialogueTargetRequest(location.state),
@@ -857,6 +882,10 @@ export function NewMakerDraftRoute() {
     toast.info(t('newChat.deviceSwitcher.attachmentsDropped', { count: stranded.length }));
   }, [attachmentState, t]);
   const effectiveWorkingDir = draft.workingDir;
+  const effectiveProjectNameCandidate = effectiveWorkingDir?.split(/[\\/]/).filter(Boolean).pop();
+  const effectiveProjectName = effectiveProjectNameCandidate?.trim()
+    ? effectiveProjectNameCandidate
+    : null;
   const effectiveRemoteHostId = draft.remoteHostId;
   const isRemoteProjectDraft = effectiveWorkingDir != null && effectiveRemoteHostId != null;
   // device-link:为远程设备项目新建对话(草稿带 deviceId)。与 SSH remoteHostId 互斥。
@@ -875,6 +904,9 @@ export function NewMakerDraftRoute() {
     if (!availableAgentsLoaded) return [];
     return (['cc', 'codex', 'pi'] as const).filter((vendor) => !availableVendors.has(vendor));
   }, [availableAgentsLoaded, availableVendors]);
+  const effectiveDeviceLinkDisplayName = effectiveDeviceLinkDeviceName
+    ? resolveDesktopCloudDeviceName(effectiveDeviceLinkDeviceName, t)
+    : null;
   /**
    * 「这份草稿要建到对端设备上」—— 只看 deviceId,**不再要求 workingDir**(#807)。
    *
@@ -1121,6 +1153,31 @@ export function NewMakerDraftRoute() {
       activeProjectOptions,
       effectiveDeviceLinkDeviceId,
     ) ?? t('newChat.folderPicker.dialogue');
+  const cloudNameOf = useCallback(
+    (instance: { customLabel: string | null; nameSequence: number }): string =>
+      desktopCloudInstanceDisplayName(instance, t),
+    [t],
+  );
+  const selectedFilterCloudInstance = useMemo(
+    () => getSingleSelectedCloudInstance(cloud.instances, selectedMachineId),
+    [cloud.instances, selectedMachineId],
+  );
+  // 设备 pill 的云端行以控制面实例列表为唯一数据源;relay 的 cloud 项(含已删实例
+  // 残留的幽灵档案)在这里排除 —— 与机器切换菜单 / 手机端设备菜单同口径。
+  const pillDevices = useMemo(
+    () =>
+      buildDraftPillDevices(selectableDevices, cloud.instances, cloud.onlineDeviceIds, cloudNameOf),
+    [selectableDevices, cloud.instances, cloud.onlineDeviceIds, cloudNameOf],
+  );
+  /**
+   * 「云端唤醒在途」的唯一派生:pill 的行禁点、waking 表达与 busy 全部由这一对值
+   * 供给。target 以 instanceId 为键(与 pending.target、行上的 cloudInstanceId 同键,
+   * 不再反查 deviceId);busy 同时纳入发送在途——UI 可点性必须覆盖 handler 防重
+   * 判定,否则会出现「行看着可点、点了被静默吞掉」的缝。
+   */
+  const cloudWakeTarget =
+    wakeActivation?.instanceId
+    ?? (cloud.pending?.action === 'wake' ? cloud.pending.target : null);
   const draftRightSidebar = useMemo(
     () =>
       resolveNewMakerDraftRightSidebar({
@@ -1473,6 +1530,10 @@ export function NewMakerDraftRoute() {
     // provider revision 驱逐时 hook 会保留旧快照但标 loading；必须等新代际 ready，不能用 stale
     // capabilities 把 inline handoff 或用户当前选择校准回旧目录。
     if (!capabilities || capabilitiesLoading || remoteDraftState.status !== 'ready') return;
+    // 等被控端 providers 也就绪再 seed:model 可路由回退要按 providers 判定,providers 未到
+    // 就 seed 会误判「无来源」。error / unsupported 不无限等(remoteModelListStatus 只在
+    // loading 时挂起),照常 seed 但跳过回退,交发送门统一处理。
+    if (remoteModelListStatus === 'loading') return;
     const key = `${effectiveDeviceLinkDeviceId}:${capabilityAgentKind}`;
     const newTarget = dlSeedKeyRef.current !== key;
     const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities;
@@ -1511,14 +1572,23 @@ export function NewMakerDraftRoute() {
     dlSeedKeyRef.current = key;
     dlSeedCapabilitiesRef.current = capabilities;
     if (newTarget) dlRuntimeTouchedRef.current = false;
-    setDlSel(
-      resolveDeviceLinkDraftDefaults(
-        capabilities,
-        remoteDraftState.value,
-        undefined,
-        capabilityAgentKind,
-      ),
+    let seeded = resolveDeviceLinkDraftDefaults(
+      capabilities,
+      remoteDraftState.value,
+      undefined,
+      capabilityAgentKind,
     );
+    // 被控端默认模型可能不被该设备任何已连接来源提供(如云端 Pod 仅连 xd 网关,却默认
+    // opus-5)。此时回退到该引擎首个可路由模型,避免 trigger 显示注定被发送门拦下的模型。
+    if (!deviceProvidersUnsupported) {
+      seeded = coerceModelToRoutableSource(seeded, {
+        capabilities,
+        remoteDraft: remoteDraftState.value,
+        providers,
+        agentKind: capabilityAgentKind,
+      });
+    }
+    setDlSel(seeded);
   }, [
     isDeviceLinkDraft,
     effectiveDeviceLinkDeviceId,
@@ -1526,6 +1596,9 @@ export function NewMakerDraftRoute() {
     capabilities,
     capabilitiesLoading,
     remoteDraftState,
+    remoteModelListStatus,
+    deviceProvidersUnsupported,
+    providers,
   ]);
 
   // 远程草稿展示用:已 seed 用 dlSel;seed 完成前(等隧道 / 能力)先用 capabilities 默认占位,
@@ -2278,6 +2351,77 @@ export function NewMakerDraftRoute() {
       state: consumeNewMakerDialogueTargetRequest(location.state),
     });
   }, [applyDraftTarget, dialogueTargetRequest, location, navigate]);
+  const activateCloudDevice = useCallback(
+    (deviceId: string, deviceName: string) => {
+      setManualLocalOverride(false);
+      setWakeActivation(null);
+      if (effectiveDeviceLinkDeviceId === deviceId) {
+        if (effectiveDeviceLinkDeviceName !== deviceName) {
+          patchDraft({ deviceLinkDeviceName: deviceName });
+        }
+        return;
+      }
+      // 本机目录不能直接投射到云端；切设备先落 dialogue，随后用户可从云端最近项目选目录。
+      applyDraftTarget({ deviceId, deviceName, workingDir: null });
+    },
+    [applyDraftTarget, effectiveDeviceLinkDeviceId, effectiveDeviceLinkDeviceName],
+  );
+
+  // 全局机器过滤若恰好单选一台在线云端设备，沿用它作为隐式默认。
+  // 手动切回本机优先，且离线实例不提前写入草稿，避免把不可达设备当成可创建目标。
+  useEffect(() => {
+    if (manualLocalOverride || effectiveDeviceLinkDeviceId || !selectedFilterCloudInstance) return;
+    if (!cloud.onlineDeviceIds.has(selectedFilterCloudInstance.deviceId)) return;
+    activateCloudDevice(
+      selectedFilterCloudInstance.deviceId,
+      cloudNameOf(selectedFilterCloudInstance),
+    );
+  }, [
+    activateCloudDevice,
+    cloud.onlineDeviceIds,
+    cloudNameOf,
+    effectiveDeviceLinkDeviceId,
+    manualLocalOverride,
+    selectedFilterCloudInstance,
+  ]);
+
+  // 唤醒先走控制面，presence 真正 online 后才切草稿目标；缓存会话与项目列表在此期间保持原样。
+  useEffect(() => {
+    if (!wakeActivation || !cloud.onlineDeviceIds.has(wakeActivation.deviceId)) return;
+    activateCloudDevice(wakeActivation.deviceId, wakeActivation.deviceName);
+  }, [activateCloudDevice, cloud.onlineDeviceIds, wakeActivation]);
+
+  // 兜底:wake 已受理但 Pod 迟迟未上线(容器启动失败等)时,超时放弃 waking 态,
+  // 设备行回落为可唤醒，避免永久卡在「唤醒中」不可点。
+  useEffect(() => {
+    if (!wakeActivation) return;
+    const timer = window.setTimeout(() => {
+      setWakeActivation(null);
+      toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
+    }, WAKE_ACTIVATION_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [t, wakeActivation]);
+
+  const handleCloudWake = useCallback(
+    (instanceId?: string) => {
+      if (cloud.pending || wakeActivation || sendInFlightRef.current) return;
+      void cloud
+        .wake(instanceId)
+        .then((result) => {
+          if (!result) return;
+          setWakeActivation({
+            instanceId: result.instanceId,
+            deviceId: result.deviceId,
+            deviceName: cloudNameOf(result),
+          });
+        })
+        .catch(() => {
+          setWakeActivation(null);
+          toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
+        });
+    },
+    [cloud.pending, cloud.wake, cloudNameOf, t, wakeActivation],
+  );
 
   // 弹窗确认添加后的落点:SSH 立即建会话 + navigate;device-link 把当前草稿指向被控端项目,
   // 首条消息发出时走既有 create-on-send 链路(见下方 isDeviceLinkDraft 分支)。
@@ -2889,17 +3033,21 @@ export function NewMakerDraftRoute() {
    *   - 反过来,首帧未就绪或 device-link 不可用(listDevices 抛错)时的空不置 loaded,不作数,
    *     避免一次抖动就把用户刚选好的设备抹掉;
    *   - 离线设备仍留在列表里(见 isSelectableDevice),所以单纯掉线不会误触发这条。
+   *   - 有效目标 = relay 可选列表 ∪ 控制面云端实例:pill 的云端行由控制面驱动
+   *     (buildDraftPillDevices),但两个数据源各有滞后窗口(实例刚建 relay 未列出 /
+   *     控制面列表还在加载),任一侧认得这台设备都不该误收敛。
    */
   useEffect(() => {
     if (!effectiveDeviceLinkDeviceId) return;
     if (!selectableDevicesLoaded) return;
     if (selectableDevices.some((d) => d.deviceId === effectiveDeviceLinkDeviceId)) return;
+    if (cloud.instances.some((instance) => instance.deviceId === effectiveDeviceLinkDeviceId)) return;
     log.warn('[new-maker] selected device is no longer selectable, falling back to local');
     // 回落 = 转移到「本机 + 对话」。这条路径原先要自己重复一遍所有清理,而且历史上正是它漏得最多
     // (chip、附件、worktree 三态都各漏过一次),还隐式依赖 seed effect 的 !isDeviceLinkDraft 分支
     // 去清远程运行配置 —— 能跑,但没人能一眼看出为什么。现在与另三条路径走同一个动作。
     applyDraftTarget({ deviceId: null, deviceName: null, workingDir: null });
-  }, [effectiveDeviceLinkDeviceId, selectableDevices, selectableDevicesLoaded, applyDraftTarget]);
+  }, [effectiveDeviceLinkDeviceId, selectableDevices, selectableDevicesLoaded, cloud.instances, applyDraftTarget]);
 
   // 创建目标正在异步提交时，发送、建目标以及设备／工作区切换必须共用同一把锁。
   // ref 负责同步 guard，state 只负责驱动 UI 禁用；所有写入都经 markSendInFlight，
@@ -2926,6 +3074,8 @@ export function NewMakerDraftRoute() {
       // 下面会剥 mention chip、丢路径型附件并清 workingDir / extraDirs —— 重选同一设备时执行这些,
       // 等于用户点一下就静默丢掉已选的项目、附件和部分已写好的消息。必须先早返回。
       if (deviceId === (effectiveDeviceLinkDeviceId ?? null)) return;
+      if (deviceId == null) setManualLocalOverride(true);
+      setWakeActivation(null);
       // 换完停在这台设备的「对话」(workingDir=null):上一台的项目路径在新机器上基本不存在,
       // 留着会让用户以为项目跟过来了、发送时才在被控端 path guard 上失败。与 mobile 切设备后
       // 工作区回落的行为一致。其余连带清理全部由 applyDraftTarget 按「设备变了」推导。
@@ -3221,6 +3371,11 @@ export function NewMakerDraftRoute() {
     setWtName(name);
   }, []);
 
+  // busy 纳入发送在途/worktree 创建:UI 可点性必须覆盖 handleCloudWake 的防重判定,
+  // 否则出现「行看着可点、点了被静默吞掉」的缝(pill 的 disabled 与 guard 同源)。
+  // sendInFlight / markSendInFlight 已由上游提供,不再重复定义。
+  const cloudWakeBusy =
+    cloudWakeTarget !== null || cloud.pending !== null || sendInFlight || wtCreating;
   const wtRef = useRef({
     enabled: wtEnabled,
     name: wtName,
@@ -4978,16 +5133,25 @@ export function NewMakerDraftRoute() {
                 )}
               >
                 {/* 设备切换器(#807):设备是一级维度,排在 mode pill 左边;没有对端设备时
-                    组件自己返回 null —— 只有本机的用户看不到任何新增控件。 */}
+                    通常由组件自己返回 null；云端 ready 且 0 实例时保留首次唤醒入口。 */}
                 <DeviceSwitcherPill
-                  devices={selectableDevices}
+                  devices={pillDevices}
                   value={effectiveDeviceLinkDeviceId ?? null}
                   onChange={handleDeviceChange}
                   open={devicePickerOpen}
                   onOpenChange={handleDevicePickerOpenChange}
                   // 窄屏 pill 排会进正常流并 flex-wrap;多台时收成图标 + 状态点少占一行。
-                  compact={isDraftNarrow && selectableDevices.length > 1}
+                  compact={isDraftNarrow && pillDevices.length > 1}
                   disabled={wtCreating || sendInFlight}
+                  cloudWake={
+                    cloud.loadState === 'ready'
+                      ? {
+                          busy: cloudWakeBusy,
+                          wakingTarget: cloudWakeTarget,
+                          onWake: handleCloudWake,
+                        }
+                      : undefined
+                  }
                 />
                 <FolderPickerPopover
                   open={folderPickerOpen}
@@ -5207,17 +5371,15 @@ export function NewMakerDraftRoute() {
                     <span className="min-w-0 truncate">
                       {/* 有项目走原文案;跨设备纯对话没有 project 可填(#807),原句写死了
                           「的 {{project}} 中」会留个空洞,所以走另一条无项目文案。 */}
-                      {effectiveWorkingDir
+                      {effectiveProjectName
                         ? t('ccAgent.draft.remoteProjectBanner', {
                             device:
-                              effectiveDeviceLinkDeviceName ?? effectiveDeviceLinkDeviceId ?? '',
-                            project:
-                              effectiveWorkingDir.split(/[\\/]/).filter(Boolean).pop() ??
-                              effectiveWorkingDir,
+                              effectiveDeviceLinkDisplayName ?? effectiveDeviceLinkDeviceId ?? '',
+                            project: effectiveProjectName,
                           })
                         : t('ccAgent.draft.remoteDialogueBanner', {
                             device:
-                              effectiveDeviceLinkDeviceName ?? effectiveDeviceLinkDeviceId ?? '',
+                              effectiveDeviceLinkDisplayName ?? effectiveDeviceLinkDeviceId ?? '',
                           })}
                     </span>
                   </div>

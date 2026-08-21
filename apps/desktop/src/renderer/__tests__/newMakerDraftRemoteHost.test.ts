@@ -160,4 +160,24 @@ describe('newMakerDraft remote host identity', () => {
     expect(getDraft().workingDir).toBe('/legacy/app');
     expect(getDraft().remoteHostId).toBeNull();
   });
+
+  it('云端目标与目录成对 patch：允许无目录 dialogue，后续裸改目录仍清目标', async () => {
+    const { getDraft, patchDraft } = await loadModule();
+    patchDraft({
+      workingDir: null,
+      remoteHostId: null,
+      deviceLinkDeviceId: 'cloud-device',
+      deviceLinkDeviceName: 'Cloud',
+    });
+    expect(getDraft()).toMatchObject({
+      workingDir: null,
+      deviceLinkDeviceId: 'cloud-device',
+      deviceLinkDeviceName: 'Cloud',
+    });
+
+    patchDraft({ workingDir: '/local/project' });
+    expect(getDraft().workingDir).toBe('/local/project');
+    expect(getDraft().deviceLinkDeviceId).toBeNull();
+    expect(getDraft().deviceLinkDeviceName).toBeNull();
+  });
 });

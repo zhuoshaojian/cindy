@@ -390,4 +390,35 @@ describe('serverApiFetch', () => {
     expect(logged).not.toContain('private subscription detail');
     expect(logged).not.toContain('PRIVATE_SUBSCRIPTION_STATE');
   });
+
+  it('metadata-only 日志不包含 token、请求体或服务端消息', async () => {
+    mocks.getAccessToken.mockReturnValue('TOKEN_MARKER_DO_NOT_LOG');
+    mocks.netFetch.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        error: { code: 'UPSTREAM_UNAVAILABLE', message: 'MESSAGE_MARKER_DO_NOT_LOG' },
+      }),
+    });
+
+    await expect(
+      serverApiFetch('/instances/wake', {
+        method: 'POST',
+        body: { customLabel: 'BODY_MARKER_DO_NOT_LOG' },
+        baseUrl: 'http://127.0.0.1:3343',
+        logMetadataOnly: true,
+      }),
+    ).rejects.toMatchObject({ code: 'UPSTREAM_UNAVAILABLE', statusCode: 503 });
+
+    expect(mocks.logger.warn).toHaveBeenCalledWith(
+      'serverApiFetch.not_ok',
+      'path=/instances/wake',
+      'method=POST',
+      'status=503',
+      'code=UPSTREAM_UNAVAILABLE',
+    );
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('TOKEN_MARKER_DO_NOT_LOG');
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('BODY_MARKER_DO_NOT_LOG');
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('MESSAGE_MARKER_DO_NOT_LOG');
+  });
 });

@@ -1,5 +1,5 @@
-import type { Maker } from '@lizi/maker-core';
-import type { Scheduler } from '@lizi/maker-scheduler';
+import type { Maker } from '@cindy/maker-core';
+import type { Scheduler } from '@cindy/maker-scheduler';
 import type { CloudActivitySnapshot } from './activity.js';
 
 export interface CloudRuntimeActivityCollectorDeps {

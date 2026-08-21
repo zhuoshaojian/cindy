@@ -109,7 +109,6 @@ vi.mock('../outboundSessionReferences', () => ({
   rewriteOutboundSessionReferences: vi.fn(async (_c, a) => a),
 }));
 vi.mock('../settings-store', () => ({
-  forgetLastKnownDeviceName: vi.fn(),
   isPlaceholderDeviceName: () => false,
   normalizeCachedDeviceName: (name: string) => name.trim() || null,
   readDeviceLinkSettings: () => ({
@@ -121,6 +120,7 @@ vi.mock('../settings-store', () => ({
   }),
   readLastKnownDeviceNames: () => ({}),
   rememberLastKnownDeviceName: vi.fn(),
+  forgetLastKnownDeviceName: vi.fn(),
   setDeviceControlEnabled: vi.fn(),
 }));
 vi.mock('../subscriptionRefcount', () => ({

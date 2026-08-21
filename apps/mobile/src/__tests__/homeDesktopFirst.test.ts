@@ -497,12 +497,14 @@ describe('mobile home desktop-first surface', () => {
     // 启动同步失败(initialHomeError)仍走同步失败空态,不冒充引导。
     expect(source).toContain('&& !initialHomeError');
     expect(source).toContain("&& home.emptyKind === 'noDevice'");
-    expect(source).toContain('showRemoteGuide && home.emptyNoDevice ? (');
+    expect(source).toContain(
+      'showRemoteGuide && home.emptyNoDevice && remoteGuideCloudState !== null ? (',
+    );
     expect(source).toContain('<RemoteAccessGuide');
     expect(source).toContain('testID="home.remoteAccessGuide"');
     // 引导态没有可筛选的对话:表头退化为纯品牌标题(无下拉菜单),新建 FAB 不渲染。
-    expect(source).toContain('{showRemoteGuide ? (');
-    expect(source).toContain('{showRemoteGuide ? null : (');
+    expect(source).toContain('{showRemoteGuideSurface ? (');
+    expect(source).toContain('{showRemoteGuideSurface ? null : (');
 
     const guideSource = readSource('src/components/RemoteAccessGuide.tsx');
     // 文案已 i18n 化,断言改查 zh-CN catalog(单一事实源);源码只保留结构/交互契约。
@@ -517,8 +519,37 @@ describe('mobile home desktop-first surface', () => {
     expect(guideSource).toContain('home.remoteGuide.recheck');
     expect(guideSource).toContain('home.remoteGuide.retryAccess');
     expect(guideSource).toContain('<Lock');
-    // 未来形态预告:云端 Cindy 上线后手机版可脱离电脑直接使用。
+    // 云端卡按能力分态:仅 unsupported 显示「筹备中」预告;能力 ready 时升级为
+    // 「唤醒云端」行动卡——桌面全离线场景下这是手机唯一的唤醒入口,不能只给预告。
     expect(t('deviceLink.cloudTeaserTitle')).toBe('云端 Cindy 筹备中');
     expect(t('deviceLink.cloudTeaserCopy')).toBe('上线后无需电脑，手机版即可直接使用。');
+    expect(t('deviceLink.cloudReadyTitle')).toBe('云端 Cindy');
+    expect(t('deviceLink.cloudWake')).toBe('唤醒云端');
+    expect(guideSource).toContain("cloud.state === 'ready'");
+    expect(guideSource).toContain('home.remoteGuide.wakeCloud');
+    expect(guideSource).toContain('home.remoteGuide.cloudTeaser');
+    // 首页接线:只有 ready/unsupported 能进入云端卡;loading/error 回落普通无设备空态,
+    // 不能把控制面请求失败长期误报成「筹备中」。0 实例首唤醒由 wake() 原子创建。
+    const devicesSource = readSource('app/devices/index.tsx');
+    expect(devicesSource).toContain('const remoteGuideCloudState = cloudInstances.loadState');
+    expect(devicesSource).toContain("cloudInstances.loadState === 'unsupported'");
+    expect(devicesSource).toContain(
+      'const showRemoteGuide = remoteGuideBaseVisible && remoteGuideCloudState !== null',
+    );
+    expect(devicesSource).toContain(
+      "const showRemoteGuideLoading = remoteGuideBaseVisible\n    && cloudInstances.loadState === 'loading'",
+    );
+    expect(devicesSource).toContain('testID="home.cloudLoading"');
+    expect(devicesSource).toContain('const showRemoteGuideSurface = showRemoteGuide || showRemoteGuideLoading');
+    expect(devicesSource).toContain('state: remoteGuideCloudState');
+    expect(devicesSource).not.toContain(
+      "state: cloudInstances.loadState === 'ready' ? 'ready' : 'unsupported'",
+    );
+    expect(devicesSource).toContain('.wake(cloudInstances.instances[0]?.instanceId)');
+    // 唤醒受理到 presence 上线之间约一分钟空窗:wake-watch 在此期间维持「唤醒中」
+    // (busy + 不可重复点击),presence 上线或超时兜底解除;引导卡与设备菜单共用一份状态。
+    expect(devicesSource).toContain('waking: cloudWaking');
+    expect(devicesSource).toContain('CLOUD_WAKE_WATCH_TIMEOUT_MS');
+    expect(devicesSource).toContain('cloudInstances.pending !== null || cloudWakeWatchDeviceId !== null');
   });
 });

@@ -180,7 +180,7 @@ function isHttpUrl(value: string): boolean {
 }
 
 // ── 运行期可覆写端点(ESM live binding)─────────────────────────────────────
-// 下面四个端点用 `export let`:启动闸门(useStartupEndpointGate)拉取远程端点
+// 下面五个端点用 `export let`:启动闸门(useStartupEndpointGate)拉取远程端点
 // 清单后经 applyResolvedClientEndpoints 重赋值,importer 通过 live binding 看到
 // 新值(消费点全部是调用时读取,无模块顶层捕获——新增顶层派生前先想清楚)。
 // 初始值即构建期烘焙值;__DEV__ 下闸门不拉取,行为与现状完全一致。
@@ -240,6 +240,12 @@ export const WECHAT_UNIVERSAL_LINK =
 
 export let DEVICE_LINK_API_BASE_URL = resolveDeviceLinkApiBaseUrl(
   configuredValue('EXPO_PUBLIC_XDT_DEVICE_LINK_API_BASE_URL'),
+);
+
+/** 云端实例控制面；显式 env 优先，正式包由 endpoint.json 运行期回写。 */
+export let CLOUD_INSTANCE_API_BASE_URL = normalizeBaseUrlWithDefault(
+  configuredValue('EXPO_PUBLIC_XDT_CLOUD_INSTANCE_API_BASE_URL'),
+  DEV_MANIFEST.cloudInstanceApiBaseUrl ?? '',
 );
 
 /** voice-server 数据面；正式包由启动端点清单回填。 */
@@ -392,6 +398,7 @@ export function applyResolvedClientEndpoints(resolved: {
   authApiBaseUrl?: string;
   oauthBrokerApiBaseUrl?: string;
   deviceLinkApiBaseUrl?: string;
+  cloudInstanceApiBaseUrl?: string;
   voiceApiBaseUrl?: string;
   mobileUpdateBaseUrl?: string;
   /** 审核模式送审版本号(parser 产出,null = 清单未填;undefined = 不改动)。 */
@@ -414,6 +421,9 @@ export function applyResolvedClientEndpoints(resolved: {
   }
   if (resolved.deviceLinkApiBaseUrl !== undefined) {
     DEVICE_LINK_API_BASE_URL = resolved.deviceLinkApiBaseUrl.replace(/\/$/, '');
+  }
+  if (resolved.cloudInstanceApiBaseUrl !== undefined) {
+    CLOUD_INSTANCE_API_BASE_URL = resolved.cloudInstanceApiBaseUrl.replace(/\/$/, '');
   }
   if (resolved.voiceApiBaseUrl !== undefined) {
     VOICE_API_BASE_URL = resolved.voiceApiBaseUrl.replace(/\/$/, '');

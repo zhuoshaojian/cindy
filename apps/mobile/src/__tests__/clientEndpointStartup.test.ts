@@ -25,6 +25,7 @@ const FULL_MANIFEST_OBJECT = {
   apiBaseUrl: 'https://api-next.example.com',
   authApiBaseUrl: 'https://auth-next.example.com',
   deviceLinkApiBaseUrl: 'https://relay-next.example.com',
+  cloudInstanceApiBaseUrl: 'https://cloud-next.example.com',
   oauthBrokerApiBaseUrl: 'https://oauth-next.example.com',
   ossApiBaseUrl: 'https://oss-next.example.com',
   heartbeatUrl: 'https://heartbeat-next.example.com',
@@ -63,6 +64,7 @@ describe('runStartupEndpointResolve(CDN 解析)', () => {
       'https://oauth-next.example.com',
     );
     expect(env.DEVICE_LINK_API_BASE_URL).toBe('https://relay-next.example.com');
+    expect(env.CLOUD_INSTANCE_API_BASE_URL).toBe('https://cloud-next.example.com');
     // 语音网关地址与清单解耦(xdGatewayBaseUrl 已退役):保持构建期 env 值不动。
     expect(env.MOBILE_VOICE_LITELLM_BASE_URL).toBe(
       'https://gateway.example.invalid',

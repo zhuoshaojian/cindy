@@ -38,6 +38,14 @@ const sessionStatusIconSource = readFileSync(
   resolve(__dirname, '..', 'SessionStatusIcon.tsx'),
   'utf8',
 );
+const deviceLinkMock = {
+  listDevices: vi.fn(
+    () => new Promise<{ devices: never[] }>(() => {}),
+  ),
+  onPresenceChanged: vi.fn(() => () => {}),
+  onStatusChanged: vi.fn(() => () => {}),
+  onControlTargetChanged: vi.fn(() => () => {}),
+};
 
 vi.mock('../SessionStatusIcon', () => ({
   SessionStatusIcon: ({ session }: { session: { id: string } }) => {
@@ -154,6 +162,15 @@ const BOTH = [sessionA, sessionB] as const;
 
 beforeEach(() => {
   renderCounts.clear();
+  // 同 SessionCard.visual.test.ts:只补 electronAPI,不整体替换 window(否则 jsdom 的
+  // addEventListener 一起消失,上游在 effect 里订阅 storage 的 hook 会当场抛)。
+  (window as unknown as { electronAPI: unknown }).electronAPI = {
+    deviceLink: deviceLinkMock,
+  };
+  deviceLinkMock.listDevices.mockClear();
+  deviceLinkMock.onPresenceChanged.mockClear();
+  deviceLinkMock.onStatusChanged.mockClear();
+  deviceLinkMock.onControlTargetChanged.mockClear();
 });
 
 afterEach(() => {

@@ -115,6 +115,43 @@ describe('resolveRemoteProjectMachineIdentity', () => {
     });
   });
 
+  it('resolves a cloud marker before building user-facing project identity', () => {
+    const identity = resolveRemoteProjectMachineIdentity(
+      {
+        scope: 'remote',
+        remoteHostId: null,
+        deviceLinkDeviceId: 'cloud-device-3',
+        deviceLinkDeviceName: '__cindy_cloud_device_name__:3',
+      },
+      [],
+      {
+        resolveDeviceName: (name) =>
+          name === '__cindy_cloud_device_name__:3' ? '云端' : name,
+      },
+    );
+    // 翻译只作用于展示;单台云端不撞名,设备 ID 不露出来。
+    expect(identity?.displayLabel).toBe('云端');
+  });
+
+  it('keys device-id disambiguation on the relay name, not the translated one', () => {
+    // 回归钉子:撞名集合装的是 relay 原名。若改成按翻译后的名字判定,云端行会因为
+    // 译名与原名不同而永远匹配不上,消歧的 ID 再也不出现。
+    const identity = resolveRemoteProjectMachineIdentity(
+      {
+        scope: 'remote',
+        remoteHostId: null,
+        deviceLinkDeviceId: 'cloud-device-3',
+        deviceLinkDeviceName: '__cindy_cloud_device_name__:3',
+      },
+      [],
+      {
+        ambiguousDeviceNames: new Set(['__cindy_cloud_device_name__:3']),
+        resolveDeviceName: () => '云端',
+      },
+    );
+    expect(identity?.displayLabel).toBe('云端 · cloud-device-3');
+  });
+
   it('does not add a machine identity to local projects', () => {
     expect(
       resolveRemoteProjectMachineIdentity(

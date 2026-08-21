@@ -46,12 +46,13 @@
  * 颜色全走主题 token(规则 16),文案全走 i18n(规则 18)。
  */
 
-import { useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Ban,
   Check,
   ChevronDown,
   Cloud,
+  CloudOff,
   Loader2,
   Monitor,
   MonitorCog,
@@ -60,9 +61,18 @@ import {
 } from 'lucide-react';
 import { useMatch, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance';
 
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
+import {
+  useCloudInstances,
+  type CloudInstanceView,
+} from '@/features/cloud-instance/useCloudInstances';
+import {
+  desktopCloudInstanceDisplayName,
+  resolveDesktopCloudDeviceName,
+} from '@/features/cloud-instance/cloudDeviceName';
 import { useActiveMainView } from '@/hooks/useActiveMainView';
 import {
   DropdownMenu,
@@ -95,9 +105,15 @@ export function MachineSwitcherMenu({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { devices, selectedDeviceId, select, toggle } = useMachineSwitcher();
+  // 云端实例由控制面列表统一驱动,再以 stable deviceId join relay presence。
+  // device-link 的 cloud 项仅作 presence 来源,不直接渲染,避免 online/offline 双行。
+  const cloud = useCloudInstances();
+  const cloudReady = cloud.loadState === 'ready';
+  const remoteDevices = devices.filter((device) => device.kind !== 'cloud');
   // 设备列表只看当前是否真有可展示的远程设备。hasRemote 还会把「目录已空、
   // raw 仍记着远端」算进去——那是旧逃生口,标题恒在后会误画出「所有 / 本机」。
-  const showDeviceList = devices.length > 0;
+  // 云端控制面可用时也要开这一段:「0 实例首次唤醒」的入口就在这里面。
+  const showDeviceList = remoteDevices.length > 0 || cloudReady;
   // 段头标题是远程任务读取状态的固定承载点。后台 bootstrap 时只更新这一行，
   // 不再把 loading 提示插入下方会话列表，避免列表整体上下跳动。
   const remoteSessionBootstrapLoading = useRemoteSessionBootstrapLoading(selectedDeviceId);
@@ -127,6 +143,78 @@ export function MachineSwitcherMenu({
     toggle(id);
     ensureConversationListVisible();
   };
+  const displayDeviceName = (name: string): string => resolveDesktopCloudDeviceName(name, t);
+
+  // 云端命名:custom 直显;default 用序号插值;fallback 用通用「云端」名。
+  const cloudNameOf = (instance: CloudInstanceView): string =>
+    desktopCloudInstanceDisplayName(instance, t);
+  // 唤醒受理到 Pod presence 上线之间有约一分钟空窗,pending 已清。wake-watch 在这段
+  // 时间里维持 busy,否则入口回落成可点、用户会重复唤醒。
+  const [wakeWatch, setWakeWatchState] = useState<{
+    instanceId: string;
+    deviceId: string;
+  } | null>(null);
+  const wakeWatchRef = useRef(wakeWatch);
+  const onlineDeviceIdsRef = useRef(cloud.onlineDeviceIds);
+  onlineDeviceIdsRef.current = cloud.onlineDeviceIds;
+  const setWakeWatch = useCallback((value: typeof wakeWatch) => {
+    wakeWatchRef.current = value;
+    setWakeWatchState(value);
+  }, []);
+  const onWakeFailed = (target?: { instanceId: string; deviceId: string }): void => {
+    if (
+      !target
+      || (
+        wakeWatchRef.current?.instanceId === target.instanceId
+        && wakeWatchRef.current.deviceId === target.deviceId
+      )
+    ) {
+      setWakeWatch(null);
+    }
+    toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
+  };
+  const wakeCloud = (instanceId: string, deviceId: string): void => {
+    const target = { instanceId, deviceId };
+    const wake = cloud.wake(instanceId).then((result) => {
+      if (result) {
+        setWakeWatch({ instanceId: result.instanceId, deviceId: result.deviceId });
+      }
+    });
+    // 离线实例与在线设备同一心智:先切过滤,不等待 Pod 上线。
+    applySelect([deviceId]);
+    void wake.catch(() => onWakeFailed(target));
+  };
+  const wakeFirstCloud = (): void => {
+    void cloud.wake().then((result) => {
+      if (!result) return;
+      setWakeWatch({ instanceId: result.instanceId, deviceId: result.deviceId });
+      applySelect([result.deviceId]);
+    }).catch(() => onWakeFailed());
+  };
+
+  useEffect(() => {
+    if (wakeWatch && cloud.onlineDeviceIds.has(wakeWatch.deviceId)) {
+      setWakeWatch(null);
+    }
+  }, [cloud.onlineDeviceIds, setWakeWatch, wakeWatch]);
+
+  useEffect(() => {
+    if (!wakeWatch) return undefined;
+    const watched = wakeWatch;
+    const timer = window.setTimeout(() => {
+      const current = wakeWatchRef.current;
+      if (
+        current?.instanceId !== watched.instanceId
+        || current.deviceId !== watched.deviceId
+        || onlineDeviceIdsRef.current.has(watched.deviceId)
+      ) {
+        return;
+      }
+      setWakeWatch(null);
+      toast.error(t('ccAgent.sidebar.cloud.wakeFailed'));
+    }, CLOUD_WAKE_WATCH_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [setWakeWatch, t, wakeWatch]);
 
   const triggerLabel = t('ccAgent.sidebar.machineSwitcher.menuTrigger');
   const settingsItems = (
@@ -160,10 +248,16 @@ export function MachineSwitcherMenu({
   if (showDeviceList && selectedDeviceId !== MACHINE_ALL) {
     if (selectedDeviceId.length === 1) {
       const only = selectedDeviceId[0];
+      // 云端实例的标题走控制面名称(带序号 / 自定义名),不用 relay 的英文 stable 名。
+      const selectedCloud = cloud.instances.find((instance) => instance.deviceId === only);
       triggerText =
         only === MACHINE_LOCAL
           ? t('ccAgent.sidebar.scopeLocalSessions')
-          : (devices.find((device) => device.deviceId === only)?.name ?? triggerLabel);
+          : selectedCloud
+            ? cloudNameOf(selectedCloud)
+            : displayDeviceName(
+              remoteDevices.find((device) => device.deviceId === only)?.name ?? triggerLabel,
+            );
     } else {
       triggerText = t('ccAgent.sidebar.machineSwitcher.selectedCount', {
         count: selectedDeviceId.length,
@@ -221,20 +315,14 @@ export function MachineSwitcherMenu({
               onSelect={() => applySelect([MACHINE_LOCAL])}
               onToggle={() => applyToggle(MACHINE_LOCAL)}
             />
-            {devices.map((device) => {
+            {remoteDevices.map((device) => {
               const rejected = device.status === 'rejected';
               const connecting = device.status === 'connecting';
               return (
                 <MachineMenuItem
                   key={device.deviceId}
-                  icon={
-                    device.kind === 'cloud' ? (
-                      <Cloud size={14} strokeWidth={2} />
-                    ) : (
-                      <MonitorSmartphone size={14} strokeWidth={2} />
-                    )
-                  }
-                  label={device.name}
+                  icon={<MonitorSmartphone size={14} strokeWidth={2} />}
+                  label={displayDeviceName(device.name)}
                   selected={isMachineSelected(selectedDeviceId, device.deviceId)}
                   shimmer={connecting}
                   rejected={rejected}
@@ -249,6 +337,56 @@ export function MachineSwitcherMenu({
                 />
               );
             })}
+            {/* 机器列表只列在线云端实例;离线实例不以「一台机器」出现(选不了过滤目标),
+                统一折叠成一行「唤醒云端」动作(CloudOff),0 实例与休眠实例同一入口。 */}
+            {cloudReady &&
+              cloud.instances
+                .filter((instance) => cloud.onlineDeviceIds.has(instance.deviceId))
+                .map((instance) => (
+                  <MachineMenuItem
+                    key={instance.instanceId}
+                    icon={<Cloud size={14} strokeWidth={2} />}
+                    label={cloudNameOf(instance)}
+                    selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
+                    onSelect={() => applySelect([instance.deviceId])}
+                    onToggle={() => applyToggle(instance.deviceId)}
+                  />
+                ))}
+            {cloudReady &&
+              (() => {
+                const offlineInstance = cloud.instances.find(
+                  (instance) => !cloud.onlineDeviceIds.has(instance.deviceId),
+                );
+                if (!offlineInstance && cloud.instances.length > 0) return null;
+                const rowTarget = offlineInstance?.instanceId ?? 'new';
+                const pendingWake = cloud.pending?.action === 'wake'
+                  && cloud.pending.target === rowTarget;
+                const watchedWake = offlineInstance
+                  ? wakeWatch?.instanceId === offlineInstance.instanceId
+                    && wakeWatch.deviceId === offlineInstance.deviceId
+                  : cloud.instances.length === 0 && wakeWatch !== null;
+                // 折叠行代表「当前可唤醒的云端」而非一条具名实例行。任一 wake 已受理时都
+                // 必须保持 busy，避免 first-offline 顺序变化后再次点击、重复创建/唤醒资源。
+                const waking = pendingWake || watchedWake
+                  || cloud.pending?.action === 'wake'
+                  || wakeWatch !== null;
+                return (
+                  <MachineMenuItem
+                    icon={<CloudOff size={14} strokeWidth={2} />}
+                    label={
+                      waking ? t('ccAgent.sidebar.cloud.waking') : t('ccAgent.sidebar.cloud.wake')
+                    }
+                    selected={false}
+                    shimmer={waking}
+                    disabled={cloud.pending !== null || wakeWatch !== null}
+                    onSelect={
+                      offlineInstance
+                        ? () => wakeCloud(offlineInstance.instanceId, offlineInstance.deviceId)
+                        : wakeFirstCloud
+                    }
+                  />
+                );
+              })()}
             <DropdownMenuSeparator className={MENU_SEPARATOR_CLASS} />
           </>
         ) : null}
@@ -278,6 +416,7 @@ function MachineMenuItem({
   onToggle,
   shimmer = false,
   rejected = false,
+  disabled = false,
 }: {
   icon?: ReactNode;
   label: string;
@@ -287,6 +426,8 @@ function MachineMenuItem({
   onToggle?: () => void;
   shimmer?: boolean;
   rejected?: boolean;
+  /** 动作在途(如云端唤醒已受理但 Pod 未上线):置灰且不可点,防重复触发。 */
+  disabled?: boolean;
 }): ReactNode {
   const { t } = useTranslation();
   // Radix 的 onSelect 自定义事件不携带修饰键信息,且键盘 Enter/Space 会合成一次
@@ -299,8 +440,9 @@ function MachineMenuItem({
       className={cn(
         MENU_ITEM_CLASS,
         'group/machine-item',
-        rejected && 'text-[var(--text-tertiary)]',
+        (rejected || disabled) && 'text-[var(--text-tertiary)]',
       )}
+      disabled={disabled}
       onClick={(event) => {
         if (event.isTrusted) modifierHeldRef.current = event.metaKey || event.ctrlKey;
       }}

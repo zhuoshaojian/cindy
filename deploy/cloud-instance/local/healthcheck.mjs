@@ -11,6 +11,10 @@ try {
   process.exit(1);
 }
 const now = Date.now();
+// modelAccess is observation-only. Keep the health gate fixed to the original
+// five runtime components so disabled/manual-fallback model access remains a
+// healthy Pod.
+const blockingReadinessComponents = ['auth', 'database', 'binaries', 'maker', 'deviceLink'];
 if (
   !status ||
   status.version !== 1 ||
@@ -19,7 +23,7 @@ if (
   status.heartbeatAtMs > now ||
   now - status.heartbeatAtMs > staleAfterMs ||
   !status.readiness ||
-  Object.values(status.readiness).some((value) => value !== 'ready')
+  blockingReadinessComponents.some((component) => status.readiness[component] !== 'ready')
 ) {
   console.error('[cloud-health] runtime status is not ready or stale');
   process.exit(1);

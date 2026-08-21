@@ -15,13 +15,18 @@
 
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, Pencil, Trash2, Check, X } from 'lucide-react';
+import { RefreshCw, Pencil, Trash2, Check, X, Moon, Sun } from 'lucide-react';
+import { deviceDisplayName } from '@cindy/maker-shared/device-list';
 
+import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { useCloudInstances } from '@/features/cloud-instance/useCloudInstances';
+import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
 import type { DeviceLinkSettings } from '@/hooks/useDeviceLinkSettings';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { compareDevicesByName } from '@/features/device-link/deviceSort';
+import { toast } from '@/lib/toast';
 import {
   canBeControlledPlatform,
   controlToggleState,
@@ -54,6 +59,15 @@ function hardwareLabel(deviceInfo: DeviceLinkDeviceInfo | null | undefined): str
 /** 云端实例(relay 透传 deviceInfo.kind):列表置底、禁止重命名。 */
 function isCloudDevice(device: DeviceLinkDeviceView | null | undefined): boolean {
   return device?.deviceInfo?.kind === 'cloud';
+}
+
+function displayDeviceName(
+  device: DeviceLinkDeviceView | null | undefined,
+  t: (key: string, options?: { sequence: number }) => string,
+): string {
+  if (!device) return '';
+  const name = deviceDisplayName(device);
+  return resolveDesktopCloudDeviceName(name, t);
 }
 
 function memoryLabel(memoryGb: number | null | undefined): string | null {
@@ -142,6 +156,10 @@ export function MyDevicesPanel({
   variant?: 'all' | 'self' | 'others';
 }) {
   const { t } = useTranslation();
+  const { confirm } = useConfirmDialog();
+  // RemoteControlSection renders separate self/others panels; only the latter
+  // needs control-plane metadata, avoiding a duplicate list request.
+  const cloud = useCloudInstances(variant !== 'self');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   // 被对方撤销了本机访问权限的设备(控制端内存推导)。
@@ -155,6 +173,8 @@ export function MyDevicesPanel({
   // 短期上下线 / 心跳不再让顺序跳动,设备只在原位改在线点。本机单独置顶(下面单独渲染)。
   const others = (s.devices ?? [])
     .filter((d) => !d.isSelf)
+    // 云端能力未配置或被服务端禁用时，relay 里残留的 cloud 设备也不应露出。
+    .filter((d) => cloud.loadState === 'ready' || !isCloudDevice(d))
     // 云端实例整体置底(防误点),桶内沿用稳定身份排序(与切换栏一致)。
     .sort((a, b) => Number(isCloudDevice(a)) - Number(isCloudDevice(b)) || compareDevicesByName(a, b));
   const revokedControllers = new Set(s.revokedControllers);
@@ -194,6 +214,47 @@ export function MyDevicesPanel({
   // 抹掉一台仍存在、仍被撤销的设备的被拒状态。
   const handleDelete = async (deviceId: string) => {
     if (await s.remove(deviceId)) revokedDevicesStore.clearRevoked(deviceId);
+  };
+
+  // 动作/防重/刷新在 useCloudInstances 单一持有;这里只做确认框与 toast(UI 关注点)。
+  // hook 成功路径已刷新云端实例列表,面板补一次 device-link 列表刷新即可。
+  const handleCloudStop = async (instanceId: string) => {
+    try {
+      await cloud.stopInstance(instanceId);
+      void s.refresh(true);
+      toast.success(t('settings.devices.cloudInstance.toast.stopped'));
+    } catch {
+      toast.error(t('settings.devices.cloudInstance.toast.stopFailed'));
+    }
+  };
+
+  // 休眠实例的第一动作位变成「唤醒实例」;presence 上线由 relay 推送刷新设备列表,
+  // 这里只负责发起唤醒并提示,不等待上线终态。
+  const handleCloudWake = async (instanceId: string) => {
+    try {
+      await cloud.wake(instanceId);
+      void s.refresh(true);
+      toast.success(t('settings.devices.cloudInstance.toast.woke'));
+    } catch {
+      toast.error(t('settings.devices.cloudInstance.toast.wakeFailed'));
+    }
+  };
+
+  const handleCloudDelete = async (instanceId: string) => {
+    const confirmed = await confirm({
+      title: t('settings.devices.cloudInstance.deleteConfirm.title'),
+      description: t('settings.devices.cloudInstance.deleteConfirm.description'),
+      confirmText: t('settings.devices.cloudInstance.deleteConfirm.confirm'),
+      cancelText: t('settings.devices.cloudInstance.deleteConfirm.cancel'),
+    });
+    if (!confirmed) return;
+    try {
+      await cloud.deleteInstance(instanceId);
+      void s.refresh(true);
+      toast.success(t('settings.devices.cloudInstance.toast.deleted'));
+    } catch {
+      toast.error(t('settings.devices.cloudInstance.toast.deleteFailed'));
+    }
   };
 
   const cardClass = 'rounded-xl border border-[var(--border-default)] px-4 py-3';
@@ -265,7 +326,7 @@ export function MyDevicesPanel({
                 </div>
               ) : (
                 <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                  {self?.name || t('settings.devices.thisDevice')}
+                  {displayDeviceName(self, t) || t('settings.devices.thisDevice')}
                 </span>
               )}
               <span className="text-11 text-[var(--text-tertiary)]">
@@ -326,6 +387,9 @@ export function MyDevicesPanel({
           </li>
         ) : (
           others.map((d) => {
+            const cloudInstance = isCloudDevice(d)
+              ? cloud.instances.find((instance) => instance.deviceId === d.deviceId)
+              : undefined;
             const peerRevoked = revokedByPeer.has(d.deviceId);
             const control = controlToggleState(d);
             const inbound = inboundToggleState(s.enabled, revokedControllers.has(d.deviceId));
@@ -382,7 +446,7 @@ export function MyDevicesPanel({
                       </div>
                     ) : (
                       <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                        {d.name}
+                        {displayDeviceName(d, t)}
                       </span>
                     )}
                     <span className="truncate text-11 text-[var(--text-tertiary)]">
@@ -391,29 +455,97 @@ export function MyDevicesPanel({
                   </div>
                   {editingId !== d.deviceId && (
                     <div className="flex shrink-0 items-center gap-1">
-                      {!isCloudDevice(d) ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingId(d.deviceId);
-                            setEditingName(d.name);
-                          }}
-                          aria-label={t('settings.devices.rename')}
-                          className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(d.deviceId)}
-                        disabled={d.online}
-                        title={d.online ? t('settings.devices.deleteOnlineHint') : undefined}
-                        aria-label={t('settings.devices.delete')}
-                        className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      {isCloudDevice(d) ? (
+                        cloudInstance ? (
+                          <>
+                            {/* 第一动作位随在线态切换:在线可休眠;休眠中变唤醒(不再提供无效的休眠)。 */}
+                            {d.online ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleCloudStop(cloudInstance.instanceId)}
+                                disabled={cloud.pending !== null}
+                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Spinner
+                                  icon={Moon}
+                                  size={12}
+                                  spinning={
+                                    cloud.pending?.target === cloudInstance.instanceId
+                                    && cloud.pending.action === 'stop'
+                                  }
+                                />
+                                {cloud.pending?.target === cloudInstance.instanceId
+                                && cloud.pending.action === 'stop'
+                                  ? t('settings.devices.cloudInstance.stopping')
+                                  : t('settings.devices.cloudInstance.stop')}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => void handleCloudWake(cloudInstance.instanceId)}
+                                disabled={cloud.pending !== null}
+                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Spinner
+                                  icon={Sun}
+                                  size={12}
+                                  spinning={
+                                    cloud.pending?.target === cloudInstance.instanceId
+                                    && cloud.pending.action === 'wake'
+                                  }
+                                />
+                                {cloud.pending?.target === cloudInstance.instanceId
+                                && cloud.pending.action === 'wake'
+                                  ? t('settings.devices.cloudInstance.waking')
+                                  : t('settings.devices.cloudInstance.wake')}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => void handleCloudDelete(cloudInstance.instanceId)}
+                              disabled={cloud.pending !== null}
+                              className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--error-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Spinner
+                                icon={Trash2}
+                                size={12}
+                                spinning={
+                                  cloud.pending?.target === cloudInstance.instanceId
+                                  && cloud.pending.action === 'delete'
+                                }
+                              />
+                              {cloud.pending?.target === cloudInstance.instanceId
+                              && cloud.pending.action === 'delete'
+                                ? t('settings.devices.cloudInstance.deleting')
+                                : t('settings.devices.cloudInstance.delete')}
+                            </button>
+                          </>
+                        ) : null
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(d.deviceId);
+                              setEditingName(d.name);
+                            }}
+                            aria-label={t('settings.devices.rename')}
+                            className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(d.deviceId)}
+                            disabled={d.online}
+                            title={d.online ? t('settings.devices.deleteOnlineHint') : undefined}
+                            aria-label={t('settings.devices.delete')}
+                            className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -430,7 +562,7 @@ export function MyDevicesPanel({
                         checked={control.checked}
                         onCheckedChange={(v) => void s.setDeviceControlEnabled(d.deviceId, v)}
                         aria-label={t('settings.remoteControl.deviceControlToggleAria', {
-                          name: d.name,
+                          name: displayDeviceName(d, t),
                         })}
                       />
                     </ControlRow>
@@ -446,7 +578,7 @@ export function MyDevicesPanel({
                       disabled={inbound.disabled}
                       onCheckedChange={(v) => void onInboundChange(d.deviceId, v)}
                       aria-label={t('settings.remoteControl.myDevices.allowInboundAria', {
-                        name: d.name,
+                        name: displayDeviceName(d, t),
                       })}
                     />
                   </ControlRow>
