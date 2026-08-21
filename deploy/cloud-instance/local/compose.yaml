@@ -1,15 +1,35 @@
 services:
+  cindy-cloud-volume-init:
+    image: node:22-bookworm-slim
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mkdir -p /data/user-data /data/workspaces /data/home
+        chown 10001:10001 /data/user-data /data/workspaces /data/home
+    restart: "no"
+    volumes:
+      - cindy-cloud-data:/data
+
   cindy-cloud:
     build:
       context: ../../..
       dockerfile: deploy/cloud-instance/local/Dockerfile
+      target: development
     # Only linux/amd64 assets are pinned today. Pinning the platform keeps
     # Apple Silicon hosts from building an arm64 image that the capability
     # gate rejects (exit 78); Docker Desktop runs it via Rosetta.
     platform: linux/amd64
+    # The image defaults to the packaged runtime. Local compose intentionally
+    # keeps the source/Forge dev path for interactive debugging.
+    command: ["pnpm", "dev:desktop:headless:local"]
     init: true
     restart: unless-stopped
     stop_grace_period: 45s
+    depends_on:
+      cindy-cloud-volume-init:
+        condition: service_completed_successfully
     extra_hosts:
       - host.docker.internal:host-gateway
     environment:
@@ -21,13 +41,31 @@ services:
       XDT_POD_DEVICE_ID: ${XDT_POD_DEVICE_ID:?set XDT_POD_DEVICE_ID to the provisioned stable Pod id}
       XDT_ENDPOINT_MANIFEST_FILE: /run/config/endpoint.local.json
       XDT_USER_DATA_DIR: /var/lib/cindy/user-data
+      XDT_POD_WORKSPACES_DIR: /var/lib/cindy/workspaces
       CINDY_CLOUD_STATUS_FILE: /var/lib/cindy/status/status.json
     secrets:
       - pod_account_refresh_token
     volumes:
-      - cindy-cloud-user-data:/var/lib/cindy/user-data
-      - cindy-cloud-status:/var/lib/cindy/status
-      - cindy-cloud-workspaces:/var/lib/cindy/workspaces
+      - type: volume
+        source: cindy-cloud-data
+        target: /var/lib/cindy/user-data
+        volume:
+          subpath: user-data
+      - type: volume
+        source: cindy-cloud-data
+        target: /var/lib/cindy/workspaces
+        volume:
+          subpath: workspaces
+      - type: volume
+        source: cindy-cloud-data
+        target: /home/cindy
+        volume:
+          subpath: home
+      - type: tmpfs
+        target: /var/lib/cindy/status
+        tmpfs:
+          size: 16777216
+          mode: 01777
       - type: bind
         source: ${CINDY_ENDPOINT_MANIFEST_FILE:?set CINDY_ENDPOINT_MANIFEST_FILE to a host-reachable endpoint.local.json}
         target: /run/config/endpoint.local.json
@@ -44,9 +82,7 @@ secrets:
     file: ${CINDY_POD_REFRESH_TOKEN_FILE:?set CINDY_POD_REFRESH_TOKEN_FILE to a gitignored secret file}
 
 volumes:
-  cindy-cloud-user-data:
-  cindy-cloud-status:
-  cindy-cloud-workspaces:
+  cindy-cloud-data:
 
 networks:
   default:

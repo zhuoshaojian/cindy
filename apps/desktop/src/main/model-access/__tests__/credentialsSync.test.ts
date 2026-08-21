@@ -128,11 +128,17 @@ describe('credentialsSync', () => {
   });
 
   it('503 → disabled 终态:不写任何东西,重复 sync 不再打服务端;retry 可重新发起', async () => {
-    const h = makeHarness();
+    const info = vi.fn();
+    const h = makeHarness({ log: { info, warn: vi.fn() } });
     h.fetchMock.mockRejectedValue(serverError('MODEL_ACCESS_DISABLED', 503));
 
     const first = await h.sync.sync();
     expect(first.state).toBe('disabled');
+    expect(first.errorCode).toBe('MODEL_ACCESS_DISABLED');
+    expect(info).toHaveBeenCalledWith(expect.any(String), {
+      code: 'MODEL_ACCESS_DISABLED',
+      statusCode: 503,
+    });
     expect(h.fetchMock).toHaveBeenCalledTimes(1);
     expect(h.written).toEqual([]);
     expect(h.store.getSource()).toBeNull();
@@ -147,27 +153,61 @@ describe('credentialsSync', () => {
   });
 
   it('403 ORG_NOT_SUPPORTED → unsupported 终态,不重试', async () => {
-    const h = makeHarness();
+    const info = vi.fn();
+    const h = makeHarness({ log: { info, warn: vi.fn() } });
     h.fetchMock.mockRejectedValue(serverError('ORG_NOT_SUPPORTED', 403));
 
     const result = await h.sync.sync();
     expect(result.state).toBe('unsupported');
+    expect(result.errorCode).toBe('ORG_NOT_SUPPORTED');
     expect(h.fetchMock).toHaveBeenCalledTimes(1); // 无自动重试
+    expect(info).toHaveBeenCalledWith(expect.any(String), {
+      code: 'ORG_NOT_SUPPORTED',
+      statusCode: 403,
+    });
 
     await h.sync.sync();
     expect(h.fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('网络/5xx 失败:退避重试用尽后 failed,本地既有 key 不受影响', async () => {
-    const h = makeHarness();
+    const warn = vi.fn();
+    const h = makeHarness({ log: { info: vi.fn(), warn } });
     h.setLocalKey('sk-old');
     h.fetchMock.mockRejectedValue(serverError('GATEWAY_ERROR', 502));
 
     const result = await h.sync.sync();
     expect(result.state).toBe('failed');
-    expect(result.errorCode).toBe('SYNC_FAILED');
+    expect(result.errorCode).toBe('GATEWAY_ERROR');
     expect(h.fetchMock).toHaveBeenCalledTimes(3); // 首次 + 2 次重试
     expect(h.written).toEqual([]); // 绝不清/写本地 key
+    expect(warn).toHaveBeenLastCalledWith(expect.any(String), {
+      code: 'GATEWAY_ERROR',
+      statusCode: 502,
+    });
+  });
+
+  it('AD_ACCOUNT_MISSING 明确失败且不做无意义重试', async () => {
+    const warn = vi.fn();
+    const h = makeHarness({ log: { info: vi.fn(), warn } });
+    h.fetchMock.mockRejectedValue(serverError('AD_ACCOUNT_MISSING', 403));
+
+    const result = await h.sync.sync();
+    expect(result).toMatchObject({ state: 'failed', errorCode: 'AD_ACCOUNT_MISSING' });
+    expect(h.fetchMock).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      code: 'AD_ACCOUNT_MISSING',
+      statusCode: 403,
+    });
+  });
+
+  it('SERVICE_UNAVAILABLE 保留子码并重试,不误归类为 disabled', async () => {
+    const h = makeHarness();
+    h.fetchMock.mockRejectedValue(serverError('SERVICE_UNAVAILABLE', 503));
+
+    const result = await h.sync.sync();
+    expect(result).toMatchObject({ state: 'failed', errorCode: 'SERVICE_UNAVAILABLE' });
+    expect(h.fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('写 key 失败(safeStorage 不可用)→ failed(SAFE_STORAGE_UNAVAILABLE)', async () => {
@@ -249,6 +289,7 @@ describe('credentialsSync', () => {
 
     const result = await h.sync.sync();
     expect(result.state).toBe('failed');
+    expect(result.errorCode).toBe('INVALID_RESPONSE');
     expect(h.written).toEqual([]); // 本地 key 原样保留
     expect(h.store.getSource()).toBeNull(); // endpoint 不落盘
   });

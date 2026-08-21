@@ -16,6 +16,7 @@
     "./chat-quotes": "./src/chatQuotes.ts",
     "./command-display": "./src/commandDisplay.ts",
     "./client-endpoints": "./src/clientEndpoints.ts",
+    "./cloud-instance": "./src/cloudInstance.ts",
     "./composer-palette": "./src/composerPalette.ts",
     "./device-list": "./src/deviceList.ts",
     "./device-link-contract": "./src/deviceLinkContract.ts",

@@ -131,6 +131,16 @@ export function setSelectedMachineIdTransient(next: MachineSelection): void {
   commit(next);
 }
 
+/** Remove temporarily hidden cloud devices without overwriting the persisted selection. */
+export function removeCloudMachineSelection(
+  selection: MachineSelection,
+  cloudDeviceIds: ReadonlySet<string>,
+): MachineSelection {
+  if (selection === MACHINE_ALL) return selection;
+  const kept = selection.filter((id) => id === MACHINE_LOCAL || !cloudDeviceIds.has(id));
+  return kept.length > 0 ? canonicalizeMachineEntries(kept) : MACHINE_ALL;
+}
+
 function subscribe(fn: () => void): () => void {
   subs.add(fn);
   return () => {

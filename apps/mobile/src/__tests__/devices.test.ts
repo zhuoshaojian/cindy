@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { DeviceView } from '@cindy/device-link';
 import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
+import { selectMobileHomeSources } from '@/session/mobileHome';
 import {
   deviceAccessState,
   isControllableDevice,
@@ -43,15 +44,83 @@ describe('mobile controllable device filter', () => {
 
   it('does not expose rename for cloud devices in the home device menu', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
-    expect(source).toContain(
-      'item.deviceId && !cloudDeviceIds.has(item.deviceId)',
-    );
+    // 云端行由 cloudItems 独立渲染且不传 onRename;deviceFilters 已把 cloud 项
+    // 整体排除,普通设备行的 onRename 无需再按 cloudDeviceIds 二次判断。
+    expect(source).toContain('onRename={item.deviceId ? () => onRenameDevice(item) : undefined}');
+    expect(source).toContain('!cloudDeviceIds.has(item.deviceId)');
   });
 
   it('does not render a cloud icon in the home device menu', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
     expect(source).not.toContain('deviceMenuIconSlot');
-    expect(source).not.toContain('<Cloud');
+    // 只防 JSX 图标(<Cloud ... />),不误伤 Pick<CloudInstanceView> 这类类型标注。
+    expect(source).not.toMatch(/<Cloud[\s/>]/);
+  });
+
+  it('renders each cloud instance once and wakes offline rows before switching filters', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
+    expect(source).toContain('const cloudInstanceDeviceIds = useMemo');
+    expect(source).toContain('const cloudItems = useMemo');
+    expect(source).toContain('!cloudInstanceDeviceIds.has(item.deviceId)');
+    expect(source).toContain('onSelect(item.filter)');
+    expect(source).toContain('void cloud.wake(item.instance.instanceId).then');
+    expect(source).toContain('onSelect(buildCloudFilterItem(result');
+    expect(source).toContain('const selectedCloudExists = cloudInstances.instances.some');
+    expect(source).toContain('disabled={!item.online && cloud.pending !== null}');
+    expect(source).toContain("status={item.online ? 'online' : 'offline'}");
+    expect(source).toContain('onManageCloudInstance={openCloudInstanceActions}');
+    expect(source).toContain('onLongPress={');
+    expect(source).toContain('cloudInstances.stopInstance');
+    expect(source).toContain('cloudInstances.deleteInstance');
+    expect(source).toContain("t('deviceLink.cloudInstance.deleteConfirmDescription')");
+    expect(source).not.toContain('cloudWakeItems');
+  });
+
+  it('hides cloud devices and their mirror sessions once at the Home source boundary', () => {
+    const regularSession = {
+      deviceLinkDeviceId: 'regular-device',
+      deviceLinkDeviceName: 'Mac',
+    };
+    const cloudSession = {
+      deviceLinkDeviceId: 'cloud-device',
+      deviceLinkDeviceName: '__cindy_cloud_device_name__:7',
+    };
+    const hiddenCachedCloudSession = {
+      deviceLinkDeviceId: 'cached-cloud-device',
+      deviceLinkDeviceName: '__cindy_cloud_device_name__',
+    };
+    const result = selectMobileHomeSources(
+      [
+        { deviceId: 'regular-device' },
+        { deviceId: 'cloud-device', kind: 'cloud' },
+      ],
+      [regularSession, cloudSession, hiddenCachedCloudSession],
+      true,
+    );
+    expect(result.devices).toEqual([{ deviceId: 'regular-device' }]);
+    expect(result.sessions).toEqual([regularSession]);
+
+    const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
+    expect(source).toContain('selectMobileHomeSources(');
+    expect(source).toContain("cloudInstances.loadState === 'unsupported'");
+    expect(source).toContain('excludeOrcaWorkerSessions(visibleSessions)');
+    expect(source).not.toContain(
+      "item.device.deviceInfo?.kind !== 'cloud' || cloudInstances.loadState === 'ready'",
+    );
+    expect(source).not.toContain(
+      "item.kind !== 'cloud' || cloudInstances.loadState === 'ready'",
+    );
+  });
+
+  it('keeps cloud devices and mirror sessions when cloud capability is enabled', () => {
+    const devices = [{ deviceId: 'cloud-device', kind: 'cloud' }];
+    const sessions = [{
+      deviceLinkDeviceId: 'cloud-device',
+      deviceLinkDeviceName: '__cindy_cloud_device_name__:7',
+    }];
+    const result = selectMobileHomeSources(devices, sessions, false);
+    expect(result.devices).toBe(devices);
+    expect(result.sessions).toBe(sessions);
   });
 
   it('requires online, remoteControlEnabled and not self', () => {

@@ -83,6 +83,7 @@ import { useRemoteProjectSessions } from '@/features/device-link/remoteProjectsS
 import { isRemoteSessionWriteBlocked } from './lib/remoteSessionWriteGuard';
 import { Tip } from '@/components/ui/tooltip';
 import { useCloudDeviceIds } from '@/features/device-link/useCloudDeviceIds';
+import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
 
 const log = createLogger('SessionContentHeader');
 
@@ -175,6 +176,9 @@ export function SessionContentHeader({
       : null;
   const remoteIconConnectionStatus = session.deviceLinkDeviceId
     ? (session.deviceLinkConnectionStatus ?? 'connected')
+    : null;
+  const displayDeviceLinkName = session.deviceLinkDeviceName
+    ? resolveDesktopCloudDeviceName(session.deviceLinkDeviceName, t)
     : null;
 
   /* ---- 行内重命名（与 SessionItem 同交互：双击进入，Enter 提交 / Esc 取消 / Blur 提交，
@@ -533,9 +537,7 @@ export function SessionContentHeader({
       )}
       {!isEditing && remoteIconKind && (
         <Tip
-          text={
-            session.deviceLinkDeviceName ?? session.deviceLinkDeviceId ?? session.remoteHostId ?? ''
-          }
+          text={displayDeviceLinkName ?? session.deviceLinkDeviceId ?? session.remoteHostId ?? ''}
         >
           <RemoteProjectIcon
             kind={remoteIconKind}

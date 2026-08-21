@@ -199,6 +199,20 @@ import {
   type PendingRemotePrecreatedWorktreeTarget,
   type RemotePrecreatedWorktreeLedgerSnapshot,
 } from '../shared/remotePrecreatedWorktreeLedger';
+import {
+  CLOUD_INSTANCE_INVOKE,
+  type CloudInstanceCreateInput,
+  type CloudInstanceDeleteInput,
+  type CloudInstanceDeleteResult,
+  type CloudInstanceEnableResult,
+  type CloudInstanceRenameInput,
+  type CloudInstanceRenameResult,
+  type CloudInstanceStatus,
+  type CloudInstanceStatusInput,
+  type CloudInstanceStopInput,
+  type CloudInstanceView,
+  type CloudInstanceWakeInput,
+} from '../shared/cloudInstanceIpc';
 
 // Codex 元 IPC 全部升级到 maker.* (agentKind 参数化), preload 不再 import vendor/codex/ipcChannels。
 //   auth      → maker:auth:*(agentKind)
@@ -3907,6 +3921,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // reveal / suggest-name / list-branches。删除 / 孤儿扫描刻意不暴露——
   // renderer 不主动触发 worktree 删除（关闭会话由 main 在 close-session
   // 路径里自动收尾）。详见 worktree-parallel-sessions-frontend.md M7。
+  // ── Cloud instances (账号级云端实例 control-plane) ────────────────────
+  // Token / endpoint / network stay in main; renderer only sees typed actions.
+  cloudInstances: {
+    list: (): Promise<{ instances: CloudInstanceView[] }> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.LIST),
+    wake: (input: CloudInstanceWakeInput = {}): Promise<CloudInstanceEnableResult> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.WAKE, input),
+    create: (input: CloudInstanceCreateInput = {}): Promise<CloudInstanceEnableResult> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.CREATE, input),
+    rename: (input: CloudInstanceRenameInput): Promise<CloudInstanceRenameResult> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.RENAME, input),
+    status: (input: CloudInstanceStatusInput = {}): Promise<{ status: CloudInstanceStatus }> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.STATUS, input),
+    stop: (input: CloudInstanceStopInput): Promise<{ status: CloudInstanceStatus }> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.STOP, input),
+    delete: (input: CloudInstanceDeleteInput): Promise<CloudInstanceDeleteResult> =>
+      ipcRenderer.invoke(CLOUD_INSTANCE_INVOKE.DELETE, input),
+  },
+
   // ── Device Link (设备互联/跨设备远程控制) ─────────────────────────────
   // 同账号设备经 server relay 互联;此处只暴露开关 + 设备列表管理面,
   // 隧道(远程会话控制)在 M3 接入。

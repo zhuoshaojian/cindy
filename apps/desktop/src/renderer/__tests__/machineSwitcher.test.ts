@@ -3,16 +3,25 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Session } from '@/lib/ccAgent.types';
 import {
   canonicalizeMachineEntries,
+  getSelectedMachineId,
   machineSelectionEquals,
   MACHINE_ALL,
   MACHINE_LOCAL,
   normalizeSelectedMachineId,
   parseMachineSelection,
+  removeCloudMachineSelection,
   selectVisibleSessions,
   serializeMachineSelection,
+  setSelectedMachineId,
+  setSelectedMachineOwner,
+  setSelectedMachineIdTransient,
   toggleMachineSelection,
 } from '@/features/device-link/selectedMachineStore';
-import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
+import { sidebarOwnerStorageKey } from '@/lib/sidebarOwnerStorage';
+import {
+  filterRemoteSessionsForCloudCapability,
+  remoteProjectsStore,
+} from '@/features/device-link/remoteProjectsStore';
 import {
   resolveSelectableIdsForNormalize,
   selectRemoteSessionBootstrapFailures,
@@ -24,6 +33,10 @@ import {
 import { buildSwitcherDevices, selectableDeviceIds } from '@/features/device-link/switcherDevices';
 import { compareDevicesByName } from '@/features/device-link/deviceSort';
 import { applyDeviceRename } from '@/features/device-link/useDeviceLinkDeviceList';
+import {
+  CLOUD_DEVICE_NAME_SENTINEL,
+  formatCloudDeviceName,
+} from '@cindy/maker-shared/device-list';
 
 /** 构造最小设备视图(只填 buildSwitcherDevices 关心的字段)。 */
 function mkDevice(
@@ -144,6 +157,76 @@ describe('断网后远端选择的逃生路径', () => {
         { deviceId: 'dev-a', name: 'Mac A', status: 'connecting' },
       ]),
     ).toBe(true);
+  });
+});
+
+describe('cloud capability disablement', () => {
+  it('transiently falls back from cloud selection without overwriting persisted intent', () => {
+    const ownerId = 'machine-switcher-cloud-test';
+    const values = new Map<string, string>([
+      [
+        sidebarOwnerStorageKey('cc-agent.sidebar.selectedMachines', ownerId),
+        serializeMachineSelection(MACHINE_ALL),
+      ],
+    ]);
+    const storage: Storage = {
+      get length() {
+        return values.size;
+      },
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      key: (index: number) => [...values.keys()][index] ?? null,
+      removeItem: (key: string) => {
+        values.delete(key);
+      },
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+    };
+    const originalStorage = globalThis.localStorage;
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: storage,
+    });
+    try {
+      setSelectedMachineOwner(ownerId);
+      setSelectedMachineId(['cloud-device']);
+      const persisted = [...values.values()][0];
+      setSelectedMachineIdTransient(
+        removeCloudMachineSelection(getSelectedMachineId(), new Set(['cloud-device'])),
+      );
+      expect(getSelectedMachineId()).toBe(MACHINE_ALL);
+      expect([...values.values()][0]).toBe(persisted);
+      expect(persisted).toBe('["cloud-device"]');
+    } finally {
+      setSelectedMachineId(MACHINE_ALL);
+      setSelectedMachineOwner(null);
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: originalStorage,
+      });
+    }
+  });
+
+  it('filters only cloud mirror sessions while unsupported', () => {
+    const localRemote = mkSession('regular', 'regular-device');
+    const cloudRemote = mkSession('cloud', 'cloud-device');
+    expect(
+      filterRemoteSessionsForCloudCapability([localRemote, cloudRemote], {
+        unsupported: true,
+        cloudDeviceIds: new Set(['cloud-device']),
+      }).map((session) => session.id),
+    ).toEqual(['regular']);
+  });
+
+  it('keeps cloud mirror sessions when the capability is enabled', () => {
+    const cloudRemote = mkSession('cloud', 'cloud-device');
+    expect(
+      filterRemoteSessionsForCloudCapability([cloudRemote], {
+        unsupported: false,
+        cloudDeviceIds: new Set(['cloud-device']),
+      }),
+    ).toEqual([cloudRemote]);
   });
 });
 
@@ -374,6 +457,44 @@ describe('buildSwitcherDevices', () => {
       revoked: new Set(),
     });
     expect(result).toEqual([{ deviceId: 'dev-a', name: '新名', status: 'connected' }]);
+  });
+
+  it('同步分片不会把未改名 cloud 的 viewer-locale sentinel 覆盖回 Pod selfName', () => {
+    const result = buildSwitcherDevices({
+      fullList: [
+        mkDevice('cloud', {
+          name: 'Cloud',
+          selfName: 'Cloud',
+          deviceInfo: { kind: 'cloud' },
+        }),
+      ],
+      syncedDevices: [{ deviceId: 'cloud', deviceName: 'Cloud', sessionCount: 1, connected: true }],
+      revoked: new Set(),
+    });
+    expect(result).toEqual([
+      {
+        deviceId: 'cloud',
+        name: CLOUD_DEVICE_NAME_SENTINEL,
+        kind: 'cloud',
+        status: 'connected',
+      },
+    ]);
+  });
+
+  it('设备切换模型保留 cloud 序号哨兵供最终 renderer 按 locale 翻译', () => {
+    const name = formatCloudDeviceName(3);
+    const result = buildSwitcherDevices({
+      fullList: [
+        mkDevice('cloud', {
+          name,
+          selfName: name,
+          deviceInfo: { kind: 'cloud' },
+        }),
+      ],
+      syncedDevices: [{ deviceId: 'cloud', deviceName: name, sessionCount: 1, connected: true }],
+      revoked: new Set(),
+    });
+    expect(result[0]?.name).toBe(name);
   });
 
   it('同步分片名为空 → 回退 fullList 既有名(不被空名覆盖)', () => {

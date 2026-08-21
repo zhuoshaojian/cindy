@@ -3411,6 +3411,7 @@
       "refresh": "刷新",
       "empty": "暂无其它设备。在另一台电脑上用同一账号登录 {{appName}} 后，这里会显示该设备。",
       "thisDevice": "本机",
+      "cloudDeviceName": "云端",
       "status": {
         "online": "在线",
         "busy": "忙碌中"
@@ -3425,6 +3426,28 @@
       "renameCancel": "取消",
       "delete": "删除",
       "deleteOnlineHint": "在线设备无法删除",
+      "cloudInstance": {
+        "stop": "休眠实例",
+        "stopping": "休眠中…",
+        "wake": "唤醒实例",
+        "waking": "唤醒中…",
+        "delete": "删除实例",
+        "deleting": "删除中…",
+        "deleteConfirm": {
+          "title": "删除云端实例？",
+          "description": "删除后，云端数据将被删除且无法恢复，同时会移除对应设备。",
+          "confirm": "删除实例",
+          "cancel": "取消"
+        },
+        "toast": {
+          "stopped": "云端实例已休眠",
+          "deleted": "云端实例已删除",
+          "stopFailed": "休眠云端实例失败，请稍后重试",
+          "deleteFailed": "删除云端实例失败，请稍后重试",
+          "woke": "云端实例正在唤醒",
+          "wakeFailed": "唤醒云端实例失败，请稍后重试"
+        }
+      },
       "error": {
         "unavailable": "设备互联服务暂不可用(服务端未启用或网络异常)",
         "listFailed": "设备列表获取失败"
@@ -7757,6 +7780,11 @@
       "notFound": "未找到该任务"
     },
     "sidebar": {
+      "cloud": {
+        "wake": "唤醒云端",
+        "waking": "唤醒中…",
+        "wakeFailed": "唤醒云端失败，请稍后重试"
+      },
       "machineSwitcher": {
         "allMachines": "所有",
         "localMachine": "本机",

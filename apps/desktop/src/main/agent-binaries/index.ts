@@ -264,6 +264,9 @@ export async function prepare(
           : undefined,
       });
       if (fallback.ready) {
+        console.info(
+          `[agent-binaries/${kind}] packaged Linux fallback source=${fallback.source}: ${fallback.binaryPath}`,
+        );
         if (broadcastProgress && fallback.installed) {
           broadcastBinaryDownloadProgress({
             progress: 100,

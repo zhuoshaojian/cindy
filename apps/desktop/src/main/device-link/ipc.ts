@@ -62,6 +62,7 @@ import {
   readDeviceLinkSettings,
   readLastKnownDeviceNames,
   rememberLastKnownDeviceName,
+  forgetLastKnownDeviceName,
   setDeviceControlEnabled,
 } from './settings-store';
 import { activeOwnerScopeKey, ownerScopedUserDataPath } from '../appSessionState';
@@ -470,10 +471,14 @@ export async function handleDeleteDevice(
     throwIpcError('INVALID_PARAMS', 'deviceId is required');
   }
   try {
-    return await deps.apiFetch<{ deviceId: string; deleted: boolean }>(
+    const result = await deps.apiFetch<{ deviceId: string; deleted: boolean }>(
       `/api/device-link/devices/${encodeURIComponent(deviceId)}`,
       { method: 'DELETE' },
     );
+    if (result.deleted) {
+      void deps.forgetLastKnownDeviceName(deviceId);
+    }
+    return result;
   } catch (err) {
     rethrowServerError(err);
   }

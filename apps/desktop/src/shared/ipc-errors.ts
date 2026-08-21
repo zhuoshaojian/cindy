@@ -119,6 +119,8 @@ export type IpcErrorCode =
   | 'REMOTE_WORKDIR_UNAVAILABLE' // 被控端网络目录不可访问 / 探测超时
   | 'SESSION_REFERENCE_UNAVAILABLE' // 会话引用不存在、离线、撤权、预算/形状非法
   | 'SESSION_REFERENCE_UNSUPPORTED' // 目标端版本不能消费可信会话引用快照
+  | 'CLOUD_INSTANCE_DISABLED' // 云端能力未为当前 membership 启用；Renderer 隐藏云端 UI
+  | 'CLOUD_INSTANCE_UNAVAILABLE' // 云端实例 control-plane 网络不可达 / 5xx
   // right-sidebar tabs(对标 Codex in-app browser sidebar 多 Tab 容器)
   | 'RIGHT_SIDEBAR_TOO_MANY_TABS' // 单 session 超 20 个 tab
   | 'RIGHT_SIDEBAR_UNKNOWN_KIND' // kind 不在 plugin registry 里
@@ -322,6 +324,8 @@ const IPC_ERROR_CODES: ReadonlySet<IpcErrorCode> = new Set<IpcErrorCode>([
   'REMOTE_WORKDIR_UNAVAILABLE',
   'SESSION_REFERENCE_UNAVAILABLE',
   'SESSION_REFERENCE_UNSUPPORTED',
+  'CLOUD_INSTANCE_DISABLED',
+  'CLOUD_INSTANCE_UNAVAILABLE',
   'RIGHT_SIDEBAR_TOO_MANY_TABS',
   'RIGHT_SIDEBAR_UNKNOWN_KIND',
   'RIGHT_SIDEBAR_STATE_TOO_LARGE',

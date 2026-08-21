@@ -70,6 +70,8 @@ const newGoalDialogSource = readSource('components', 'new-chat', 'NewGoalDialog.
 
 const chatInputSource = readSource('components', 'new-chat', 'ChatInput.tsx');
 
+const extraDirsButtonSource = readSource('components', 'new-chat', 'ExtraDirsButton.tsx');
+
 const sidebarUpperSource = readSource('features', 'cc-agent', 'CCAgentSidebarUpper.tsx');
 
 describe('Shared create project picker', () => {
@@ -590,15 +592,14 @@ describe('Shared create project picker', () => {
   });
 
   // #807:设备切换 pill。三条产品裁决写进源码断言,防后续重构悄悄改掉。
-  it('wires the device switcher pill and keeps it invisible without paired devices', () => {
+  it('wires the device switcher pill and only stays visible empty for first cloud wake', () => {
     expect(newMakerDraftRouteSource).toContain(
       'const { devices: selectableDevices, loaded: selectableDevicesLoaded } = useSelectableDevices();',
     );
     expect(newMakerDraftRouteSource).toContain('<DeviceSwitcherPill');
-    // 没有对端设备 → 组件自己返回 null,只有本机的用户看不到任何新增控件。
-    expect(deviceSwitcherPillSource).toContain('if (devices.length === 0) return null');
-    // 离线设备列出但禁用 —— 掉线时从列表消失会让用户以为配对丢了。
-    expect(deviceSwitcherPillSource).toContain('disabled={!device.online}');
+    // 具体行语义(离线云端可唤醒 / 普通离线禁用 / 0 实例首次唤醒 / 空列表隐藏)由
+    // DeviceSwitcherPill.test.tsx 的行为测试锁定,这里只钉跨文件接线,不锁表达式写法。
+    expect(deviceSwitcherPillSource).toContain('cloudWake?.onWake(device.cloudInstanceId)');
     // 换设备后停在这台设备的「对话」:上一台的项目路径在新机器上基本不存在,
     // 留着会让用户以为项目跟过来了、发送时才在被控端 path guard 上失败。
     expect(newMakerDraftRouteSource).toContain('const handleDeviceChange = useCallback(');
@@ -643,7 +644,7 @@ describe('Shared create project picker', () => {
     const body = handler.slice(0, handler.indexOf('    [applyDraftTarget'));
     expect(body).toContain('deviceId: draft.deviceLinkDeviceId,');
     expect(body).toContain('workingDir: dir,');
-    // 而那个动作**总是**显式带上设备字段,所以这条不变量对四条路径一次性成立,
+    // 而那个动作**总是**显式带上设备字段,所以这条不变量对六条路径一次性成立,
     // 不再依赖每个调用方各自记得拼一个 keepDevice。
     const action = newMakerDraftRouteSource.slice(
       newMakerDraftRouteSource.indexOf('const applyDraftTarget = useCallback('),
@@ -1266,18 +1267,19 @@ describe('Shared create project picker', () => {
    * ─── 草稿运行目标的转移:两条主不变量 ────────────────────────────────────────
    *
    * 这两条替代了先前十余条按「路径 × 状态」逐格 pin 的断言。那种写法锁的是矩阵的每一格,
-   * 而矩阵本身就是缺陷来源:4 条转移路径 × 9 处连带状态,漏掉一格既不会编译失败也不会有测试
+   * 而矩阵本身就是缺陷来源:六条转移路径 × 9 处连带状态,漏掉一格既不会编译失败也不会有测试
    * 变红,#807 的 review 里约十轮都在补格子(切设备漏 worktree 三态、同机换项目误重置运行配置、
    * 指向设备前忘了作废快照、回落路径两样清理都漏、picker 换项目不作废 worktree……)。
    *
-   * 收敛之后只需要锁两件事:① 四条路径都**只声明目标**,不自己做副作用;② 每处连带状态绑对了
-   * 它真正依赖的那一半(设备 / 项目)。第五条路径出现时,①会直接失败,而②保证它自动是对的。
+   * 收敛之后只需要锁两件事:① 六条路径都**只声明目标**,不自己做副作用;② 每处连带状态绑对了
+   * 它真正依赖的那一半(设备 / 项目)。第七条路径出现时,①会直接失败,而②保证它自动是对的。
    */
   it('routes every draft-target transition through the single action', () => {
-    // 五条路径:设备 pill、设备域浏览器选项目、工作区 picker、所选设备失效后的自动回落、
-    // “对话”分组导航请求。声明本身是 `= useCallback(` 不匹配这个模式,所以数出来的就是调用点。
+    // 六条路径:设备 pill、设备域浏览器选项目、工作区 picker、所选设备失效后的自动回落、
+    // “对话”分组导航请求、云端 presence 上线后的激活。切回本机统一走设备 pill。
+    // 声明本身是 `= useCallback(` 不匹配这个模式,所以数出来的就是调用点。
     const calls = newMakerDraftRouteSource.match(/applyDraftTarget\(\{/g) ?? [];
-    expect(calls.length).toBe(5);
+    expect(calls.length).toBe(6);
     // 组件里不得再有任何一处手写这些副作用 —— 手写一处就等于又开了一条绕过推导的路。
     // patchDraft 仍可出现(入场清 extraDirs、发送后复位),但不得再带设备字段。
     expect(newMakerDraftRouteSource).not.toContain('deviceLinkDeviceId: deviceId,');
@@ -1711,6 +1713,21 @@ describe('Shared create project picker', () => {
     expect(newMakerDraftRouteSource).not.toContain(
       'isDeviceLinkDraft\n    ? (deviceLinkInitial?.providerId ?? null)',
     );
+  });
+
+  it('云端创建入口只由设备 pill 承载，并复用既有 presence 上线状态机', () => {
+    expect(newMakerDraftRouteSource).not.toContain('create-agent-cloud-toggle');
+    expect(newMakerDraftRouteSource).not.toContain('cloudToggleState');
+    expect(newMakerDraftRouteSource).not.toContain('handleCloudToggle');
+    expect(newMakerDraftRouteSource).toContain('onWake: handleCloudWake');
+    expect(newMakerDraftRouteSource).toContain(
+      'if (!wakeActivation || !cloud.onlineDeviceIds.has(wakeActivation.deviceId)) return;',
+    );
+    expect(newMakerDraftRouteSource).toContain(
+      'activateCloudDevice(wakeActivation.deviceId, wakeActivation.deviceName);',
+    );
+    expect(deviceSwitcherPillSource).toContain("device.kind === 'cloud'");
+    expect(deviceSwitcherPillSource).toContain('cloudWake?.onWake(device.cloudInstanceId)');
   });
 
   it('keeps recent-folder storage out of project-option selection', () => {

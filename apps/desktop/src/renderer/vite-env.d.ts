@@ -109,6 +109,17 @@ type RemoteHostSnapshot = import('@cindy/maker-remote-ssh').HostSnapshot & {
   /** 隧道实时状态 (main 进程内存态); 无记录 → null。 */
   agentProxyTunnel: AgentProxyTunnelStatePayload | null;
 };
+type CloudInstanceCreateInput = import('../shared/cloudInstanceIpc').CloudInstanceCreateInput;
+type CloudInstanceDeleteInput = import('../shared/cloudInstanceIpc').CloudInstanceDeleteInput;
+type CloudInstanceDeleteResult = import('../shared/cloudInstanceIpc').CloudInstanceDeleteResult;
+type CloudInstanceEnableResult = import('../shared/cloudInstanceIpc').CloudInstanceEnableResult;
+type CloudInstanceRenameInput = import('../shared/cloudInstanceIpc').CloudInstanceRenameInput;
+type CloudInstanceRenameResult = import('../shared/cloudInstanceIpc').CloudInstanceRenameResult;
+type CloudInstanceStatus = import('../shared/cloudInstanceIpc').CloudInstanceStatus;
+type CloudInstanceStatusInput = import('../shared/cloudInstanceIpc').CloudInstanceStatusInput;
+type CloudInstanceStopInput = import('../shared/cloudInstanceIpc').CloudInstanceStopInput;
+type CloudInstanceView = import('../shared/cloudInstanceIpc').CloudInstanceView;
+type CloudInstanceWakeInput = import('../shared/cloudInstanceIpc').CloudInstanceWakeInput;
 /** 设备互联:REST 设备视图(同 shared/deviceLinkIpc.ts DeviceLinkDeviceView) */
 interface DeviceLinkDeviceInfo {
   cpuLabel?: string;
@@ -1114,6 +1125,16 @@ interface ElectronAPI {
   appDisplayVersionDetail: string;
   preferredSystemLocale: ApplicationMenuLocale;
   onLocaleChanged?: (cb: (locale: import('../shared/locale').SupportedLocale) => void) => () => void;
+  /** 账号级云端实例 control-plane；鉴权和网络均封装在 main。 */
+  cloudInstances: {
+    list: () => Promise<{ instances: CloudInstanceView[] }>;
+    wake: (input?: CloudInstanceWakeInput) => Promise<CloudInstanceEnableResult>;
+    create: (input?: CloudInstanceCreateInput) => Promise<CloudInstanceEnableResult>;
+    rename: (input: CloudInstanceRenameInput) => Promise<CloudInstanceRenameResult>;
+    status: (input?: CloudInstanceStatusInput) => Promise<{ status: CloudInstanceStatus }>;
+    stop: (input: CloudInstanceStopInput) => Promise<{ status: CloudInstanceStatus }>;
+    delete: (input: CloudInstanceDeleteInput) => Promise<CloudInstanceDeleteResult>;
+  };
   getDeviceId: () => Promise<string>;
   windowMinimize: () => void;
   windowMaximize: () => void;

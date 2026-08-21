@@ -52,6 +52,34 @@ afterAll(() => {
 });
 
 describe('legacy managed binary migration', () => {
+  it('uses an exact pinned PATH binary without touching the network', async () => {
+    const systemCodex = path.join(tempDir, 'prebaked', 'codex');
+    fs.mkdirSync(path.dirname(systemCodex), { recursive: true });
+    fs.writeFileSync(systemCodex, '#!/bin/sh\necho \"codex-cli 0.145.0\"\\n', { mode: 0o755 });
+    execFileMock.mockImplementation((
+      command: string,
+      _args: string[],
+      _options: unknown,
+      callback: (error: Error | null, stdout: string, stderr: string) => void,
+    ) => {
+      if (command === '/bin/sh') {
+        callback(null, `${systemCodex}\n`, '');
+        return;
+      }
+      callback(null, 'codex-cli 0.145.0\n', '');
+    });
+
+    const result = await fallback.prepareLinuxRuntimeFallback('codex');
+
+    expect(result).toEqual({
+      ready: true,
+      binaryPath: systemCodex,
+      installed: false,
+      source: 'system',
+    });
+    expect(downloadMock).not.toHaveBeenCalled();
+  });
+
   it('reuses and atomically migrates the exact pinned Claude cache without network access', async () => {
     const legacyPath = fallback.legacyManagedBinaryPath(tempDir, 'claude-code');
     fs.mkdirSync(path.dirname(legacyPath), { recursive: true });

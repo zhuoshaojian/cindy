@@ -10,18 +10,38 @@ import { resolveRegionUserDataDirName } from './regionUserData.js';
 import { createLogger, initLogger } from './logger.js';
 import { beginDesktopDevInstance, type DesktopDevMode } from './devStartupStatus.js';
 import { ensureSystemBinPathForMachineId } from './deviceId.js';
+import {
+  HEADLESS_POD_RUNTIME_ENV,
+  ensurePodWorkspacesDir,
+  hasHeadlessPodRuntimeInput,
+  resolvePodUserDataDir,
+  shouldRefreshShellPath,
+} from './headless-startup.js';
+
+// headless Pod 运行时的判定必须最早落地:下面的区域目录映射、initLogger 的
+// packaged 日志目录、fixPath 都要按它分流。env 里回写 '1'/'0' 供后续模块统一读。
+const headlessPodRuntimeInput = hasHeadlessPodRuntimeInput(process.argv, process.env);
+process.env[HEADLESS_POD_RUNTIME_ENV] = headlessPodRuntimeInput ? '1' : '0';
+ensurePodWorkspacesDir(headlessPodRuntimeInput, process.env);
 
 // 正式目录保持历史兼容：global 构建继续使用 CindyGlobal，cn 版继续使用
 // productName 默认的 Cindy；dev 也按构建区域选择对应 profile。必须在
 // initLogger()(packaged 日志目录)、crashReporter、单实例锁与一切 userData
 // 读取之前完成区域映射。
+// Pod 的 userData 由镜像/编排给定,优先级高于区域目录:Pod 里不存在「同机双装」,
+// 目录由外部挂载决定。
+const podUserDataDir = resolvePodUserDataDir(headlessPodRuntimeInput, process.env);
 const regionUserDataDirName = resolveRegionUserDataDirName({
   isPackaged: app.isPackaged,
   region: CURRENT_CINDY_REGION,
   argv: process.argv,
   envUserDataDir: process.env.XDT_USER_DATA_DIR,
 });
-if (regionUserDataDirName) {
+if (podUserDataDir) {
+  app.setPath('userData', podUserDataDir);
+  // 诊断与 legacy migration 守卫要跟实际选中的目录一致。
+  process.env.XDT_USER_DATA_DIR = podUserDataDir;
+} else if (regionUserDataDirName) {
   app.setPath('userData', path.join(app.getPath('appData'), regionUserDataDirName));
 }
 
@@ -35,7 +55,13 @@ setDefaultAutoSelectFamilyAttemptTimeout(2500);
 initLogger();
 const log = createLogger('fix-path');
 log.debug(`[fix-path] before PATH=${process.env.PATH ?? ''}`);
-fixPath();
+// Pod 镜像自己拼好了 PATH(含随包 agent 二进制);fix-path 会用登录 shell 的 PATH
+// 覆盖它,把镜像内的路径挤掉。headless Pod 运行时保留镜像给的 PATH。
+if (shouldRefreshShellPath(headlessPodRuntimeInput)) {
+  fixPath();
+} else {
+  log.info('[fix-path] kept image-owned PATH for headless Pod runtime');
+}
 log.debug(`[fix-path] after PATH=${process.env.PATH ?? ''}`);
 
 // Guarantee /usr/sbin:/sbin are on PATH before anything resolves the device id.

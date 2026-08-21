@@ -25,6 +25,7 @@ const LIVE_BINDINGS = [
   'AUTH_API_BASE_URL',
   'OAUTH_BROKER_API_BASE_URL',
   'DEVICE_LINK_API_BASE_URL',
+  'CLOUD_INSTANCE_API_BASE_URL',
 ];
 
 // 顶层 const 声明行(无缩进),初始化器引用了任一 live binding(词边界,排除

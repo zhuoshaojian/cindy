@@ -1839,6 +1839,61 @@ function resetActiveAuthRealmToBuild(): void {
   resetClientEndpointRealm();
 }
 
+/**
+ * Commit the shared authenticated-session state for interactive and
+ * provisioned login paths. Callers retain ownership of any surrounding
+ * account-switch boundary and path-specific login-flow state.
+ */
+function applyAuthenticatedSession(
+  pair: AuthTokenPair,
+  options: {
+    authEpoch?: number;
+    realm?: AuthRegion;
+    refreshTokenAlreadyPersisted?: boolean;
+    user?: CurrentUser;
+    beforeNotify?: () => void;
+    notify?: boolean;
+  } = {},
+): void {
+  const loginEpoch = options.authEpoch ?? ++authStateEpoch;
+  const realm = options.realm ?? activeAuthRealm;
+  accessToken = pair.accessToken;
+  persistedRefreshTokenNeedsIdentityCheck = false;
+  clearReplacementIntegrationReloadTimers();
+  activeAuthRealm = realm;
+  if (!options.refreshTokenAlreadyPersisted) {
+    writePersistedAuthSession(pair.refreshToken, realm);
+  }
+  // passive 的共享用户数据实例不拥有这些键:它只是跟随主实例的会话,不得代替
+  // 主实例清理 legacy token / 删除回执 / relogin 标记(与交互式登录路径同口径)。
+  if (!isPassiveSharedUserDataInstance()) {
+    removeSafe(LEGACY_REFRESH_TOKEN_KEY);
+  }
+  lastAcceptedRefreshToken = pair.refreshToken;
+  if (!isPassiveSharedUserDataInstance()) {
+    removeSafe(ACCOUNT_DELETION_RECEIPT_KEY);
+    clearReloginFlag();
+  }
+  // 显式登录解除本进程登出墓碑(passive / foreign-device)。
+  passiveLocalSignOut = false;
+  foreignDeviceLocalSignOut = false;
+  const nextUser = options.user ?? mapMembershipToAuthUser(pair.membership);
+  currentUser = nextUser;
+  commitCloudAppSession(nextUser.id);
+  scheduleCanaryFlagSync({
+    token: pair.accessToken,
+    expectedAuthEpoch: loginEpoch,
+    expectedUserId: nextUser.id,
+  });
+  scheduleRefresh(pair.accessToken);
+  getProviderSecretStore().reconcileOwner(pair.membership.id);
+  options.beforeNotify?.();
+  if (options.notify !== false) {
+    notifyRenderer();
+    notifyAuthListeners();
+  }
+}
+
 async function reloadPerAccountIntegrationsFromDisk(_accessToken: string | null): Promise<void> {
   void _accessToken;
   // 登录账号级集成清单当前为空(见 clearPerAccountIntegrations 顶注)。
@@ -2104,6 +2159,11 @@ export function persistProvisionedAccountRefreshToken(accountRefreshToken: strin
   }
 }
 
+/** Forget a server-rejected Pod account token so a retry can read a refreshed Secret. */
+export function clearProvisionedAccountRefreshToken(): void {
+  removeSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);
+}
+
 /** Read the last validated Pod membership selection from encrypted storage. */
 export function readProvisionedMembershipId(): string | null {
   return readSafe(POD_MEMBERSHIP_ID_KEY);
@@ -2129,30 +2189,16 @@ export function installProvisionedSession(
   if (!input.accessToken || !input.refreshToken) {
     throw new Error('provisioned resource session is incomplete');
   }
-  if (!writeSafe(REFRESH_TOKEN_KEY, input.refreshToken)) {
+  if (!writePersistedAuthSession(input.refreshToken, AUTH_REGION)) {
     throw new Error('failed to persist provisioned resource refresh token');
   }
 
-  const loginEpoch = ++authStateEpoch;
   resetLoginFlowState();
-  accessToken = input.accessToken;
-  persistedRefreshTokenNeedsIdentityCheck = false;
-  clearReplacementIntegrationReloadTimers();
   removeSafe(LEGACY_ACCOUNT_REFRESH_TOKEN_KEY);
-  removeSafe(LEGACY_REFRESH_TOKEN_KEY);
-  lastAcceptedRefreshToken = input.refreshToken;
-  clearReloginFlag();
-  currentUser = mapMembershipToAuthUser(input.membership);
-  commitActiveAppSession('cloud', currentUser.id);
-  scheduleCanaryFlagSync({
-    token: input.accessToken,
-    expectedAuthEpoch: loginEpoch,
-    expectedUserId: currentUser.id,
+  applyAuthenticatedSession(input, {
+    realm: AUTH_REGION,
+    refreshTokenAlreadyPersisted: true,
   });
-  scheduleRefresh(input.accessToken);
-  getProviderSecretStore().reconcileOwner(input.membership.id);
-  notifyRenderer();
-  notifyAuthListeners();
   return snapshotAuthState();
 }
 
@@ -3016,7 +3062,7 @@ async function completeLogin(
   loginFlowState = reduceAuthFlow(loginFlowState, { type: 'outcome', outcome });
   notifyRenderer();
   notifyAuthListeners();
-  return loginFlowState;
+  return loginFlowState!;
 }
 
 async function acceptLoginOutcome(outcome: LoginOutcome): Promise<AuthFlowState> {

@@ -12,9 +12,9 @@
  *   - fs:mkdir-p    幂等创建目录(用户输入一个尚不存在的项目路径时)
  * **不**提供文件读/写/删/exec —— 仅项目目录选择所需的最小面(allowlist 注释同款理由)。
  *
- * 跨平台:`~` 用 os.homedir() 展开;路径拼接/上级一律走 node:path(被控端可能是
- * Windows)。每个 entry 回传 host-native 绝对 `path`,renderer 直接用它导航,不在
- * renderer 侧拼接,天然跨平台。
+ * 跨平台:`~` 在普通 Desktop 展开到 os.homedir(),严格 headless Pod 展开到持久
+ * workspaces 根;路径拼接/上级一律走 node:path(被控端可能是 Windows)。每个 entry
+ * 回传 host-native 绝对 `path`,renderer 直接用它导航,不在 renderer 侧拼接,天然跨平台。
  *
  * 纯函数(listDir / statPath / mkdirP / expandHome)导出供单测;ipcMain.handle 只做 adapter。
  */
@@ -24,6 +24,10 @@ import { promises as fs, type Dirent } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import {
+  HEADLESS_POD_RUNTIME_ENV,
+  resolvePodWorkspacesDir,
+} from '../headless-startup.js';
 import { throwIpcError, requireObject, requireString } from '../utils/ipcValidate.js';
 
 export interface FsBrowseEntry {
@@ -51,19 +55,36 @@ export interface FsMkdirResult {
 }
 
 /**
- * 把以 `~` 开头的路径展开到本机 home,并归一为绝对路径(去 `..` 等)。
- * 空串 / `~` → home;`~/x` → home/x;绝对路径 → resolve;相对路径 → 相对 home 兜底。
+ * 目录选择器的逻辑根:普通 Desktop 是系统 HOME;严格 headless Pod 是持久 workspaces。
  */
-export function expandHome(input: string): string {
-  const home = os.homedir();
+export function resolveFsBrowseRoot(
+  env: NodeJS.ProcessEnv = process.env,
+  homeDir: string = os.homedir(),
+): string {
+  return (
+    resolvePodWorkspacesDir(env[HEADLESS_POD_RUNTIME_ENV] === '1', env) ??
+    homeDir
+  );
+}
+
+/**
+ * 把以 `~` 开头的路径展开到目录选择器逻辑根,并归一为绝对路径(去 `..` 等)。
+ * 空串 / `~` → root;`~/x` → root/x;绝对路径 → resolve;相对路径 → 相对 root 兜底。
+ */
+export function expandHome(
+  input: string,
+  env: NodeJS.ProcessEnv = process.env,
+  homeDir: string = os.homedir(),
+): string {
+  const root = resolveFsBrowseRoot(env, homeDir);
   const raw = (input ?? '').trim();
-  if (raw === '' || raw === '~' || raw === '~/' || raw === '~\\') return home;
+  if (raw === '' || raw === '~' || raw === '~/' || raw === '~\\') return root;
   if (raw.startsWith('~/') || raw.startsWith('~\\')) {
-    return path.resolve(home, raw.slice(2));
+    return path.resolve(root, raw.slice(2));
   }
   if (path.isAbsolute(raw)) return path.resolve(raw);
-  // 项目选择器里不该出现相对路径,兜底归到 home 下(而非 process.cwd,后者在被控端无意义)。
-  return path.resolve(home, raw);
+  // 项目选择器里不该出现相对路径,兜底归到逻辑根下(绝不使用被控端 process.cwd)。
+  return path.resolve(root, raw);
 }
 
 /** 列出目录下的**子目录**(含 hidden,对齐 SSH `ls -A`;文件不列)。每项带 host-native 绝对路径。 */

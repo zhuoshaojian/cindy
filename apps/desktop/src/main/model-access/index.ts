@@ -318,8 +318,8 @@ function getSync(): CredentialsSync {
         }
       },
       log: {
-        info: (msg) => log.info(msg),
-        warn: (msg) => log.warn(msg),
+        info: (msg, context) => log.info(msg, context),
+        warn: (msg, context) => log.warn(msg, context),
       },
     });
   }
@@ -382,10 +382,10 @@ export function noteManualXdKeyRemoved(): void {
 
 function mapServerError(err: unknown): never {
   if (err instanceof ServerApiError) {
-    if (err.statusCode === 503 || err.code === 'MODEL_ACCESS_DISABLED') {
+    if (err.code === 'MODEL_ACCESS_DISABLED') {
       throwIpcError('MODEL_ACCESS_DISABLED', '模型访问服务未启用');
     }
-    if (err.statusCode === 403 || err.code === 'ORG_NOT_SUPPORTED') {
+    if (err.code === 'ORG_NOT_SUPPORTED') {
       throwIpcError('MODEL_ACCESS_UNSUPPORTED', '当前企业未开通模型访问');
     }
     throwIpcError('MODEL_ACCESS_FAILED', err.message);

@@ -22,11 +22,24 @@ if (arch !== 'x64') {
 }
 
 const root = process.env.CINDY_WORKSPACE_ROOT ?? '/workspace';
+const packagedResources = process.env.CINDY_CLOUD_PACKAGED_RESOURCES ?? '/opt/cindy/resources';
+const firstExisting = (candidates) => candidates.find((candidate) => fs.existsSync(candidate))
+  ?? candidates[0];
 const assets = [
-  `${root}/apps/claude-code-bin/linux-x64/claude`,
-  `${root}/apps/codex-bin/linux-x64/codex`,
-  `${root}/apps/ripgrep-bin/linux-x64/rg`,
-  `${root}/apps/desktop/native/sqlite-vec/linux-x64/vec0.so`,
+  firstExisting([
+    `${root}/apps/claude-code-bin/linux-x64/claude`,
+  ]),
+  firstExisting([
+    `${root}/apps/codex-bin/linux-x64/codex`,
+  ]),
+  firstExisting([
+    `${packagedResources}/tools/ripgrep/rg`,
+    `${root}/apps/ripgrep-bin/linux-x64/rg`,
+  ]),
+  firstExisting([
+    `${packagedResources}/app.asar.unpacked/native/sqlite-vec/linux-x64/vec0.so`,
+    `${root}/apps/desktop/native/sqlite-vec/linux-x64/vec0.so`,
+  ]),
 ];
 const missing = assets.filter((filePath) => {
   try {
@@ -42,4 +55,6 @@ if (missing.length > 0) {
   console.error(`[cloud-capability] missing or invalid native assets: ${missing.join(', ')}`);
   process.exit(78);
 }
-console.log('[cloud-capability] linux-x64 native assets present; no emulation enabled');
+console.log(
+  `[cloud-capability] linux-x64 native assets present; no emulation enabled; sources=${assets.join(',')}`,
+);

@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils';
 import { Tip } from '@/components/ui/tooltip';
 import { useEffectiveSelectedMachineId } from '@/features/device-link/useMachineSwitcher';
 import { MACHINE_ALL } from '@/features/device-link/selectedMachineStore';
+import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
 import {
   projectOrderWriteLedger,
   resolveDisplayedProjectOrder,
@@ -980,8 +981,10 @@ export function ProjectsSection({
               const device = section.deviceId
                 ? remoteDeviceIndex?.get(section.deviceId)
                 : undefined;
+              // 云端设备的 relay 自名是 locale-neutral 哨兵,必须在渲染边界翻译,
+              // 否则段头直接漏出 `__cindy_cloud_device_name__:<序号>`。
               const name = section.deviceId
-                ? (device?.name ?? section.deviceId)
+                ? resolveDesktopCloudDeviceName(device?.name ?? section.deviceId, t)
                 : t('ccAgent.sidebar.deviceGroup.local');
               const online = section.deviceId ? (device?.online ?? false) : true;
               const sectionCollapsed = collapsedDevices.has(key);

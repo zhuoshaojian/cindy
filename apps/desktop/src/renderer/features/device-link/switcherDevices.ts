@@ -12,7 +12,11 @@
  */
 
 import type { RemoteDeviceSummary } from './remoteProjectsStore';
-import { compareDevicesByName, isMobilePlatform } from '@cindy/maker-shared/device-list';
+import {
+  compareDevicesByName,
+  deviceDisplayName,
+  isMobilePlatform,
+} from '@cindy/maker-shared/device-list';
 
 export type DeviceConnectionStatus = 'connected' | 'connecting' | 'rejected';
 
@@ -38,13 +42,15 @@ export function buildSwitcherDevices({
   revoked,
 }: BuildSwitcherDevicesInput): SwitcherDevice[] {
   const list = fullList ?? [];
+  const deviceById = new Map<string, DeviceLinkDeviceView>();
   const nameById = new Map<string, string>();
   const kindById = new Map<string, 'cloud'>();
   const selfIds = new Set<string>();
   const mobileIds = new Set<string>();
   const onlineControllable = new Set<string>();
   for (const d of list) {
-    nameById.set(d.deviceId, d.name);
+    deviceById.set(d.deviceId, d);
+    nameById.set(d.deviceId, deviceDisplayName(d));
     if (d.deviceInfo?.kind === 'cloud') kindById.set(d.deviceId, 'cloud');
     if (d.isSelf) {
       selfIds.add(d.deviceId);
@@ -65,7 +71,13 @@ export function buildSwitcherDevices({
     cached.set(s.deviceId, s);
     // 已连接设备的名字以同步分片(remoteProjectsStore)为准:REST 改名只更新它、不广播 presence,
     // fullList 的名字会滞后 → chip 标签需用同步分片名覆盖。空名才回退 fullList 既有名 / deviceId。
-    if (s.deviceName) nameById.set(s.deviceId, s.deviceName);
+    if (s.deviceName) {
+      const full = deviceById.get(s.deviceId);
+      nameById.set(
+        s.deviceId,
+        full ? deviceDisplayName({ ...full, name: s.deviceName }) : s.deviceName,
+      );
+    }
     else if (!nameById.has(s.deviceId)) nameById.set(s.deviceId, s.deviceName);
   }
 
