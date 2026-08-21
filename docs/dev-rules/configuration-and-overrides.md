@@ -49,6 +49,27 @@ token）与 [`engineering-conventions.md`](engineering-conventions.md)（i18n）
   约定。
 - agent 修改配置时，只有用户明确要求才写入 override，不得把当前默认值固化回用户配置。
 
+## 6. 云端 runtime 的 agent 二进制镜像源
+
+`XDT_AGENT_BINARY_MIRROR_BASE_URL` 是云端 runtime 镜像构建使用的隐藏、opt-in override，
+用于在受限网络中从受控静态站点取得仓库已经钉住的 agent 二进制。未设置或设为空字符串
+时，下载行为完全不变，仍使用各工具既有的上游／CDN 路径。
+
+- base URL 必须是无凭据的 HTTPS 绝对 URL，且不得含 query 或 hash；一旦显式设置但 URL
+  不合法，构建立即失败。
+- 信任锚位于 `tools/agent-binary-mirror/linux-x64.json`。镜像站只提供字节，不提供或决定
+  hash；下载后必须按仓内钉住的大小与 SHA-256 校验。特别地，ripgrep 在镜像模式下不得
+  读取镜像侧 `.sha256`，避免让同一来源同时控制产物与校验值。
+- 设置镜像源后不允许静默回落上游：缺文件、下载失败、大小或 SHA-256 不符、压缩包解包
+  或目录分发校验不符都必须失败；`--best-effort` 也不得吞掉这些错误。
+- linux-x64 镜像站必须按下列相对路径持久发布四项资产（版本取自仓内 pin）：
+  - `claude-code/2.1.219/linux-x64/claude.gz`
+  - `codex/0.145.0/linux-x64/codex.gz`
+  - `ripgrep/15.1.0/linux-x64/rg.gz`
+  - `pi/0.83.0/linux-x64/pi-linux-x64.tar.gz`
+- `deploy/cloud-instance/Dockerfile` 只把该值声明为可选 build `ARG`，供构建步骤使用；不得
+  改成 `ENV` 或以其它方式写进最终镜像。
+
 ## Review 清单
 
 1. 新配置的可见性层级选对了吗？是否因“技术上能配”就塞进了设置页外层？

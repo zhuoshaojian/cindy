@@ -19,9 +19,7 @@ mkdir -p \
   "$home_dir"
 
 # A mounted home subPath starts empty and hides the skeleton copied by useradd.
-# Initialize it once. Do not preserve root-owned skeleton directory metadata:
-# this entrypoint runs as cindy, and a failed metadata restore would leave a
-# partially copied non-empty home without its completion marker.
+# Initialize it once without restoring root-owned directory metadata.
 home_marker="$home_dir/.cindy-home-initialized"
 if [ ! -e "$home_marker" ]; then
   if [ -z "$(find "$home_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
@@ -30,7 +28,7 @@ if [ ! -e "$home_marker" ]; then
   : > "$home_marker"
 fi
 
-# This is an orchestration scaffold: it never prints secret contents.
+# Never print secret contents. Missing native/runtime capabilities fail closed.
 node /usr/local/bin/cindy-cloud-check-capabilities.mjs
 
 xvfb_pid=''

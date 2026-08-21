@@ -22,10 +22,17 @@ Cindy 的中国大陆版与国际版仍是两个独立的安装包和更新通�
 - `*.cindy.com.cn` 对应中国大陆区域；
 - `*.cindy.app` 对应国际区域。
 
-构建脚本分别读取 `config/endpoint.json` 与 `config/endpoint.global.json` 的
-`cdnBaseUrl`，把当前区域和对端区域的两个清单基址烘焙进客户端。远端
+构建脚本默认分别读取 `config/endpoint.json` 与 `config/endpoint.global.json` 的
+`cdnBaseUrl`，把当前区域和对端区域的两个清单基址烘焙进客户端。Desktop 自托管打包也可
+通过 `--endpoint-manifest-bases-file` 显式读取仓外或 gitignored 的 current / peer HTTPS
+基址；该文件绑定 `cn | global` 物理 realm，`dev` 应用身份按 `cn` realm 校验，普通环境变量
+不能覆盖 packaged 构建。远端
 `endpoint.json` 继续使用原有 `schemaVersion: 1` 与业务端点字段，不要求
 `region`、`crossRealmOrgLoginEnabled` 或 `realmManifestBaseUrls`。
+
+在线拉取接受注入文件中通过校验的任意无凭据 HTTPS 主机。Desktop 离线缓存的域名信任锚
+仍固定在客户端源码中；自托管域名不因此获得离线启动资格，也不得从清单或 userData 改写
+该锚点。部署细节见 [`self-hosted-desktop-endpoints.md`](self-hosted-desktop-endpoints.md)。
 
 客户端从某个受信任地址加载到清单后，就把它归入该地址对应的区域，并使用其中的
 `authApiBaseUrl` 调用该区 auth-server。discovery 响应仍必须包含 `region`，且必须与

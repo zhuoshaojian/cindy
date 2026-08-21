@@ -17,6 +17,12 @@ import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
+import {
+  installAgentBinaryFromMirror,
+  isInstalledAgentBinaryMirrorAsset,
+  resolveAgentBinaryMirrorBaseUrl,
+} from './agent-binary-mirror.mjs';
+
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PLATFORM = 'linux-x64';
 const MIN_EXPECTED_BYTES = 1024;
@@ -112,38 +118,69 @@ async function main() {
     throw new Error('this helper only supports --platform=linux-x64');
   }
 
+  const mirrorBaseUrl = resolveAgentBinaryMirrorBaseUrl();
   const codex = readJson('tools/codex/latest.json');
   const codexPin = codex.runtimeAssets[PLATFORM];
-  await installPinnedBinary({
-    kind: 'codex',
-    version: codex.version,
-    url: codexPin.url,
-    archiveSha256: codexPin.sha256,
-    binaryName: 'codex-x86_64-unknown-linux-musl',
-    targetPath: path.join(ROOT, 'apps/codex-bin', PLATFORM, 'codex'),
-  });
+  const codexTarget = path.join(ROOT, 'apps/codex-bin', PLATFORM, 'codex');
+  if (mirrorBaseUrl) {
+    const mirrorOptions = {
+      kind: 'codex',
+      version: codex.version,
+      platformKey: PLATFORM,
+      targetPath: codexTarget,
+    };
+    if (await isInstalledAgentBinaryMirrorAsset(mirrorOptions)) {
+      console.log(`[direct-agent-bootstrap] codex ${PLATFORM}: mirror-verified @ ${codex.version}`);
+    } else {
+      await installAgentBinaryFromMirror({ baseUrl: mirrorBaseUrl, ...mirrorOptions });
+    }
+  } else {
+    await installPinnedBinary({
+      kind: 'codex',
+      version: codex.version,
+      url: codexPin.url,
+      archiveSha256: codexPin.sha256,
+      binaryName: 'codex-x86_64-unknown-linux-musl',
+      targetPath: codexTarget,
+    });
+  }
 
   const ripgrep = readJson('tools/ripgrep/latest.json');
-  const ripgrepArchive = `ripgrep-${ripgrep.version}-x86_64-unknown-linux-musl.tar.gz`;
-  const ripgrepUrl =
-    `https://github.com/BurntSushi/ripgrep/releases/download/${ripgrep.version}/${ripgrepArchive}`;
-  const checksumText = await (async () => {
-    const response = await fetch(`${ripgrepUrl}.sha256`, {
-      signal: AbortSignal.timeout(60_000),
+  const ripgrepTarget = path.join(ROOT, 'apps/ripgrep-bin', PLATFORM, 'rg');
+  if (mirrorBaseUrl) {
+    const mirrorOptions = {
+      kind: 'ripgrep',
+      version: ripgrep.version,
+      platformKey: PLATFORM,
+      targetPath: ripgrepTarget,
+    };
+    if (await isInstalledAgentBinaryMirrorAsset(mirrorOptions)) {
+      console.log(`[direct-agent-bootstrap] ripgrep ${PLATFORM}: mirror-verified @ ${ripgrep.version}`);
+    } else {
+      await installAgentBinaryFromMirror({ baseUrl: mirrorBaseUrl, ...mirrorOptions });
+    }
+  } else {
+    const ripgrepArchive = `ripgrep-${ripgrep.version}-x86_64-unknown-linux-musl.tar.gz`;
+    const ripgrepUrl =
+      `https://github.com/BurntSushi/ripgrep/releases/download/${ripgrep.version}/${ripgrepArchive}`;
+    const checksumText = await (async () => {
+      const response = await fetch(`${ripgrepUrl}.sha256`, {
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!response.ok) throw new Error(`ripgrep checksum download failed (${response.status})`);
+      return response.text();
+    })();
+    const ripgrepHash = checksumText.match(/[a-f0-9]{64}/i)?.[0]?.toLowerCase();
+    if (!ripgrepHash) throw new Error('ripgrep checksum file did not contain a SHA-256 digest');
+    await installPinnedBinary({
+      kind: 'ripgrep',
+      version: ripgrep.version,
+      url: ripgrepUrl,
+      archiveSha256: ripgrepHash,
+      binaryName: 'rg',
+      targetPath: ripgrepTarget,
     });
-    if (!response.ok) throw new Error(`ripgrep checksum download failed (${response.status})`);
-    return response.text();
-  })();
-  const ripgrepHash = checksumText.match(/[a-f0-9]{64}/i)?.[0]?.toLowerCase();
-  if (!ripgrepHash) throw new Error('ripgrep checksum file did not contain a SHA-256 digest');
-  await installPinnedBinary({
-    kind: 'ripgrep',
-    version: ripgrep.version,
-    url: ripgrepUrl,
-    archiveSha256: ripgrepHash,
-    binaryName: 'rg',
-    targetPath: path.join(ROOT, 'apps/ripgrep-bin', PLATFORM, 'rg'),
-  });
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

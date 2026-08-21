@@ -1,4 +1,11 @@
-# Headless 启动 PoC（T2）
+# Headless 启动 PoC（T2，历史归档）
+
+> **Archived / historical PoC**：本文只保留早期 macOS 无窗启动验证记录，不代表当前云端
+> runtime 的能力或部署状态。现行 Pod 启动、持久目录、status/readiness、modelAccess 和
+> delete 契约见 [`cloud-instance-runtime.md`](./cloud-instance-runtime.md)。请勿删除下方历史
+> 内容或用它作为 ACS 发布说明。
+> **权威范围（authoritative-for）**：仅限这次历史 PoC 的验证记录。
+> **非权威范围（not-authoritative-for）**：当前 runtime ABI、server 编排与云部署状态。
 
 当前 PoC 只验证 macOS 原生 dev 进程的无窗启动：主进程不创建 BrowserWindow，
 但会完成 agent 二进制准备、Maker 构造和 main IPC 注册。Linux/Docker、keyring 和

@@ -11,6 +11,12 @@
 
 两端合入后行为不变，填上端点清单字段才切换。
 
+> **部署口径**：Desktop OAuth 的 `redirect_uri` 只可能是非空
+> `authDesktopCallbackUrl`（必须与 auth-server 的 allowlist / 同源规则逐字符匹配），或
+> RFC 8252 loopback 地址。`cindy://focus/desktop-login` 只是结果页的「回到 Cindy」深链，
+> 不是 OAuth `redirect_uri`。Mobile 才使用 `cindycn://auth`、`cindy://auth`、
+> `cindydev://auth` 作为原生回调。
+
 ## 1. 要解决的问题
 
 Desktop 今天走 RFC 8252 loopback 登录：本机起随机端口 HTTP server，把

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "region": "cn",
+  "authApiBaseUrl": "https://auth.dev.example.invalid",
+  "deviceLinkApiBaseUrl": "https://device-link.dev.example.invalid",
+  "modelAccessApiBaseUrl": "https://model-access.dev.example.invalid",
+  "cloudInstanceApiBaseUrl": "https://cloud-instance.dev.example.invalid",
+  "authDesktopCallbackUrl": ""
+}

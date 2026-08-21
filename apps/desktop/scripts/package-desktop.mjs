@@ -27,6 +27,10 @@
 //              仅存的 CDN 依赖,显式 x.y.z 则不再碰 CDN manifest。
 //              (agent 侧车二进制走缓存优先的 ensureBinary:已就位且版本
 //              匹配 pin 时跳过下载;首次打包仍需网络拉一次,之后可离线。)
+//   --endpoint-manifest-bases-file <path>
+//              显式注入 packaged 客户端的 current / peer 清单基址。文件须符合
+//              config/desktop-endpoint-manifest-bases.json.example;相对路径按仓库根解析,
+//              真实环境值应放仓外或 gitignored 文件,普通 env override 仍被禁用
 //   --skip-smoke                    跳过 packaged smoke test(调试用)
 //   --allow-unsigned                有版本打包放行无签名(win 缺 CINDY_WIN_SIGN_CMD /
 //                                   mac 缺 APPLE_APP_PASSWORD 时降级 ad-hoc)
@@ -146,7 +150,7 @@ function cleanOutDir() {
   }
 }
 
-function runForgeMake({ platform, arch, region, version, versionless, noSign, webAuthnAppleTeamId }) {
+function runForgeMake({ platform, arch, region, version, versionless, noSign, webAuthnAppleTeamId, clientEndpointBuildEnv }) {
   console.log('==> Building remote bundles...');
   execSync('node scripts/build-remote-bundles.mjs', { cwd: DESKTOP_ROOT, stdio: 'inherit' });
 
@@ -155,7 +159,7 @@ function runForgeMake({ platform, arch, region, version, versionless, noSign, we
     ...process.env,
     NODE_ENV: 'production',
     // 烘焙面只含 region + 端点清单自举基址,按 region 二选一。
-    ...desktopClientBuildEnv({ allowEnvOverride: false, authRegion: region }),
+    ...clientEndpointBuildEnv,
     // 日志上报目标(SLS project/logstore/区域)。真值不进仓,读 config/log-upload.json
     // (打包机由 cindy-build-scripts 的 sync-desktop-release-kit.sh 拷回)。
     // 只烘焙**本区域那一个**目标 —— cn 包里物理上不含 global 的 logstore 地址。
@@ -520,9 +524,16 @@ async function main() {
     console.error(`ERROR: ${err.message}`);
     process.exit(1);
   }
-  const { platform, archs, region, versionSpec, skipSmoke, allowUnsigned, noSign } = args;
+  const { platform, archs, region, versionSpec, skipSmoke, allowUnsigned, noSign, endpointManifestBasesFile } = args;
   // ensureBinary 的 CDN fallback 按此 region 选择清单基址；必须早于二进制准备。
   process.env.CINDY_AUTH_REGION = region;
+  // 在下载二进制或改写版本号前 fail closed。显式文件是唯一可审计的 packaged
+  // 清单基址覆盖;allowEnvOverride 继续保持 false,shell env 不能静默改包体身份。
+  const clientEndpointBuildEnv = desktopClientBuildEnv({
+    allowEnvOverride: false,
+    authRegion: region,
+    endpointManifestBasesFile,
+  });
   // mac 签名身份按区域从 release-regions.json 注入(文件缺失时静默跳过,
   // 届时签名要求身份齐备,由 resolveAppleIdentity fail closed)。只在 darwin
   // 且未显式跳签时加载:appPasswordEnv 声明即承诺(指向空 env 会抛错),
@@ -567,6 +578,7 @@ async function main() {
   console.log(`==> Package Cindy desktop`);
   console.log(`    platform: ${archs.map((a) => `${platform}-${a}`).join(' + ')}`);
   console.log(`    region:   ${region}`);
+  console.log(`    endpoint manifests: ${endpointManifestBasesFile ? 'explicit build config' : 'region config'}`);
   console.log(`    version:  ${versionless ? `(版本无关,占位 ${version},不参与热更新)` : version}`);
   console.log('='.repeat(60));
 
@@ -625,6 +637,7 @@ async function main() {
       versionless,
       noSign,
       webAuthnAppleTeamId: webAuthnProvisioningProfile ? macSigningIdentity?.teamId : undefined,
+      clientEndpointBuildEnv,
     });
 
     // drizzle 资源校验(平台差异只在 packaged 内路径)。
