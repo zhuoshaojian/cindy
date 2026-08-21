@@ -1,7 +1,10 @@
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { resolveMobileDeviceDisplayName, sortCloudDevicesLast } from '@/device-link/devicePresentation';
-import { formatCloudDeviceName } from '@cindy/maker-shared/device-list';
+import {
+  CLOUD_DEVICE_NAME_SENTINEL,
+  formatCloudDeviceName,
+} from '@cindy/maker-shared/device-list';
 import { i18n } from '@/i18n';
 
 const cloud = {
@@ -51,6 +54,13 @@ describe('mobile cloud device presentation', () => {
 
   it('keeps ordinary devices unchanged', () => {
     expect(resolveMobileDeviceDisplayName({ ...cloud, deviceInfo: null, name: '办公室 Mac' })).toBe('办公室 Mac');
+  });
+
+  it('normalizes cached and route-param names at user-visible page boundaries', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(resolveMobileDeviceDisplayName(CLOUD_DEVICE_NAME_SENTINEL)).toBe('云端');
+    expect(resolveMobileDeviceDisplayName(formatCloudDeviceName(5))).toBe('云端');
+    expect(resolveMobileDeviceDisplayName('Build Pod')).toBe('Build Pod');
   });
 
   it('places cloud devices after ordinary devices without reordering either group', () => {

@@ -1,15 +1,77 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createReconcileBackoff,
   nextArchivedSessionRetryDelay,
   nextSessionListTokenRetryDelay,
   resolveIneligibleRemoteProjectAction,
+  selectRemoteProjectShardsMissingFromDirectory,
   startRemoteSessionsReconciler,
   startSessionListTokenRefresh,
+  useDeviceLinkRemoteProjects,
 } from '@/features/device-link/useDeviceLinkRemoteProjects';
+import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
+
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: () => ({ isAuthenticated: true, deviceId: 'self-device', dataOwnerId: null }),
+}));
+vi.mock('@/features/device-link/mirrorCacheClient', () => ({
+  cancelSessionListPersist: vi.fn(),
+  clearCachedDevice: vi.fn(),
+  clearMirrorCacheAccountState: vi.fn(),
+  readCachedSessionList: vi.fn(async () => []),
+  scheduleSessionListPersist: vi.fn(),
+  sessionListOwnerTokensReady: vi.fn(() => true),
+}));
+vi.mock('@/hooks/useAgentCapabilities', () => ({
+  evictDeviceCapabilities: vi.fn(),
+  prefetchDeviceCapabilities: vi.fn(),
+}));
+vi.mock('@/hooks/useDeviceProviders', () => ({
+  evictDeviceProviders: vi.fn(),
+  prefetchDeviceProviders: vi.fn(),
+}));
+vi.mock('@/hooks/useGitSafetySettings', () => ({
+  evictDeviceGitSafetySettings: vi.fn(),
+  prefetchDeviceGitSafetySettings: vi.fn(),
+}));
+
+type PresenceListener = (snapshot: DeviceLinkPresenceSnapshot) => void;
+let presenceListener: PresenceListener | null = null;
+let listDevices: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  presenceListener = null;
+  listDevices = vi.fn();
+  remoteProjectsStore.clear();
+  Object.defineProperty(window, 'electronAPI', {
+    configurable: true,
+    value: {
+      deviceLink: {
+        getState: vi.fn(() => new Promise(() => {})),
+        listDevices,
+        onAccessRevoked: vi.fn(() => vi.fn()),
+        onControlTargetChanged: vi.fn(() => vi.fn()),
+        onPresenceChanged: vi.fn((listener: PresenceListener) => {
+          presenceListener = listener;
+          return vi.fn();
+        }),
+        onRemotePush: vi.fn(() => vi.fn()),
+        onResponsivenessChanged: vi.fn(() => vi.fn()),
+        onStatusChanged: vi.fn(() => vi.fn()),
+        subscribe: vi.fn(async () => ({ ok: true })),
+        unsubscribe: vi.fn(async () => ({ ok: true })),
+      },
+    },
+  });
+});
 
 afterEach(() => {
+  cleanup();
+  remoteProjectsStore.clear();
   vi.useRealTimers();
 });
 
@@ -298,5 +360,107 @@ describe('resolveIneligibleRemoteProjectAction', () => {
         disabledControl: true,
       }),
     ).toBe('remove');
+  });
+});
+
+describe('successful device-directory reconciliation', () => {
+  it('removes a deleted cloud shard while retaining an ordinary offline device still in the directory', () => {
+    expect(
+      selectRemoteProjectShardsMissingFromDirectory({
+        authoritativeDeviceIds: new Set(['desktop-offline']),
+        cachedDeviceIds: ['cloud-device-deleted', 'desktop-offline'],
+        eligibleDeviceIds: new Set(),
+      }),
+    ).toEqual(['cloud-device-deleted']);
+  });
+
+  it('retains a presence-owned device when a directory response temporarily omits it', () => {
+    expect(
+      selectRemoteProjectShardsMissingFromDirectory({
+        authoritativeDeviceIds: new Set(),
+        cachedDeviceIds: ['desktop-live'],
+        eligibleDeviceIds: new Set(['desktop-live']),
+      }),
+    ).toEqual([]);
+  });
+
+  it('debounces offline presence, retains shards on directory failure, and removes only confirmed absence', async () => {
+    vi.useFakeTimers();
+    let rejectFirstDirectoryRead!: (reason?: unknown) => void;
+    const firstDirectoryRead = new Promise<never>((_resolve, reject) => {
+      rejectFirstDirectoryRead = reject;
+    });
+    remoteProjectsStore.setDeviceSessions(
+      'cloud-device-deleted',
+      'Cloud',
+      [{ id: 'cloud-session', status: 'active' }] as never,
+      'active',
+      'cloud',
+    );
+    remoteProjectsStore.setDeviceSessions('desktop-offline', 'Desktop', [
+      { id: 'desktop-session', status: 'active' },
+    ] as never);
+    listDevices.mockReturnValueOnce(firstDirectoryRead).mockResolvedValueOnce({
+      devices: [
+        {
+          deviceId: 'desktop-offline',
+          name: 'Desktop',
+          online: false,
+          remoteControlEnabled: true,
+          controlEnabled: true,
+          isSelf: false,
+          platform: 'darwin',
+          appVersion: '1.0.0',
+          lastSeenAt: null,
+          busy: false,
+        },
+      ],
+    });
+
+    const mounted = renderHook(() => useDeviceLinkRemoteProjects());
+    expect(presenceListener).not.toBeNull();
+    const offlineCloud = {
+      deviceId: 'cloud-device-deleted',
+      deviceName: 'Cloud',
+      online: false,
+      platform: 'linux',
+      appVersion: '1.0.0',
+      lastSeenAt: Date.now(),
+      remoteControlEnabled: false,
+      busy: false,
+      deviceInfo: { kind: 'cloud' as const },
+    };
+
+    act(() => {
+      presenceListener?.(offlineCloud);
+      presenceListener?.(offlineCloud);
+    });
+    await vi.advanceTimersByTimeAsync(299);
+    expect(listDevices).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(listDevices).toHaveBeenCalledTimes(1);
+    expect(remoteProjectsStore.hasDevice('cloud-device-deleted')).toBe(true);
+    expect(remoteProjectsStore.hasDevice('desktop-offline')).toBe(true);
+
+    // A slow authoritative read must absorb the rest of the same offline storm.
+    act(() => presenceListener?.(offlineCloud));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listDevices).toHaveBeenCalledTimes(1);
+    rejectFirstDirectoryRead(new Error('relay unavailable'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(remoteProjectsStore.hasDevice('cloud-device-deleted')).toBe(true);
+
+    act(() => presenceListener?.(offlineCloud));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listDevices).toHaveBeenCalledTimes(2);
+    expect(remoteProjectsStore.hasDevice('cloud-device-deleted')).toBe(false);
+    expect(remoteProjectsStore.hasDevice('desktop-offline')).toBe(true);
+
+    mounted.unmount();
+    act(() => presenceListener?.(offlineCloud));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listDevices).toHaveBeenCalledTimes(2);
   });
 });

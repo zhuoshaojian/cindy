@@ -131,6 +131,38 @@ describe('update relaunch busy probe', () => {
     expect(readSynchronousBusy).toHaveBeenCalledTimes(2);
   });
 
+  it('reports idle only after both synchronous samples and the schedule query are idle', async () => {
+    const readSynchronousBusy = vi.fn(() => false);
+    const readScheduleBusy = vi.fn(async () => false);
+
+    await expect(hasUpdateRelaunchBusyActivity({
+      readSynchronousBusy,
+      readScheduleBusy,
+    })).resolves.toBe(false);
+    expect(readSynchronousBusy).toHaveBeenCalledTimes(2);
+    expect(readScheduleBusy).toHaveBeenCalledTimes(1);
+  });
+
+  it('short-circuits the SQLite query when synchronous activity is already busy', async () => {
+    const readScheduleBusy = vi.fn(async () => false);
+
+    await expect(hasUpdateRelaunchBusyActivity({
+      readSynchronousBusy: () => true,
+      readScheduleBusy,
+    })).resolves.toBe(true);
+    expect(readScheduleBusy).not.toHaveBeenCalled();
+  });
+
+  it('reports a running schedule without performing a stale second synchronous sample', async () => {
+    const readSynchronousBusy = vi.fn(() => false);
+
+    await expect(hasUpdateRelaunchBusyActivity({
+      readSynchronousBusy,
+      readScheduleBusy: async () => true,
+    })).resolves.toBe(true);
+    expect(readSynchronousBusy).toHaveBeenCalledTimes(1);
+  });
+
   it('fails closed when schedule activity cannot be read', async () => {
     await expect(hasUpdateRelaunchBusyActivity({
       readSynchronousBusy: () => false,

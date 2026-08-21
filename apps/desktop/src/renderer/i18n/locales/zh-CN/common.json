@@ -3437,6 +3437,8 @@
         "currentVersionUpToDate": "当前版本 {{version}} · 已是最新版本",
         "update": "更新云端",
         "updating": "更新中…",
+        "autoUpdate": "空闲时自动更新",
+        "autoUpdateHint": "有新版本时，云端实例会在空闲或休眠时自动更新。",
         "updateRolledBack": "上次更新失败，已自动回滚。",
         "updateConfirm": {
           "title": "更新云端实例？",
@@ -3461,8 +3463,10 @@
           "wakeFailed": "唤醒云端实例失败，请稍后重试",
           "updateStarted": "云端实例已开始更新",
           "updateFailed": "无法开始更新云端实例，请稍后重试",
+          "autoUpdateFailed": "无法保存云端实例的自动更新设置，请稍后重试",
           "noReleaseAvailable": "目前没有可用的正式版，请刷新后稍后重试"
-        }
+        },
+        "modelAccessStale": "云端模型凭据待刷新，云端模型可能暂不可用"
       },
       "error": {
         "unavailable": "设备互联服务暂不可用(服务端未启用或网络异常)",

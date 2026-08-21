@@ -8,10 +8,14 @@ import {
 } from '@cindy/device-link';
 import {
   BREAKER_NEUTRAL_INVOKE_CHANNELS,
+  acquireDeviceSendSlot,
   buildDeviceResponsivenessProbeArgs,
   classifyDeviceSendSuccess,
   classifyLinkOpenFailure,
+  clearDeviceResponsivenessTrackingFor,
   DEVICE_RESPONSIVENESS_PROBE_CHANNEL,
+  settleDeviceSend,
+  unresponsiveDevicesStore,
 } from '@/device-link/unresponsiveDevicesStore';
 
 describe('DEVICE_RESPONSIVENESS_PROBE_CHANNEL 契约', () => {
@@ -84,5 +88,24 @@ describe('classifyLinkOpenFailure(openLink 失败 → 熔断信号分类)', () =
     expect(classifyLinkOpenFailure(err('LINK_NOT_OPEN'))).toBe('inconclusive');
     expect(classifyLinkOpenFailure(err('INVOKE_TIMEOUT'))).toBe('timeout');
     expect(classifyLinkOpenFailure(new Error('boom'))).toBe('inconclusive');
+  });
+});
+
+describe('explicit peer open breaker escape', () => {
+  it('clearing only the target breaker makes a user open attempt reachable again', () => {
+    const deviceId = 'explicit-open-peer';
+    clearDeviceResponsivenessTrackingFor(deviceId);
+    for (let i = 0; i < 3; i++) {
+      const slot = acquireDeviceSendSlot(deviceId);
+      settleDeviceSend(deviceId, slot, 'timeout');
+    }
+    expect(unresponsiveDevicesStore.has(deviceId)).toBe(true);
+    expect(() => acquireDeviceSendSlot(deviceId)).toThrowError(/unresponsive/);
+
+    clearDeviceResponsivenessTrackingFor(deviceId);
+    expect(unresponsiveDevicesStore.has(deviceId)).toBe(false);
+    const userOpenSlot = acquireDeviceSendSlot(deviceId);
+    settleDeviceSend(deviceId, userOpenSlot, 'inconclusive');
+    clearDeviceResponsivenessTrackingFor(deviceId);
   });
 });

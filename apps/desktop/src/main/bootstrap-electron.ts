@@ -760,10 +760,13 @@ import {
   collectCloudRuntimeActivity,
   createCloudRuntimeController,
   createCloudStatusStore,
+  createPodDeleteControlServer,
   initializePodUserServices,
+  startPodAccountProviderReadiness,
   modelAccessReadiness,
   type CloudRuntimeController,
   type CloudReadinessComponents,
+  type PodDeleteControlServer,
 } from './cloud-runtime/index.js';
 
 const CLOUD_RUNTIME_HEARTBEAT_INTERVAL_MS = 5_000;
@@ -773,6 +776,18 @@ const CLOUD_RUNTIME_SCHEDULER_WAKE_GUARD_MS = 60_000;
 const POD_STARTUP_RETRY_INITIAL_MS = 5_000;
 const POD_STARTUP_RETRY_MAX_MS = 5 * 60_000;
 let cloudRuntimeController: CloudRuntimeController | null = null;
+let podDeleteControlServer: PodDeleteControlServer | null = null;
+
+async function startPodDeleteControlServer(): Promise<void> {
+  if (podDeleteControlServer) return;
+  const control = createPodDeleteControlServer({
+    clearCredentials: authManager.clearProvisionedAccountCredentials,
+    credentialsAbsent: authManager.areProvisionedAccountCredentialsAbsent,
+    logger: headlessStartupLog,
+  });
+  await control.start();
+  podDeleteControlServer = control;
+}
 
 async function startPodCloudRuntimeController(): Promise<void> {
   if (cloudRuntimeController) return;
@@ -7686,6 +7701,19 @@ app.on('ready', async () => {
         );
     if (headlessPodRuntimeInput) {
       try {
+        // This Unix-socket control is reachable only through provider exec.
+        // Start it before provisioning retries so deletion can always obtain a
+        // clear acknowledgement from a live Pod.
+        await startPodDeleteControlServer();
+      } catch (err) {
+        // The provider always has a physical runtimeRoot/PVC fallback. A local
+        // control-socket failure must not turn that best-effort barrier into a
+        // Pod availability failure.
+        headlessStartupLog.warn('Pod delete credential control unavailable', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      try {
         // Start the heartbeat before provisioning. Until auth succeeds its
         // existing fail-closed projection is phase=degraded,
         // readiness.auth=not-ready, blocker=runtime-not-ready.
@@ -7698,34 +7726,45 @@ app.on('ready', async () => {
         return;
       }
     }
-    const started = await runHeadlessStartup({
-      provisionSession: async () => {
-        const hasValidatedLocalPodSession = (): boolean => {
-          const membershipId = authManager.readProvisionedMembershipId();
-          const state = authManager.getAuthState();
-          return Boolean(
-            membershipId &&
-            state.isAuthenticated &&
-            state.user?.id === membershipId,
-          );
-        };
+    const hasValidatedLocalPodSession = (): boolean => {
+      const membershipId = authManager.readProvisionedMembershipId();
+      const state = authManager.getAuthState();
+      return Boolean(
+        membershipId &&
+        state.isAuthenticated &&
+        state.user?.id === membershipId,
+      );
+    };
+    const provisionPodSession = async (): Promise<boolean> => {
+      // A resource refresh token persisted on the PVC is the authoritative
+      // restart path. Finish its cold-start refresh before considering the
+      // mounted one-shot account token, otherwise a normal restart can
+      // consume an already-rotated predecessor unnecessarily.
+      let pendingRestore: Promise<authManager.AuthState> | null = null;
+      const restored = await authManager.initialize({
+        onColdStartPending: (completion) => {
+          pendingRestore = completion;
+        },
+      });
+      if (pendingRestore) await pendingRestore;
+      const hasValidatedSession = hasValidatedLocalPodSession();
+      if (restored.isAuthenticated || hasValidatedSession) {
+        headlessStartupLog.info('headless Pod validated local session restored');
+      }
 
-        // A resource refresh token persisted on the PVC is the authoritative
-        // restart path. Finish its cold-start refresh before considering the
-        // mounted one-shot account token, otherwise a normal restart can
-        // consume an already-rotated predecessor unnecessarily.
-        let pendingRestore: Promise<authManager.AuthState> | null = null;
-        const restored = await authManager.initialize({
-          onColdStartPending: (completion) => {
-            pendingRestore = completion;
-          },
-        });
-        if (pendingRestore) await pendingRestore;
-        if (restored.isAuthenticated || hasValidatedLocalPodSession()) {
-          headlessStartupLog.info('headless Pod validated local session restored');
+      let provisioned = hasValidatedSession;
+      if (!provisioned) {
+        const accountCredentialState = authManager.readProvisionedAccountCredentialState();
+        if (accountCredentialState.kind === 'temporarily-unreadable') {
+          throw new authManager.ProvisionedAccountCredentialTemporarilyUnreadableError();
         }
-
-        const provisioned = await bootstrapPodProvisioning({
+        if (accountCredentialState.kind === 'definitely-absent') {
+          headlessStartupLog.info(
+            'Pod durable Account credential absent; evaluating initial mounted credential',
+            { credentialState: accountCredentialState.kind },
+          );
+        }
+        provisioned = await bootstrapPodProvisioning({
           env: process.env,
           getAuthBaseUrl: () => getClientEndpoint('authApiBaseUrl'),
           authRegion: import.meta.env.VITE_CINDY_AUTH_REGION === 'global' ? 'global' : 'cn',
@@ -7733,42 +7772,59 @@ app.on('ready', async () => {
           // exists. Node fetch uses undici and has no Electron session dependency.
           fetch: createNodeFetchAdapter(),
           logger: headlessStartupLog,
-          readPersistedAccountRefreshToken: authManager.readProvisionedAccountRefreshToken,
+          readPersistedAccountRefreshToken:
+            authManager.readProvisionedAccountRefreshTokenForProvisioning,
           readPersistedMembershipId: authManager.readProvisionedMembershipId,
           persistAccountRefreshToken: authManager.persistProvisionedAccountRefreshToken,
-          clearPersistedAccountRefreshToken:
-            authManager.clearProvisionedAccountRefreshToken,
+          clearPersistedAccountCredentials: authManager.clearProvisionedAccountCredentials,
           persistMembershipId: authManager.persistProvisionedMembershipId,
           installSession: authManager.installProvisionedSession,
           hasLocalSession: hasValidatedLocalPodSession,
         });
-        if (!provisioned) return false;
+      }
+      if (!provisioned) return false;
 
-        const userId = authManager.getCurrentUserId();
-        if (!userId) {
-          throw new Error('Pod provisioning installed no authenticated user');
-        }
-        const localDbResult = await localDbEnsureReady(userId);
-        if (!localDbResult.ready) {
-          throw new Error(
-            `Pod provisioning localDb failed (${localDbResult.error.code}): ${localDbResult.error.message}`,
-          );
-        }
-        const dbClientTakeover = await ensureLifecycleDbClient(userId);
-        if (dbClientTakeover.mode === 'failed' || dbClientTakeover.mode === 'skipped') {
-          throw new Error(`Pod provisioning DbClient unavailable (${dbClientTakeover.mode})`);
-        }
-        if (dbClientTakeover.shouldReleaseMainDb && process.env.XDT_DB_INPROC !== 'true') {
-          localDbCloseDb({ preserveSchemaMigrationLease: true });
-          dbClientLog.info('[DbClient] main-side _db released after headless Pod takeover');
-        }
-        return true;
-      },
+      const userId = authManager.getCurrentUserId();
+      if (!userId) {
+        throw new Error('Pod provisioning installed no authenticated user');
+      }
+      const localDbResult = await localDbEnsureReady(userId);
+      if (!localDbResult.ready) {
+        throw new Error(
+          `Pod provisioning localDb failed (${localDbResult.error.code}): ${localDbResult.error.message}`,
+        );
+      }
+      const dbClientTakeover = await ensureLifecycleDbClient(userId);
+      if (dbClientTakeover.mode === 'failed' || dbClientTakeover.mode === 'skipped') {
+        throw new Error(`Pod provisioning DbClient unavailable (${dbClientTakeover.mode})`);
+      }
+      if (dbClientTakeover.shouldReleaseMainDb && process.env.XDT_DB_INPROC !== 'true') {
+        localDbCloseDb({ preserveSchemaMigrationLease: true });
+        dbClientLog.info('[DbClient] main-side _db released after headless Pod takeover');
+      }
+      return true;
+    };
+    const started = await runHeadlessStartup({
+      provisionSession: provisionPodSession,
       provisionRetry: headlessPodRuntimeInput
         ? {
             initialDelayMs: POD_STARTUP_RETRY_INITIAL_MS,
             maxDelayMs: POD_STARTUP_RETRY_MAX_MS,
-            onFailure: async () => {
+            onFailure: async (error, context) => {
+              if (
+                error
+                instanceof authManager.ProvisionedAccountCredentialTemporarilyUnreadableError
+              ) {
+                headlessStartupLog.error(
+                  'Pod durable Account credential temporarily unreadable; retry scheduled',
+                  {
+                    credentialState: 'temporarily-unreadable',
+                    attempt: context.attempt,
+                    nextRetryMs: context.nextRetryMs,
+                    error: error.name,
+                  },
+                );
+              }
               await cloudRuntimeController?.sampleNow();
             },
           }
@@ -7789,13 +7845,25 @@ app.on('ready', async () => {
       exit: (code) => app.exit(code),
     });
     if (!started) return;
-    if (podProvisioningMode) {
+    const initializePodAccountRuntime = async (): Promise<void> => {
       await initializePodUserServices({
         refreshCustomProviders: refreshCustomProvidersIntoCatalog,
         startEmbeddingHost: attemptStartEmbeddingHost,
         prewarmModelPricing,
         logger: headlessStartupLog,
       });
+      const providerScopeKey = activeOwnerScopeKey();
+      startPodAccountProviderReadiness({
+        scopeKey: providerScopeKey,
+        refreshModels: refreshXdGatewayModels,
+        // 直接用 barrier.start 拿 handle:Pod 侧要在目录同步成功后标记发现完成。
+        startReadiness: (scopeKey, task, onError) =>
+          accountProviderReadinessBarrier.start(scopeKey, task, onError),
+        logger: headlessStartupLog,
+      });
+    };
+    if (podProvisioningMode) {
+      await initializePodAccountRuntime();
     }
     if (deferDeviceLink) {
       try {
@@ -7814,6 +7882,74 @@ app.on('ready', async () => {
         app.exit(1);
         return;
       }
+    }
+    if (headlessPodRuntimeInput && podProvisioningMode) {
+      let recoveryPromise: Promise<void> | null = null;
+      authManager.setProvisionedSessionRecovery(() => {
+        if (recoveryPromise) return;
+        recoveryPromise = (async () => {
+          let attempt = 0;
+          let retryDelayMs = POD_STARTUP_RETRY_INITIAL_MS;
+          const waitForRecoveryRetry = async (
+            credentialState: authManager.ProvisionedAccountCredentialState['kind'],
+            error: unknown,
+          ): Promise<void> => {
+            attempt += 1;
+            const nextRetryMs = Math.min(retryDelayMs, POD_STARTUP_RETRY_MAX_MS);
+            headlessStartupLog.error('Pod resource session re-provision failed; retry scheduled', {
+              credentialState,
+              attempt,
+              nextRetryMs,
+              error: error instanceof Error ? error.name : 'UnknownError',
+            });
+            await cloudRuntimeController?.sampleNow().catch(() => undefined);
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, nextRetryMs);
+            });
+            retryDelayMs = Math.min(nextRetryMs * 2, POD_STARTUP_RETRY_MAX_MS);
+          };
+          for (;;) {
+            const accountCredentialState = authManager.readProvisionedAccountCredentialState();
+            if (accountCredentialState.kind === 'definitely-absent') {
+              headlessStartupLog.info(
+                'Pod resource session re-provision stopped; Account credential unavailable',
+                { credentialState: accountCredentialState.kind, attempt },
+              );
+              return;
+            }
+            if (accountCredentialState.kind === 'temporarily-unreadable') {
+              await waitForRecoveryRetry(
+                accountCredentialState.kind,
+                new authManager.ProvisionedAccountCredentialTemporarilyUnreadableError(),
+              );
+              continue;
+            }
+            try {
+              if (!(await provisionPodSession())) {
+                throw new Error('Pod resource session provisioning is unavailable');
+              }
+              await ensureMakerReady();
+              await initializePodAccountRuntime();
+              await cloudRuntimeController?.sampleNow();
+              headlessStartupLog.info('Pod resource session re-provisioned');
+              return;
+            } catch (error) {
+              const postFailureCredentialState =
+                authManager.readProvisionedAccountCredentialState();
+              if (postFailureCredentialState.kind === 'definitely-absent') {
+                headlessStartupLog.info(
+                  'Pod resource session re-provision stopped after Account credential rejection',
+                  { credentialState: postFailureCredentialState.kind, attempt },
+                );
+                return;
+              }
+              await waitForRecoveryRetry(postFailureCredentialState.kind, error);
+            }
+          }
+        })().finally(() => {
+          recoveryPromise = null;
+        });
+      });
     }
   }
   // 注:invoke-capture 自检(assertCaptureHealthy)不在这里——maker:create-session / maker:send
@@ -7941,6 +8077,11 @@ onQuit('cloud-runtime', async () => {
   if (!cloudRuntimeController) return;
   await cloudRuntimeController.stop();
   cloudRuntimeController = null;
+}, 'async');
+onQuit('pod-delete-control', async () => {
+  if (!podDeleteControlServer) return;
+  await podDeleteControlServer.close();
+  podDeleteControlServer = null;
 }, 'async');
 onQuit('shutdown-maker', shutdownMaker, 'async');
 onQuit('review-artifact-snapshots', cleanupActiveReviewArtifactSnapshots, 'async');

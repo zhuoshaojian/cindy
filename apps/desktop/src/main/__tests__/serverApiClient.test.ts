@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getAccessToken: vi.fn(),
   refresh: vi.fn(),
   invalidateSession: vi.fn(),
+  invalidateResourceSession: vi.fn(),
   logger: {
     error: vi.fn(),
     warn: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../authManager', () => ({
   getAccessToken: mocks.getAccessToken,
   refresh: mocks.refresh,
   invalidateSession: mocks.invalidateSession,
+  invalidateResourceSession: mocks.invalidateResourceSession,
 }));
 vi.mock('../i18n.js', () => ({
   getResolvedMainLocale: () => 'zh-CN',
@@ -134,6 +136,28 @@ describe('serverApiFetch', () => {
     );
   });
 
+  it('supports a Node fetch override without changing the ordinary Electron path', async () => {
+    const nodeFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    });
+
+    await expect(
+      serverApiFetch('/api/model-access/credentials', {
+        baseUrl: 'https://model-access.example.com',
+        fetchImpl: nodeFetch,
+        timeoutMs: 15_000,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(nodeFetch).toHaveBeenCalledWith(
+      'https://model-access.example.com/api/model-access/credentials',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(mocks.netFetch).not.toHaveBeenCalled();
+  });
+
   it('ACCOUNT_UNAVAILABLE 不 refresh，直接完整退登', async () => {
     mocks.getAccessToken.mockReturnValue('token-a');
     mocks.invalidateSession.mockResolvedValue(undefined);
@@ -180,10 +204,10 @@ describe('serverApiFetch', () => {
     expect(mocks.invalidateSession).not.toHaveBeenCalled();
   });
 
-  it('refresh 后仍返回可恢复 401 时完整退登', async () => {
+  it('refresh 后仍返回可恢复 401 时失效 resource session', async () => {
     mocks.getAccessToken.mockReturnValue('token-a');
     mocks.refresh.mockResolvedValue(true);
-    mocks.invalidateSession.mockResolvedValue(undefined);
+    mocks.invalidateResourceSession.mockResolvedValue(undefined);
     mocks.netFetch
       .mockResolvedValueOnce({
         ok: false,
@@ -201,7 +225,10 @@ describe('serverApiFetch', () => {
         baseUrl: 'https://resource.example.com',
       }),
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED', statusCode: 401 });
-    expect(mocks.invalidateSession).toHaveBeenCalledWith('resource-unauthorized-after-refresh');
+    expect(mocks.invalidateResourceSession).toHaveBeenCalledWith(
+      'resource-unauthorized-after-refresh',
+    );
+    expect(mocks.invalidateSession).not.toHaveBeenCalled();
   });
 
   it.each([

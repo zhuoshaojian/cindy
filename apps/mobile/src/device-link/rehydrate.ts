@@ -1,5 +1,5 @@
 import type { Topic } from '@cindy/device-link';
-import type { RehydratePlan } from '@/device-link/topicRegistry';
+import type { PeerLinkRecoveryPlan } from '@/device-link/peerLinkRecovery';
 import { isTransientRemoteError } from '@/device-link/remoteRetry';
 
 export interface DeviceLinkRehydrateSendOptions {
@@ -26,6 +26,8 @@ export interface DeviceLinkRehydrateDeps {
   openLink(deviceId: string): PresenceTrackedRehydrateStep;
   subscribe(deviceId: string, topics: readonly Topic[]): Promise<unknown>;
   requestSessionsReseed(deviceId: string): void;
+  canPublishPeerLinkRecovered?(deviceId: string): boolean;
+  onPeerLinkRecovered?(deviceId: string): void;
   onDeviceReachable?(deviceId: string): void;
   onDeviceRemoteDisabled?(deviceId: string): void;
   onDeviceUnavailable?(deviceId: string): void;
@@ -44,6 +46,8 @@ export interface DeviceLinkRehydrateResult {
    * 消息静默丢在镜像外。
    */
   transientFailures: number;
+  /** Exact peers that need another pass; retry scheduling must stay per-peer. */
+  transientFailureDeviceIds: string[];
 }
 
 /**
@@ -54,22 +58,24 @@ export interface DeviceLinkRehydrateResult {
  * `transientFailures > 0` — see DeviceLinkContext.
  */
 export async function rehydrateDeviceLinkTopics(
-  plans: readonly RehydratePlan[],
+  plans: readonly PeerLinkRecoveryPlan[],
   deps: DeviceLinkRehydrateDeps,
 ): Promise<DeviceLinkRehydrateResult> {
   let transientFailures = 0;
+  const transientFailureDeviceIds = new Set<string>();
   const track = async (
     deviceId: string,
     capturedPresenceEpoch: number,
     capturedResponseEvidenceEpoch: number,
     step: Promise<unknown>,
-  ): Promise<'continue' | 'unavailable'> => {
+  ): Promise<'success' | 'stale' | 'failed' | 'unavailable'> => {
     try {
       await step;
       if (deps.isPresenceEpochCurrent(deviceId, capturedPresenceEpoch)) {
         deps.onDeviceReachable?.(deviceId);
+        return 'success';
       }
-      return 'continue';
+      return 'stale';
     } catch (err) {
       const epochCurrent = deps.isPresenceEpochCurrent(
         deviceId,
@@ -104,29 +110,48 @@ export async function rehydrateDeviceLinkTopics(
         )
       ) {
         transientFailures += 1;
+        transientFailureDeviceIds.add(deviceId);
       }
-      return unavailable ? 'unavailable' : 'continue';
+      return unavailable ? 'unavailable' : 'failed';
     }
   };
 
   for (const plan of plans) {
-    if (deps.isCancelled?.()) return { transientFailures };
+    if (deps.isCancelled?.()) {
+      return { transientFailures, transientFailureDeviceIds: [...transientFailureDeviceIds] };
+    }
     if (plan.openLink) {
       // openLink 可能与页面请求共用一条在途请求;它必须连同底层请求真正创建时
       // 捕获的 epoch 一起复用,不能在 dedupe 时补拍一个更新的 epoch。
       const openLinkStep = deps.openLink(plan.deviceId);
-      if (await track(
+      const openResult = await track(
         plan.deviceId,
         openLinkStep.capturedPresenceEpoch,
         openLinkStep.capturedResponseEvidenceEpoch,
         openLinkStep.request,
-      ) === 'unavailable') {
+      );
+      if (openResult === 'success' && plan.requireOpenSuccessBeforeReplay) {
+        if (!(deps.canPublishPeerLinkRecovered?.(plan.deviceId) ?? true)) {
+          continue;
+        }
+        deps.onPeerLinkRecovered?.(plan.deviceId);
+      }
+      if (openResult === 'unavailable') {
+        continue;
+      }
+      if (plan.requireOpenSuccessBeforeReplay && openResult !== 'success') {
+        if (openResult === 'stale') {
+          transientFailures += 1;
+          transientFailureDeviceIds.add(plan.deviceId);
+        }
         continue;
       }
     }
 
     if (plan.topics.length === 0) continue;
-    if (deps.isCancelled?.()) return { transientFailures };
+    if (deps.isCancelled?.()) {
+      return { transientFailures, transientFailureDeviceIds: [...transientFailureDeviceIds] };
+    }
     if (
       await track(
         plan.deviceId,
@@ -139,7 +164,9 @@ export async function rehydrateDeviceLinkTopics(
     }
 
     for (const topic of plan.topics) {
-      if (deps.isCancelled?.()) return { transientFailures };
+      if (deps.isCancelled?.()) {
+        return { transientFailures, transientFailureDeviceIds: [...transientFailureDeviceIds] };
+      }
       if (topic === 'sessions') {
         deps.requestSessionsReseed(plan.deviceId);
         continue;
@@ -161,7 +188,10 @@ export async function rehydrateDeviceLinkTopics(
       }
     }
   }
-  return { transientFailures };
+  return {
+    transientFailures,
+    transientFailureDeviceIds: [...transientFailureDeviceIds],
+  };
 }
 
 export function hasDeviceLinkErrorCode(

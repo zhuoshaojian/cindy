@@ -33,6 +33,14 @@ const getBaseUrl = vi.fn(() => CDN_EXTERNAL_BASE_URL);
 const isDev = vi.fn(() => false);
 const download = vi.fn();
 const readAutoUpdateSettings = vi.fn(() => ({ autoRelaunchOnIdle: true }));
+const readAutoUpdateSettingsState = vi.fn(() => ({
+  value: readAutoUpdateSettings(),
+  isCustomized: true,
+  defaults: { autoRelaunchOnIdle: false },
+  customizedKeys: ['autoRelaunchOnIdle'],
+}));
+const resetAutoUpdateSettings = vi.fn(() => ({ autoRelaunchOnIdle: false }));
+const writeAutoRelaunchOnIdle = vi.fn();
 
 const logInfo = vi.fn();
 const logWarn = vi.fn();
@@ -67,13 +75,9 @@ vi.mock('electron', () => ({
 
 vi.mock('../auto-update-settings-store', () => ({
   readAutoUpdateSettings,
-  readAutoUpdateSettingsState: () => ({
-    value: readAutoUpdateSettings(),
-    isCustomized: true,
-    defaults: { autoRelaunchOnIdle: false },
-  }),
-  resetAutoUpdateSettings: () => ({ autoRelaunchOnIdle: false }),
-  writeAutoRelaunchOnIdle: vi.fn(),
+  readAutoUpdateSettingsState,
+  resetAutoUpdateSettings,
+  writeAutoRelaunchOnIdle,
 }));
 
 const tryEnableUncustomizedBetaAtomic = vi.fn(async () => true);
@@ -216,6 +220,16 @@ beforeEach(() => {
   });
   readAutoUpdateSettings.mockReset();
   readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: true });
+  readAutoUpdateSettingsState.mockReset();
+  readAutoUpdateSettingsState.mockImplementation(() => ({
+    value: readAutoUpdateSettings(),
+    isCustomized: true,
+    defaults: { autoRelaunchOnIdle: false },
+    customizedKeys: ['autoRelaunchOnIdle'],
+  }));
+  resetAutoUpdateSettings.mockReset();
+  resetAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: false });
+  writeAutoRelaunchOnIdle.mockReset();
   logInfo.mockReset();
   logWarn.mockReset();
   logError.mockReset();
@@ -1191,6 +1205,281 @@ describe('startup update relaunch safety', () => {
       service.stopUpdateService();
     }
   });
+  function mockSuccessfulDownload(): void {
+    download.mockImplementation(async ({ targetPath }: { targetPath: string }) => {
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.writeFileSync(targetPath, 'update');
+      return { path: targetPath, size: 123 };
+    });
+  }
+
+  async function stageReadyPatch(
+    service: Awaited<ReturnType<typeof freshUpdateService>>,
+    version = '0.0.65',
+  ): Promise<void> {
+    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: false });
+    mockSuccessfulDownload();
+    await expect(service.checkForUpdate(updateManifest(version))).resolves.toBe('ready');
+    expect(service.getUpdateStatus()).toBe('ready');
+  }
+
+  async function flushEvaluation(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  it('tracks a live download as imminent only while auto relaunch remains enabled', async () => {
+    let finishDownload: (() => void) | undefined;
+    download.mockImplementation(({ targetPath }: { targetPath: string }) => (
+      new Promise<{ path: string; size: number }>((resolve) => {
+        finishDownload = () => {
+          fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+          fs.writeFileSync(targetPath, 'update');
+          resolve({ path: targetPath, size: 123 });
+        };
+      })
+    ));
+
+    const service = await freshUpdateService('darwin');
+    const check = service.checkForUpdate(updateManifest());
+    expect(service.getUpdateStatus()).toBe('downloading');
+    expect(service.isUpdateRelaunchImminent()).toBe(true);
+
+    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: false });
+    expect(service.isUpdateRelaunchImminent()).toBe(false);
+
+    finishDownload?.();
+    await expect(check).resolves.toBe('ready');
+  });
+
+  it('gets, sets, validates, and resets the persisted auto-relaunch override', async () => {
+    vi.useFakeTimers();
+    let value = false;
+    let customized = false;
+    readAutoUpdateSettings.mockImplementation(() => ({ autoRelaunchOnIdle: value }));
+    readAutoUpdateSettingsState.mockImplementation(() => ({
+      value: { autoRelaunchOnIdle: value },
+      isCustomized: customized,
+      defaults: { autoRelaunchOnIdle: false },
+      customizedKeys: customized ? ['autoRelaunchOnIdle'] : [],
+    }));
+    writeAutoRelaunchOnIdle.mockImplementation((next: boolean) => {
+      value = next;
+      customized = next;
+    });
+    resetAutoUpdateSettings.mockImplementation(() => {
+      value = false;
+      customized = false;
+      return { autoRelaunchOnIdle: false };
+    });
+
+    const service = await freshUpdateService('darwin');
+    service.initUpdateService();
+    try {
+      const get = ipcHandlers.get('update-auto-settings-get');
+      const set = ipcHandlers.get('update-auto-settings-set');
+      const reset = ipcHandlers.get('update-auto-settings-reset');
+      expect(get?.()).toEqual({
+        autoRelaunchOnIdle: false,
+        isCustomized: false,
+        defaultAutoRelaunchOnIdle: false,
+      });
+
+      expect(set?.({}, { autoRelaunchOnIdle: true })).toEqual({
+        autoRelaunchOnIdle: true,
+        isCustomized: true,
+        defaultAutoRelaunchOnIdle: false,
+      });
+      expect(writeAutoRelaunchOnIdle).toHaveBeenCalledWith(true);
+      expect(() => set?.({}, { autoRelaunchOnIdle: 'true' })).toThrow('INVALID_PARAMS');
+      expect(() => set?.({}, null)).toThrow('INVALID_PARAMS');
+
+      expect(reset?.()).toEqual({
+        autoRelaunchOnIdle: false,
+        isCustomized: false,
+        defaultAutoRelaunchOnIdle: false,
+      });
+      expect(resetAutoUpdateSettings).toHaveBeenCalledTimes(1);
+    } finally {
+      service.stopUpdateService();
+    }
+  });
+
+  it('closes the ready → idle policy → relaunch trigger loop on the 30-second poll', async () => {
+    vi.useFakeTimers();
+    fetchManifest.mockResolvedValue(updateManifest('0.0.65'));
+    const service = await freshUpdateService('darwin');
+    service.initUpdateService();
+    try {
+      await stageReadyPatch(service);
+      // App Translocation is an existing non-destructive executor seam: reaching
+      // `error/translocated` proves executeRelaunch() was entered without spawning
+      // an updater or terminating the Vitest process.
+      appIsInApplicationsFolder.mockReturnValue(false);
+      readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: true });
+
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(service.getUpdateStatus()).toBe('ready');
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(service.getUpdateStatus()).toBe('error');
+      expect(logInfo).toHaveBeenCalledWith(
+        'auto relaunch conditions met (%s), applying update v%s',
+        'poll',
+        '0.0.65',
+      );
+    } finally {
+      service.stopUpdateService();
+    }
+  });
+
+  it('re-evaluates on a busy edge and starts the 60-second quiet period', async () => {
+    vi.useFakeTimers();
+    const service = await freshUpdateService('darwin');
+    const probe = vi.fn(() => false);
+    service.setUpdateAutoRelaunchBusyProbe(probe);
+    await stageReadyPatch(service);
+    probe.mockClear();
+    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: true });
+
+    service.notifyUpdateAutoRelaunchBusyStateChanged();
+    await flushEvaluation();
+
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(service.getUpdateStatus()).toBe('ready');
+    expect(logInfo).toHaveBeenCalledWith('auto relaunch blocked (%s)', 'recent-busy');
+  });
+
+  it('fails closed when the post-SQLite synchronous re-sample throws', async () => {
+    vi.useFakeTimers();
+    const { hasUpdateRelaunchBusyActivity } = await import('../updateRelaunchSafety');
+    const service = await freshUpdateService('darwin');
+    let reads = 0;
+    let secondReadReached: (() => void) | undefined;
+    const secondRead = new Promise<void>((resolve) => {
+      secondReadReached = resolve;
+    });
+    service.setUpdateAutoRelaunchBusyProbe(() => hasUpdateRelaunchBusyActivity({
+      readSynchronousBusy: () => {
+        reads += 1;
+        if (reads === 2) {
+          secondReadReached?.();
+          throw new Error('second sample failed');
+        }
+        return false;
+      },
+      readScheduleBusy: async () => false,
+    }));
+    await stageReadyPatch(service);
+    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: true });
+
+    service.notifyUpdateAutoRelaunchBusyStateChanged();
+    await secondRead;
+    await flushEvaluation();
+
+    expect(reads).toBe(2);
+    expect(service.getUpdateStatus()).toBe('ready');
+    expect(logWarn).toHaveBeenCalledWith(
+      'auto relaunch busy probe failed; treating app as busy',
+      { error: 'second sample failed' },
+    );
+  });
+
+  it('re-snapshots the setting after an asynchronous busy probe before applying', async () => {
+    vi.useFakeTimers();
+    const service = await freshUpdateService('darwin');
+    await stageReadyPatch(service);
+    appIsInApplicationsFolder.mockReturnValue(false);
+    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: true });
+    let finishProbe: ((busy: boolean) => void) | undefined;
+    let probeStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      probeStarted = resolve;
+    });
+    service.setUpdateAutoRelaunchBusyProbe(() => new Promise<boolean>((resolve) => {
+      finishProbe = resolve;
+      probeStarted?.();
+    }));
+    await started;
+
+    // The user disables unattended relaunch while the probe is awaiting SQLite.
+    // A stale pre-await snapshot would enter executeRelaunch() and hit the
+    // translocation sentinel; the second snapshot must leave the patch ready.
+    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: false });
+    finishProbe?.(false);
+    await flushEvaluation();
+
+    expect(service.getUpdateStatus()).toBe('ready');
+    expect(appIsInApplicationsFolder).not.toHaveBeenCalled();
+  });
+
+  it('does not install the background poller or power listeners in dev mode', async () => {
+    vi.useFakeTimers();
+    isDev.mockReturnValue(true);
+    const service = await freshUpdateService('darwin');
+    service.initUpdateService();
+    try {
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(powerMonitorOn).not.toHaveBeenCalled();
+      expect(fetchManifest).not.toHaveBeenCalled();
+    } finally {
+      service.stopUpdateService();
+    }
+  });
+
+  it('replaces a ready package only after the superseding package succeeds', async () => {
+    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: false });
+    download.mockImplementation(async ({ targetPath }: { targetPath: string }) => {
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.writeFileSync(targetPath, path.basename(targetPath));
+      return { path: targetPath, size: 123 };
+    });
+    const service = await freshUpdateService('darwin');
+
+    await expect(service.checkForUpdate(updateManifest('0.0.65'))).resolves.toBe('ready');
+    const updatesDir = path.join(TEST_USER_DATA, 'updates');
+    const oldFile = path.join(updatesDir, 'xdt-maker-0.0.65.zip');
+    expect(fs.existsSync(oldFile)).toBe(true);
+
+    await expect(service.checkForUpdate(updateManifest('0.0.66'))).resolves.toBe('ready');
+    const nextFile = path.join(updatesDir, 'xdt-maker-0.0.66.zip');
+    expect(fs.existsSync(oldFile)).toBe(false);
+    expect(fs.existsSync(nextFile)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(updatesDir, 'patch-info.json'), 'utf-8')))
+      .toMatchObject({ version: '0.0.66', fileName: 'xdt-maker-0.0.66.zip' });
+  });
+
+  it('discards a staged package after three persisted apply attempts', async () => {
+    vi.useFakeTimers();
+    fetchManifest.mockResolvedValue(null);
+    const updatesDir = path.join(TEST_USER_DATA, 'updates');
+    const patchFile = path.join(updatesDir, 'failed-three-times.zip');
+    fs.mkdirSync(updatesDir, { recursive: true });
+    fs.writeFileSync(patchFile, 'update');
+    fs.writeFileSync(path.join(updatesDir, 'patch-info.json'), JSON.stringify({
+      version: '0.0.65',
+      fileName: path.basename(patchFile),
+      sha256: 'abc',
+      applyAttempts: 3,
+    }));
+
+    const service = await freshUpdateService('darwin');
+    service.initUpdateService();
+    try {
+      const startup = ipcHandlers.get('update-check-startup');
+      await expect(startup?.()).resolves.toMatchObject({
+        hasUpdate: false,
+        action: 'none',
+        error: 'manifest_failed',
+      });
+      expect(fs.existsSync(patchFile)).toBe(false);
+      expect(fs.existsSync(path.join(updatesDir, 'patch-info.json'))).toBe(false);
+      expect(service.getUpdateStatus()).toBe('idle');
+    } finally {
+      service.stopUpdateService();
+    }
+  });
 });
 
 describe('splash 启动下载 0% 显式广播', () => {
@@ -1268,4 +1557,5 @@ describe('splash 启动下载 0% 显式广播', () => {
     expect(await service.checkForUpdate(updateManifest('0.0.66'))).toBe('ready');
     expect(progressCountWhenDownloadStarted).toBe(0);
   });
+
 });

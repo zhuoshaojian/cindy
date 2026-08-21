@@ -28,6 +28,18 @@ export const CLOUD_DEVICE_NAME_SENTINEL = '__cindy_cloud_device_name__';
 const CLOUD_DEVICE_NAME_WITH_SEQUENCE_PATTERN =
   /^__cindy_cloud_device_name__:([1-9]\d*)$/;
 
+/**
+ * Stable relay device-id namespace for cloud instances.
+ *
+ * Wire contract twin: cindy-server/cloud-instance-server/src/identity.ts.
+ * Changing this prefix requires updating both repositories together.
+ */
+export const CLOUD_DEVICE_ID_PREFIX = 'cloud-device-';
+
+export function isCloudInstanceDeviceId(deviceId: string): boolean {
+  return deviceId.startsWith(CLOUD_DEVICE_ID_PREFIX);
+}
+
 export interface CloudDeviceNameMarker {
   /** null keeps compatibility with cloud devices registered before ordinals existed. */
   sequence: number | null;

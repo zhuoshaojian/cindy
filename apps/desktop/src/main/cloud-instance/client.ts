@@ -10,6 +10,7 @@ import type {
   CloudInstanceCreateInput,
   CloudInstanceDeleteResult,
   CloudInstanceEnableResult,
+  CloudInstancePatchInput,
   CloudInstanceRenameResult,
   CloudInstanceResourceTier,
   CloudInstanceStatus,
@@ -46,6 +47,7 @@ export interface CloudInstanceClient {
   wake(input: CloudInstanceWakeInput): Promise<CloudInstanceEnableResult>;
   create(input: CloudInstanceCreateInput): Promise<CloudInstanceEnableResult>;
   rename(instanceId: string, customLabel: string | null): Promise<CloudInstanceRenameResult>;
+  patch(instanceId: string, input: Omit<CloudInstancePatchInput, 'instanceId'>): Promise<void>;
   status(instanceId?: string): Promise<{ status: CloudInstanceStatus }>;
   stop(instanceId: string): Promise<{ status: CloudInstanceStatus }>;
   upgrade(instanceId: string): Promise<CloudInstanceUpgradeResult>;
@@ -91,6 +93,12 @@ export function createCloudInstanceClient(deps: CloudInstanceClientDeps): CloudI
         `/instances/${encodeURIComponent(instanceId)}`,
         requestOptions(deps, { method: 'PATCH', body: { customLabel } }),
       ),
+    patch: async (instanceId, input) => {
+      await deps.request<unknown>(
+        `/instances/${encodeURIComponent(instanceId)}`,
+        requestOptions(deps, { method: 'PATCH', body: input }),
+      );
+    },
     status: async (instanceId) => {
       const query = instanceId ? `?instanceId=${encodeURIComponent(instanceId)}` : '';
       return deps.request<{ status: CloudInstanceStatus }>(

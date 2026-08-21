@@ -187,6 +187,22 @@ describe('credentialsSync', () => {
     });
   });
 
+  it('long-term retry policy can recover after the ordinary two retries', async () => {
+    const sleep = vi.fn(async () => undefined);
+    const nextRetryDelayMs = vi.fn(() => 1);
+    const h = makeHarness({ sleep, nextRetryDelayMs });
+    h.fetchMock
+      .mockRejectedValueOnce(serverError('NETWORK_ERROR', 0))
+      .mockRejectedValueOnce(serverError('NETWORK_ERROR', 0))
+      .mockRejectedValueOnce(serverError('NETWORK_ERROR', 0))
+      .mockResolvedValue({ endpoint: 'https://laxa.test.invalid', apiKey: 'sk-recovered' });
+
+    await expect(h.sync.sync()).resolves.toMatchObject({ state: 'ok' });
+    expect(h.fetchMock).toHaveBeenCalledTimes(4);
+    expect(nextRetryDelayMs).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(3);
+  });
+
   it('AD_ACCOUNT_MISSING 明确失败且不做无意义重试', async () => {
     const warn = vi.fn();
     const h = makeHarness({ log: { info: vi.fn(), warn } });

@@ -18,8 +18,8 @@ export function formatMobileCloudDeviceName(): string {
 type DevicePresentationInput = Pick<DeviceListDeviceLike, 'name' | 'selfName' | 'deviceInfo'>;
 
 /** Resolve the cloud self-name sentinel using the app's active language preference. */
-export function resolveMobileDeviceDisplayName(device: DevicePresentationInput): string {
-  const name = deviceDisplayName(device);
+export function resolveMobileDeviceDisplayName(device: DevicePresentationInput | string): string {
+  const name = typeof device === 'string' ? device : deviceDisplayName(device);
   const marker = parseCloudDeviceName(name);
   return marker
     ? formatMobileCloudDeviceName()

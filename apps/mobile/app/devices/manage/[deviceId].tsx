@@ -1,10 +1,13 @@
 import { useLocalSearchParams } from 'expo-router';
 
 import { DeviceManagementScreen } from '@/device-link/DeviceManagementScreen';
+import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 
 export default function DeviceManagementRoute() {
   const params = useLocalSearchParams<{
     deviceId: string;
+    autoUpdate?: string;
+    cloudCandidate?: string;
     name?: string;
     online?: string;
     cloudInstanceId?: string;
@@ -20,8 +23,11 @@ export default function DeviceManagementRoute() {
     upgradeState?: string;
   }>();
   const upgradeState = readRouteString(params.upgradeState);
+  const autoUpdate = readRouteString(params.autoUpdate);
   return (
     <DeviceManagementScreen
+      autoUpdate={autoUpdate === '1' ? true : autoUpdate === '0' ? false : undefined}
+      cloudCandidate={readRouteString(params.cloudCandidate) === '1'}
       cloudInstanceId={readRouteString(params.cloudInstanceId) ?? undefined}
       cpuLabel={readRouteString(params.cpuLabel) ?? undefined}
       deviceId={readRouteString(params.deviceId) ?? ''}
@@ -31,7 +37,9 @@ export default function DeviceManagementRoute() {
       lastFailedUpgradeImage={readRouteString(params.lastFailedUpgradeImage) ?? undefined}
       memoryGb={readFiniteNumber(params.memoryGb)}
       modelLabel={readRouteString(params.modelLabel) ?? undefined}
-      name={readRouteString(params.name) ?? readRouteString(params.deviceId) ?? ''}
+      name={resolveMobileDeviceDisplayName(
+        readRouteString(params.name) ?? readRouteString(params.deviceId) ?? '',
+      )}
       online={readRouteString(params.online) === '1'}
       platform={readRouteString(params.platform) ?? undefined}
       updateAvailable={readRouteString(params.updateAvailable) === '1'}

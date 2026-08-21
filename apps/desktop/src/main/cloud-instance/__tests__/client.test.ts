@@ -46,6 +46,7 @@ describe('cloud instance HTTP client', () => {
     await client.wake({ instanceId: 'instance/a', resourceTier: 'large' });
     await client.create({ resourceTier: 'small' });
     await client.rename('instance/a', 'Build');
+    await client.patch('instance/a', { autoUpdate: true });
     await client.status('instance/a');
     await client.stop('instance/a');
     await client.upgrade('instance/a');
@@ -86,6 +87,16 @@ describe('cloud instance HTTP client', () => {
         {
           method: 'PATCH',
           body: { customLabel: 'Build' },
+          baseUrl: 'http://127.0.0.1:3343',
+          timeoutMs: 12_345,
+          logMetadataOnly: true,
+        },
+      ],
+      [
+        '/instances/instance%2Fa',
+        {
+          method: 'PATCH',
+          body: { autoUpdate: true },
           baseUrl: 'http://127.0.0.1:3343',
           timeoutMs: 12_345,
           logMetadataOnly: true,

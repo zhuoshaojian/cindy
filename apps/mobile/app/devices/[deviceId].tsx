@@ -32,6 +32,7 @@ import {
 } from '@/components/MobilePrimitives';
 import { buildMainWindowLayout } from '@/components/mainWindowLayout';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
+import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 import { formatRemoteError } from '@/device-link/remoteStatus';
 import { withTransientRemoteRetry } from '@/device-link/remoteRetry';
 import { useRemoteSyncTask } from '@/device-link/remoteSyncTask';
@@ -119,7 +120,9 @@ export default function DeviceDetailScreen() {
     statusFilter?: string;
   }>();
   const deviceId = readRouteString(params.deviceId) ?? '';
-  const deviceName = readRouteString(params.name) ?? readRouteString(params.deviceName) ?? deviceId;
+  const deviceName = resolveMobileDeviceDisplayName(
+    readRouteString(params.name) ?? readRouteString(params.deviceName) ?? deviceId,
+  );
   // 从首页「查看全部 N 条对话」进来时带 workingDir + 项目名 → 仅显示该项目的会话(项目作用域)。
   const projectWorkingDir = readRouteString(params.workingDir);
   const projectName = readRouteString(params.projectName);

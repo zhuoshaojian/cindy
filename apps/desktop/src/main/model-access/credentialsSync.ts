@@ -77,6 +77,11 @@ export interface CredentialsSyncDeps {
   onStatusChange(status: ModelAccessStatus): void;
   /** 自动重试退避(默认 [2s, 8s];首次尝试不算)。 */
   retryDelaysMs?: number[];
+  /**
+   * Optional retry policy. Returning null stops automatic recovery; returning
+   * a delay keeps retrying. Pod mode uses this for a capped long-term backoff.
+   */
+  nextRetryDelayMs?(attempt: number): number | null;
   sleep?(ms: number): Promise<void>;
   log?: {
     info(msg: string, context?: unknown): void;
@@ -232,10 +237,13 @@ export function createCredentialsSync(deps: CredentialsSyncDeps): CredentialsSyn
       const result = await attemptOnce(myEpoch);
       if (result === 'stale' || myEpoch !== epoch) return status; // 登出/换账号,放弃本轮
       if (!('kind' in result)) return result;
-      if (attempt >= retryDelays.length) {
+      const retryDelayMs = deps.nextRetryDelayMs
+        ? deps.nextRetryDelayMs(attempt)
+        : (retryDelays[attempt] ?? null);
+      if (retryDelayMs === null) {
         return setStatusIfFresh(myEpoch, 'failed', result.errorCode);
       }
-      await sleep(retryDelays[attempt]);
+      await sleep(retryDelayMs);
       if (myEpoch !== epoch) return status;
     }
   }

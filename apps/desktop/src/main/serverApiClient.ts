@@ -53,6 +53,8 @@ export interface ApiFetchOptions {
   baseUrl: string | (() => string);
   /** Abort the request after this many milliseconds; 0 disables the deadline. */
   timeoutMs?: number;
+  /** Override Electron net.fetch for windowless runtimes that require Node's fetch. */
+  fetchImpl?: typeof globalThis.fetch;
   /** Keep upstream response/network details out of local logs for sensitive flows. */
   redactErrorDetails?: boolean;
   /**
@@ -96,7 +98,8 @@ async function rawFetch<T>(apiPath: string, opts: ApiFetchOptions): Promise<RawR
   const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
     const body = opts.bodyFactory ? opts.bodyFactory() : opts.body;
-    const response = await net.fetch(url, {
+    const fetchImpl = opts.fetchImpl ?? net.fetch;
+    const response = await fetchImpl(url, {
       method,
       headers,
       cache: opts.cache,
@@ -164,11 +167,11 @@ export async function serverApiFetch<T>(apiPath: string, opts: ApiFetchOptions):
       (errCode === 'ACCOUNT_UNAVAILABLE' ||
         (refreshedAndRetried && isRefreshableUnauthorizedCode(errCode)))
     ) {
-      void authManager.invalidateSession(
-        errCode === 'ACCOUNT_UNAVAILABLE'
-          ? 'account-unavailable'
-          : 'resource-unauthorized-after-refresh',
-      );
+      if (errCode === 'ACCOUNT_UNAVAILABLE') {
+        void authManager.invalidateSession('account-unavailable');
+      } else {
+        void authManager.invalidateResourceSession('resource-unauthorized-after-refresh');
+      }
     }
     // 网络异常 rawFetch 已 log;这里补 not-ok 响应(401/5xx 等)的日志,
     // 否则上层 catch 一吞,排查调用链时完全看不到原因。

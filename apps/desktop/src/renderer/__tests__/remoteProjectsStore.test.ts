@@ -363,6 +363,24 @@ describe('remoteProjectsStore', () => {
     expect(remoteProjectsStore.getArchivedLoadedDeviceIds().size).toBe(0);
   });
 
+  it('retains cloud kind across disconnects and refreshes that omit the optional metadata', () => {
+    remoteProjectsStore.setDeviceSessions('dev-cloud', 'Cloud', [mk('s1')], 'active', 'cloud');
+    remoteProjectsStore.markDeviceDisconnected('dev-cloud');
+    expect(remoteProjectsStore.getDeviceList()).toEqual([
+      {
+        deviceId: 'dev-cloud',
+        deviceName: 'Cloud',
+        kind: 'cloud',
+        sessionCount: 1,
+        connected: false,
+      },
+    ]);
+
+    remoteProjectsStore.setDeviceSessions('dev-cloud', 'Cloud', [mk('s1')]);
+    expect(remoteProjectsStore.getDeviceKind('dev-cloud')).toBe('cloud');
+    expect(remoteProjectsStore.getDeviceList()[0]?.kind).toBe('cloud');
+  });
+
   it('setDeviceSessions reconnects a disconnected cached shard', () => {
     remoteProjectsStore.setDeviceSessions('dev-B', 'B', [mk('s1')]);
     remoteProjectsStore.markDeviceDisconnected('dev-B');

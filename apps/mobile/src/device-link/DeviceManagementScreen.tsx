@@ -1,9 +1,10 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { parseCloudInstanceImageTag } from '@cindy/maker-shared/cloud-instance';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 
 import { Text, TextInput } from '@/components/AppText';
 import {
@@ -13,13 +14,19 @@ import {
   StatusDot,
 } from '@/components/MobilePrimitives';
 import { useAuth } from '@/auth/AuthContext';
-import { useCloudInstances } from '@/cloud-instance/useCloudInstances';
+import {
+  useCloudInstances,
+  type UseCloudInstances,
+} from '@/cloud-instance/useCloudInstances';
+import type { CloudInstanceView } from '@/api/cloudInstance';
 import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@/cloud-instance/cloudInstanceWake';
 import { DEVICE_LINK_API_BASE_URL } from '@/config/env';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
+import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 import {
   cloudInstanceDetailActionState,
   devicePlatformLabel,
+  resolveCloudManagementTarget,
 } from '@/device-link/deviceManagement';
 import { formatRemoteError } from '@/device-link/remoteStatus';
 import { remoteSessionStore } from '@/session/remoteSessionStore';
@@ -33,6 +40,8 @@ export interface DeviceManagementScreenProps {
   deviceId: string;
   name: string;
   online: boolean;
+  autoUpdate?: boolean;
+  cloudCandidate?: boolean;
   cloudInstanceId?: string;
   cpuLabel?: string;
   image?: string;
@@ -53,18 +62,32 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
   const router = useRouter();
   const { t } = useTranslation();
   const { apiFetch } = useAuth();
+  const cloudCandidate = Boolean(
+    props.cloudCandidate
+    || props.kind === 'cloud'
+    || props.cloudInstanceId
+    || isCloudInstanceDeviceId(props.deviceId),
+  );
+  const cloud = useCloudInstances(apiFetch, cloudCandidate);
   const { lastPresenceSnapshot } = useDeviceLink();
-  const [deviceName, setDeviceName] = useState(props.name);
-  const [renameDraft, setRenameDraft] = useState(props.name);
+  const displayName = resolveMobileDeviceDisplayName(props.name);
+  const [deviceName, setDeviceName] = useState(displayName);
+  const [renameDraft, setRenameDraft] = useState(displayName);
   const [renameEditing, setRenameEditing] = useState(false);
   const [renameSaving, setRenameSaving] = useState(false);
   const [online, setOnline] = useState(props.online);
-  const isCloud = props.kind === 'cloud' || Boolean(props.cloudInstanceId);
+  const cloudTarget = resolveCloudManagementTarget({
+    cloudCandidate,
+    cloudInstanceId: props.cloudInstanceId,
+    deviceId: props.deviceId,
+    instances: cloud.instances,
+    kind: props.kind,
+  });
 
   useEffect(() => {
-    setDeviceName(props.name);
-    setRenameDraft(props.name);
-  }, [props.name]);
+    setDeviceName(displayName);
+    setRenameDraft(displayName);
+  }, [displayName]);
 
   useEffect(() => {
     if (lastPresenceSnapshot?.deviceId === props.deviceId) {
@@ -134,10 +157,12 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
           </View>
         </View>
 
-        {isCloud ? (
+        {cloudTarget.isCloud ? (
           <CloudInstanceManagement
             {...props}
+            cloud={cloud}
             initialInstanceId={props.cloudInstanceId}
+            resolvedInstance={cloudTarget.instance}
             online={online}
             onOnlineOverride={setOnline}
             onDeleted={() => goBackGuarded(router)}
@@ -200,6 +225,8 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
 }
 
 function CloudInstanceManagement({
+  autoUpdate: fallbackAutoUpdate,
+  cloud,
   deviceId,
   image: fallbackImage,
   initialInstanceId,
@@ -208,22 +235,27 @@ function CloudInstanceManagement({
   onDeleted,
   online,
   onOnlineOverride,
+  resolvedInstance,
   updateAvailable: fallbackUpdateAvailable = false,
   upgradeState: fallbackUpgradeState = 'idle',
 }: DeviceManagementScreenProps & {
+  cloud: UseCloudInstances;
   initialInstanceId?: string;
   onDeleted(): void;
   onOnlineOverride(value: boolean): void;
+  resolvedInstance: CloudInstanceView | null;
 }) {
   const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const { t } = useTranslation();
-  const { apiFetch } = useAuth();
-  const cloud = useCloudInstances(apiFetch);
   const refreshCloudInstances = cloud.refresh;
-  const instance = cloud.instances.find((item) => item.instanceId === initialInstanceId)
-    ?? cloud.instances.find((item) => item.deviceId === deviceId);
+  const instance = resolvedInstance;
   const instanceId = instance?.instanceId ?? initialInstanceId ?? null;
   const status = instance?.status;
+  const autoUpdateSupported = instance
+    ? typeof status?.autoUpdate === 'boolean'
+    : typeof fallbackAutoUpdate === 'boolean';
+  const autoUpdate = status?.autoUpdate ?? fallbackAutoUpdate ?? false;
   const currentVersion = parseCloudInstanceImageTag(status?.image ?? fallbackImage);
   const updateAvailable = status?.updateAvailable ?? fallbackUpdateAvailable;
   const latestReleaseTag = instance
@@ -258,6 +290,8 @@ function CloudInstanceManagement({
     wakeWatching,
   });
   const recordUnavailable = cloud.loadState !== 'ready' || !instance || instanceId === null;
+  const autoUpdatePending = cloud.pending?.target === instanceId
+    && cloud.pending.action === 'autoUpdate';
 
   const runWake = useCallback(async () => {
     if (!instanceId) return;
@@ -316,6 +350,11 @@ function CloudInstanceManagement({
     );
   }, [cloud, instanceId, onDeleted, t]);
 
+  const setAutoUpdate = useCallback((enabled: boolean) => {
+    if (!instanceId) return;
+    void cloud.setAutoUpdate(instanceId, enabled);
+  }, [cloud, instanceId]);
+
   const lifecycleLabel = actionState.lifecycleBusy
     ? actionState.lifecycleAction === 'wake'
       ? t('deviceLink.cloudInstance.waking')
@@ -354,6 +393,12 @@ function CloudInstanceManagement({
             {t('deviceLink.cloudInstance.updateRolledBack')}
           </Text>
         ) : null}
+        {/* 观测提示:Pod 模型凭据同步失败(不阻塞就绪,不影响本页其它操作)。 */}
+        {status?.modelAccess === 'not-ready' ? (
+          <Text style={styles.warningText} testID="deviceManagement.cloudModelAccessStale">
+            {t('deviceLink.cloudInstance.modelAccessStale')}
+          </Text>
+        ) : null}
         {(updateAvailable || actionState.updateBusy) ? (
           <MainWindowActionGroup
             primaryActions={[{
@@ -367,6 +412,30 @@ function CloudInstanceManagement({
               tone: 'primary',
             }]}
           />
+        ) : null}
+        {autoUpdateSupported ? (
+          <View style={styles.switchRow} testID="deviceManagement.cloudAutoUpdateRow">
+            <View style={styles.switchTexts}>
+              <Text style={styles.switchLabel}>
+                {t('deviceLink.cloudInstance.autoUpdate')}
+              </Text>
+              <Text style={styles.sectionDescription}>
+                {t('deviceLink.cloudInstance.autoUpdateHint')}
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel={t('deviceLink.cloudInstance.autoUpdate')}
+              accessibilityState={{
+                busy: autoUpdatePending,
+                disabled: cloud.pending !== null || recordUnavailable,
+              }}
+              disabled={cloud.pending !== null || recordUnavailable}
+              onValueChange={setAutoUpdate}
+              testID="deviceManagement.cloudAutoUpdate"
+              trackColor={{ true: colors.inputCaret }}
+              value={autoUpdate}
+            />
+          </View>
         ) : null}
       </View>
 
@@ -455,6 +524,25 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1,
     fontSize: typeScale.caption,
     lineHeight: lineHeight.caption,
+  },
+  switchRow: {
+    alignItems: 'center',
+    borderTopColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+    paddingTop: spacing.md,
+  },
+  switchTexts: {
+    flex: 1,
+    gap: spacing.xs,
+    minWidth: 0,
+  },
+  switchLabel: {
+    color: colors.textPrimary,
+    fontSize: typeScale.body,
+    lineHeight: lineHeight.body,
   },
   input: {
     backgroundColor: colors.surface,

@@ -287,11 +287,16 @@ describe('payload 有界校验', () => {
       {
         deviceId: 'dev-1',
         deviceName: 'Mac',
+        kind: 'cloud',
         sessions: Array.from({ length: 5_000 }, (_, i) => ({ id: `s${i}`, status: 'active' })),
       },
     ];
     await handleMirrorCachePutSessionList(cache, devices);
-    const passed = cache.writeSessionList.mock.calls[0]?.[0] as Array<{ sessions: unknown[] }>;
+    const passed = cache.writeSessionList.mock.calls[0]?.[0] as Array<{
+      kind?: 'cloud';
+      sessions: unknown[];
+    }>;
+    expect(passed[0].kind).toBe('cloud');
     expect(passed[0].sessions.length).toBe(500);
   });
 });

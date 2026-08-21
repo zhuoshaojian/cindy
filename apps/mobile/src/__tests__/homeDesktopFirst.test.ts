@@ -311,7 +311,9 @@ describe('mobile home desktop-first surface', () => {
     const detailSource = readSource('src/device-link/DeviceManagementScreen.tsx');
 
     expect(homeSource).toContain('buildDeviceManagementRouteParams({');
-    expect(homeSource).not.toContain('function RenameDeviceModal');
+    // 行内重命名(原有交互)与管理页重命名并存,都走同一 device-link PATCH。
+    expect(homeSource).toContain('function RenameDeviceModal');
+    expect(homeSource).toContain('`/api/device-link/devices/${encodeURIComponent(target.deviceId)}`');
     expect(detailSource).toContain('testID="deviceManagement.renameInput"');
     expect(detailSource).toContain("testID: 'deviceManagement.renameSave'");
     expect(detailSource).toContain('`/api/device-link/devices/${encodeURIComponent(props.deviceId)}`');
@@ -455,10 +457,12 @@ describe('mobile home desktop-first surface', () => {
     expect(source).toContain('const initialHomeSettled = deviceIdentityCacheReady && lastSyncedAt !== null;');
     expect(source).toContain('const initialHomeLoading = !initialHomeSettled && !connectionError;');
     expect(source).toContain('const initialHomeError = !initialHomeSettled && !!connectionError;');
-    expect(source).toContain('const hasOpenableLiveDevice = deviceModels.some((item) => item.canOpen);');
+    expect(source).toContain('const currentHomeLoading = isCurrentHomeStartupLoading({');
+    expect(source).toContain('const hasOpenableLiveDevice = deviceModels.some((item) =>');
     // 首次 loadHome 落地前(含失败态)FAB 只认 live 设备:首页列表缓存画出的会话会合成出
     // 「可用」的 primaryDevice,但缓存设备不能当 live 设备开新会话(settle 后回归 primaryDevice 语义)。
-    expect(source).toContain('const newSessionDisabled = !home.primaryDevice || (!initialHomeSettled && !hasOpenableLiveDevice);');
+    expect(source).toContain('const currentHomeSettled = initialHomeSettled || selectedPeerRecoveryReady;');
+    expect(source).toContain('const newSessionDisabled = !home.primaryDevice || (!currentHomeSettled && !hasOpenableLiveDevice);');
     expect(source).toContain("const emptyStateTitle = initialHomeError ? t('devices.list.syncFailed') : home.emptyTitle;");
     expect(source).toContain("testID={initialHomeError ? 'home.syncError' : 'home.empty'}");
     expect(source).toContain('testID="home.loading"');

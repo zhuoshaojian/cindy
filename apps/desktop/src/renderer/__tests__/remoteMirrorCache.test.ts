@@ -830,6 +830,25 @@ describe('remoteProjectsStore.hydrateFromCache', () => {
     ]);
     expect(remoteProjectsStore.hasDevice('dev-empty')).toBe(false);
   });
+
+  it('restores optional cloud kind while accepting old cache rows without it', () => {
+    remoteProjectsStore.hydrateFromCache([
+      {
+        deviceId: 'dev-cloud',
+        deviceName: 'Cloud',
+        kind: 'cloud',
+        sessions: [{ id: 'cloud-session' }] as never,
+      },
+      {
+        deviceId: 'dev-legacy',
+        deviceName: 'Legacy',
+        sessions: [{ id: 'legacy-session' }] as never,
+      },
+    ]);
+
+    expect(remoteProjectsStore.getDeviceKind('dev-cloud')).toBe('cloud');
+    expect(remoteProjectsStore.getDeviceKind('dev-legacy')).toBeUndefined();
+  });
 });
 
 describe('在途 hydrate 遇上权威删除', () => {
@@ -1394,7 +1413,13 @@ describe('列表快照的采集口径', () => {
   // 而离线可见正是这份缓存存在的理由。
   it('断连设备仍进快照(否则冷启动就恢复不出离线设备)', () => {
     remoteProjectsStore.setDeviceSessions('dev-online', 'Online Mac', [{ id: 's-on' }] as never);
-    remoteProjectsStore.setDeviceSessions('dev-offline', 'Offline Mac', [{ id: 's-off' }] as never);
+    remoteProjectsStore.setDeviceSessions(
+      'dev-offline',
+      'Offline Mac',
+      [{ id: 's-off' }] as never,
+      'active',
+      'cloud',
+    );
     remoteProjectsStore.markDeviceDisconnected('dev-offline');
 
     const snapshot = collectSessionListSnapshot();
@@ -1403,6 +1428,7 @@ describe('列表快照的采集口径', () => {
     expect(snapshot.find((d) => d.deviceId === 'dev-offline')?.sessions.map((s) => s.id)).toEqual([
       's-off',
     ]);
+    expect(snapshot.find((d) => d.deviceId === 'dev-offline')?.kind).toBe('cloud');
   });
 
   it('缓存种入的(disconnected)分片也在采集范围内', () => {

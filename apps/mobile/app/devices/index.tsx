@@ -85,6 +85,7 @@ import {
   buildCloudDeviceFilterItem,
   projectCloudInstanceMenuItems,
   projectDeviceMenuSources,
+  resolveDeviceMenuKind,
 } from '@/device-link/deviceMenuProjection';
 import {
   collectFreshPresenceDeviceIds,
@@ -152,6 +153,14 @@ import {
   scheduleHomeListSnapshotPersist,
 } from '@/session/mobileHomeListCache';
 import { startBoundedStartupRead } from '@/session/mobileHomeStartup';
+import {
+  createHomePeerRecoveryRefresh,
+  isCurrentHomeStartupLoading,
+  markHomePeerReady,
+  promoteRecoveredHomeDevice,
+  pruneHomePeerReady,
+  type HomePeerRecoveryRefresh,
+} from '@/session/homePeerRecovery';
 import { serializeNewSessionDeviceOptions } from '@/session/newSession';
 import {
   buildRemoteSessionCardPreview,
@@ -243,7 +252,15 @@ export default function HomeScreen() {
   const refreshCloudInstances = cloudInstances.refresh;
   // 首页列表持久缓存按账号键控(401 掉线换号不串数据);首页仅登录后可达,user 理应非空。
   const homeCacheUserId = user?.id ?? '';
-  const { connectionEpoch, connectionIssue, invoke, lastPresenceSnapshot, status, subscribe } = useDeviceLink();
+  const {
+    connectionEpoch,
+    connectionIssue,
+    invoke,
+    lastPresenceSnapshot,
+    status,
+    subscribe,
+    subscribePeerLinkRecovered,
+  } = useDeviceLink();
   const revokedDevices = useRevokedDevices();
   const sessions = useRemoteSessions();
   const messageVersion = useRemoteMessageVersion();
@@ -252,6 +269,11 @@ export default function HomeScreen() {
   const syncQueuedRef = useRef<{ visible?: boolean } | null>(null);
   const loadHomeRef = useRef<(options?: { visible?: boolean }) => Promise<void>>(async () => undefined);
   const devicesRef = useRef<DeviceView[]>([]);
+  // The REST list is available before the initial Promise.all hydrate settles.
+  // Keep its controllable devices addressable so peer recovery can refresh only
+  // the recovered device instead of waiting for (or restarting) the global load.
+  const peerRecoveryDevicesRef = useRef<DeviceView[]>([]);
+  const peerRecoveryRefreshRef = useRef<HomePeerRecoveryRefresh<DeviceView> | null>(null);
   // schedule-index hydration 延后任务登记表(按设备 id 索引):为同一设备注册新延后任务前取消上一轮
   // pending 的,避免 800ms 窗口内多次 hydrate 时较早回调用旧快照覆盖新状态(并发覆盖竞态);卸载时 cancelAll。
   const scheduleIndexDeferRegistryRef = useRef(createScheduleIndexDeferRegistry());
@@ -277,6 +299,9 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [peerRecoveryReadyDeviceIds, setPeerRecoveryReadyDeviceIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   // 恢复偏好时暂存的设备名:设备列表尚未同步回来前表头用它兜底,避免显示成占位文案。
   const [restoredDeviceName, setRestoredDeviceName] = useState<string | null>(null);
@@ -479,6 +504,45 @@ export default function HomeScreen() {
     }
   }, [homeCacheUserId, invoke, markDeviceOffline, refreshDeviceScheduleIndex, statusFilter, subscribe, t, updateDeviceConnectionState]);
 
+  useEffect(() => {
+    // Construct inside the effect: StrictMode intentionally runs setup → cleanup
+    // → setup on mount, and a disposed controller must never be reused.
+    const peerRecoveryRefresh = createHomePeerRecoveryRefresh<DeviceView>({
+      getDeviceId: (device) => device.deviceId,
+      hydrate: hydrateDeviceSessions,
+      onReady: (deviceId, device) => {
+        // A successful sessions/list hydrate is stronger reachability evidence
+        // than an older REST offline bit. Preserve any newer local fields and
+        // only promote this recovered peer into the current Home projection.
+        setDevices((current) => {
+          const existingIndex = current.findIndex((item) => item.deviceId === deviceId);
+          const currentDevice = existingIndex < 0 ? null : current[existingIndex];
+          const recoveredDevice = promoteRecoveredHomeDevice(currentDevice, device);
+          if (currentDevice === recoveredDevice) return current;
+          const nextRaw = existingIndex < 0
+            ? [...current, recoveredDevice]
+            : current.map((item, index) => index === existingIndex ? recoveredDevice : item);
+          const next = reconcileDeviceViews(nextRaw).devices;
+          devicesRef.current = next;
+          return next;
+        });
+        setPeerRecoveryReadyDeviceIds((current) => markHomePeerReady(current, deviceId));
+      },
+    });
+    peerRecoveryRefreshRef.current = peerRecoveryRefresh;
+    void peerRecoveryRefresh.setDevices(peerRecoveryDevicesRef.current);
+    const unsubscribe = subscribePeerLinkRecovered((deviceId, generation) => {
+      void peerRecoveryRefresh.refresh(deviceId, generation);
+    });
+    return () => {
+      unsubscribe();
+      if (peerRecoveryRefreshRef.current === peerRecoveryRefresh) {
+        peerRecoveryRefreshRef.current = null;
+      }
+      peerRecoveryRefresh.dispose();
+    };
+  }, [hydrateDeviceSessions, reconcileDeviceViews, subscribePeerLinkRecovered]);
+
   const loadHome = useCallback(async (options: { visible?: boolean } = {}) => {
     if (!deviceIdentityCacheReady) return;
     const visible = options.visible === true;
@@ -518,6 +582,20 @@ export default function HomeScreen() {
       const serverDevices = mergeFreshPresence(reconcileDeviceViews(res.devices).devices);
       const deviceRows = toDeviceListItems(serverDevices, now, revokedDevices);
       const availableRows = deviceRows.filter((item) => item.canOpen);
+      // Recovery success is newer reachability evidence than this REST snapshot,
+      // so keep still-bound soft-offline peers eligible for a targeted hydrate.
+      // Revoked/remote-disabled/self rows remain excluded and cannot be revived.
+      peerRecoveryDevicesRef.current = deviceRows
+        .filter((item) =>
+          item.device.deviceId !== selfDeviceId
+          && deviceMirrorCleanupDisposition(item.state) !== 'hard')
+        .map((item) => item.device);
+      const peerRecoveryDeviceIds = new Set(
+        peerRecoveryDevicesRef.current.map((device) => device.deviceId),
+      );
+      setPeerRecoveryReadyDeviceIds((current) =>
+        pruneHomePeerReady(current, peerRecoveryDeviceIds));
+      void peerRecoveryRefreshRef.current?.setDevices(peerRecoveryDevicesRef.current);
       setDeviceConnectionStates((current) => pruneHomeDeviceConnectionStates(
         current,
         new Set(availableRows.map((item) => item.device.deviceId)),
@@ -597,7 +675,7 @@ export default function HomeScreen() {
     return task.finally(() => {
       if (visible) setRefreshing(false);
     });
-  }, [apiFetch, deviceIdentityCacheReady, homeCacheUserId, hydrateDeviceSessions, reconcileDeviceViews, revokedDevices, softInvalidateDeviceMirror]);
+  }, [apiFetch, deviceIdentityCacheReady, homeCacheUserId, hydrateDeviceSessions, reconcileDeviceViews, revokedDevices, selfDeviceId, softInvalidateDeviceMirror]);
   loadHomeRef.current = loadHome;
 
   // 冷启动先画缓存:上次 loadHome 成功的设备+会话快照种入 store,先把列表画出来(消除首屏强制
@@ -953,10 +1031,68 @@ export default function HomeScreen() {
     })),
     [devices, t],
   );
+  const openRenameDevice = useCallback((item: MobileHomeDeviceFilterItem) => {
+    if (!item.deviceId) return;
+    // 不能在菜单还没卸载时直接挂重命名 Modal(见 pendingMenuActionRef 注释),先关菜单再延后打开。
+    pendingMenuActionRef.current = () => {
+      setRenameTarget(item);
+      setRenameDraft(item.label);
+      setError(null);
+    };
+    setDeviceMenuOpen(false);
+  }, []);
+
+  const closeRenameDevice = useCallback(() => {
+    if (renameSaving) return;
+    setRenameTarget(null);
+    setRenameDraft('');
+  }, [renameSaving]);
+
+  const confirmRenameDevice = useCallback(async () => {
+    const target = renameTarget;
+    const name = renameDraft.trim();
+    if (!target?.deviceId || !name || renameSaving) return;
+    if (name === target.label.trim()) {
+      setRenameTarget(null);
+      setRenameDraft('');
+      return;
+    }
+
+    setRenameSaving(true);
+    try {
+      const res = await apiFetch<{ deviceId: string; name: string }>(
+        `/api/device-link/devices/${encodeURIComponent(target.deviceId)}`,
+        {
+          baseUrl: DEVICE_LINK_API_BASE_URL,
+          body: { name },
+          method: 'PATCH',
+          timeoutMs: DEVICE_LIST_TIMEOUT_MS,
+        },
+      );
+      const nextName = res.name;
+      setDevices((current) => {
+        const nextRaw = current.map((device) =>
+          device.deviceId === target.deviceId ? { ...device, name: nextName } : device);
+        const next = reconcileDeviceViews(nextRaw).devices;
+        devicesRef.current = next;
+        return next;
+      });
+      remoteSessionStore.renameDevice(target.deviceId, nextName);
+      setRenameTarget(null);
+      setRenameDraft('');
+      void loadHome({ visible: false });
+    } catch (err) {
+      setError(formatRemoteError(err));
+    } finally {
+      setRenameSaving(false);
+    }
+  }, [apiFetch, loadHome, reconcileDeviceViews, renameDraft, renameSaving, renameTarget]);
+
   const openDeviceManagement = useCallback((input: {
     deviceId: string;
     name: string;
     cloudInstance?: CloudInstanceView | null;
+    cloudCandidate?: boolean;
   }) => {
     const device = displayDevices.find((item) => item.deviceId === input.deviceId) ?? null;
     setDeviceMenuOpen(false);
@@ -964,6 +1100,7 @@ export default function HomeScreen() {
       pathname: '/devices/manage/[deviceId]',
       params: buildDeviceManagementRouteParams({
         cloudInstance: input.cloudInstance,
+        cloudCandidate: input.cloudCandidate,
         device,
         deviceId: input.deviceId,
         name: input.name,
@@ -995,7 +1132,7 @@ export default function HomeScreen() {
       deviceRows.map((item) => ({
         canOpen: item.canOpen,
         deviceId: item.device.deviceId,
-        kind: item.device.deviceInfo?.kind,
+        kind: resolveDeviceMenuKind(item.device.deviceId, item.device.deviceInfo?.kind),
         name: item.device.name,
         state: item.state,
         statusDetail: item.statusDetail,
@@ -1154,8 +1291,13 @@ export default function HomeScreen() {
   const liveActivityIndex = useStableValue(liveActivityIndexRaw, mapContentEqual);
   // 列表隐藏 Orca worker 子会话(本期不支持进 worker 聊天);Lead + 普通会话保留。仅 mobile 侧过滤。
   const homeSessions = useMemo(
-    () => excludeOrcaWorkerSessions(visibleSessions),
-    [visibleSessions],
+    () => excludeOrcaWorkerSessions(visibleSessions).map((session) => {
+      const rawName = session.deviceLinkDeviceName;
+      if (!rawName) return session;
+      const displayName = resolveMobileDeviceDisplayName(rawName);
+      return displayName === rawName ? session : { ...session, deviceLinkDeviceName: displayName };
+    }),
+    [t, visibleSessions],
   );
   const home = useMemo(
     () => buildMobileHomePresentation({
@@ -1247,6 +1389,13 @@ export default function HomeScreen() {
   const initialHomeSettled = deviceIdentityCacheReady && lastSyncedAt !== null;
   const initialHomeLoading = !initialHomeSettled && !connectionError;
   const initialHomeError = !initialHomeSettled && !!connectionError;
+  const selectedPeerRecoveryReady = selectedDeviceId !== null
+    && peerRecoveryReadyDeviceIds.has(selectedDeviceId);
+  const currentHomeLoading = isCurrentHomeStartupLoading({
+    initialHomeLoading,
+    selectedDeviceId,
+    recoveryReadyDeviceIds: peerRecoveryReadyDeviceIds,
+  });
   // 首次同步完成后校验恢复/当前选中的设备,不成立时回退「所有对话」并同步持久化:
   // - 设备已不存在(解绑):home.selectedDeviceId 是归一化后的口径,查不到会变 null,
   //   若不回退,表头显示旧设备名而列表实际展示全部会话,两者口径不一致。
@@ -1302,7 +1451,7 @@ export default function HomeScreen() {
     ? cloudInstances.loadState
     : null;
   const remoteGuideBaseVisible = homeListItemCount === 0
-    && !initialHomeLoading
+    && !currentHomeLoading
     && !initialHomeError
     && home.pinned.length === 0
     && home.emptyKind === 'noDevice'
@@ -1315,10 +1464,12 @@ export default function HomeScreen() {
     const revoked = home.emptyNoDevice?.reason === 'accessRevoked' ? home.emptyNoDevice.devices : [];
     for (const device of revoked) void retryRevokedDevice(device.deviceId);
   }, [home.emptyNoDevice, retryRevokedDevice]);
-  const hasOpenableLiveDevice = deviceModels.some((item) => item.canOpen);
+  const hasOpenableLiveDevice = deviceModels.some((item) =>
+    item.canOpen && (selectedDeviceId === null || item.deviceId === selectedDeviceId));
   // 首次 loadHome 落地前(含失败态)FAB 只认 live 设备:缓存画出的会话会让 primaryDevice 合成出
   // 「可用」项,但缓存设备不能当 live 设备直接开新会话——列表先画出来,新建入口等 live 数据。
-  const newSessionDisabled = !home.primaryDevice || (!initialHomeSettled && !hasOpenableLiveDevice);
+  const currentHomeSettled = initialHomeSettled || selectedPeerRecoveryReady;
+  const newSessionDisabled = !home.primaryDevice || (!currentHomeSettled && !hasOpenableLiveDevice);
   const newSessionDeviceOptions = useMemo(
     () => deviceModels
       .filter((item) => item.canOpen)
@@ -1924,7 +2075,7 @@ export default function HomeScreen() {
                 padding: windowLayout.emptyPadding,
               }}
             />
-          ) : initialHomeLoading ? (
+          ) : currentHomeLoading ? (
             <HomeListLoadingState
               label={t('devices.list.loading')}
               testID="home.loading"
@@ -2017,7 +2168,7 @@ export default function HomeScreen() {
         <Pressable
           accessibilityLabel={t('devices.list.a11y.newRemoteConversation')}
           accessibilityRole="button"
-          accessibilityState={{ busy: initialHomeLoading || undefined, disabled: newSessionDisabled }}
+          accessibilityState={{ busy: currentHomeLoading || undefined, disabled: newSessionDisabled }}
           disabled={newSessionDisabled}
           onPress={() => openNewSession()}
           style={({ pressed }) => [
@@ -2049,6 +2200,7 @@ export default function HomeScreen() {
         filters={home.deviceFilters}
         onClose={() => setDeviceMenuOpen(false)}
         onClosed={handleDeviceMenuClosed}
+        onRenameDevice={openRenameDevice}
         onOpenDevice={(item) => {
           if (!item.deviceId) return;
           setDeviceMenuOpen(false);
@@ -2057,9 +2209,10 @@ export default function HomeScreen() {
             params: { deviceId: item.deviceId, name: item.label },
           });
         }}
-        onOpenManage={(item) => {
+        onOpenManage={(item, cloudCandidate) => {
           if (!item.deviceId) return;
           openDeviceManagement({
+            cloudCandidate,
             deviceId: item.deviceId,
             name: item.label,
           });
@@ -2181,6 +2334,7 @@ function DeviceMenuModal({
   onOpenCloudInstance,
   onOpenDevice,
   onOpenManage,
+  onRenameDevice,
   onSelect,
   onToggleGroupByProject,
   onlineDeviceIds,
@@ -2203,7 +2357,9 @@ function DeviceMenuModal({
   /** Opens the existing task-list detail route for an ordinary device. */
   onOpenDevice(item: MobileHomeDeviceFilterItem): void;
   /** Opens the dedicated device-management route. */
-  onOpenManage(item: MobileHomeDeviceFilterItem): void;
+  onOpenManage(item: MobileHomeDeviceFilterItem, cloudCandidate?: boolean): void;
+  /** 常规设备行内重命名(铅笔)入口;云端行不提供。 */
+  onRenameDevice(item: MobileHomeDeviceFilterItem): void;
   onSelect(item: MobileHomeDeviceFilterItem): void;
   onToggleGroupByProject(): void;
   onlineDeviceIds: ReadonlySet<string>;
@@ -2307,6 +2463,7 @@ function DeviceMenuModal({
                 onDetails={item.deviceId ? () => onOpenManage(item) : undefined}
                 onLongPress={item.deviceId ? () => onOpenDevice(item) : undefined}
                 onPress={() => onSelect(item)}
+                onRename={item.deviceId ? () => onRenameDevice(item) : undefined}
                 selected={item.selected}
                 status={deviceMenuStatus(item)}
                 testID={item.deviceId ? `home.deviceChip.${sanitizeDeviceChipTestId(item.deviceId)}` : undefined}
@@ -2318,8 +2475,8 @@ function DeviceMenuModal({
                 dimmed={!item.available && item.state !== 'access_revoked'}
                 key={`cloud-fallback:${item.id}`}
                 label={item.label}
-                onDetails={item.deviceId ? () => onOpenManage(item) : undefined}
-                onLongPress={item.deviceId ? () => onOpenManage(item) : undefined}
+                onDetails={item.deviceId ? () => onOpenManage(item, true) : undefined}
+                onLongPress={item.deviceId ? () => onOpenManage(item, true) : undefined}
                 onPress={() => onSelect(item)}
                 selected={item.selected}
                 status={deviceMenuStatus(item)}
@@ -2545,6 +2702,7 @@ function DeviceMenuItem({
   onDetails,
   onLongPress,
   onPress,
+  onRename,
   selected,
   status,
   testID,
@@ -2561,6 +2719,7 @@ function DeviceMenuItem({
   onDetails?: () => void;
   onLongPress?: () => void;
   onPress(): void;
+  onRename?: () => void;
   selected: boolean;
   status?: 'online' | 'offline';
   testID?: string;
@@ -2580,7 +2739,7 @@ function DeviceMenuItem({
         disabled: rowDisabled,
         selected: selected || undefined,
       }}
-      disabled={rowDisabled && !onDetails}
+      disabled={rowDisabled && !onDetails && !onRename}
       onLongPress={
         !onLongPress
           ? undefined
@@ -2639,6 +2798,29 @@ function DeviceMenuItem({
           ) : null}
         </View>
       ) : null}
+      {/* 尾列固定宽槽:有重命名(常规设备)渲染铅笔,无重命名(云端等)留空,
+          保证状态点在各行同一水平位置、不因缺少铅笔而右移错位。
+          例外:带更新徽标的云端行永远没有铅笔,空占位会在窄面板里把
+          flex:1 的名字挤成零宽,该行让出占位换名字可见。 */}
+      {(status || onRename) && !badge ? (
+        <View style={styles.deviceMenuRenameSlot}>
+          {onRename ? (
+            <Pressable
+              accessibilityLabel={t('devices.list.a11y.renameDevice', { label })}
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={(event) => {
+                event.stopPropagation();
+                onRename();
+              }}
+              style={({ pressed }) => [styles.deviceMenuRenameButton, pressed && styles.pressed]}
+              testID={testID ? `${testID}.rename` : undefined}
+            >
+              <Pencil color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.regular} />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       {/* 尾列详情 affordance 打开管理页;长按目标由各行单独决定,行点击仍只切换设备筛选。 */}
       {status || onDetails ? (
         <View style={styles.deviceMenuDetailsSlot}>
@@ -2664,6 +2846,75 @@ function DeviceMenuItem({
 }
 
 function RenameDeviceModal({
+  draft,
+  onCancel,
+  onChangeDraft,
+  onConfirm,
+  saving,
+  visible,
+}: {
+  draft: string;
+  onCancel(): void;
+  onChangeDraft(value: string): void;
+  onConfirm(): void;
+  saving: boolean;
+  visible: boolean;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const canSave = draft.trim().length > 0 && !saving;
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onCancel}>
+      <Pressable style={styles.renameDeviceBackdrop} onPress={onCancel} testID="home.renameDevice.backdrop">
+        <Pressable style={styles.renameDeviceCard} onPress={() => undefined} testID="home.renameDevice.modal">
+          <Text style={styles.renameDeviceTitle}>{t('devices.list.renameDevice.title')}</Text>
+          <TextInput
+            autoFocus
+            editable={!saving}
+            maxLength={64}
+            onChangeText={onChangeDraft}
+            onSubmitEditing={() => {
+              if (canSave) onConfirm();
+            }}
+            placeholder={t('devices.list.renameDevice.placeholder')}
+            placeholderTextColor={colors.textTertiary}
+            returnKeyType="done"
+            selectTextOnFocus
+            style={styles.renameDeviceInput}
+            testID="home.renameDevice.input"
+            value={draft}
+          />
+          {/* 确认对统一规则:共享满宽纵排组(保存在上/取消居底),置于卡片底部。 */}
+          <MainWindowActionGroup
+            primaryActions={[{
+              accessibilityLabel: saving ? t('devices.list.renameDevice.savingA11y') : t('devices.list.renameDevice.saveA11y'),
+              busy: saving,
+              disabled: !canSave,
+              label: saving ? t('devices.common.saving') : t('devices.common.save'),
+              onPress: onConfirm,
+              testID: 'home.renameDevice.save',
+              tone: 'primary',
+            }]}
+            cancelAction={{
+              accessibilityLabel: t('devices.list.a11y.cancelRename'),
+              disabled: saving,
+              label: t('devices.common.cancel'),
+              onPress: onCancel,
+              testID: 'home.renameDevice.cancel',
+            }}
+            testID="home.renameDevice.actions"
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+/**
+ * 会话重命名弹窗:与 RenameDeviceModal 平行的轻量组件,复用同一套 renameDevice* 样式。
+ */
+function RenameSessionModal({
   draft,
   onCancel,
   onChangeDraft,
@@ -3956,6 +4207,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   // 尾列固定宽槽:没有详情入口的特殊行留空占位,状态点跨行对齐。
   deviceMenuDetailsSlot: {
+    alignItems: 'center',
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  deviceMenuRenameButton: {
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  // 尾列固定宽槽(与重命名按钮同宽):云端等无重命名的行留空占位,状态点跨行对齐。
+  deviceMenuRenameSlot: {
     alignItems: 'center',
     height: 34,
     justifyContent: 'center',

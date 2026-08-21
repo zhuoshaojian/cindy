@@ -675,7 +675,7 @@ describe('Pod provisioning bootstrap', () => {
   });
 
   it('preserves structured auth-server errors', async () => {
-    const clearPersistedAccountRefreshToken = vi.fn();
+    const clearPersistedAccountCredentials = vi.fn();
     await expect(
       bootstrapPodProvisioning({
         env: {
@@ -700,7 +700,7 @@ describe('Pod provisioning bootstrap', () => {
         readPersistedAccountRefreshToken: () => null,
         readPersistedMembershipId: () => null,
         persistAccountRefreshToken: vi.fn(),
-        clearPersistedAccountRefreshToken,
+        clearPersistedAccountCredentials,
         persistMembershipId: vi.fn(),
         installSession: vi.fn(),
       }),
@@ -710,11 +710,11 @@ describe('Pod provisioning bootstrap', () => {
       statusCode: 401,
       message: 'Refresh token is invalid',
     });
-    expect(clearPersistedAccountRefreshToken).toHaveBeenCalledOnce();
+    expect(clearPersistedAccountCredentials).toHaveBeenCalledOnce();
   });
 
   it('keeps a persisted account token after a transient refresh failure', async () => {
-    const clearPersistedAccountRefreshToken = vi.fn();
+    const clearPersistedAccountCredentials = vi.fn();
     await expect(
       bootstrapPodProvisioning({
         env: {
@@ -731,7 +731,7 @@ describe('Pod provisioning bootstrap', () => {
         readPersistedMembershipId: () => null,
         readSecretFile: () => 'mounted-token',
         persistAccountRefreshToken: vi.fn(),
-        clearPersistedAccountRefreshToken,
+        clearPersistedAccountCredentials,
         persistMembershipId: vi.fn(),
         installSession: vi.fn(),
       }),
@@ -739,7 +739,47 @@ describe('Pod provisioning bootstrap', () => {
       name: 'AuthApiError',
       code: 'NETWORK_ERROR',
     });
-    expect(clearPersistedAccountRefreshToken).not.toHaveBeenCalled();
+    expect(clearPersistedAccountCredentials).not.toHaveBeenCalled();
+  });
+
+  it('keeps Account credentials when only the resource exchange is rejected', async () => {
+    const clearPersistedAccountCredentials = vi.fn();
+    const fetch = vi.fn(async (input: string) => {
+      const requestPath = new URL(input).pathname;
+      if (requestPath.endsWith('/refresh')) {
+        return response({
+          accountToken: 'account-access',
+          accountRefreshToken: 'account-rotated',
+        });
+      }
+      if (requestPath.endsWith('/account')) {
+        return response({ memberships: [membership('personal', 'personal')] });
+      }
+      return response(
+        { error: { code: 'INVALID_REFRESH_TOKEN', message: 'resource rejected' } },
+        false,
+        401,
+      );
+    });
+
+    await expect(bootstrapPodProvisioning({
+      env: {
+        [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'account-injected',
+        [POD_DEVICE_ID_ENV]: 'pod-resource-rejected',
+      },
+      getAuthBaseUrl: () => 'http://localhost:3344',
+      authRegion: 'cn',
+      fetch,
+      logger: { info: vi.fn() },
+      readPersistedAccountRefreshToken: () => 'account-persisted',
+      readPersistedMembershipId: () => 'personal',
+      persistAccountRefreshToken: vi.fn(),
+      clearPersistedAccountCredentials,
+      persistMembershipId: vi.fn(),
+      installSession: vi.fn(),
+    })).rejects.toMatchObject({ code: 'INVALID_REFRESH_TOKEN' });
+
+    expect(clearPersistedAccountCredentials).not.toHaveBeenCalled();
   });
 
   it('re-reads a refreshed mounted Secret after the persisted rotation is rejected', async () => {
@@ -787,7 +827,7 @@ describe('Pod provisioning bootstrap', () => {
       persistAccountRefreshToken: (token: string) => {
         persistedToken = token;
       },
-      clearPersistedAccountRefreshToken: () => {
+      clearPersistedAccountCredentials: () => {
         persistedToken = null;
       },
       persistMembershipId: vi.fn(),
