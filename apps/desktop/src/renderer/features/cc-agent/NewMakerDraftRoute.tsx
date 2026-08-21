@@ -1166,10 +1166,9 @@ export function NewMakerDraftRoute() {
     navigate('/settings?tab=remote-control&section=devices');
   }, [navigate]);
   /**
-   * 「云端唤醒在途」的唯一派生:pill 的行禁点、waking 表达与 busy 全部由这一对值
-   * 供给。target 以 instanceId 为键(与 pending.target、行上的 cloudInstanceId 同键,
-   * 不再反查 deviceId);busy 同时纳入发送在途——UI 可点性必须覆盖 handler 防重
-   * 判定,否则会出现「行看着可点、点了被静默吞掉」的缝。
+   * pill 的进行中语义直接消费 cloud.pending；cloudWakeTarget 仅保留给首次创建身份补全与
+   * transient draft 的终态衔接。busy 还纳入 draft wake-watch / 发送在途，保证 UI 可点性
+   * 覆盖 handler 防重判定，避免「行看着可点、点了被静默吞掉」的缝。
    */
   const cloudWakeTarget = cloud.pending?.action === 'wake' ? cloud.pending.target : null;
   const pendingCloudTarget = draft.pendingCloudTarget;
@@ -5261,11 +5260,9 @@ export function NewMakerDraftRoute() {
                     cloud.loadState === 'ready'
                       ? {
                           busy: cloudWakeBusy,
-                          wakingTarget:
-                            pendingCloudTarget?.status === 'waking'
-                              ? pendingCloudTarget.instanceId
-                              : cloudWakeTarget,
+                          pending: cloud.pending,
                           onWake: handleCloudWake,
+                          onReselectWake: handleCloudWake,
                           selectedTarget: pendingCloudTarget
                               ? {
                                 deviceId: pendingCloudTarget.deviceId,

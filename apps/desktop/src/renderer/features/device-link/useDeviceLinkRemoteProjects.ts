@@ -65,6 +65,11 @@ import {
   prefetchDeviceGitSafetySettings,
 } from '@/hooks/useGitSafetySettings';
 import { extractIpcError } from '@/utils/ipcError';
+import {
+  getCloudInstanceRendererAuthority,
+  rememberRetiredCloudDevice,
+  subscribeCloudInstanceRendererAuthority,
+} from '@/features/cloud-instance/cloudInstanceRendererAuthority';
 
 const log = createLogger('device-link-remote-projects');
 
@@ -342,6 +347,57 @@ export function useDeviceLinkRemoteProjects(): void {
       archivedRetryDelayMs.clear();
     };
 
+    const cloudKindFor = (deviceId: string, kind?: 'cloud'): 'cloud' | undefined =>
+      kind ?? knownDeviceKinds.get(deviceId) ?? remoteProjectsStore.getDeviceKind(deviceId);
+
+    /**
+     * Only a complete successful cloud-instance list may retire a cloud peer.
+     * Unknown (startup / list failure / owner switch) is deliberately fail-open:
+     * treating it as an empty set would unsubscribe every live cloud peer during
+     * a control-plane outage and discard their in-memory session projections.
+     */
+    const cloudAuthorityRejects = (deviceId: string, kind?: 'cloud'): boolean => {
+      if (cloudKindFor(deviceId, kind) !== 'cloud') return false;
+      const authority = getCloudInstanceRendererAuthority();
+      if (authority.activeDeviceIds?.has(deviceId)) return false;
+      if (authority.retiredDeviceIds.has(deviceId)) return true;
+      if (authority.activeDeviceIds === undefined) return false;
+      rememberRetiredCloudDevice(deviceId);
+      return true;
+    };
+
+    const retireCloudDevice = (deviceId: string): void => {
+      const wasEligible = eligible.delete(deviceId);
+      clearArchivedSessionRetry(deviceId);
+      if (wasEligible) {
+        window.electronAPI.deviceLink.unsubscribe(deviceId, ['sessions']).catch(() => {});
+      }
+      // Keep the cloud classification for late presence rows that omit
+      // deviceInfo.kind. A later complete list containing the same deviceId
+      // removes its retirement fence and lets normal presence reconnect it.
+      knownDeviceKinds.set(deviceId, 'cloud');
+      cacheHydrationBlocked.add(deviceId);
+      remoteProjectsStore.removeDevice(deviceId);
+      removeRemoteSessionActivityForDevice(deviceId);
+      evictDeviceCapabilities(deviceId);
+      evictDeviceProviders(deviceId);
+      evictDeviceGitSafetySettings(deviceId);
+    };
+
+    const reconcileCloudInstanceAuthority = (): void => {
+      const authority = getCloudInstanceRendererAuthority();
+      if (authority.activeDeviceIds === undefined) return;
+      const candidates = new Set([
+        ...knownDeviceKinds.keys(),
+        ...eligible.keys(),
+        ...remoteProjectsStore.getAllDeviceIds(),
+      ]);
+      for (const deviceId of candidates) {
+        if (!cloudAuthorityRejects(deviceId)) continue;
+        retireCloudDevice(deviceId);
+      }
+    };
+
     const scheduleArchivedSessionRetry = (deviceId: string): void => {
       if (disposed || !eligible.has(deviceId) || archivedRetryTimers.has(deviceId)) return;
       const delay = nextArchivedSessionRetryDelay(archivedRetryDelayMs.get(deviceId) ?? 0);
@@ -450,6 +506,12 @@ export function useDeviceLinkRemoteProjects(): void {
       kind?: 'cloud';
     }): void => {
       if (d.kind === 'cloud') knownDeviceKinds.set(d.deviceId, d.kind);
+      const effectiveKind = cloudKindFor(d.deviceId, d.kind);
+      if (cloudAuthorityRejects(d.deviceId, effectiveKind)) {
+        retireCloudDevice(d.deviceId);
+        return;
+      }
+      if (effectiveKind === 'cloud') cacheHydrationBlocked.delete(d.deviceId);
       const ok =
         !d.isSelf &&
         d.online &&
@@ -568,12 +630,22 @@ export function useDeviceLinkRemoteProjects(): void {
     // 账号里删掉设备的情形,都靠补这一轮收敛(reseed 末尾还会清掉权威列表中缺席的分片)。
     // 仍在 listDevices 里但离线的设备照既有语义保留为 disconnected —— 与「断连保留最近
     // 一次快照让 All Sessions 稳定」一致,不是本次引入的行为。
+    const offCloudInstanceAuthority = subscribeCloudInstanceRendererAuthority(
+      reconcileCloudInstanceAuthority,
+    );
+    reconcileCloudInstanceAuthority();
+
     void readCachedSessionList().then((devices) => {
       if (disposed || devices.length === 0) return;
       // 读快照这一跳期间被**明确移除**的设备(撤销访问 / 关闭被控 / 本机停用控制)不许种回来:
       // 那些路径已经删了分片并清了盘,而这次种入拿的是它们之前读到的旧快照;紧随的 reseed
       // 在 listDevices 离线时也纠正不了,于是那台设备会一直留在侧边栏(review: codex P1)。
-      const usable = devices.filter((device) => !cacheHydrationBlocked.has(device.deviceId));
+      const usable = devices.filter((device) => {
+        if (cacheHydrationBlocked.has(device.deviceId)) return false;
+        if (!cloudAuthorityRejects(device.deviceId, device.kind)) return true;
+        retireCloudDevice(device.deviceId);
+        return false;
+      });
       if (usable.length === 0) return;
       for (const device of usable) {
         if (device.kind === 'cloud') knownDeviceKinds.set(device.deviceId, device.kind);
@@ -812,6 +884,7 @@ export function useDeviceLinkRemoteProjects(): void {
       offStatus();
       offAccessRevoked();
       offControlTarget();
+      offCloudInstanceAuthority();
       offRename();
       offShardChange();
       offResponsiveness();

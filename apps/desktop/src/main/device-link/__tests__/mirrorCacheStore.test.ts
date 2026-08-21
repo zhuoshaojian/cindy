@@ -85,6 +85,18 @@ function cache(rootFn: () => string = () => root) {
   return withAutoToken(createMirrorCache(rootFn), rootFn);
 }
 
+async function reconcileCloudDevices(
+  store: MirrorCache,
+  activeDeviceIds: readonly string[],
+): Promise<void> {
+  const scope = await store.captureOwnerScope();
+  await store.reconcileCloudSessionList(
+    activeDeviceIds,
+    scope.ownerRoot,
+    scope.accountCounter,
+  );
+}
+
 function messagesDir(): string {
   return path.join(root, __testing.messagesDirName);
 }
@@ -1236,6 +1248,361 @@ describe('clearDevice / clearAll', () => {
     await c.clearDevice('dev-1');
     await c.writeMessages('dev-1', 'sess-1', [row('m1', '2026-01-01T00:00:00.000Z')]);
     expect((await c.readMessages('dev-1', 'sess-1')).map((m) => m.id)).toEqual(['m1']);
+  });
+
+  it('retireDevice 持久拒绝旧设备的新同步写入,其它设备仍可读写', async () => {
+    const c = cache();
+    await c.writeMessages('dev-old', 'sess-1', [row('old', '2026-01-01T00:00:00.000Z')]);
+    await c.retireDevice('dev-old', 1234);
+
+    await c.writeMessages('dev-old', 'sess-2', [row('late', '2026-02-01T00:00:00.000Z')]);
+    await c.writeMessages('dev-new', 'sess-3', [row('new', '2026-03-01T00:00:00.000Z')]);
+    await c.writeSessionList([
+      { deviceId: 'dev-old', deviceName: 'Old', sessions: [{ id: 's-old', status: 'active' }] },
+      { deviceId: 'dev-new', deviceName: 'New', sessions: [{ id: 's-new', status: 'active' }] },
+    ]);
+
+    expect(await c.readMessages('dev-old', 'sess-1')).toEqual([]);
+    expect(await c.readMessages('dev-old', 'sess-2')).toEqual([]);
+    expect((await c.readMessages('dev-new', 'sess-3')).map((item) => item.id)).toEqual(['new']);
+    expect((await c.readSessionList()).map((device) => device.deviceId)).toEqual(['dev-new']);
+    expect(await c.listRetiredDevices()).toEqual([{ deviceId: 'dev-old', createdAtMs: 1234 }]);
+  });
+
+  it('retirement tombstone 跨 store 实例生效,release 最终清理后才恢复写入', async () => {
+    const first = cache();
+    await first.retireDevice('dev-reused', 5678);
+
+    const restarted = cache();
+    await restarted.writeMessages(
+      'dev-reused',
+      'sess-old',
+      [row('blocked', '2026-01-01T00:00:00.000Z')],
+    );
+    expect(await restarted.readMessages('dev-reused', 'sess-old')).toEqual([]);
+
+    await restarted.releaseRetiredDevice('dev-reused');
+    expect(await restarted.listRetiredDevices()).toEqual([]);
+    await restarted.writeMessages(
+      'dev-reused',
+      'sess-new',
+      [row('accepted', '2026-02-01T00:00:00.000Z')],
+    );
+    expect((await restarted.readMessages('dev-reused', 'sess-new')).map((item) => item.id)).toEqual([
+      'accepted',
+    ]);
+  });
+
+  it.skipIf(!canTestUnwritableDir)('release 最终清理失败时保留 retirement tombstone', async () => {
+    const c = cache();
+    await c.retireDevice('dev-old', 9876, 'instance-old');
+    await fsp.mkdir(messagesDir(), { recursive: true });
+    await fsp.chmod(messagesDir(), 0o000);
+    try {
+      await expect(c.releaseRetiredDevice('dev-old')).rejects.toBeInstanceOf(MirrorCachePurgeError);
+      expect(await c.listRetiredDevices()).toEqual([
+        { deviceId: 'dev-old', instanceId: 'instance-old', createdAtMs: 9876 },
+      ]);
+    } finally {
+      await fsp.chmod(messagesDir(), 0o700);
+    }
+  });
+
+  it('retirement tombstone 内容损坏时仍 fail-closed 拒绝目标设备读写', async () => {
+    const c = cache();
+    await c.retireDevice('dev-old', 1234);
+    const pendingDir = path.join(`${root}.control`, 'pending');
+    const [retirementFile] = (await fsp.readdir(pendingDir)).filter((name) =>
+      name.startsWith('retired-device-'),
+    );
+    await fsp.writeFile(path.join(pendingDir, retirementFile), '{broken', 'utf8');
+
+    await c.writeMessages('dev-old', 'sess-late', [row('late', '2026-02-01T00:00:00.000Z')]);
+    expect(await c.readMessages('dev-old', 'sess-late')).toEqual([]);
+    await expect(c.listRetiredDevices()).rejects.toThrow('malformed device retirement tombstone');
+  });
+
+  it('retirement tombstone 首次落盘失败时以内存闸拒写，并在后续 list 时补持久化', async () => {
+    const c = cache();
+    const rename = fsp.rename.bind(fsp);
+    const renameSpy = vi.spyOn(fsp, 'rename').mockImplementation(async (from, to) => {
+      if (String(to).includes(`${path.sep}pending${path.sep}retired-device-`)) {
+        throw Object.assign(new Error('temporary control-dir failure'), { code: 'EMFILE' });
+      }
+      return rename(from, to);
+    });
+    await expect(c.retireDevice('dev-memory', 2468, 'instance-old')).rejects.toBeInstanceOf(
+      MirrorCachePurgeError,
+    );
+    renameSpy.mockRestore();
+
+    await c.writeMessages(
+      'dev-memory',
+      'sess-late',
+      [row('late', '2026-02-01T00:00:00.000Z')],
+    );
+    expect(await c.readMessages('dev-memory', 'sess-late')).toEqual([]);
+    expect(await c.listRetiredDevices()).toEqual([
+      { deviceId: 'dev-memory', instanceId: 'instance-old', createdAtMs: 2468 },
+    ]);
+
+    const restarted = cache();
+    expect(await restarted.listRetiredDevices()).toEqual([
+      { deviceId: 'dev-memory', instanceId: 'instance-old', createdAtMs: 2468 },
+    ]);
+  });
+
+  it('重复 retire 同一设备保持幂等，并持续清除 session-list 条目', async () => {
+    const c = cache();
+    await c.writeSessionList([
+      {
+        deviceId: 'cloud-old',
+        deviceName: 'Old',
+        kind: 'cloud',
+        sessions: [{ id: 's-old', status: 'active' }],
+      },
+      {
+        deviceId: 'local-peer',
+        deviceName: 'Peer',
+        sessions: [{ id: 's-peer', status: 'active' }],
+      },
+    ]);
+
+    await c.retireDevice('cloud-old', 100, 'instance-old');
+    await c.retireDevice('cloud-old', 100, 'instance-old');
+
+    expect((await c.readSessionList()).map((device) => device.deviceId)).toEqual(['local-peer']);
+    expect(await c.listRetiredDevices()).toEqual([
+      { deviceId: 'cloud-old', instanceId: 'instance-old', createdAtMs: 100 },
+    ]);
+  });
+
+  it('首次成功 cloud list 前 unknown 不过滤 read/write', async () => {
+    const c = cache();
+    await c.writeSessionList([
+      {
+        deviceId: 'cloud-offline',
+        deviceName: 'Cloud',
+        kind: 'cloud',
+        sessions: [{ id: 's-cloud', status: 'active' }],
+      },
+    ]);
+
+    expect((await c.readSessionList()).map((device) => device.deviceId)).toEqual(['cloud-offline']);
+    expect(fs.existsSync(path.join(root, __testing.sessionListFileName))).toBe(true);
+  });
+
+  it('下一次成功 cloud list 物理自愈存量脏条目，且保留活 cloud 与非 cloud', async () => {
+    const beforeUpgrade = cache();
+    await beforeUpgrade.writeSessionList([
+      {
+        deviceId: 'cloud-retired',
+        deviceName: 'Retired',
+        kind: 'cloud',
+        sessions: [{ id: 's-retired', status: 'active' }],
+      },
+      {
+        deviceId: 'cloud-active',
+        deviceName: 'Active',
+        kind: 'cloud',
+        sessions: [{ id: 's-active', status: 'active' }],
+      },
+      {
+        deviceId: 'desktop-peer',
+        deviceName: 'Desktop',
+        sessions: [{ id: 's-peer', status: 'active' }],
+      },
+    ]);
+
+    // 模拟升级 / 重启：新 store 没有任何进程内权威状态，只从现有脏文件开始。
+    const afterUpgrade = cache();
+    await reconcileCloudDevices(afterUpgrade, ['cloud-active']);
+
+    expect((await afterUpgrade.readSessionList()).map((device) => device.deviceId).sort()).toEqual([
+      'cloud-active',
+      'desktop-peer',
+    ]);
+    const stored = JSON.parse(
+      await fsp.readFile(path.join(root, __testing.sessionListFileName), 'utf8'),
+    ) as { devices: Array<{ deviceId: string }> };
+    expect(stored.devices.map((device) => device.deviceId).sort()).toEqual([
+      'cloud-active',
+      'desktop-peer',
+    ]);
+
+    // 相同权威集重复对账不改写文件。
+    const listFile = path.join(root, __testing.sessionListFileName);
+    const past = new Date(2020, 0, 1);
+    await fsp.utimes(listFile, past, past);
+    await reconcileCloudDevices(afterUpgrade, ['cloud-active']);
+    expect((await fsp.stat(listFile)).mtimeMs).toBe(past.getTime());
+  });
+
+  it('tombstone 解除后迟到的 renderer 快照仍不能回灌已销毁 cloud 条目', async () => {
+    const c = cache();
+    await c.retireDevice('cloud-retired', 100, 'instance-old');
+    await reconcileCloudDevices(c, []);
+    await c.releaseRetiredDevice('cloud-retired');
+
+    await c.writeSessionList([
+      {
+        deviceId: 'cloud-retired',
+        deviceName: 'Retired',
+        kind: 'cloud',
+        sessions: [{ id: 's-retired', status: 'active' }],
+      },
+    ]);
+
+    expect(await c.readSessionList()).toEqual([]);
+    expect(fs.existsSync(path.join(root, __testing.sessionListFileName))).toBe(false);
+  });
+
+  it('权威集按 owner root 隔离，A 的空集不会过滤 B 的 cloud 快照', async () => {
+    const rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'mirror-cache-owner-b-'));
+    let currentRoot = root;
+    const c = cache(() => currentRoot);
+    try {
+      await reconcileCloudDevices(c, []);
+      currentRoot = rootB;
+      await c.writeSessionList([
+        {
+          deviceId: 'cloud-b',
+          deviceName: 'Cloud B',
+          kind: 'cloud',
+          sessions: [{ id: 's-b', status: 'active' }],
+        },
+      ]);
+
+      expect((await c.readSessionList()).map((device) => device.deviceId)).toEqual(['cloud-b']);
+    } finally {
+      fs.rmSync(rootB, { recursive: true, force: true });
+      fs.rmSync(`${rootB}.control`, { recursive: true, force: true });
+    }
+  });
+
+  it('丢弃跨 owner 切换返回的迟到 list，不把 A 的权威集发布到 B', async () => {
+    const rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'mirror-cache-owner-switch-b-'));
+    let currentRoot = root;
+    const c = cache(() => currentRoot);
+    try {
+      const scopeA = await c.captureOwnerScope();
+      currentRoot = rootB;
+
+      await c.reconcileCloudSessionList([], scopeA.ownerRoot, scopeA.accountCounter);
+      await c.writeSessionList([
+        {
+          deviceId: 'cloud-b',
+          deviceName: 'Cloud B',
+          kind: 'cloud',
+          sessions: [{ id: 's-b', status: 'active' }],
+        },
+      ]);
+
+      expect((await c.readSessionList()).map((device) => device.deviceId)).toEqual(['cloud-b']);
+    } finally {
+      fs.rmSync(rootB, { recursive: true, force: true });
+      fs.rmSync(`${rootB}.control`, { recursive: true, force: true });
+    }
+  });
+
+  it('丢弃同路径账号 ABA 后返回的迟到 list，clearAll 后保持 unknown', async () => {
+    const c = cache();
+    const staleScope = await c.captureOwnerScope();
+    await c.clearAll();
+
+    await c.reconcileCloudSessionList(
+      [],
+      staleScope.ownerRoot,
+      staleScope.accountCounter,
+    );
+    await c.writeSessionList([
+      {
+        deviceId: 'cloud-new-account',
+        deviceName: 'Cloud',
+        kind: 'cloud',
+        sessions: [{ id: 's-new', status: 'active' }],
+      },
+    ]);
+
+    expect((await c.readSessionList()).map((device) => device.deviceId)).toEqual([
+      'cloud-new-account',
+    ]);
+  });
+
+  it('clearAll 成功后同一 owner 重新回到 unknown，等待下一次成功 list', async () => {
+    const c = cache();
+    await reconcileCloudDevices(c, []);
+    await c.clearAll();
+
+    await c.writeSessionList([
+      {
+        deviceId: 'cloud-created-elsewhere',
+        deviceName: 'Cloud',
+        kind: 'cloud',
+        sessions: [{ id: 's-new', status: 'active' }],
+      },
+    ]);
+
+    expect((await c.readSessionList()).map((device) => device.deviceId)).toEqual([
+      'cloud-created-elsewhere',
+    ]);
+  });
+
+  it('权威列表明确复用同一 deviceId 后恢复接受新 cloud 数据', async () => {
+    const c = cache();
+    await reconcileCloudDevices(c, []);
+    await c.writeSessionList([
+      {
+        deviceId: 'cloud-reused',
+        deviceName: 'Old',
+        kind: 'cloud',
+        sessions: [{ id: 's-old', status: 'active' }],
+      },
+    ]);
+    expect(await c.readSessionList()).toEqual([]);
+
+    await reconcileCloudDevices(c, ['cloud-reused']);
+    await c.writeSessionList([
+      {
+        deviceId: 'cloud-reused',
+        deviceName: 'New',
+        kind: 'cloud',
+        sessions: [{ id: 's-new', status: 'active' }],
+      },
+    ]);
+    expect((await c.readSessionList()).map((device) => device.deviceId)).toEqual(['cloud-reused']);
+  });
+
+  it('read 闸会过滤另一个进程在对账后落下的脏 cloud 行', async () => {
+    const c = cache();
+    await reconcileCloudDevices(c, []);
+    await fsp.mkdir(root, { recursive: true });
+    await fsp.writeFile(
+      path.join(root, __testing.sessionListFileName),
+      JSON.stringify({
+        version: 1,
+        updatedAt: Date.now(),
+        devices: [
+          {
+            deviceId: 'cloud-retired',
+            deviceName: 'Retired',
+            kind: 'cloud',
+            sessions: [{ id: 's-retired', status: 'active' }],
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    expect(await c.readSessionList()).toEqual([]);
+  });
+
+  it('日志设备引用使用稳定 16 位哈希，不暴露完整 deviceId', () => {
+    const deviceId = 'cloud-device-3e9f53c71d775c6bb63af298';
+    const ref = __testing.diagnosticDeviceRef(deviceId);
+    expect(ref).toMatch(/^device#[0-9a-f]{16}$/);
+    expect(ref).not.toContain(deviceId);
+    expect(ref).toBe(__testing.diagnosticDeviceRef(deviceId));
   });
 });
 

@@ -489,11 +489,13 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
   });
 
   it('云端设备使用 Cloud 图标', () => {
-    expect(menuSource).toContain("import {");
+    expect(menuSource).toContain('import {');
     expect(menuSource).toContain('Cloud,');
     expect(menuSource).toContain("devices.filter((device) => device.kind !== 'cloud')");
     // 机器列表只渲染在线云端实例;离线实例折叠进「唤醒云端」动作行。
-    expect(menuSource).toContain('.filter((instance) => cloud.onlineDeviceIds.has(instance.deviceId))');
+    expect(menuSource).toContain(
+      '.filter((instance) => cloud.onlineDeviceIds.has(instance.deviceId))',
+    );
     expect(menuSource).toContain('<Cloud size={14} strokeWidth={2} />');
   });
 
@@ -577,6 +579,10 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     );
     // 段头恒在之后组件不再有可见性门控;云端入口不靠 return null 的宽窄决定去留。
     expect(menuSource).not.toContain('!cloudReady) return null');
+    // wake / stop / rebuild 都显示自己的进行中文案；不再只认 wake 后回落成「唤醒云端」。
+    expect(menuSource).toContain('cloudInstanceLifecycleAction(cloud.pending)');
+    expect(menuSource).toContain('cloudInstanceLifecycleProgressKey(progressAction)');
+    expect(menuSource).not.toContain('const pendingWake =');
     // 设备列表看非云端设备数;云端控制面可用时也要开这一段——「0 实例首次唤醒」
     // 的入口就在里面,没有任何远程设备时也必须出现。
     expect(menuSource).toContain(
@@ -637,6 +643,10 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     // 唤醒失败不许静默,必须有用户可见反馈。
     expect(menuSource).toContain("'ccAgent.sidebar.cloud.wakeFailed'");
     expect(menuSource).toContain("'ccAgent.sidebar.cloud.actionTimedOut'");
+    // wake / stop / rebuild 都显示自己的进行中文案；不再只认 wake 后回落成「唤醒云端」。
+    expect(menuSource).toContain('cloudInstanceLifecycleAction(cloud.pending)');
+    expect(menuSource).toContain('cloudInstanceLifecycleProgressKey(progressAction)');
+    expect(menuSource).not.toContain('const pendingWake =');
     // 在线云端行只提示正式版更新;动作仍集中在设置页。
     expect(menuSource).toContain('cloudInstanceHasAvailableUpdate(instance)');
     expect(menuSource).toContain("t('ccAgent.sidebar.cloud.updateAvailable')");

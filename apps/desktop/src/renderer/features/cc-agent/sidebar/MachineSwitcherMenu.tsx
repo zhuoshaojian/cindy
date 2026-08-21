@@ -71,6 +71,11 @@ import {
 } from '@/features/cloud-instance/useCloudInstances';
 import { cloudInstanceHasAvailableUpdate } from '@/features/cloud-instance/cloudDraftTarget';
 import {
+  cloudInstanceLifecycleAction,
+  cloudInstanceLifecycleActionForTarget,
+  cloudInstanceLifecycleProgressKey,
+} from '@/features/cloud-instance/cloudLifecyclePresentation';
+import {
   desktopCloudInstanceDisplayName,
   resolveDesktopCloudDeviceName,
 } from '@/features/cloud-instance/cloudDeviceName';
@@ -301,11 +306,23 @@ export function MachineSwitcherMenu({
             {cloudReady &&
               cloud.instances
                 .filter((instance) => cloud.onlineDeviceIds.has(instance.deviceId))
-                .map((instance) => (
+                .map((instance) => {
+                  // wake / stop / rebuild 共用同一份进度呈现:重建会换 instanceId,
+                  // 所以要按「pending 目标是否属于当前实例集合」判定,不能只比对 id。
+                  const progressAction = cloudInstanceLifecycleActionForTarget(
+                    cloud.pending,
+                    instance.instanceId,
+                    cloud.instances.map((candidate) => candidate.instanceId),
+                  );
+                  return (
                   <MachineMenuItem
                     key={instance.instanceId}
                     icon={<Cloud size={14} strokeWidth={2} />}
-                    label={cloudNameOf(instance)}
+                    label={progressAction
+                      ? t(cloudInstanceLifecycleProgressKey(progressAction))
+                      : cloudNameOf(instance)}
+                    shimmer={progressAction !== null}
+                    disabled={progressAction !== null}
                     badge={
                       cloudInstanceHasAvailableUpdate(instance)
                         ? t('ccAgent.sidebar.cloud.updateAvailable')
@@ -319,25 +336,24 @@ export function MachineSwitcherMenu({
                     onSelect={() => applySelect([instance.deviceId])}
                     onToggle={() => applyToggle(instance.deviceId)}
                   />
-                ))}
+                  );
+                })}
             {cloudReady &&
               (() => {
                 const offlineInstance = cloud.instances.find(
                   (instance) => !cloud.onlineDeviceIds.has(instance.deviceId),
                 );
                 if (!offlineInstance && cloud.instances.length > 0) return null;
-                const rowTarget = offlineInstance?.instanceId ?? 'new';
-                const pendingWake = cloud.pending?.action === 'wake'
-                  && cloud.pending.target === rowTarget;
-                // 折叠行代表「当前可唤醒的云端」而非一条具名实例行。任一 wake 已受理时都
+                // 折叠行代表「当前可唤醒的云端」而非一条具名实例行。任一动作已受理时都
                 // 必须保持 busy，避免 first-offline 顺序变化后再次点击、重复创建/唤醒资源。
-                const waking = pendingWake || cloud.pending?.action === 'wake';
+                const progressAction = cloudInstanceLifecycleAction(cloud.pending);
+                const waking = progressAction !== null;
                 return (
                   <MachineMenuItem
                     icon={<CloudOff size={14} strokeWidth={2} />}
-                    label={
-                      waking ? t('ccAgent.sidebar.cloud.waking') : t('ccAgent.sidebar.cloud.wake')
-                    }
+                    label={progressAction
+                      ? t(cloudInstanceLifecycleProgressKey(progressAction))
+                      : t('ccAgent.sidebar.cloud.wake')}
                     selected={false}
                     shimmer={waking}
                     disabled={cloud.pending !== null}

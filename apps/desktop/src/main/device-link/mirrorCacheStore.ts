@@ -40,8 +40,12 @@ import { withCrossProcessLock } from './crossProcessLock';
 import {
   bumpClearedCounter,
   cacheLockPath,
+  clearDeviceRetirement,
   clearPendingMark,
+  hasDeviceRetirement,
   hasPendingClears,
+  listDeviceRetirements,
+  markDeviceRetirement,
   markClearPending,
   controlDir,
   numericCounter,
@@ -49,8 +53,15 @@ import {
   CLEARED_ACCOUNT,
   CLEARED_ANY,
   type ClearCounter,
+  type DeviceRetirementTombstone,
 } from './mirrorCacheBarrier';
 import { createLogger } from '../logger';
+import {
+  forgetVolatileDeviceRetirement,
+  hasVolatileDeviceRetirement,
+  listVolatileDeviceRetirements,
+  rememberVolatileDeviceRetirement,
+} from './mirrorCacheRetirementState';
 
 const log = createLogger('device-link:mirror-cache');
 
@@ -129,6 +140,10 @@ function safeSegment(value: string): string {
 
 function shortHash(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 16);
+}
+
+function diagnosticDeviceRef(deviceId: string): string {
+  return `device#${shortHash(deviceId.trim())}`;
 }
 
 function digestOf(content: string): string {
@@ -360,6 +375,8 @@ export class MirrorCachePurgeError extends Error {
      * 设备(review: codex P1)。因此把 scope 一起交给 purge 队列,补删成功后由队列撤掉。
      */
     readonly tombstones: string[] = [],
+    /** 长期设备退役墓碑落盘失败时，由持久 purge queue 继续补写。 */
+    readonly retirements: DeviceRetirementTombstone[] = [],
   ) {
     super(`device-link mirror cache purge incomplete: ${remaining.length} file(s) remain`);
     this.name = 'MirrorCachePurgeError';
@@ -468,8 +485,25 @@ export interface MirrorCache {
     expectedOwnerRoot?: string,
     expectedAccountCounter?: number,
   ): Promise<void>;
+  /** Capture the current owner root + account generation before an async authority request. */
+  captureOwnerScope(): Promise<{ ownerRoot: string; accountCounter: number }>;
+  /**
+   * 成功的 cloud-instance `GET /instances` 返回当前 membership 的**完整、非分页**实例集。
+   * 用它收敛已不属于该账号的 cloud 列表缓存；首次成功 list 之前保持 unknown，不做过滤。
+   */
+  reconcileCloudSessionList(
+    activeDeviceIds: readonly string[],
+    expectedOwnerRoot: string,
+    expectedAccountCounter: number,
+  ): Promise<void>;
   /** 某设备离场(移除 / 撤销控制):清掉它的消息文件与列表快照条目。 */
   clearDevice(deviceId: string): Promise<void>;
+  /** 云端设备已删除:持久拒绝后续同步写入,直到控制面与 presence 确认退役。 */
+  retireDevice(deviceId: string, createdAtMs?: number, instanceId?: string): Promise<void>;
+  /** 最终再清一次目标设备缓存,成功后才解除长期退役墓碑。 */
+  releaseRetiredDevice(deviceId: string): Promise<void>;
+  /** 重启后恢复云端删除收敛所需的持久退役设备清单。 */
+  listRetiredDevices(): Promise<DeviceRetirementTombstone[]>;
   /** 显式登出等隐私路径:整棵缓存目录删掉。 */
   clearAll(): Promise<void>;
 }
@@ -489,6 +523,72 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
    * 已覆盖:写入失败(只在成功后才记)、LRU 逐出、空写删除、clearDevice、clearAll。
    */
   const lastWritten = new Map<string, string>();
+  const warnedRetirementWrites = new Set<string>();
+  const warnedCloudAuthorityWrites = new Set<string>();
+  const warnedRetirementPersistence = new Set<string>();
+  /**
+   * 每个 owner root 最近一次成功 cloud-instance list 的完整 deviceId 集。
+   *
+   * `undefined` 与空集语义不同：undefined 表示控制面仍未知，此时 read/write **故意不额外
+   * 过滤**。把未知当空会在启动离线 / 控制面不可达时清掉仍然有效的云端会话冷缓存。
+   * Map 以 owner root 分桶，账号切换后上一账号的权威集绝不能作用到新目录。
+   */
+  const authoritativeCloudDeviceIdsByRoot = new Map<string, ReadonlySet<string>>();
+
+  function authoritativeCloudDeviceIds(root: string): ReadonlySet<string> | undefined {
+    return authoritativeCloudDeviceIdsByRoot.get(root);
+  }
+
+  function filterCloudDevicesByAuthority(
+    root: string,
+    devices: readonly CachedDeviceSessions[],
+    onRejected?: (deviceId: string) => void,
+  ): CachedDeviceSessions[] {
+    const active = authoritativeCloudDeviceIds(root);
+    if (active === undefined) return [...devices];
+    return devices.filter((device) => {
+      const allowed = device.kind !== 'cloud' || active.has(device.deviceId);
+      if (!allowed) onRejected?.(device.deviceId);
+      return allowed;
+    });
+  }
+
+  function warnRetirementWrite(deviceId: string, kind: 'messages' | 'session-list'): void {
+    const id = deviceId.trim();
+    const key = `${kind}:${id}`;
+    if (warnedRetirementWrites.has(key)) return;
+    warnedRetirementWrites.add(key);
+    log.warn(`mirror cache: rejected ${kind} write for retired device ${diagnosticDeviceRef(id)}`);
+  }
+
+  function warnCloudAuthorityWrite(root: string, deviceId: string): void {
+    const id = deviceId.trim();
+    const key = `${root}:${id}`;
+    if (warnedCloudAuthorityWrites.has(key)) return;
+    warnedCloudAuthorityWrites.add(key);
+    log.warn(
+      `mirror cache: rejected session-list write for cloud device absent from latest instance list ${diagnosticDeviceRef(id)}`,
+    );
+  }
+
+  async function retiredDeviceIds(root: string): Promise<Set<string> | null> {
+    try {
+      return new Set([
+        ...(await listDeviceRetirements(root)).map((item) => item.deviceId),
+        ...listVolatileDeviceRetirements(root).map((item) => item.deviceId),
+      ]);
+    } catch (error) {
+      log.warn('mirror cache: retirement tombstones unreadable; rejecting session-list access', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  async function isDeviceRetired(root: string, deviceId: string): Promise<boolean> {
+    const id = deviceId.trim();
+    return hasVolatileDeviceRetirement(root, id) || hasDeviceRetirement(root, id);
+  }
 
   /** 内容与上次成功落盘一致 → 可跳过。**不写入指纹**,记录留给写成功之后。 */
   function unchanged(file: string, content: string): boolean {
@@ -969,6 +1069,9 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       const root = resolveRoot();
       const ownerRoot = root;
       const key = sessionClearKey(deviceId, sessionId);
+      if (await isDeviceRetired(root, deviceId)) {
+        return { messages: [], invalidation: -1, ownerRoot, accountCounter: -1 };
+      }
       // 计数必须**夹住**文件读(前后各读一次),不能与它并行:并行时另一个窗口正在清理这条会话,
       // 文件读可能返回清理**之前**的行、计数读却已经是新值(或反之),这一对被原样返回后,发起
       // 清理的那个 renderer 之外的窗口会把这些已被删除的行 hydrate 出来并在对端离线期间一直留着
@@ -989,6 +1092,9 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       const before = await readCounters(root, keys);
       const messages = await this.readMessages(deviceId, sessionId);
       const after = await readCounters(root, keys);
+      if (await isDeviceRetired(root, deviceId)) {
+        return { messages: [], invalidation: -1, ownerRoot, accountCounter: -1 };
+      }
       if (await hasPendingClears(root)) {
         return { messages: [], invalidation: -1, ownerRoot, accountCounter: -1 };
       }
@@ -1010,6 +1116,7 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
 
     async readMessages(deviceId, sessionId) {
       if (!deviceId.trim() || !sessionId.trim()) return [];
+      if (await isDeviceRetired(resolveRoot(), deviceId)) return [];
       const parsed = await readJson(path.join(messagesDir(), messageFileName(deviceId, sessionId)));
       const messages = isRecord(parsed) && Array.isArray(parsed.messages) ? parsed.messages : [];
       return normalizeMessages(messages);
@@ -1041,6 +1148,10 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       //     我们读到的是清理**之前**的值,它清完自增后比对失配 → 丢弃这次写;
       //  3. 最后才等跨进程锁,拿到才提交。
       return withRootMutex(rootAtStart, async () => {
+        if (await isDeviceRetired(rootAtStart, deviceId)) {
+          warnRetirementWrite(deviceId, 'messages');
+          return { invalidation: -1 };
+        }
         const clearCounterAtStart = await readClearCounter(rootAtStart, deviceClearKey(deviceId));
         const accountCounterAtStart = await readClearCounter(rootAtStart, CLEARED_ACCOUNT);
         return withCacheFileLock(rootAtStart, async (held) => {
@@ -1117,6 +1228,10 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
            */
           const canCommitNonEmpty = async (): Promise<boolean> => {
             if (!held || isStale(writeGuard)) return false;
+            if (await isDeviceRetired(rootAtStart, deviceId)) {
+              warnRetirementWrite(deviceId, 'messages');
+              return false;
+            }
             const now = await readClearCounter(rootAtStart, sessionKey);
             if (typeof now !== 'number' || now !== expectedInvalidation) return false;
             if (await clearedSince(rootAtStart, deviceClearKey(deviceId), clearCounterAtStart)) {
@@ -1227,6 +1342,8 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       // 设备连同会话标题画回侧边栏(review: codex P1)。
       const root = resolveRoot();
       const ownerRoot = root;
+      const retiredBefore = await retiredDeviceIds(root);
+      if (retiredBefore === null) return { devices: [], ownerRoot, accountCounter: -1 };
       // 同 readMessagesWithInvalidation:有"没确认清完"的墓碑就不命中。
       if (await hasPendingClears(root)) {
         return { devices: [], ownerRoot, accountCounter: -1 };
@@ -1235,6 +1352,10 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       const before = await readCounters(root, keys);
       const parsed = await readJson(sessionListPath());
       const after = await readCounters(root, keys);
+      const retiredAfter = await retiredDeviceIds(root);
+      if (retiredAfter === null) {
+        return { devices: [], ownerRoot, accountCounter: numericCounter(after[1]) };
+      }
       // 同 readMessagesWithInvalidation:墓碑夹住这次读(只查前面挡不住"读到一半才落墓碑")。
       if (await hasPendingClears(root)) {
         return { devices: [], ownerRoot, accountCounter: numericCounter(after[1]) };
@@ -1243,8 +1364,12 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
         return { devices: [], ownerRoot, accountCounter: numericCounter(after[1]) };
       }
       const devices = isRecord(parsed) && Array.isArray(parsed.devices) ? parsed.devices : [];
+      const retired = new Set([...retiredBefore, ...retiredAfter]);
       return {
-        devices: normalizeDeviceSessions(devices),
+        devices: filterCloudDevicesByAuthority(
+          root,
+          normalizeDeviceSessions(devices).filter((device) => !retired.has(device.deviceId)),
+        ),
         ownerRoot,
         accountCounter: numericCounter(after[1]),
       };
@@ -1254,9 +1379,25 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       // 代际在请求发起时(进互斥之前)同步捕获 —— 同 writeMessages。
       const epoch = generation;
       const rootAtStart = resolveRoot();
-      const hasContent = normalizeDeviceSessions(devices).length > 0;
+      const normalizedAtStart = normalizeDeviceSessions(devices);
       // 同 writeMessages 的三段式:互斥准入 → 等跨进程锁之前读基线 → 拿到锁才提交。
       return withRootMutex(rootAtStart, async () => {
+        const retiredAtStart = await retiredDeviceIds(rootAtStart);
+        if (retiredAtStart === null) return;
+        for (const device of normalizedAtStart) {
+          if (retiredAtStart.has(device.deviceId)) {
+            warnRetirementWrite(device.deviceId, 'session-list');
+          }
+        }
+        const allowedAfterRetirement = normalizedAtStart.filter(
+          (device) => !retiredAtStart.has(device.deviceId),
+        );
+        const allowedAtStart = filterCloudDevicesByAuthority(
+          rootAtStart,
+          allowedAfterRetirement,
+          (deviceId) => warnCloudAuthorityWrite(rootAtStart, deviceId),
+        );
+        const hasContent = allowedAtStart.length > 0;
         const clearCounterAtStart = await readClearCounter(rootAtStart, CLEARED_ANY);
         const accountCounterAtStart = await readClearCounter(rootAtStart, CLEARED_ACCOUNT);
         // **没带 owner root 的非空快照一律拒掉**(同 writeMessages 的 fail-closed):renderer
@@ -1279,20 +1420,107 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
         return withCacheFileLock(rootAtStart, async (held) => {
           // 与 writeMessages 同款:同一文件的写入串成链,保证「落盘 → 登记指纹」成对有序。
           const listFile = path.join(rootAtStart, SESSION_LIST_FILE);
-          const outcome = await serializeWrite(listFile, async () =>
+          const outcome = await serializeWrite(listFile, async () => {
+            const retiredAtCommit = await retiredDeviceIds(rootAtStart);
+            if (retiredAtCommit === null) return { outcome: 'stale' } as SessionListWriteResult;
+            for (const device of allowedAtStart) {
+              if (retiredAtCommit.has(device.deviceId)) {
+                warnRetirementWrite(device.deviceId, 'session-list');
+              }
+            }
+            const allowedAfterRetirementAtCommit = allowedAtStart.filter(
+              (device) => !retiredAtCommit.has(device.deviceId),
+            );
+            const allowedAtCommit = filterCloudDevicesByAuthority(
+              rootAtStart,
+              allowedAfterRetirementAtCommit,
+              (deviceId) => warnCloudAuthorityWrite(rootAtStart, deviceId),
+            );
             // 拿不到跨进程锁 → 跳过(整份快照写在别人清理途中落地会把被清设备写回来)。
             // 空快照 = **删除**,删除是安全方向:即使拿不到锁 / 期间发生过清理也照做。
-            !hasContent ||
+            return !hasContent ||
             (held &&
               !(await clearedSince(rootAtStart, CLEARED_ANY, clearCounterAtStart)) &&
               !(await clearedSince(rootAtStart, CLEARED_ACCOUNT, accountCounterAtStart)))
-              ? writeSessionListLocked(devices, { kind: 'write', epoch }, listFile)
+              ? writeSessionListLocked(allowedAtCommit, { kind: 'write', epoch }, listFile)
               : // 写不了内容时不能"什么都不做":盘上那份可能已经陈旧(它可能还带着刚被清掉的
                 // 设备)。按与"落位失败"同一口径**作废**它;作废失败才登记重试。
-                invalidateSessionList(listFile),
-          );
+                invalidateSessionList(listFile);
+          });
           // 只有「删除失败」才抛(见 purge-failed):写入失败保留旧快照即可,不该让上层去
           // 重试删除一份仍然有效的缓存。
+          if (outcome.outcome === 'purge-failed') {
+            throw new MirrorCachePurgeError(rootAtStart, [outcome.stuck], null);
+          }
+        });
+      });
+    },
+
+    async captureOwnerScope() {
+      const ownerRoot = resolveRoot();
+      return {
+        ownerRoot,
+        accountCounter: numericCounter(await readClearCounter(ownerRoot, CLEARED_ACCOUNT)),
+      };
+    },
+
+    async reconcileCloudSessionList(
+      activeDeviceIds,
+      expectedOwnerRoot,
+      expectedAccountCounter,
+    ) {
+      const rootAtStart = resolveRoot();
+      // list 请求可能跨越账号切换。结果只能作用于请求发起时捕获的同一 owner root + 同一
+      // account generation；A→B 与 A→B→A(同路径 ABA)都必须丢弃，不能把 A 的完整列表
+      // 发布成 B 的权威集。计数不可比对同样保持 unknown，不做任何删除。
+      if (
+        rootAtStart !== expectedOwnerRoot
+        || !Number.isInteger(expectedAccountCounter)
+        || expectedAccountCounter < 0
+        || await clearedSince(rootAtStart, CLEARED_ACCOUNT, expectedAccountCounter)
+      ) {
+        return;
+      }
+      const active = new Set(
+        activeDeviceIds
+          .map((deviceId) => deviceId.trim())
+          .filter((deviceId) => deviceId.length > 0),
+      );
+      const epochAll = purgeAllEpoch;
+      const listFile = path.join(rootAtStart, SESSION_LIST_FILE);
+      return withRootMutex(rootAtStart, async () => {
+        // 排队等 root 互斥期间 owner 可能已经切换 / clearAll 已推进代际，再验一次才发布。
+        if (
+          resolveRoot() !== rootAtStart
+          || await clearedSince(rootAtStart, CLEARED_ACCOUNT, expectedAccountCounter)
+        ) {
+          return;
+        }
+        // 只有成功的、完整的 GET /instances 才会调用本方法。先发布 owner-scoped 权威集：
+        // 即使随后的物理收敛因锁/文件系统失败，当前进程 read/write 仍不会再投影或回灌幽灵行。
+        authoritativeCloudDeviceIdsByRoot.set(rootAtStart, active);
+
+        return withCacheFileLock(rootAtStart, async (lockHeld) => {
+          // 不能在没拿到跨进程锁时做「读 → 过滤 → 写回」：另一个实例可能同时更新正常设备。
+          // 权威集已先安装到本进程读写闸，物理自愈留给下一次成功 list 重试。
+          if (!lockHeld) {
+            log.warn(
+              'mirror cache: cloud session-list reconciliation skipped without cross-process lock',
+            );
+            return;
+          }
+          const outcome = await serializeWrite(listFile, async () => {
+            const guard = { kind: 'purge', allEpoch: epochAll } as const;
+            if (isStale(guard)) return { outcome: 'stale' } as SessionListWriteResult;
+            const parsed = await readJson(listFile);
+            const devices = isRecord(parsed) && Array.isArray(parsed.devices) ? parsed.devices : [];
+            const normalized = normalizeDeviceSessions(devices);
+            const allowed = filterCloudDevicesByAuthority(rootAtStart, normalized);
+            if (allowed.length === normalized.length) {
+              return { outcome: 'skipped' } as SessionListWriteResult;
+            }
+            return writeSessionListLocked(allowed, guard, listFile);
+          });
           if (outcome.outcome === 'purge-failed') {
             throw new MirrorCachePurgeError(rootAtStart, [outcome.stuck], null);
           }
@@ -1319,6 +1547,72 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       }
     },
 
+    async retireDevice(deviceId, createdAtMs, instanceId) {
+      const id = deviceId.trim();
+      if (!id) return;
+      const rootAtStart = resolveRoot();
+      const tombstone: DeviceRetirementTombstone = {
+        deviceId: id,
+        ...(instanceId?.trim() ? { instanceId: instanceId.trim() } : {}),
+        createdAtMs: createdAtMs ?? Date.now(),
+      };
+      // 先作废本进程在途写，再落长期墓碑；墓碑成功之后才开始删。后续旧 Pod 的新同步即使
+      // 捕获了新 generation，也会在磁盘墓碑闸上被拒绝。
+      generation += 1;
+      rememberVolatileDeviceRetirement(rootAtStart, tombstone);
+      try {
+        await markDeviceRetirement(
+          rootAtStart,
+          id,
+          tombstone.createdAtMs,
+          tombstone.instanceId,
+        );
+      } catch (error) {
+        throw new MirrorCachePurgeError(rootAtStart, [rootAtStart], error, [], [], [tombstone]);
+      }
+      await this.clearDevice(id);
+    },
+
+    async releaseRetiredDevice(deviceId) {
+      const id = deviceId.trim();
+      if (!id) return;
+      const rootAtStart = resolveRoot();
+      // 墓碑仍举着时最后清一遍；只有清理成功才解除，避免清理失败却重新放行旧 Pod 回写。
+      await this.clearDevice(id);
+      await clearDeviceRetirement(rootAtStart, id);
+      forgetVolatileDeviceRetirement(rootAtStart, id);
+      warnedRetirementWrites.delete(`messages:${id}`);
+      warnedRetirementWrites.delete(`session-list:${id}`);
+    },
+
+    async listRetiredDevices() {
+      const rootAtStart = resolveRoot();
+      const persisted = await listDeviceRetirements(rootAtStart);
+      const merged = new Map(persisted.map((item) => [item.deviceId, item]));
+      for (const tombstone of listVolatileDeviceRetirements(rootAtStart)) {
+        merged.set(tombstone.deviceId, tombstone);
+        if (persisted.some((item) => item.deviceId === tombstone.deviceId)) continue;
+        try {
+          await markDeviceRetirement(
+            rootAtStart,
+            tombstone.deviceId,
+            tombstone.createdAtMs,
+            tombstone.instanceId,
+          );
+          warnedRetirementPersistence.delete(tombstone.deviceId);
+        } catch (error) {
+          if (!warnedRetirementPersistence.has(tombstone.deviceId)) {
+            warnedRetirementPersistence.add(tombstone.deviceId);
+            log.warn(
+              `mirror cache: device retirement remains memory-only (${tombstone.deviceId.slice(0, 8)})`,
+              { error: error instanceof Error ? error.message : String(error) },
+            );
+          }
+        }
+      }
+      return [...merged.values()];
+    },
+
     /**
      * 隐私路径(登出 / 切账号 / 会话失效)。与其它方法不同:**失败会抛**。
      *
@@ -1339,7 +1633,7 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
       const root = resolveRoot();
       // 同 clearDevice:整段拿着跨进程锁跑,别的实例的写入会在锁上等(等不到就跳过写),
       // 不会在删除途中把明文写回来。拿不到锁也照删(删除是安全方向)。
-      return withCacheLock(root, async (lockHeld) => {
+      await withCacheLock(root, async (lockHeld) => {
         if (!lockHeld) log.warn('mirror cache: clearAll without cross-process lock');
         // 账号级作废计数器住在缓存根之外,先自增:发起时读到旧值的写入提交时会被挡掉,
         // 即使它们排在整棵目录删除之后(review: codex P1)。落不下去同样不能当成清理成功 ——
@@ -1396,6 +1690,13 @@ export function createMirrorCache(resolveRoot: () => string): MirrorCache {
           log.warn('mirror cache: failed to drop pending clear mark after clearAll', err);
         });
       });
+      // 只有账号边界真正清成功才忘掉这份权威集。失败时调用方不会推进 owner，继续保留能
+      // 防旧 renderer 回灌的判断更安全；成功后同一 owner 再登录则必须等下一次成功 list，
+      // 不能沿用登出前的集合去过滤用户在其它客户端新建的实例。
+      authoritativeCloudDeviceIdsByRoot.delete(root);
+      for (const key of warnedCloudAuthorityWrites) {
+        if (key.startsWith(`${root}:`)) warnedCloudAuthorityWrites.delete(key);
+      }
     },
   };
 }
@@ -1626,6 +1927,7 @@ export const __testing = {
   sessionListFileName: SESSION_LIST_FILE,
   safeSegment,
   shortHash,
+  diagnosticDeviceRef,
   purgeContents,
   sweepStaleTmpFiles,
   listRootTmpFiles,
