@@ -735,7 +735,7 @@ describe('Shared create project picker', () => {
   // 就静默丢掉已选项目和部分已写好的消息(mention chip 被剥、workingDir/extraDirs 被清)。
   it('ignores reselecting the current device before touching either draft store', () => {
     expect(newMakerDraftRouteSource).toContain(
-      'if (deviceId === (effectiveDeviceLinkDeviceId ?? null)) return;',
+      'if (deviceId === (effectiveDeviceLinkDeviceId ?? null) && pendingCloudTarget == null) return;',
     );
   });
 
@@ -1281,11 +1281,12 @@ describe('Shared create project picker', () => {
    * 它真正依赖的那一半(设备 / 项目)。第七条路径出现时,①会直接失败,而②保证它自动是对的。
    */
   it('routes every draft-target transition through the single action', () => {
-    // 六条路径:设备 pill、设备域浏览器选项目、工作区 picker、所选设备失效后的自动回落、
-    // “对话”分组导航请求、云端 presence 上线后的激活。切回本机统一走设备 pill。
+    // 七条路径:设备 pill、设备域浏览器选项目、工作区 picker、所选设备失效后的自动回落、
+    // “对话”分组导航请求、云端终态上线后的激活、选择休眠云端时先收回本机正式目标。
+    // 切回本机统一走设备 pill。
     // 声明本身是 `= useCallback(` 不匹配这个模式,所以数出来的就是调用点。
     const calls = newMakerDraftRouteSource.match(/applyDraftTarget\(\{/g) ?? [];
-    expect(calls.length).toBe(6);
+    expect(calls.length).toBe(7);
     // 组件里不得再有任何一处手写这些副作用 —— 手写一处就等于又开了一条绕过推导的路。
     // patchDraft 仍可出现(入场清 extraDirs、发送后复位),但不得再带设备字段。
     expect(newMakerDraftRouteSource).not.toContain('deviceLinkDeviceId: deviceId,');
@@ -1730,6 +1731,13 @@ describe('Shared create project picker', () => {
       "const cloudWakeTarget = cloud.pending?.action === 'wake' ? cloud.pending.target : null;",
     );
     expect(newMakerDraftRouteSource).toContain(
+      'activateCloudDevice(pendingCloudTarget.deviceId, pendingCloudTarget.deviceName);',
+    );
+    // wake Promise 只补全实例身份；必须等共享 hook 的终态 watch 收口后才正式激活，
+    // 否则 relay presence 早到会让远端模型请求撞在尚未就绪的端点上。
+    expect(newMakerDraftRouteSource).toContain('if (cloud.pending?.action === \'wake\') return;');
+    expect(newMakerDraftRouteSource).toContain('instanceId: result.instanceId,');
+    expect(newMakerDraftRouteSource).not.toContain(
       'activateCloudDevice(result.deviceId, cloudNameOf(result));',
     );
     expect(newMakerDraftRouteSource).not.toContain('wakeActivation');

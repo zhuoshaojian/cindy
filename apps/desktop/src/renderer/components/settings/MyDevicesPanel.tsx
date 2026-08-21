@@ -1,41 +1,20 @@
 /**
- * MyDevicesPanel —— 「远程控制」页统一的「我的设备」面板。
- * ---------------------------------------------------------------------------
- * 合并原 ControlThisMacPanel(inbound)+ ControllableDevicesPanel(outbound):同一份同账号设备
- * 列表,每台设备一张卡,在一处管理两个方向 + 设备本身(重命名 / 删除)。
+ * MyDevicesPanel —— 「远程连接」里的同账号设备管理。
  *
- *  - 首行「本机」:承载本机重命名、「允许其他设备控制本机」总开关(总闸)+ relay 连接状态。
- *  - 其余每台设备两条控件:
- *      · 「我控制它」(outbound = controlEnabled):对方已拒绝本机时整行**不展示**(不让用户看到
- *        控不了的选中态而纠结);对方未开被控时仍可编辑(本地偏好独立于对方状态),附「对方未开启被控」说明;
- *      · 「允许它控制本机」(inbound = revoke/restore 的反面):总开关关时置灰;关掉走二次确认。
- *
- * 模型 = 总闸 + 逐设备例外。底层全部复用 useDeviceLinkSettings,本面板只做组装与展示。
+ * 本机卡常驻，折叠区只列真实设备。云端实例由同级的 CloudInstancesPanel 管理，
+ * 即使 relay 里仍有 cloud 设备快照，也不会混回「我的设备」。
  */
 
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, Pencil, Trash2, Check, X, Moon, Sun, CircleArrowUp } from 'lucide-react';
+import { Check, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
 import { deviceDisplayName } from '@cindy/maker-shared/device-list';
 
-import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import {
-  CloudInstanceActionTimeoutError,
-  CloudInstanceRebuildCreateError,
-  useCloudInstances,
-} from '@/features/cloud-instance/useCloudInstances';
-import {
-  desktopCloudInstanceDisplayName,
-  resolveDesktopCloudDeviceName,
-} from '@/features/cloud-instance/cloudDeviceName';
-import { resolveCloudVersionPresentation } from '@/features/cloud-instance/cloudVersionPresentation';
 import type { DeviceLinkSettings } from '@/hooks/useDeviceLinkSettings';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { compareDevicesByName } from '@/features/device-link/deviceSort';
-import { toast } from '@/lib/toast';
-import { extractIpcError } from '@/utils/ipcError';
 import {
   canBeControlledPlatform,
   controlToggleState,
@@ -65,18 +44,8 @@ function hardwareLabel(deviceInfo: DeviceLinkDeviceInfo | null | undefined): str
   return label || null;
 }
 
-/** 云端实例(relay 透传 deviceInfo.kind):列表置底、禁止重命名。 */
-function isCloudDevice(device: DeviceLinkDeviceView | null | undefined): boolean {
-  return device?.deviceInfo?.kind === 'cloud';
-}
-
-function displayDeviceName(
-  device: DeviceLinkDeviceView | null | undefined,
-  t: (key: string, options?: { sequence: number }) => string,
-): string {
-  if (!device) return '';
-  const name = deviceDisplayName(device);
-  return resolveDesktopCloudDeviceName(name, t);
+function displayDeviceName(device: DeviceLinkDeviceView | null | undefined): string {
+  return device ? deviceDisplayName(device) : '';
 }
 
 function memoryLabel(memoryGb: number | null | undefined): string | null {
@@ -85,35 +54,9 @@ function memoryLabel(memoryGb: number | null | undefined): string | null {
   return `${formatted} GB`;
 }
 
-function deviceStatusLabel(
-  device: DeviceLinkDeviceView,
-  t: (k: string, o?: Record<string, unknown>) => string,
-): string {
-  if (device.online) {
-    return device.busy ? t('settings.devices.status.busy') : t('settings.devices.status.online');
-  }
-  return t('settings.devices.lastSeen', { time: relativeTime(device.lastSeenAt, t) });
-}
-
-function deviceSubtitle(
-  device: DeviceLinkDeviceView,
-  t: (k: string, o?: Record<string, unknown>) => string,
-  opts: { isControlling?: boolean; statusOverride?: string } = {},
-): string {
-  const parts = [
-    platformLabel(device.platform),
-    hardwareLabel(device.deviceInfo),
-    memoryLabel(device.deviceInfo?.memoryGb),
-    opts.statusOverride ?? deviceStatusLabel(device, t),
-  ].filter(Boolean);
-  if (opts.isControlling) parts.push(t('settings.remoteControl.myDevices.controllingThisMac'));
-  return parts.join(' · ');
-}
-
-/** lastSeenAt 相对时间(分钟粒度,超过 7 天显示日期)。 */
 function relativeTime(
   iso: string | null,
-  t: (k: string, o?: Record<string, unknown>) => string,
+  t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
   if (!iso) return '—';
   const ts = Date.parse(iso);
@@ -128,7 +71,31 @@ function relativeTime(
   return new Date(ts).toLocaleDateString();
 }
 
-/** 设备卡内的一条控件行:左标签(可带原因副文案)+ 右控件。 */
+function deviceStatusLabel(
+  device: DeviceLinkDeviceView,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (device.online) {
+    return device.busy ? t('settings.devices.status.busy') : t('settings.devices.status.online');
+  }
+  return t('settings.devices.lastSeen', { time: relativeTime(device.lastSeenAt, t) });
+}
+
+function deviceSubtitle(
+  device: DeviceLinkDeviceView,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  opts: { isControlling?: boolean; statusOverride?: string } = {},
+): string {
+  const parts = [
+    platformLabel(device.platform),
+    hardwareLabel(device.deviceInfo),
+    memoryLabel(device.deviceInfo?.memoryGb),
+    opts.statusOverride ?? deviceStatusLabel(device, t),
+  ].filter(Boolean);
+  if (opts.isControlling) parts.push(t('settings.remoteControl.myDevices.controllingThisMac'));
+  return parts.join(' · ');
+}
+
 function ControlRow({
   label,
   reason,
@@ -149,60 +116,29 @@ function ControlRow({
   );
 }
 
-/**
- * variant:
- *  - 'all'    完整面板(本机卡 + 刷新 + 其它设备),独立使用时的默认形态
- *  - 'self'   仅本机卡(重命名 + 被控总开关 + relay 状态)——供折叠布局把本机常驻外层
- *  - 'others' 仅刷新按钮 + 其它设备列表——折叠区内容
- * 'self' 与 'others' 成对使用时传同一个 s,数据单源;两实例的重命名编辑态互不相干
- * (同一时刻只会编辑其中一边的设备)。
- */
 export function MyDevicesPanel({
   s,
   variant = 'all',
-  visible = true,
 }: {
   s: DeviceLinkSettings;
   variant?: 'all' | 'self' | 'others';
   visible?: boolean;
 }) {
   const { t } = useTranslation();
-  const { confirm } = useConfirmDialog();
-  // RemoteControlSection renders separate self/others panels; only the latter
-  // needs control-plane metadata, avoiding a duplicate list request.
-  const cloud = useCloudInstances(variant !== 'self');
-  const refreshCloudInstances = cloud.refresh;
-  useEffect(() => {
-    if (variant !== 'self' && visible) void refreshCloudInstances();
-  }, [refreshCloudInstances, variant, visible]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
-  // 被对方撤销了本机访问权限的设备(控制端内存推导)。
   const revokedByPeer = useSyncExternalStore(
     revokedDevicesStore.subscribe,
     revokedDevicesStore.getSnapshot,
   );
 
-  const self = (s.devices ?? []).find((d) => d.isSelf);
-  // 与切换栏同一排序规则:按稳定身份(名字 → deviceId),不跟服务端的「在线/lastSeen 倒序」——
-  // 短期上下线 / 心跳不再让顺序跳动,设备只在原位改在线点。本机单独置顶(下面单独渲染)。
+  const self = (s.devices ?? []).find((device) => device.isSelf);
   const others = (s.devices ?? [])
-    .filter((d) => !d.isSelf)
-    // 云端能力未配置或被服务端禁用时，relay 里残留的 cloud 设备也不应露出。
-    .filter((d) => cloud.loadState === 'ready' || !isCloudDevice(d))
-    // 云端实例整体置底(防误点),桶内沿用稳定身份排序(与切换栏一致)。
-    .sort((a, b) => Number(isCloudDevice(a)) - Number(isCloudDevice(b)) || compareDevicesByName(a, b));
-  const relayDeviceIds = new Set((s.devices ?? []).map((device) => device.deviceId));
-  // 控制面创建成功但 Pod 从未注册 relay 时也必须可管理。此类实例没有 device row,
-  // 不能再依赖 others 的 join 才渲染卡片。
-  const relaySnapshotSettled = s.devices !== null || Boolean(s.listError);
-  const unregisteredCloudInstances = cloud.loadState === 'ready' && relaySnapshotSettled
-    ? cloud.instances.filter((instance) => !relayDeviceIds.has(instance.deviceId))
-    : [];
+    .filter((d) => !d.isSelf && d.deviceInfo?.kind !== 'cloud')
+    .sort(compareDevicesByName);
   const revokedControllers = new Set(s.revokedControllers);
-  const controlling = new Set(s.controlledBy.map((c) => c.deviceId));
+  const controlling = new Set(s.controlledBy.map((controller) => controller.deviceId));
 
-  // 连接问题(鉴权失效/被顶号/超限/版本不符/反复掉线)时不再显示笼统的 connecting 黄点。
   const activeConnectionIssue = resolveActiveConnectionIssue(s.linkStatus, s.connectionIssue);
   const linkStatusColor = activeConnectionIssue
     ? 'var(--remote-status-disconnected)'
@@ -213,9 +149,9 @@ export function MyDevicesPanel({
         : 'var(--remote-status-disconnected)';
 
   const handleRename = async (deviceId: string) => {
-    const target =
-      self?.deviceId === deviceId ? self : others.find((d) => d.deviceId === deviceId);
-    if (isCloudDevice(target)) return; // 云端实例不可重命名(名字跟随本地化 selfName)
+    const target = self?.deviceId === deviceId
+      ? self
+      : others.find((device) => device.deviceId === deviceId);
     const name = editingName.trim();
     const currentName = target?.name.trim() ?? '';
     setEditingId(null);
@@ -223,130 +159,24 @@ export function MyDevicesPanel({
     await s.rename(deviceId, name || null);
   };
 
-  // 关掉「允许它控制本机」= 撤销访问权限;打开 = 恢复。设置页是有意操作,**不弹二次确认** ——
-  // 撤销确认只留给 ControlledBanner 那种「选项外的浮层提示」侧边按钮(防误点)。
   const onOutboundChange = async (device: DeviceLinkDeviceView, next: boolean) => {
-    if (isCloudDevice(device)) return;
     await s.setDeviceControlEnabled(device.deviceId, next);
   };
 
   const onInboundChange = async (device: DeviceLinkDeviceView, next: boolean) => {
-    if (isCloudDevice(device)) return;
     if (next) await s.restore(device.deviceId);
     else await s.revoke(device.deviceId);
   };
 
-  // 删除设备:**仅删除真正成功时**才连带清掉「已撤销」标记(s.remove 内部 catch + toast,会吞掉
-  // 失败,故必须看返回值)。否则若删的是被对方撤销过的设备,切换栏的 buildSwitcherDevices 仍会拿
-  // revoked id 单独撑起一颗陈旧 rejected chip,直到登出 / 停服才消失;而删除失败时清掉则会错误地
-  // 抹掉一台仍存在、仍被撤销的设备的被拒状态。
   const handleDelete = async (deviceId: string) => {
     if (await s.remove(deviceId)) revokedDevicesStore.clearRevoked(deviceId);
-  };
-
-  // 动作/防重/刷新在 useCloudInstances 单一持有;这里只做确认框与 toast(UI 关注点)。
-  // hook 成功路径已刷新云端实例列表,面板补一次 device-link 列表刷新即可。
-  const handleCloudStop = async (instanceId: string) => {
-    try {
-      await cloud.stopInstance(instanceId);
-      void s.refresh(true);
-      toast.success(t('settings.devices.cloudInstance.toast.stopped'));
-    } catch (error) {
-      toast.error(t(error instanceof CloudInstanceActionTimeoutError
-        ? 'settings.devices.cloudInstance.toast.actionTimedOut'
-        : 'settings.devices.cloudInstance.toast.stopFailed'));
-    }
-  };
-
-  const handleCloudWake = async (instanceId: string) => {
-    try {
-      await cloud.wake(instanceId);
-      void s.refresh(true);
-      toast.success(t('settings.devices.cloudInstance.toast.woke'));
-    } catch (error) {
-      toast.error(t(error instanceof CloudInstanceActionTimeoutError
-        ? 'settings.devices.cloudInstance.toast.actionTimedOut'
-        : 'settings.devices.cloudInstance.toast.wakeFailed'));
-    }
-  };
-
-  const handleCloudDelete = async (instanceId: string) => {
-    const confirmed = await confirm({
-      title: t('settings.devices.cloudInstance.deleteConfirm.title'),
-      description: t('settings.devices.cloudInstance.deleteConfirm.description'),
-      confirmText: t('settings.devices.cloudInstance.deleteConfirm.confirm'),
-      cancelText: t('settings.devices.cloudInstance.deleteConfirm.cancel'),
-    });
-    if (!confirmed) return;
-    try {
-      await cloud.deleteInstance(instanceId);
-      void s.refresh(true);
-      toast.success(t('settings.devices.cloudInstance.toast.deleted'));
-    } catch {
-      toast.error(t('settings.devices.cloudInstance.toast.deleteFailed'));
-    }
-  };
-
-  const handleCloudUpgrade = async (instanceId: string) => {
-    const confirmed = await confirm({
-      title: t('settings.devices.cloudInstance.updateConfirm.title'),
-      description: t('settings.devices.cloudInstance.updateConfirm.description'),
-      confirmText: t('settings.devices.cloudInstance.updateConfirm.confirm'),
-      cancelText: t('settings.devices.cloudInstance.updateConfirm.cancel'),
-    });
-    if (!confirmed) return;
-    try {
-      await cloud.upgradeInstance(instanceId);
-      toast.success(t('settings.devices.cloudInstance.toast.updateStarted'));
-    } catch (error) {
-      if (extractIpcError(error)?.code === 'NO_RELEASE_AVAILABLE') {
-        toast.warning(t('settings.devices.cloudInstance.toast.noReleaseAvailable'));
-        return;
-      }
-      toast.error(t('settings.devices.cloudInstance.toast.updateFailed'));
-    }
-  };
-
-  const handleCloudRebuild = async (instanceId: string) => {
-    const confirmed = await confirm({
-      title: t('settings.devices.cloudInstance.rebuildConfirm.title'),
-      description: t('settings.devices.cloudInstance.rebuildConfirm.description'),
-      confirmText: t('settings.devices.cloudInstance.rebuildConfirm.confirm'),
-      cancelText: t('settings.devices.cloudInstance.rebuildConfirm.cancel'),
-      confirmVariant: 'destructive',
-    });
-    if (!confirmed) return;
-    try {
-      await cloud.rebuildInstance(instanceId);
-      void s.refresh(true);
-      toast.success(t('settings.devices.cloudInstance.toast.rebuilt'));
-    } catch (error) {
-      if (error instanceof CloudInstanceActionTimeoutError) {
-        toast.error(t('settings.devices.cloudInstance.toast.actionTimedOut'));
-        return;
-      }
-      if (error instanceof CloudInstanceRebuildCreateError) {
-        void s.refresh(true);
-        toast.error(t('settings.devices.cloudInstance.toast.rebuildCreateFailed'));
-        return;
-      }
-      toast.error(t('settings.devices.cloudInstance.toast.rebuildFailed'));
-    }
-  };
-
-  const handleCloudAutoUpdate = async (instanceId: string, enabled: boolean) => {
-    try {
-      await cloud.setAutoUpdate(instanceId, enabled);
-    } catch {
-      toast.error(t('settings.devices.cloudInstance.toast.autoUpdateFailed'));
-    }
   };
 
   const cardClass = 'rounded-xl border border-[var(--border-default)] px-4 py-3';
 
   return (
     <div className="flex flex-col gap-4">
-      {variant !== 'self' && (
+      {variant !== 'self' ? (
         <div className="flex items-center justify-end">
           <button
             type="button"
@@ -359,7 +189,7 @@ export function MyDevicesPanel({
             {t('settings.devices.refresh')}
           </button>
         </div>
-      )}
+      ) : null}
 
       <ul
         className="flex flex-col gap-2"
@@ -369,191 +199,153 @@ export function MyDevicesPanel({
             : t('settings.remoteControl.sections.myDevices')
         }
       >
-        {/* 本机:承载重命名 + 被控总开关 + relay 状态 */}
-        {variant !== 'others' && (
-        <li className={cardClass}>
-          <div className="flex items-center gap-3">
-            <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full"
-              style={{ backgroundColor: linkStatusColor }}
-              aria-hidden
-            />
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              {self && editingId === self.deviceId && !isCloudDevice(self) ? (
-                <div className="flex items-center gap-1.5">
-                  <input
-                    value={editingName}
-                    autoFocus
-                    maxLength={64}
-                    onChange={(e) => setEditingName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) void handleRename(self.deviceId);
-                      if (e.key === 'Escape') setEditingId(null);
-                    }}
-                    className="w-44 rounded-lg border border-[var(--border-default)] bg-transparent px-2 py-0.5 text-13 text-[var(--settings-input-text)] outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleRename(self.deviceId)}
-                    aria-label={t('settings.devices.renameConfirm')}
-                    className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                  >
-                    <Check size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingId(null)}
-                    aria-label={t('settings.devices.renameCancel')}
-                    className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ) : (
-                <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                  {displayDeviceName(self, t) || t('settings.devices.thisDevice')}
-                </span>
-              )}
-              <span className="text-11 text-[var(--text-tertiary)]">
-                {self
-                  ? deviceSubtitle(self, t, {
-                      statusOverride: t(`settings.devices.linkStatus.${s.linkStatus}`),
-                    })
-                  : `${t('settings.devices.thisDevice')} · ${t(`settings.devices.linkStatus.${s.linkStatus}`)}`}
-              </span>
-              {activeConnectionIssue ? (
-                <span className="text-11 text-[var(--error-fg)]">
-                  {t(`settings.devices.connectionIssue.${activeConnectionIssue.kind}`)}
-                </span>
-              ) : null}
-              {s.standby ? (
+        {variant !== 'others' ? (
+          <li className={cardClass}>
+            <div className="flex items-center gap-3">
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: linkStatusColor }}
+                aria-hidden
+              />
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                {self && editingId === self.deviceId ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      value={editingName}
+                      autoFocus
+                      maxLength={64}
+                      onChange={(event) => setEditingName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                          void handleRename(self.deviceId);
+                        }
+                        if (event.key === 'Escape') setEditingId(null);
+                      }}
+                      className="w-44 rounded-lg border border-[var(--border-default)] bg-transparent px-2 py-0.5 text-13 text-[var(--settings-input-text)] outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleRename(self.deviceId)}
+                      aria-label={t('settings.devices.renameConfirm')}
+                      className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(null)}
+                      aria-label={t('settings.devices.renameCancel')}
+                      className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="truncate text-13 font-medium text-[var(--text-primary)]">
+                    {displayDeviceName(self) || t('settings.devices.thisDevice')}
+                  </span>
+                )}
                 <span className="text-11 text-[var(--text-tertiary)]">
-                  {t('settings.devices.standbyHint')}
+                  {self
+                    ? deviceSubtitle(self, t, {
+                        statusOverride: t(`settings.devices.linkStatus.${s.linkStatus}`),
+                      })
+                    : `${t('settings.devices.thisDevice')} · ${t(`settings.devices.linkStatus.${s.linkStatus}`)}`}
                 </span>
+                {activeConnectionIssue ? (
+                  <span className="text-11 text-[var(--error-fg)]">
+                    {t(`settings.devices.connectionIssue.${activeConnectionIssue.kind}`)}
+                  </span>
+                ) : null}
+                {s.standby ? (
+                  <span className="text-11 text-[var(--text-tertiary)]">
+                    {t('settings.devices.standbyHint')}
+                  </span>
+                ) : null}
+              </div>
+              {self && editingId !== self.deviceId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(self.deviceId);
+                    setEditingName(self.name);
+                  }}
+                  aria-label={t('settings.devices.rename')}
+                  className="shrink-0 rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+                >
+                  <Pencil size={13} />
+                </button>
               ) : null}
             </div>
-            {self && editingId !== self.deviceId && !isCloudDevice(self) ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingId(self.deviceId);
-                  setEditingName(self.name);
-                }}
-                aria-label={t('settings.devices.rename')}
-                className="shrink-0 rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+            <div className="mt-3 border-t border-[var(--border-default)] pt-3">
+              <ControlRow
+                label={t('settings.devices.allowControl')}
+                reason={t('settings.devices.allowControlHint')}
               >
-                <Pencil size={13} />
-              </button>
-            ) : null}
-          </div>
-          <div className="mt-3 border-t border-[var(--border-default)] pt-3">
-            <ControlRow
-              label={t('settings.devices.allowControl')}
-              reason={t('settings.devices.allowControlHint')}
-            >
-              <Switch
-                checked={s.enabled}
-                onCheckedChange={(v) => void s.setEnabled(v)}
-                aria-label={t('settings.devices.allowControl')}
-              />
-            </ControlRow>
-          </div>
-        </li>
-        )}
+                <Switch
+                  checked={s.enabled}
+                  onCheckedChange={(value) => void s.setEnabled(value)}
+                  aria-label={t('settings.devices.allowControl')}
+                />
+              </ControlRow>
+            </div>
+          </li>
+        ) : null}
 
-        {/* 其余同账号设备 */}
         {variant === 'self' ? null : s.listError ? (
           <li className="rounded-xl border border-[var(--border-default)] px-4 py-6 text-center text-12 text-[var(--text-tertiary)]">
             {s.listError}
           </li>
-        ) : s.devices === null && unregisteredCloudInstances.length === 0 ? null
-          : others.length === 0 && unregisteredCloudInstances.length === 0 ? (
+        ) : s.devices === null ? null : others.length === 0 ? (
           <li className="rounded-xl border border-[var(--border-default)] px-4 py-6 text-center text-12 text-[var(--text-tertiary)]">
             {t('settings.devices.empty')}
           </li>
         ) : (
-          others.map((d) => {
-            const cloudInstance = isCloudDevice(d)
-              ? cloud.instances.find((instance) => instance.deviceId === d.deviceId)
-              : undefined;
-            const peerRevoked = revokedByPeer.has(d.deviceId);
-            const control = controlToggleState(d);
-            const inbound = inboundToggleState(s.enabled, revokedControllers.has(d.deviceId));
-            const isControlling = controlling.has(d.deviceId);
-            const cloudUpgradePending =
-              cloudInstance !== undefined
-              && cloud.pending?.target === cloudInstance.instanceId
-              && cloud.pending.action === 'upgrade';
-            const cloudUpgradeVerifying =
-              cloudInstance?.status.upgrade?.state === 'verifying';
-            const cloudUpdating = cloudUpgradePending || cloudUpgradeVerifying;
-            const cloudHasReleaseChannel = cloudInstance?.status.latestReleaseTag != null;
-            const cloudUpdateAvailable =
-              cloudHasReleaseChannel
-              && cloudInstance?.status.updateAvailable === true
-              && !cloudUpdating;
-            const cloudRebuildAvailable =
-              cloudInstance !== undefined && !cloudHasReleaseChannel && !cloudUpdating;
-            const cloudAutoUpdateSupported =
-              typeof cloudInstance?.status.autoUpdate === 'boolean';
-            const cloudAutoUpdatePending =
-              cloudInstance !== undefined
-              && cloud.pending?.target === cloudInstance.instanceId
-              && cloud.pending.action === 'autoUpdate';
-            const cloudLifecyclePending =
-              cloudInstance !== undefined
-              && cloud.pending?.target === cloudInstance.instanceId
-              && (cloud.pending.action === 'wake' || cloud.pending.action === 'stop')
-                ? cloud.pending.action
-                : null;
-            const cloudLifecycleAction = cloudLifecyclePending ?? (d.online ? 'stop' : 'wake');
-            const cloudVersion = resolveCloudVersionPresentation({
-              image: cloudInstance?.status.image,
-              updateAvailable: cloudInstance?.status.updateAvailable === true,
-              updating: cloudUpdating,
-            });
-            const failedUpgradeImage = cloudInstance
-              ? cloudInstance.status.lastFailedUpgradeImage
-                ?? (cloudInstance.status.upgrade?.state === 'rolled-back'
-                  ? cloudInstance.status.upgrade.targetImage
-                  : null)
+          others.map((device) => {
+            const peerRevoked = revokedByPeer.has(device.deviceId);
+            const control = controlToggleState(device);
+            const inbound = inboundToggleState(
+              s.enabled,
+              revokedControllers.has(device.deviceId),
+            );
+            const isControlling = controlling.has(device.deviceId);
+            const controlReason = control.reason === 'peer-off'
+              ? t('settings.remoteControl.myDevices.peerControlOff')
               : null;
-            const controlReason =
-              control.reason === 'peer-off'
-                ? t('settings.remoteControl.myDevices.peerControlOff')
-                : null;
+
             return (
-              <li key={d.deviceId} className={cardClass}>
-                {/* header: 状态点 + 名字(可编辑) + 元信息 + 重命名/删除 */}
+              <li key={device.deviceId} className={cardClass}>
                 <div className="flex items-center gap-3">
                   <span
                     className={`h-1.5 w-1.5 shrink-0 rounded-full ${isControlling ? 'animate-pulse' : ''}`}
                     style={{
                       backgroundColor: isControlling
                         ? 'var(--status-bar-accent)'
-                        : d.online
+                        : device.online
                           ? 'var(--remote-status-ready)'
                           : 'var(--remote-status-disconnected)',
                     }}
                     aria-hidden
                   />
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    {editingId === d.deviceId && !isCloudDevice(d) ? (
+                    {editingId === device.deviceId ? (
                       <div className="flex items-center gap-1.5">
                         <input
                           value={editingName}
                           autoFocus
                           maxLength={64}
-                          onChange={(e) => setEditingName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void handleRename(d.deviceId);
-                            if (e.key === 'Escape') setEditingId(null);
+                          onChange={(event) => setEditingName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                              void handleRename(device.deviceId);
+                            }
+                            if (event.key === 'Escape') setEditingId(null);
                           }}
                           className="w-44 rounded-lg border border-[var(--border-default)] bg-transparent px-2 py-0.5 text-13 text-[var(--settings-input-text)] outline-none"
                         />
                         <button
                           type="button"
-                          onClick={() => void handleRename(d.deviceId)}
+                          onClick={() => void handleRename(device.deviceId)}
                           aria-label={t('settings.devices.renameConfirm')}
                           className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                         >
@@ -569,306 +361,76 @@ export function MyDevicesPanel({
                         </button>
                       </div>
                     ) : (
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                          {displayDeviceName(d, t)}
-                        </span>
-                        {cloudUpdateAvailable ? (
-                          <span className="shrink-0 select-none rounded-full bg-[var(--surface-chip)] px-2 py-0.5 text-10 text-[var(--text-secondary)]">
-                            {cloudInstance?.status.latestReleaseTag
-                              ? t('settings.devices.cloudInstance.updateAvailableTag', {
-                                  tag: cloudInstance.status.latestReleaseTag,
-                                })
-                              : t('settings.devices.cloudInstance.updateAvailable')}
-                          </span>
-                        ) : null}
-                      </div>
+                      <span className="truncate text-13 font-medium text-[var(--text-primary)]">
+                        {displayDeviceName(device)}
+                      </span>
                     )}
                     <span className="truncate text-11 text-[var(--text-tertiary)]">
-                      {deviceSubtitle(d, t, { isControlling })}
+                      {deviceSubtitle(device, t, { isControlling })}
                     </span>
-                    {cloudVersion.currentVersion ? (
-                      <span
-                        data-testid="cloud-instance-current-version"
-                        className="truncate text-11 text-[var(--text-tertiary)]"
-                      >
-                        {t(
-                          cloudVersion.upToDate
-                            ? 'settings.devices.cloudInstance.currentVersionUpToDate'
-                            : 'settings.devices.cloudInstance.currentVersion',
-                          { version: cloudVersion.currentVersion },
-                        )}
-                      </span>
-                    ) : null}
-                    {failedUpgradeImage ? (
-                      <span className="text-11 text-[var(--warning-fg)]">
-                        {t('settings.devices.cloudInstance.updateRolledBack')}
-                      </span>
-                    ) : null}
-                    {/* 观测提示:Pod 模型凭据同步失败(不阻塞就绪,不影响其它操作)。 */}
-                    {cloudInstance?.status.readiness?.modelAccess === 'not-ready' ? (
-                      <span
-                        data-testid="cloud-instance-model-access-stale"
-                        className="text-11 text-[var(--warning-fg)]"
-                      >
-                        {t('settings.devices.cloudInstance.modelAccessStale')}
-                      </span>
-                    ) : null}
                   </div>
-                  {editingId !== d.deviceId && (
+                  {editingId !== device.deviceId ? (
                     <div className="flex shrink-0 items-center gap-1">
-                      {isCloudDevice(d) ? (
-                        cloudInstance ? (
-                          <>
-                            {(cloudUpdateAvailable || cloudUpdating) ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleCloudUpgrade(cloudInstance.instanceId)}
-                                disabled={cloud.pending !== null || cloudUpgradeVerifying}
-                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                <Spinner
-                                  icon={CircleArrowUp}
-                                  size={12}
-                                  spinning={cloudUpdating}
-                                />
-                                {cloudUpdating
-                                  ? t('settings.devices.cloudInstance.updating')
-                                  : t('settings.devices.cloudInstance.update')}
-                              </button>
-                            ) : null}
-                            {cloudRebuildAvailable ? (
-                              <button
-                                type="button"
-                                data-testid="cloud-instance-rebuild"
-                                onClick={() => void handleCloudRebuild(cloudInstance.instanceId)}
-                                disabled={cloud.pending !== null}
-                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                <Spinner
-                                  icon={RefreshCw}
-                                  size={12}
-                                  spinning={
-                                    cloud.pending?.target === cloudInstance.instanceId
-                                    && cloud.pending.action === 'rebuild'
-                                  }
-                                />
-                                {cloud.pending?.target === cloudInstance.instanceId
-                                && cloud.pending.action === 'rebuild'
-                                  ? t('settings.devices.cloudInstance.rebuilding')
-                                  : t('settings.devices.cloudInstance.rebuild')}
-                              </button>
-                            ) : null}
-                            {/* 动作在途时保持原动作的进度表达；空闲时再随 presence 切换。 */}
-                            {cloudLifecycleAction === 'stop' ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleCloudStop(cloudInstance.instanceId)}
-                                disabled={cloud.pending !== null}
-                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                <Spinner
-                                  icon={Moon}
-                                  size={12}
-                                  spinning={
-                                    cloud.pending?.target === cloudInstance.instanceId
-                                    && cloud.pending.action === 'stop'
-                                  }
-                                />
-                                {cloud.pending?.target === cloudInstance.instanceId
-                                && cloud.pending.action === 'stop'
-                                  ? t('settings.devices.cloudInstance.stopping')
-                                  : t('settings.devices.cloudInstance.stop')}
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => void handleCloudWake(cloudInstance.instanceId)}
-                                disabled={cloud.pending !== null}
-                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                <Spinner
-                                  icon={Sun}
-                                  size={12}
-                                  spinning={
-                                    cloud.pending?.target === cloudInstance.instanceId
-                                    && cloud.pending.action === 'wake'
-                                  }
-                                />
-                                {cloud.pending?.target === cloudInstance.instanceId
-                                && cloud.pending.action === 'wake'
-                                  ? t('settings.devices.cloudInstance.waking')
-                                  : t('settings.devices.cloudInstance.wake')}
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => void handleCloudDelete(cloudInstance.instanceId)}
-                              disabled={cloud.pending !== null}
-                              className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--error-fg)] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Spinner
-                                icon={Trash2}
-                                size={12}
-                                spinning={
-                                  cloud.pending?.target === cloudInstance.instanceId
-                                  && cloud.pending.action === 'delete'
-                                }
-                              />
-                              {cloud.pending?.target === cloudInstance.instanceId
-                              && cloud.pending.action === 'delete'
-                                ? t('settings.devices.cloudInstance.deleting')
-                                : t('settings.devices.cloudInstance.delete')}
-                            </button>
-                          </>
-                        ) : null
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingId(d.deviceId);
-                              setEditingName(d.name);
-                            }}
-                            aria-label={t('settings.devices.rename')}
-                            className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-                          >
-                            <Pencil size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDelete(d.deviceId)}
-                            disabled={d.online}
-                            title={d.online ? t('settings.devices.deleteOnlineHint') : undefined}
-                            aria-label={t('settings.devices.delete')}
-                            className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(device.deviceId);
+                          setEditingName(device.name);
+                        }}
+                        aria-label={t('settings.devices.rename')}
+                        className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(device.deviceId)}
+                        disabled={device.online}
+                        title={device.online ? t('settings.devices.deleteOnlineHint') : undefined}
+                        aria-label={t('settings.devices.delete')}
+                        className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
-                {isCloudDevice(d) && cloudInstance && cloudAutoUpdateSupported ? (
-                  <div className="mt-3 border-t border-[var(--border-default)] pt-3">
+                <div className="mt-3 flex flex-col gap-3 border-t border-[var(--border-default)] pt-3">
+                  {canBeControlledPlatform(device.platform) && !peerRevoked ? (
                     <ControlRow
-                      label={t('settings.devices.cloudInstance.autoUpdate')}
-                      reason={t('settings.devices.cloudInstance.autoUpdateHint')}
+                      label={t('settings.remoteControl.myDevices.controlIt')}
+                      reason={controlReason}
                     >
                       <Switch
-                        checked={cloudInstance.status.autoUpdate === true}
-                        disabled={cloud.pending !== null}
-                        onCheckedChange={(enabled) => void handleCloudAutoUpdate(
-                          cloudInstance.instanceId,
-                          enabled,
-                        )}
-                        aria-label={t('settings.devices.cloudInstance.autoUpdate')}
-                        data-testid="cloud-instance-auto-update"
-                        data-pending={cloudAutoUpdatePending || undefined}
-                      />
-                    </ControlRow>
-                  </div>
-                ) : null}
-
-                {/* 云端实例的两个方向恒为开启且不可编辑,整区隐藏;普通设备保持原行为。
-                    手机等「不可被控」的普通设备、以及对方已拒绝本机的设备,不展示「我控制它」。 */}
-                {!isCloudDevice(d) ? (
-                  <div className="mt-3 flex flex-col gap-3 border-t border-[var(--border-default)] pt-3">
-                    {canBeControlledPlatform(d.platform) && !peerRevoked && (
-                      <ControlRow
-                        label={t('settings.remoteControl.myDevices.controlIt')}
-                        reason={controlReason}
-                      >
-                        <Switch
-                          checked={control.checked}
-                          onCheckedChange={(v) => void onOutboundChange(d, v)}
-                          aria-label={t('settings.remoteControl.deviceControlToggleAria', {
-                            name: displayDeviceName(d, t),
-                          })}
-                        />
-                      </ControlRow>
-                    )}
-                    <ControlRow
-                      label={t('settings.remoteControl.myDevices.allowInbound')}
-                      reason={
-                        inbound.disabled ? t('settings.remoteControl.myDevices.masterOffHint') : null
-                      }
-                    >
-                      <Switch
-                        checked={inbound.checked}
-                        disabled={inbound.disabled}
-                        onCheckedChange={(v) => void onInboundChange(d, v)}
-                        aria-label={t('settings.remoteControl.myDevices.allowInboundAria', {
-                          name: displayDeviceName(d, t),
+                        checked={control.checked}
+                        onCheckedChange={(v) => void onOutboundChange(device, v)}
+                        aria-label={t('settings.remoteControl.deviceControlToggleAria', {
+                          name: displayDeviceName(device),
                         })}
                       />
                     </ControlRow>
-                  </div>
-                ) : null}
+                  ) : null}
+                  <ControlRow
+                    label={t('settings.remoteControl.myDevices.allowInbound')}
+                    reason={
+                      inbound.disabled ? t('settings.remoteControl.myDevices.masterOffHint') : null
+                    }
+                  >
+                    <Switch
+                      checked={inbound.checked}
+                      disabled={inbound.disabled}
+                      onCheckedChange={(v) => void onInboundChange(device, v)}
+                      aria-label={t('settings.remoteControl.myDevices.allowInboundAria', {
+                        name: displayDeviceName(device),
+                      })}
+                    />
+                  </ControlRow>
+                </div>
               </li>
             );
           })
         )}
-
-        {variant === 'self' ? null : unregisteredCloudInstances.map((instance) => {
-          const rebuildPending =
-            cloud.pending?.target === instance.instanceId
-            && cloud.pending.action === 'rebuild';
-          const deletePending =
-            cloud.pending?.target === instance.instanceId
-            && cloud.pending.action === 'delete';
-          return (
-            <li
-              key={instance.instanceId}
-              data-testid="cloud-instance-unregistered-card"
-              data-instance-id={instance.instanceId}
-              className={cardClass}
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className="h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: 'var(--remote-status-disconnected)' }}
-                  aria-hidden
-                />
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                    {desktopCloudInstanceDisplayName(instance, t)}
-                  </span>
-                  <span className="text-11 text-[var(--warning-fg)]">
-                    {t('settings.devices.cloudInstance.unregisteredStatus')}
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    data-testid="cloud-instance-rebuild"
-                    onClick={() => void handleCloudRebuild(instance.instanceId)}
-                    disabled={cloud.pending !== null}
-                    className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Spinner icon={RefreshCw} size={12} spinning={rebuildPending} />
-                    {rebuildPending
-                      ? t('settings.devices.cloudInstance.rebuilding')
-                      : t('settings.devices.cloudInstance.rebuild')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleCloudDelete(instance.instanceId)}
-                    disabled={cloud.pending !== null}
-                    className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--error-fg)] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Spinner icon={Trash2} size={12} spinning={deletePending} />
-                    {deletePending
-                      ? t('settings.devices.cloudInstance.deleting')
-                      : t('settings.devices.cloudInstance.delete')}
-                  </button>
-                </div>
-              </div>
-            </li>
-          );
-        })}
       </ul>
     </div>
   );

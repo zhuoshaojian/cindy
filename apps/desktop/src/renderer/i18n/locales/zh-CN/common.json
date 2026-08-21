@@ -3129,6 +3129,7 @@
       },
       "sections": {
         "myDevices": "我的设备",
+        "cloudCindy": "云端 Cindy",
         "ssh": "SSH 远程主机",
         "hook": "Cindy IM 机器人"
       },
@@ -3352,6 +3353,10 @@
             "superseded": "已关联到另一台设备"
           }
         }
+      },
+      "cloud": {
+        "empty": "还没有云端实例。唤醒云端后会自动创建，可从任意设备使用。",
+        "loadFailed": "暂时无法加载云端 Cindy，请检查连接后重试。"
       },
       "summary": {
         "otherDevices": "其它设备 {{count}} 台",
@@ -7809,7 +7814,12 @@
       "worktreeRepoHint": "可尝试重新选一次工作目录，等右下角文件夹标识刷新后再试",
       "sessionInactive": "任务已不再处于活跃状态",
       "remoteProjectBanner": "在 {{device}} 的 {{project}} 中新建任务",
-      "remoteDialogueBanner": "在 {{device}} 上新建对话（不绑定项目）"
+      "remoteDialogueBanner": "在 {{device}} 上新建对话（不绑定项目）",
+      "cloudWaking": "正在唤醒云端 Cindy，期间可以继续输入",
+      "cloudWakingSendBlocked": "云端 Cindy 正在唤醒，唤醒完成后即可发送",
+      "cloudModelsLoading": "云端模型加载中…",
+      "cloudWakeFailed": "暂时未能唤醒云端 Cindy，你的草稿仍在",
+      "cloudWakeRetry": "重试"
     },
     "jumpSession": {
       "emptyId": "请输入要跳转的任务 ID",
