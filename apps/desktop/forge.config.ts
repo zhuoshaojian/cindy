@@ -21,6 +21,7 @@ import {
 } from '@cindy/maker-shared/brand-identity';
 import { stageMacIOSSimulatorHelper } from './forge-ios-simulator-helper';
 import { stagePackagedThirdPartyNotices } from './forge-third-party-notices';
+import { pruneNativeBuildMetadata } from './forge-native-build-metadata';
 
 const _require = createRequire(__filename);
 const DESKTOP_PACKAGE_VERSION = (_require('./package.json') as { version: string }).version;
@@ -344,6 +345,10 @@ function bundleNativeDeps(buildPath: string, targetPlatform: string, targetArch:
     fs.cpSync(src, dst, { recursive: true, dereference: true });
     console.log(`[forge:afterCopy] bundled native dep: ${dep} <- ${src}`);
   }
+  // ssh2 publishes test TLS fixtures inside the package tarball. They are not
+  // runtime inputs and include a private-key-shaped PEM that must never enter
+  // a packaged app or cloud image.
+  fs.rmSync(path.join(destModules, 'ssh2', 'test'), { recursive: true, force: true });
   copyDiscordRuntimeDeps(destModules);
 }
 
@@ -414,6 +419,11 @@ async function rebuildNativeDepsInPackage(
     fs.rmSync(ptyObjTarget, { recursive: true, force: true });
     console.log(`[forge:afterCopy] pruned node-gyp intermediates: ${ptyObjTarget}`);
   }
+
+  const prunedMetadata = pruneNativeBuildMetadata(buildPath);
+  console.log(
+    `[forge:afterCopy] pruned ${prunedMetadata.length} host-specific native build metadata entries`,
+  );
 
   console.log(`[forge:afterCopy] rebuild ok: ${sqliteNative}, ${ptyNative}`);
 }
