@@ -9,6 +9,7 @@ import {
   handleListCloudInstances,
   handleRenameCloudInstance,
   handleStopCloudInstance,
+  handleUpgradeCloudInstance,
   handleWakeCloudInstance,
   type CloudInstanceIpcDeps,
 } from '../ipc.js';
@@ -21,6 +22,7 @@ function client(): CloudInstanceClient {
     rename: vi.fn().mockResolvedValue({}),
     status: vi.fn().mockResolvedValue({ status: {} }),
     stop: vi.fn().mockResolvedValue({ status: {} }),
+    upgrade: vi.fn().mockResolvedValue({ status: {} }),
     delete: vi.fn().mockResolvedValue({
       status: {},
       revocation: { status: 'revoked' },
@@ -93,12 +95,14 @@ describe('cloud instance IPC handlers', () => {
     expect(testDeps.client.rename).toHaveBeenNthCalledWith(2, 'instance-1', null);
   });
 
-  it('validates and forwards stop/delete inputs', async () => {
+  it('validates and forwards stop/upgrade/delete inputs', async () => {
     const testDeps = deps();
     await handleStopCloudInstance(testDeps, { instanceId: ' instance-1 ' });
+    await handleUpgradeCloudInstance(testDeps, { instanceId: ' instance-1 ' });
     await handleDeleteCloudInstance(testDeps, { instanceId: ' instance-2 ' });
 
     expect(testDeps.client.stop).toHaveBeenCalledWith('instance-1');
+    expect(testDeps.client.upgrade).toHaveBeenCalledWith('instance-1');
     expect(testDeps.client.delete).toHaveBeenCalledWith('instance-2');
     // 删除成功后必须清掉该设备的名字缓存,防止已删云端以缓存旧名再现。
     expect(testDeps.forgetDeviceName).toHaveBeenCalledTimes(1);
@@ -106,8 +110,26 @@ describe('cloud instance IPC handlers', () => {
       code: 'INVALID_PARAMS',
     });
     await expect(
+      handleUpgradeCloudInstance(testDeps, { instanceId: 'instance-1', image: 'forbidden' }),
+    ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
+    await expect(
       handleDeleteCloudInstance(testDeps, { instanceId: 'instance-2', token: 'forbidden' }),
     ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
+  });
+
+  it.each([
+    ['UPGRADE_IN_PROGRESS', 'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS'],
+    ['CLOUD_INSTANCE_UPGRADE_IN_PROGRESS', 'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS'],
+    ['NO_RELEASE_AVAILABLE', 'NO_RELEASE_AVAILABLE'],
+  ])('preserves upgrade outcome %s as a stable IPC code', async (serverCode, ipcCode) => {
+    const testDeps = deps();
+    vi.mocked(testDeps.client.upgrade).mockRejectedValue(
+      new ServerApiError(serverCode, 409, 'control-plane detail'),
+    );
+
+    await expect(
+      handleUpgradeCloudInstance(testDeps, { instanceId: 'instance-1' }),
+    ).rejects.toMatchObject({ code: ipcCode });
   });
 
   it('maps stop/delete control-plane failures through the shared IPC error contract', async () => {

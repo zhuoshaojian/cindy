@@ -4,7 +4,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DeviceView } from '@cindy/device-link';
 import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import { i18n } from '@/i18n';
-import { selectMobileHomeSources } from '@/session/mobileHome';
+import {
+  selectMobileHomeSources,
+  type MobileHomeDeviceFilterItem,
+} from '@/session/mobileHome';
 import {
   deviceAccessState,
   isControllableDevice,
@@ -12,6 +15,10 @@ import {
   toDeviceListItems,
   visibleDeviceListItems,
 } from '@/device-link/devices';
+import {
+  projectCloudInstanceMenuItems,
+  projectDeviceMenuSources,
+} from '@/device-link/deviceMenuProjection';
 
 beforeAll(async () => {
   await i18n.changeLanguage('zh-CN');
@@ -32,6 +39,23 @@ function device(patch: Partial<DeviceView> = {}): DeviceView {
   };
 }
 
+function deviceFilter(
+  deviceId: string | null,
+  id: string,
+): MobileHomeDeviceFilterItem {
+  return {
+    available: true,
+    deviceId,
+    id,
+    label: id,
+    selected: false,
+    sessionCount: 0,
+    state: 'ready',
+    statusLabel: 'online',
+    waitingCount: 0,
+  };
+}
+
 describe('mobile controllable device filter', () => {
   it('places cloud Pods after ordinary devices without changing stable order', () => {
     expect(sortCloudDevicesLast([
@@ -47,12 +71,19 @@ describe('mobile controllable device filter', () => {
     ]);
   });
 
-  it('does not expose rename for cloud devices in the home device menu', () => {
+  it('keeps ordinary-device long press on the task detail and routes the chevron to management', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
-    // 云端行由 cloudItems 独立渲染且不传 onRename;deviceFilters 已把 cloud 项
-    // 整体排除,普通设备行的 onRename 无需再按 cloudDeviceIds 二次判断。
-    expect(source).toContain('onRename={item.deviceId ? () => onRenameDevice(item) : undefined}');
-    expect(source).toContain('!cloudDeviceIds.has(item.deviceId)');
+    expect(source).toContain("pathname: '/devices/[deviceId]'");
+    expect(source).toContain('params: { deviceId: item.deviceId, name: item.label }');
+    expect(source).toContain('onLongPress={item.deviceId ? () => onOpenDevice(item) : undefined}');
+    expect(source).toContain('onDetails={item.deviceId ? () => onOpenManage(item) : undefined}');
+    expect(source).toContain('onLongPress={item.deviceId ? () => onOpenManage(item) : undefined}');
+    expect(source).toContain('onOpenCloudInstance={(instance, label) => openDeviceManagement({');
+    expect(source).toContain("pathname: '/devices/manage/[deviceId]'");
+    expect(source).toContain('testID={testID ? `${testID}.details` : undefined}');
+    expect(source).toContain('projectDeviceMenuSources({');
+    expect(source).toContain('fallbackCloudFilters.map((item) => (');
+    expect(source).not.toContain('onRenameDevice');
   });
 
   it('does not render a cloud icon in the home device menu', () => {
@@ -66,22 +97,33 @@ describe('mobile controllable device filter', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
     expect(source).toContain('const cloudInstanceDeviceIds = useMemo');
     expect(source).toContain('const cloudItems = useMemo');
-    expect(source).toContain('!cloudInstanceDeviceIds.has(item.deviceId)');
+    expect(source).toContain('cloudInstanceDeviceIds,');
     expect(source).toContain('onSelect(item.filter)');
     expect(source).toContain('void cloud.wake(item.instance.instanceId).then');
-    expect(source).toContain('onSelect(buildCloudFilterItem(result');
+    expect(source).toContain('onSelect(buildCloudDeviceFilterItem(result');
     expect(source).toContain('const selectedCloudExists = cloudInstances.instances.some');
     expect(source).toContain('disabled={!item.online && cloud.pending !== null}');
     expect(source).toContain("status={item.online ? 'online' : 'offline'}");
-    expect(source).toContain('onManageCloudInstance={openCloudInstanceActions}');
-    expect(source).toContain('onLongPress={');
-    expect(source).toContain('cloudInstances.stopInstance');
-    expect(source).toContain('cloudInstances.deleteInstance');
-    expect(source).toContain("t('deviceLink.cloudInstance.deleteConfirmDescription')");
+    expect(source).toContain('onBadgePress={() => onOpenCloudInstance(item.instance, item.label)}');
+    expect(source).toContain(
+      "t('deviceLink.cloudInstance.updateAvailableOpenDetails', { label })",
+    );
+    expect(source).toContain('hitSlop={{ bottom: 10, top: 10 }}');
+    const badgeTextStyle = source.slice(
+      source.indexOf('deviceMenuBadgeText:'),
+      source.indexOf('deviceMenuStatusSlot:'),
+    );
+    expect(badgeTextStyle).toContain('lineHeight: lineHeight.micro');
+    expect(source).toContain('onDetails={() => onOpenCloudInstance(item.instance, item.label)}');
+    expect(source).toContain('onLongPress={() => onOpenCloudInstance(item.instance, item.label)}');
+    expect(source).toContain('item.instance.status.updateAvailable && !busy');
+    expect(source).toContain('projectCloudInstanceMenuItems({');
+    expect(source).toContain('void refreshCloudInstances()');
+    expect(source).not.toContain('openCloudInstanceActions');
     expect(source).not.toContain('cloudWakeItems');
   });
 
-  it('hides cloud devices and their mirror sessions once at the Home source boundary', () => {
+  it('keeps live cloud devices while dropping unbound cached cloud sessions when control plane is unavailable', () => {
     const regularSession = {
       deviceLinkDeviceId: 'regular-device',
       deviceLinkDeviceName: 'Mac',
@@ -102,8 +144,11 @@ describe('mobile controllable device filter', () => {
       [regularSession, cloudSession, hiddenCachedCloudSession],
       true,
     );
-    expect(result.devices).toEqual([{ deviceId: 'regular-device' }]);
-    expect(result.sessions).toEqual([regularSession]);
+    expect(result.devices).toEqual([
+      { deviceId: 'regular-device' },
+      { deviceId: 'cloud-device', kind: 'cloud' },
+    ]);
+    expect(result.sessions).toEqual([regularSession, cloudSession]);
 
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
     expect(source).toContain('selectMobileHomeSources(');
@@ -115,6 +160,84 @@ describe('mobile controllable device filter', () => {
     expect(source).not.toContain(
       "item.kind !== 'cloud' || cloudInstances.loadState === 'ready'",
     );
+  });
+
+  it('keeps a relay kind=cloud row in the device menu until a rich control-plane row can replace it', () => {
+    const all = deviceFilter(null, 'all');
+    const regular = deviceFilter('regular-device', 'regular');
+    const cloud = deviceFilter('cloud-device', 'cloud');
+
+    expect(projectDeviceMenuSources({
+      cloudDeviceIds: new Set(['cloud-device']),
+      cloudInstanceDeviceIds: new Set(),
+      cloudLoadState: 'ready',
+      filters: [all, regular, cloud],
+    })).toEqual({
+      deviceFilters: [regular],
+      fallbackCloudFilters: [cloud],
+    });
+
+    expect(projectDeviceMenuSources({
+      cloudDeviceIds: new Set(['cloud-device']),
+      cloudInstanceDeviceIds: new Set(['cloud-device']),
+      cloudLoadState: 'ready',
+      filters: [all, regular, cloud],
+    })).toEqual({
+      deviceFilters: [regular],
+      fallbackCloudFilters: [],
+    });
+  });
+
+  it('projects a ready control-plane instance into one kind=cloud menu item', () => {
+    const instance = {
+      customLabel: null,
+      deviceId: 'cloud-device',
+      instanceId: 'cloud-instance',
+      nameSequence: 1,
+      status: {
+        image: 'registry.example/cindy-cloud:0.1.6',
+        lastFailedUpgradeImage: null,
+        latestReleaseTag: '0.1.6',
+        updateAvailable: true,
+        upgrade: {
+          deadlineAtMs: null,
+          previousImage: null,
+          state: 'idle' as const,
+          targetImage: null,
+        },
+      },
+    };
+
+    expect(projectCloudInstanceMenuItems({
+      instances: [instance],
+      nameOf: () => 'Cloud',
+      onlineDeviceIds: new Set(['cloud-device']),
+      selectedDeviceId: 'cloud-device',
+    })).toMatchObject([{
+      filter: {
+        deviceId: 'cloud-device',
+        selected: true,
+        statusLabel: 'online',
+      },
+      instance,
+      kind: 'cloud',
+      label: 'Cloud',
+      online: true,
+      updating: false,
+    }]);
+
+    expect(projectCloudInstanceMenuItems({
+      instances: [{
+        ...instance,
+        status: {
+          ...instance.status,
+          upgrade: { ...instance.status.upgrade, state: 'verifying' },
+        },
+      }],
+      nameOf: () => 'Cloud',
+      onlineDeviceIds: new Set(['cloud-device']),
+      selectedDeviceId: null,
+    })[0]?.updating).toBe(true);
   });
 
   it('keeps cloud devices and mirror sessions when cloud capability is enabled', () => {

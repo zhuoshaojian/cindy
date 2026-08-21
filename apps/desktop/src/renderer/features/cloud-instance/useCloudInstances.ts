@@ -4,7 +4,7 @@
  * 数据 / 网络 / token 全在 main;这里只调 `electronAPI.cloudInstances`,并 join
  * device-link 全量设备列表判断「就绪」——实例的 stable `deviceId` 在 relay `online`
  * 即代表 Pod 已连上、可对话(控制面 status 仅作诊断,不作可对话终态)。
- * 云端实例的全部变更动作(唤醒 / 休眠 / 删除)与 in-flight 状态由模块级单例持有,
+ * 云端实例的全部变更动作(唤醒 / 休眠 / 更新 / 删除)与 in-flight 状态由模块级单例持有,
  * 三个挂载点(机器切换菜单 / 创建页 / 设置页)共享同一快照与动作锁,消费端只做
  * UI:按钮、确认框、toast。
  */
@@ -27,7 +27,7 @@ export type CloudInstanceWakeResult = Awaited<
 /** 端点未配置 → unsupported(隐藏入口);首次加载 → loading;正常 → ready;其它 → error。 */
 export type CloudInstancesLoadState = 'loading' | 'ready' | 'unsupported' | 'error';
 
-export type CloudInstanceAction = 'wake' | 'stop' | 'delete';
+export type CloudInstanceAction = 'wake' | 'stop' | 'upgrade' | 'delete';
 
 /** in-flight 动作:target 为 instanceId,首次唤醒(自动建)为 'new';空闲为 null。 */
 export type CloudInstancePendingState = {
@@ -47,8 +47,11 @@ export interface UseCloudInstances {
   pending: CloudInstancePendingState;
   /** relay 上 online(可对话)的 deviceId 集合。 */
   onlineDeviceIds: Set<string>;
+  /** Best-effort refresh for menus/panels becoming visible. */
+  refresh: () => Promise<void>;
   wake: (instanceId?: string) => Promise<CloudInstanceWakeResult | undefined>;
   stopInstance: (instanceId: string) => Promise<void>;
+  upgradeInstance: (instanceId: string) => Promise<void>;
   deleteInstance: (instanceId: string) => Promise<void>;
 }
 
@@ -66,6 +69,13 @@ const initialSnapshot: CloudInstancesSnapshot = {
 let snapshot = initialSnapshot;
 let started = false;
 const subscribers = new Set<() => void>();
+let refreshInFlight: Promise<Partial<CloudInstancesSnapshot>> | null = null;
+let pollingConsumers = 0;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let visibilityListenersAttached = false;
+
+export const CLOUD_INSTANCES_REFRESH_INTERVAL_MS = 90_000;
+export const CLOUD_INSTANCES_VERIFYING_REFRESH_INTERVAL_MS = 5_000;
 
 function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
@@ -92,6 +102,13 @@ function instancesEqual(left: readonly CloudInstanceView[], right: readonly Clou
       && instance.status.readiness.ready === other.status.readiness.ready
       && instance.status.readiness.reason === other.status.readiness.reason
       && arraysEqual(instance.status.readiness.blockers, other.status.readiness.blockers)
+      && (instance.status.upgrade?.state ?? 'idle') === (other.status.upgrade?.state ?? 'idle')
+      && (instance.status.upgrade?.targetImage ?? null) === (other.status.upgrade?.targetImage ?? null)
+      && (instance.status.upgrade?.previousImage ?? null) === (other.status.upgrade?.previousImage ?? null)
+      && (instance.status.upgrade?.deadlineAtMs ?? null) === (other.status.upgrade?.deadlineAtMs ?? null)
+      && (instance.status.lastFailedUpgradeImage ?? null) === (other.status.lastFailedUpgradeImage ?? null)
+      && (instance.status.updateAvailable ?? false) === (other.status.updateAvailable ?? false)
+      && (instance.status.latestReleaseTag ?? null) === (other.status.latestReleaseTag ?? null)
       && instance.status.updatedAtMs === other.status.updatedAtMs;
   });
 }
@@ -108,6 +125,7 @@ function pendingEqual(
 }
 
 function updateSnapshot(next: Partial<CloudInstancesSnapshot>): void {
+  const wasVerifying = hasVerifyingUpgrade(snapshot.instances);
   const nextSnapshot = { ...snapshot, ...next };
   if (
     instancesEqual(snapshot.instances, nextSnapshot.instances)
@@ -118,6 +136,7 @@ function updateSnapshot(next: Partial<CloudInstancesSnapshot>): void {
   }
   snapshot = nextSnapshot;
   subscribers.forEach((subscriber) => subscriber());
+  if (wasVerifying !== hasVerifyingUpgrade(nextSnapshot.instances)) schedulePoll();
 }
 
 function subscribe(subscriber: () => void): () => void {
@@ -129,16 +148,102 @@ function getSnapshot(): CloudInstancesSnapshot {
   return snapshot;
 }
 
-async function refresh(): Promise<Partial<CloudInstancesSnapshot>> {
-  try {
-    const { instances } = await window.electronAPI.cloudInstances.list();
-    return { instances, loadState: 'ready' };
-  } catch (error) {
-    if (isCloudInstancesUnsupportedError(error)) {
-      return { instances: [], loadState: 'unsupported' };
+function hasVerifyingUpgrade(instances: readonly CloudInstanceView[]): boolean {
+  return instances.some((instance) => instance.status.upgrade?.state === 'verifying');
+}
+
+function rendererIsVisible(): boolean {
+  return document.visibilityState === 'visible' && document.hasFocus();
+}
+
+function fetchRefreshPatch(): Promise<Partial<CloudInstancesSnapshot>> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const { instances } = await window.electronAPI.cloudInstances.list();
+      return { instances, loadState: 'ready' };
+    } catch (error) {
+      if (isCloudInstancesUnsupportedError(error)) {
+        return { instances: [], loadState: 'unsupported' };
+      }
+      return { loadState: 'error' };
+    } finally {
+      refreshInFlight = null;
     }
-    return { loadState: 'error' };
+  })();
+  return refreshInFlight;
+}
+
+async function refresh(silentFailure = false): Promise<Partial<CloudInstancesSnapshot>> {
+  const patch = await fetchRefreshPatch();
+  return silentFailure && patch.loadState === 'error' ? {} : patch;
+}
+
+async function refreshAfterMutation(): Promise<Partial<CloudInstancesSnapshot>> {
+  // A visibility/menu refresh may have started before the mutation acquired
+  // the pending lock. Never let that pre-mutation response satisfy the final
+  // action refresh, or the UI can remain stale until the next poll.
+  if (refreshInFlight) await refreshInFlight;
+  return refresh();
+}
+
+async function refreshSnapshot(): Promise<void> {
+  if (snapshot.pending) return;
+  updateSnapshot(await refresh(true));
+}
+
+function clearPollTimer(): void {
+  if (pollTimer === null) return;
+  clearTimeout(pollTimer);
+  pollTimer = null;
+}
+
+function schedulePoll(): void {
+  clearPollTimer();
+  if (pollingConsumers === 0) return;
+  const delay = rendererIsVisible() && hasVerifyingUpgrade(snapshot.instances)
+    ? CLOUD_INSTANCES_VERIFYING_REFRESH_INTERVAL_MS
+    : CLOUD_INSTANCES_REFRESH_INTERVAL_MS;
+  pollTimer = setTimeout(() => {
+    pollTimer = null;
+    void (async () => {
+      if (rendererIsVisible() && !snapshot.pending) await refreshSnapshot();
+      schedulePoll();
+    })();
+  }, delay);
+}
+
+function handleRendererVisibilityChange(): void {
+  if (rendererIsVisible()) void refreshSnapshot();
+  schedulePoll();
+}
+
+function attachVisibilityListeners(): void {
+  if (visibilityListenersAttached) return;
+  visibilityListenersAttached = true;
+  document.addEventListener('visibilitychange', handleRendererVisibilityChange);
+  window.addEventListener('focus', handleRendererVisibilityChange);
+}
+
+function detachVisibilityListeners(): void {
+  if (!visibilityListenersAttached) return;
+  visibilityListenersAttached = false;
+  document.removeEventListener('visibilitychange', handleRendererVisibilityChange);
+  window.removeEventListener('focus', handleRendererVisibilityChange);
+}
+
+function retainPolling(): () => void {
+  pollingConsumers += 1;
+  if (pollingConsumers === 1) {
+    attachVisibilityListeners();
+    schedulePoll();
   }
+  return () => {
+    pollingConsumers = Math.max(0, pollingConsumers - 1);
+    if (pollingConsumers > 0) return;
+    clearPollTimer();
+    detachVisibilityListeners();
+  };
 }
 
 function ensureStarted(): void {
@@ -160,7 +265,7 @@ async function runAction<T>(
   let listPatch: Partial<CloudInstancesSnapshot> = {};
   try {
     const value = await op();
-    listPatch = await refresh();
+    listPatch = await refreshAfterMutation();
     return value;
   } finally {
     updateSnapshot({ ...listPatch, pending: null });
@@ -177,6 +282,19 @@ async function stopInstance(instanceId: string): Promise<void> {
   await runAction(instanceId, 'stop', () =>
     window.electronAPI.cloudInstances.stop({ instanceId }),
   );
+}
+
+async function upgradeInstance(instanceId: string): Promise<void> {
+  await runAction(instanceId, 'upgrade', async () => {
+    try {
+      await window.electronAPI.cloudInstances.upgrade({ instanceId });
+    } catch (error) {
+      // Another client may win the race after this UI rendered the update
+      // action. Treat that conflict as accepted and refresh into verifying.
+      if (extractIpcError(error)?.code === 'CLOUD_INSTANCE_UPGRADE_IN_PROGRESS') return;
+      throw error;
+    }
+  });
 }
 
 async function deleteInstance(instanceId: string): Promise<void> {
@@ -196,8 +314,12 @@ async function deleteInstance(instanceId: string): Promise<void> {
 }
 
 function resetCloudInstancesStore(): void {
+  clearPollTimer();
+  detachVisibilityListeners();
   snapshot = initialSnapshot;
   started = false;
+  refreshInFlight = null;
+  pollingConsumers = 0;
   subscribers.clear();
 }
 
@@ -211,7 +333,9 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
   const deviceList = useDeviceLinkDeviceList();
 
   useEffect(() => {
-    if (enabled) ensureStarted();
+    if (!enabled) return undefined;
+    ensureStarted();
+    return retainPolling();
   }, [enabled]);
 
   const onlineDeviceIds = useMemo(
@@ -239,8 +363,10 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
       loadState,
       pending,
       onlineDeviceIds,
+      refresh: refreshSnapshot,
       wake,
       stopInstance,
+      upgradeInstance,
       deleteInstance,
     }),
     [instances, loadState, onlineDeviceIds, pending],

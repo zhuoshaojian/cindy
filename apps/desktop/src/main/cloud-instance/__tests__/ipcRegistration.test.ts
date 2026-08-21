@@ -38,6 +38,7 @@ function deps(): CloudInstanceIpcDeps {
       rename: vi.fn(),
       status: vi.fn(),
       stop: vi.fn(),
+      upgrade: vi.fn(),
       delete: vi.fn(),
     } as unknown as CloudInstanceClient,
     forgetDeviceName: vi.fn(async () => true),

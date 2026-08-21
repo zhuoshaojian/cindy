@@ -13,9 +13,9 @@
  * 模型 = 总闸 + 逐设备例外。底层全部复用 useDeviceLinkSettings,本面板只做组装与展示。
  */
 
-import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, Pencil, Trash2, Check, X, Moon, Sun } from 'lucide-react';
+import { RefreshCw, Pencil, Trash2, Check, X, Moon, Sun, CircleArrowUp } from 'lucide-react';
 import { deviceDisplayName } from '@cindy/maker-shared/device-list';
 
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
@@ -23,10 +23,12 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { useCloudInstances } from '@/features/cloud-instance/useCloudInstances';
 import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
+import { resolveCloudVersionPresentation } from '@/features/cloud-instance/cloudVersionPresentation';
 import type { DeviceLinkSettings } from '@/hooks/useDeviceLinkSettings';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { compareDevicesByName } from '@/features/device-link/deviceSort';
 import { toast } from '@/lib/toast';
+import { extractIpcError } from '@/utils/ipcError';
 import {
   canBeControlledPlatform,
   controlToggleState,
@@ -151,15 +153,21 @@ function ControlRow({
 export function MyDevicesPanel({
   s,
   variant = 'all',
+  visible = true,
 }: {
   s: DeviceLinkSettings;
   variant?: 'all' | 'self' | 'others';
+  visible?: boolean;
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   // RemoteControlSection renders separate self/others panels; only the latter
   // needs control-plane metadata, avoiding a duplicate list request.
   const cloud = useCloudInstances(variant !== 'self');
+  const refreshCloudInstances = cloud.refresh;
+  useEffect(() => {
+    if (variant !== 'self' && visible) void refreshCloudInstances();
+  }, [refreshCloudInstances, variant, visible]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   // 被对方撤销了本机访问权限的设备(控制端内存推导)。
@@ -203,9 +211,15 @@ export function MyDevicesPanel({
 
   // 关掉「允许它控制本机」= 撤销访问权限;打开 = 恢复。设置页是有意操作,**不弹二次确认** ——
   // 撤销确认只留给 ControlledBanner 那种「选项外的浮层提示」侧边按钮(防误点)。
-  const onInboundChange = async (deviceId: string, next: boolean) => {
-    if (next) await s.restore(deviceId);
-    else await s.revoke(deviceId);
+  const onOutboundChange = async (device: DeviceLinkDeviceView, next: boolean) => {
+    if (isCloudDevice(device)) return;
+    await s.setDeviceControlEnabled(device.deviceId, next);
+  };
+
+  const onInboundChange = async (device: DeviceLinkDeviceView, next: boolean) => {
+    if (isCloudDevice(device)) return;
+    if (next) await s.restore(device.deviceId);
+    else await s.revoke(device.deviceId);
   };
 
   // 删除设备:**仅删除真正成功时**才连带清掉「已撤销」标记(s.remove 内部 catch + toast,会吞掉
@@ -254,6 +268,26 @@ export function MyDevicesPanel({
       toast.success(t('settings.devices.cloudInstance.toast.deleted'));
     } catch {
       toast.error(t('settings.devices.cloudInstance.toast.deleteFailed'));
+    }
+  };
+
+  const handleCloudUpgrade = async (instanceId: string) => {
+    const confirmed = await confirm({
+      title: t('settings.devices.cloudInstance.updateConfirm.title'),
+      description: t('settings.devices.cloudInstance.updateConfirm.description'),
+      confirmText: t('settings.devices.cloudInstance.updateConfirm.confirm'),
+      cancelText: t('settings.devices.cloudInstance.updateConfirm.cancel'),
+    });
+    if (!confirmed) return;
+    try {
+      await cloud.upgradeInstance(instanceId);
+      toast.success(t('settings.devices.cloudInstance.toast.updateStarted'));
+    } catch (error) {
+      if (extractIpcError(error)?.code === 'NO_RELEASE_AVAILABLE') {
+        toast.warning(t('settings.devices.cloudInstance.toast.noReleaseAvailable'));
+        return;
+      }
+      toast.error(t('settings.devices.cloudInstance.toast.updateFailed'));
     }
   };
 
@@ -394,6 +428,26 @@ export function MyDevicesPanel({
             const control = controlToggleState(d);
             const inbound = inboundToggleState(s.enabled, revokedControllers.has(d.deviceId));
             const isControlling = controlling.has(d.deviceId);
+            const cloudUpgradePending =
+              cloudInstance !== undefined
+              && cloud.pending?.target === cloudInstance.instanceId
+              && cloud.pending.action === 'upgrade';
+            const cloudUpgradeVerifying =
+              cloudInstance?.status.upgrade?.state === 'verifying';
+            const cloudUpdating = cloudUpgradePending || cloudUpgradeVerifying;
+            const cloudUpdateAvailable =
+              cloudInstance?.status.updateAvailable === true && !cloudUpdating;
+            const cloudVersion = resolveCloudVersionPresentation({
+              image: cloudInstance?.status.image,
+              updateAvailable: cloudInstance?.status.updateAvailable === true,
+              updating: cloudUpdating,
+            });
+            const failedUpgradeImage = cloudInstance
+              ? cloudInstance.status.lastFailedUpgradeImage
+                ?? (cloudInstance.status.upgrade?.state === 'rolled-back'
+                  ? cloudInstance.status.upgrade.targetImage
+                  : null)
+              : null;
             const controlReason =
               control.reason === 'peer-off'
                 ? t('settings.remoteControl.myDevices.peerControlOff')
@@ -445,19 +499,65 @@ export function MyDevicesPanel({
                         </button>
                       </div>
                     ) : (
-                      <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                        {displayDeviceName(d, t)}
-                      </span>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-13 font-medium text-[var(--text-primary)]">
+                          {displayDeviceName(d, t)}
+                        </span>
+                        {cloudUpdateAvailable ? (
+                          <span className="shrink-0 select-none rounded-full bg-[var(--surface-chip)] px-2 py-0.5 text-10 text-[var(--text-secondary)]">
+                            {cloudInstance?.status.latestReleaseTag
+                              ? t('settings.devices.cloudInstance.updateAvailableTag', {
+                                  tag: cloudInstance.status.latestReleaseTag,
+                                })
+                              : t('settings.devices.cloudInstance.updateAvailable')}
+                          </span>
+                        ) : null}
+                      </div>
                     )}
                     <span className="truncate text-11 text-[var(--text-tertiary)]">
                       {deviceSubtitle(d, t, { isControlling })}
                     </span>
+                    {cloudVersion.currentVersion ? (
+                      <span
+                        data-testid="cloud-instance-current-version"
+                        className="truncate text-11 text-[var(--text-tertiary)]"
+                      >
+                        {t(
+                          cloudVersion.upToDate
+                            ? 'settings.devices.cloudInstance.currentVersionUpToDate'
+                            : 'settings.devices.cloudInstance.currentVersion',
+                          { version: cloudVersion.currentVersion },
+                        )}
+                      </span>
+                    ) : null}
+                    {failedUpgradeImage ? (
+                      <span className="text-11 text-[var(--warning-fg)]">
+                        {t('settings.devices.cloudInstance.updateRolledBack')}
+                      </span>
+                    ) : null}
                   </div>
                   {editingId !== d.deviceId && (
                     <div className="flex shrink-0 items-center gap-1">
                       {isCloudDevice(d) ? (
                         cloudInstance ? (
                           <>
+                            {(cloudUpdateAvailable || cloudUpdating) ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleCloudUpgrade(cloudInstance.instanceId)}
+                                disabled={cloud.pending !== null || cloudUpgradeVerifying}
+                                className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-2.5 text-11 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Spinner
+                                  icon={CircleArrowUp}
+                                  size={12}
+                                  spinning={cloudUpdating}
+                                />
+                                {cloudUpdating
+                                  ? t('settings.devices.cloudInstance.updating')
+                                  : t('settings.devices.cloudInstance.update')}
+                              </button>
+                            ) : null}
                             {/* 第一动作位随在线态切换:在线可休眠;休眠中变唤醒(不再提供无效的休眠)。 */}
                             {d.online ? (
                               <button
@@ -550,39 +650,41 @@ export function MyDevicesPanel({
                   )}
                 </div>
 
-                {/* 两个方向控件。手机等「不可被控」的设备、以及对方已拒绝本机的设备,都不展示「我控制它」
-                    (前者永远控不了;后者避免让用户看到一个控不了的选中态而纠结)。 */}
-                <div className="mt-3 flex flex-col gap-3 border-t border-[var(--border-default)] pt-3">
-                  {canBeControlledPlatform(d.platform) && !peerRevoked && (
+                {/* 云端实例的两个方向恒为开启且不可编辑,整区隐藏;普通设备保持原行为。
+                    手机等「不可被控」的普通设备、以及对方已拒绝本机的设备,不展示「我控制它」。 */}
+                {!isCloudDevice(d) ? (
+                  <div className="mt-3 flex flex-col gap-3 border-t border-[var(--border-default)] pt-3">
+                    {canBeControlledPlatform(d.platform) && !peerRevoked && (
+                      <ControlRow
+                        label={t('settings.remoteControl.myDevices.controlIt')}
+                        reason={controlReason}
+                      >
+                        <Switch
+                          checked={control.checked}
+                          onCheckedChange={(v) => void onOutboundChange(d, v)}
+                          aria-label={t('settings.remoteControl.deviceControlToggleAria', {
+                            name: displayDeviceName(d, t),
+                          })}
+                        />
+                      </ControlRow>
+                    )}
                     <ControlRow
-                      label={t('settings.remoteControl.myDevices.controlIt')}
-                      reason={controlReason}
+                      label={t('settings.remoteControl.myDevices.allowInbound')}
+                      reason={
+                        inbound.disabled ? t('settings.remoteControl.myDevices.masterOffHint') : null
+                      }
                     >
                       <Switch
-                        checked={control.checked}
-                        onCheckedChange={(v) => void s.setDeviceControlEnabled(d.deviceId, v)}
-                        aria-label={t('settings.remoteControl.deviceControlToggleAria', {
+                        checked={inbound.checked}
+                        disabled={inbound.disabled}
+                        onCheckedChange={(v) => void onInboundChange(d, v)}
+                        aria-label={t('settings.remoteControl.myDevices.allowInboundAria', {
                           name: displayDeviceName(d, t),
                         })}
                       />
                     </ControlRow>
-                  )}
-                  <ControlRow
-                    label={t('settings.remoteControl.myDevices.allowInbound')}
-                    reason={
-                      inbound.disabled ? t('settings.remoteControl.myDevices.masterOffHint') : null
-                    }
-                  >
-                    <Switch
-                      checked={inbound.checked}
-                      disabled={inbound.disabled}
-                      onCheckedChange={(v) => void onInboundChange(d.deviceId, v)}
-                      aria-label={t('settings.remoteControl.myDevices.allowInboundAria', {
-                        name: displayDeviceName(d, t),
-                      })}
-                    />
-                  </ControlRow>
-                </div>
+                  </div>
+                ) : null}
               </li>
             );
           })

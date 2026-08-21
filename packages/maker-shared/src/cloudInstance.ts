@@ -7,6 +7,24 @@ import { CLOUD_DEVICE_NAME_SENTINEL } from './deviceList.js';
  */
 export const CLOUD_WAKE_WATCH_TIMEOUT_MS = 180_000;
 
+/**
+ * Extract the explicit tag from a container image reference without guessing
+ * `latest`. Digest-qualified refs keep the tag before `@sha256:...`.
+ */
+export function parseCloudInstanceImageTag(
+  image: string | null | undefined,
+): string | null {
+  const value = image?.trim();
+  if (!value) return null;
+  const digestSeparator = value.indexOf('@');
+  const name = digestSeparator >= 0 ? value.slice(0, digestSeparator) : value;
+  const lastSlash = name.lastIndexOf('/');
+  const tagSeparator = name.lastIndexOf(':');
+  if (tagSeparator <= lastSlash) return null;
+  const tag = name.slice(tagSeparator + 1);
+  return /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(tag) ? tag : null;
+}
+
 /** Control-plane naming metadata joined to a relay device by stable deviceId. */
 export interface CloudInstanceNameMetadata {
   customLabel: string | null;

@@ -54,6 +54,8 @@ interface Props {
   compact?: boolean;
   disabled?: boolean;
   cloudWake?: DeviceSwitcherCloudWake;
+  /** 打开设置中的云端设备管理区。 */
+  onOpenCloudSettings: () => void;
 }
 
 /**
@@ -82,6 +84,7 @@ export function DeviceSwitcherPill({
   compact = false,
   disabled = false,
   cloudWake,
+  onOpenCloudSettings,
 }: Props) {
   const { t } = useTranslation();
 
@@ -170,6 +173,10 @@ export function DeviceSwitcherPill({
           value={value}
           localLabel={localLabel}
           cloudWake={cloudWake}
+          onOpenCloudSettings={() => {
+            onOpenChange(false);
+            onOpenCloudSettings();
+          }}
           onSelect={(deviceId, deviceName) => {
             onChange(deviceId, deviceName);
             onOpenChange(false);
@@ -185,12 +192,14 @@ function DeviceMenuList({
   value,
   localLabel,
   cloudWake,
+  onOpenCloudSettings,
   onSelect,
 }: {
   devices: readonly DraftPillDevice[];
   value: DeviceSwitcherValue;
   localLabel: string;
   cloudWake?: DeviceSwitcherCloudWake;
+  onOpenCloudSettings: () => void;
   onSelect: (deviceId: DeviceSwitcherValue, deviceName: string | null) => void;
 }) {
   const { t } = useTranslation();
@@ -238,6 +247,7 @@ function DeviceMenuList({
                     : t('newChat.deviceSwitcher.offlineHint')
               }
               online={device.online}
+              updateAvailable={device.kind === 'cloud' && device.updateAvailable}
               // 在线行 = 切换;云端离线行 = 唤醒(busy 期间禁点防重);普通离线行不可选。
               disabled={
                 device.online ? false : device.kind !== 'cloud' || cloudWake == null || cloudWake.busy
@@ -249,6 +259,9 @@ function DeviceMenuList({
                   : device.kind === 'cloud'
                     ? () => cloudWake?.onWake(device.cloudInstanceId)
                     : undefined
+              }
+              onUpdateAvailableSelect={
+                device.kind === 'cloud' && device.updateAvailable ? onOpenCloudSettings : undefined
               }
             />
           );
@@ -288,55 +301,81 @@ interface RowProps {
   disabled?: boolean;
   selected: boolean;
   onSelect?: () => void;
+  updateAvailable?: boolean;
+  onUpdateAvailableSelect?: () => void;
 }
 
-function DeviceRow({ icon, shimmer = false, name, hint, online, disabled, selected, onSelect }: RowProps) {
+function DeviceRow({
+  icon,
+  shimmer = false,
+  name,
+  hint,
+  online,
+  disabled,
+  selected,
+  onSelect,
+  updateAvailable = false,
+  onUpdateAvailableSelect,
+}: RowProps) {
+  const { t } = useTranslation();
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      data-testid="create-agent-device-option"
-      onClick={onSelect}
+    <div
       className={cn(
-        'flex w-full items-center gap-3 rounded-[8px] px-3 py-[10px] text-left',
+        'flex w-full items-center gap-3 rounded-[8px] text-left',
         'transition-colors outline-none',
-        // 键盘焦点必须看得见(Codex review P1):原来只有 hover / disabled 两种态,`outline-none`
-        // 又把浏览器默认焦点圈去掉了 —— 用 Tab 走这个菜单时,当前落在哪一行完全没有提示,
-        // 用户不知道 Enter / Space 会激活哪台设备。token 用 --create-agent-focus-ring:pill 的
-        // trigger 与 VendorSegmentedSwitcher 都用它,同一控件的键盘焦点表现应当一致
-        // (DESIGN.md §2 把 focus ring 列为少数被批准的彩色语义之一)。
-        'focus-visible:ring-2 focus-visible:ring-[var(--create-agent-focus-ring)]',
-        disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-[var(--folder-item-hover)]',
+        (!disabled || onUpdateAvailableSelect) && 'hover:bg-[var(--folder-item-hover)]',
       )}
     >
-      <span
-        data-testid={shimmer ? 'create-agent-cloud-waking-icon' : undefined}
-        className={cn('inline-flex shrink-0', shimmer && 'animate-pulse')}
-      >
-        {icon}
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col items-start">
-        <span className="flex w-full items-center gap-1.5">
-          {online !== undefined && (
-            <span
-              aria-hidden
-              className={cn(
-                'size-1.5 shrink-0 rounded-full',
-                online ? 'bg-[var(--remote-status-ready)]' : 'bg-[var(--text-tertiary)]',
-              )}
-            />
-          )}
-          <span className="min-w-0 truncate text-sm font-medium text-[var(--folder-item-name)]">
-            {name}
-          </span>
-        </span>
-        {hint && (
-          <span className="w-full truncate text-xs text-[var(--folder-item-path)]">{hint}</span>
+      <button
+        type="button"
+        disabled={disabled}
+        data-testid="create-agent-device-option"
+        onClick={onSelect}
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-3 rounded-[8px] px-3 py-[10px] text-left outline-none',
+          'focus-visible:ring-2 focus-visible:ring-[var(--create-agent-focus-ring)]',
+          disabled && 'cursor-not-allowed opacity-50',
         )}
-      </div>
-      {selected && (
-        <Check size={16} strokeWidth={2.2} className="shrink-0 text-[var(--folder-item-name)]" />
-      )}
-    </button>
+      >
+        <span
+          data-testid={shimmer ? 'create-agent-cloud-waking-icon' : undefined}
+          className={cn('inline-flex shrink-0', shimmer && 'animate-pulse')}
+        >
+          {icon}
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col items-start">
+          <span className="flex w-full items-center gap-1.5">
+            {online !== undefined && (
+              <span
+                aria-hidden
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full',
+                  online ? 'bg-[var(--remote-status-ready)]' : 'bg-[var(--text-tertiary)]',
+                )}
+              />
+            )}
+            <span className="min-w-0 truncate text-sm font-medium text-[var(--folder-item-name)]">
+              {name}
+            </span>
+          </span>
+          {hint && (
+            <span className="w-full truncate text-xs text-[var(--folder-item-path)]">{hint}</span>
+          )}
+        </div>
+        {selected && (
+          <Check size={16} strokeWidth={2.2} className="shrink-0 text-[var(--folder-item-name)]" />
+        )}
+      </button>
+      {updateAvailable && onUpdateAvailableSelect ? (
+        <button
+          type="button"
+          data-testid="create-agent-cloud-update-badge"
+          onClick={onUpdateAvailableSelect}
+          className="mr-3 shrink-0 select-none rounded-full bg-[var(--surface-chip)] px-2 py-0.5 text-10 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+        >
+          {t('ccAgent.sidebar.cloud.updateAvailable')}
+        </button>
+      ) : null}
+    </div>
   );
 }

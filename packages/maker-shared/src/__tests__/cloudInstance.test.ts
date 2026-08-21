@@ -1,7 +1,31 @@
 import { describe, expect, it } from 'vitest';
 
 import { CLOUD_DEVICE_NAME_SENTINEL } from '../deviceList.js';
-import { describeCloudInstanceName } from '../cloudInstance.js';
+import {
+  describeCloudInstanceName,
+  parseCloudInstanceImageTag,
+} from '../cloudInstance.js';
+
+describe('cloud instance image tag', () => {
+  it.each([
+    ['registry.example/public/cindy-cloud:0.1.7@sha256:abc', '0.1.7'],
+    ['localhost:5000/cindy-cloud:dev-b390b09-packaged', 'dev-b390b09-packaged'],
+    ['cindy-cloud:release_candidate-1', 'release_candidate-1'],
+  ])('extracts an explicit tag from %s', (image, expected) => {
+    expect(parseCloudInstanceImageTag(image)).toBe(expected);
+  });
+
+  it.each([
+    null,
+    undefined,
+    '',
+    'registry.example/public/cindy-cloud',
+    'registry.example/public/cindy-cloud@sha256:abc',
+    'registry.example/public/cindy-cloud:bad tag',
+  ])('returns null when no valid explicit tag can be parsed from %s', (image) => {
+    expect(parseCloudInstanceImageTag(image)).toBeNull();
+  });
+});
 
 describe('cloud instance name descriptor', () => {
   it('preserves a user custom label verbatim', () => {

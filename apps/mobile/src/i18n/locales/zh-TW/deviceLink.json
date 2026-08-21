@@ -19,6 +19,7 @@
     "cloud": "雲端",
     "wakeFailed": "喚醒雲端失敗，請稍後重試",
     "updateAvailable": "有可用更新",
+    "updateAvailableOpenDetails": "「{{label}}」有可用更新。開啟詳情",
     "updateAvailableTag": "有可用更新 · {{tag}}",
     "updateSectionTitle": "更新",
     "currentVersion": "目前版本 {{version}}",
