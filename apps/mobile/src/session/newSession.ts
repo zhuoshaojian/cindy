@@ -5,6 +5,7 @@ import {
   deriveOptimisticSessionTitle,
 } from '@cindy/maker-shared/session-title';
 import { i18n } from '@/i18n';
+import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import type { CreateSessionOptions, RemoteDirectoryEntry } from '@/device-link/mobileMakerTransport';
 import type { DeviceProvidersPayload } from '@/device-link/deviceProvidersCache';
 import type { MobileModelOption } from './agentCapabilities';
@@ -71,6 +72,8 @@ export interface RecentWorkspaceOption {
 export interface NewSessionDeviceOption {
   deviceId: string;
   name: string;
+  /** Protocol marker for product-specific device presentation. */
+  kind?: 'cloud';
 }
 
 export interface NewSessionStoredPreferences {
@@ -927,7 +930,8 @@ function readNewSessionDeviceOptionsParam(value: unknown): NewSessionDeviceOptio
       const deviceId = readString(record.deviceId)?.trim() ?? '';
       if (!deviceId) return [];
       const name = readString(record.name)?.trim() || deviceId;
-      return [{ deviceId, name }];
+      const kind = record.kind === 'cloud' ? 'cloud' : undefined;
+      return [{ deviceId, name, ...(kind ? { kind } : {}) }];
     });
   } catch {
     return [];
@@ -943,9 +947,13 @@ function normalizeNewSessionDeviceOptions(
     const deviceId = option.deviceId.trim();
     if (!deviceId || seen.has(deviceId)) continue;
     seen.add(deviceId);
-    result.push({ deviceId, name: option.name.trim() || deviceId });
+    result.push({
+      deviceId,
+      name: option.name.trim() || deviceId,
+      ...(option.kind === 'cloud' ? { kind: 'cloud' as const } : {}),
+    });
   }
-  return result;
+  return sortCloudDevicesLast(result);
 }
 
 function projectTitle(workingDir: string): string {

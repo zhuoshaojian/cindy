@@ -299,9 +299,15 @@ describe("CindyAuthClient", () => {
     );
   });
 
-  it("uses account tokens only for account control and exchanges a resource token", async () => {
+  it("refreshes account control tokens and exchanges a resource token", async () => {
     const fetch = vi
       .fn()
+      .mockResolvedValueOnce(
+        response(200, {
+          accountToken: "account-access",
+          accountRefreshToken: "account-refresh-next",
+        }),
+      )
       .mockResolvedValueOnce(
         response(200, {
           memberships: [
@@ -335,18 +341,28 @@ describe("CindyAuthClient", () => {
         }),
       );
     const auth = client(fetch);
-    expect(auth).not.toHaveProperty("refreshAccount");
     expect(auth).not.toHaveProperty("logoutAccount");
+    await expect(auth.refreshAccount("account-refresh")).resolves.toEqual({
+      accountToken: "account-access",
+      accountRefreshToken: "account-refresh-next",
+    });
     await expect(
       auth.getAccountMemberships("account-access"),
     ).resolves.toHaveLength(1);
     await expect(
       auth.exchangeAccountMembership("account-access", "org-membership"),
     ).resolves.toMatchObject({ accessToken: "org-access" });
-    expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({
+    expect(fetch.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({
+        accountRefreshToken: "account-refresh",
+        deviceId: "device-1",
+      }),
+    );
+    expect(fetch.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(fetch.mock.calls[1]?.[1]?.headers).toMatchObject({
       Authorization: "Bearer account-access",
     });
-    expect(fetch.mock.calls[1]?.[1]?.headers).toMatchObject({
+    expect(fetch.mock.calls[2]?.[1]?.headers).toMatchObject({
       Authorization: "Bearer account-access",
     });
   });
@@ -360,6 +376,36 @@ describe("CindyAuthClient", () => {
     ).rejects.toEqual(
       expect.objectContaining({ code: "INVALID_CODE", statusCode: 401 }),
     );
+  });
+
+  it("applies a finite timeout to account refresh", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn(
+        async (
+          _input: string,
+          init?: { signal?: AbortSignal },
+        ): Promise<AuthFetchResponse> =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                const error = new Error("aborted");
+                error.name = "AbortError";
+                reject(error);
+              },
+              { once: true },
+            );
+          }),
+      );
+      const pending = expect(
+        client(fetch).refreshAccount("account-refresh", { timeoutMs: 25 }),
+      ).rejects.toMatchObject({ code: "REQUEST_TIMEOUT" });
+      await vi.advanceTimersByTimeAsync(25);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("discovers enterprise SSO connections by org id and maps to login methods", async () => {

@@ -18,6 +18,7 @@ export {
 } from "./sessionRealm.js";
 export { isValidEmail } from "./email.js";
 export type {
+  AccountTokenPair,
   AuthClientOptions,
   AuthFetch,
   AuthFetchResponse,

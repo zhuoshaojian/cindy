@@ -2,9 +2,9 @@
  * invokeCaptureHealthOrdering.test.ts —— 锁住 device-link invoke-capture 自检的时机。
  *
  * 真机实测发现:`assertCaptureHealthy()` 原本在 bootstrap 线性段(initDeviceLinkService 之后)
- * 调用,而 `maker:create-session` / `maker:send` 由 splash 后的 registerMakerIpcsAfterSplash
+ * 调用,而 `maker:create-session` / `maker:send` 由 splash 后的 ensureMakerReady
  * 延迟注册 —— 自检跑在它们注册之前,误报「critical channels missing」。修复:把自检挪到
- * registerMakerIpcsAfterSplash 内 registerMakerCoreIpc 之后。本测试用源不变式锁住该顺序,
+ * ensureMakerReady 内 registerMakerCoreIpc 之后。本测试用源不变式锁住该顺序,
  * 防回退(整段 bootstrap 启 Electron 才能跑,故用静态断言而非运行时)。
  */
 import { readFileSync } from 'node:fs';

@@ -35,6 +35,7 @@ import type { TextInput as NativeTextInput } from 'react-native';
 import {
   Camera,
   Check,
+  Cloud,
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
@@ -5248,7 +5249,11 @@ export default function NewRemoteSessionScreen() {
                 style={({ pressed }) => [styles.selectorRow, pressed && styles.pressed]}
                 testID="newSession.deviceSelector"
               >
-                <Laptop color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+                {selectedDeviceOption?.kind === 'cloud' ? (
+                  <Cloud color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+                ) : (
+                  <Laptop color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+                )}
                 <Text style={styles.selectorText} numberOfLines={1}>{selectedDeviceLabel}</Text>
                 {deviceHasChoices ? (
                   <ChevronsUpDown color={colors.borderStrong} size={iconSize.sm} strokeWidth={iconStroke.regular} />
@@ -5267,11 +5272,19 @@ export default function NewRemoteSessionScreen() {
                         style={({ pressed }) => [styles.deviceOptionRow, pressed && styles.pressed]}
                         testID="newSession.deviceOption"
                       >
-                        <Laptop
-                          color={selected ? colors.textPrimary : colors.textTertiary}
-                          size={iconSize.action}
-                          strokeWidth={iconStroke.thin}
-                        />
+                        {option.kind === 'cloud' ? (
+                          <Cloud
+                            color={selected ? colors.textPrimary : colors.textTertiary}
+                            size={iconSize.action}
+                            strokeWidth={iconStroke.thin}
+                          />
+                        ) : (
+                          <Laptop
+                            color={selected ? colors.textPrimary : colors.textTertiary}
+                            size={iconSize.action}
+                            strokeWidth={iconStroke.thin}
+                          />
+                        )}
                         <Text style={styles.deviceOptionText} numberOfLines={1}>
                           {option.name || option.deviceId}
                         </Text>

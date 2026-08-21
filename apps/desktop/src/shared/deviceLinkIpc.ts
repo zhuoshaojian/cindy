@@ -136,6 +136,8 @@ export interface DeviceLinkDeviceInfo {
   memoryGb?: number;
   osVersion?: string;
   modelLabel?: string;
+  /** 云端实例标记,由 relay 透传。 */
+  kind?: 'cloud';
 }
 
 /** GET_STATE 返回值 */
