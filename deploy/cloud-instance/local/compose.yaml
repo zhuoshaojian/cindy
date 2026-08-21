@@ -15,7 +15,9 @@ services:
   cindy-cloud:
     build:
       context: ../../..
-      dockerfile: deploy/cloud-instance/local/Dockerfile
+      # The formal Dockerfile is the single stage/runtime source. Local compose
+      # only selects its development target and never maintains a forked image.
+      dockerfile: deploy/cloud-instance/Dockerfile
       target: development
     # Only linux/amd64 assets are pinned today. Pinning the platform keeps
     # Apple Silicon hosts from building an arm64 image that the capability

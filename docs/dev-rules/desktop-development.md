@@ -121,6 +121,15 @@ checkout 的启动器顶掉）。因此并行多开的标准姿势是：**每个
 Agent 自身仍只走 restart 命令，不直接调 human-only 的 `dev:desktop*`。共享同一 userData
 多开时，非 primary 实例用 `--passive` 让出定时任务调度（见上）。
 
+### Self-hosted packaged 端点清单
+
+需要让 packaged Desktop 从自建 HTTPS 清单站点启动时，不要修改仓内
+`config/endpoint*.json`，也不要放开普通环境变量覆盖。使用
+`package-desktop.mjs --endpoint-manifest-bases-file <path>` 的显式构建输入；真实值放仓外或
+gitignored 文件，仓内只保留 placeholder。文件 schema、`dev` 身份到 `cn` 物理 realm 的
+映射、最小 `endpoint.json` 与 Desktop OAuth callback 口径见
+[`../self-hosted-desktop-endpoints.md`](../self-hosted-desktop-endpoints.md)。
+
 ### 使用统计（TapDB）在 dev 下不上报
 
 dev 构建**默认不初始化 TapDB**，与用户是否同意《隐私政策》、统计开关是否打开无关。闸在

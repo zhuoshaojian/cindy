@@ -26,12 +26,8 @@ const packagedResources = process.env.CINDY_CLOUD_PACKAGED_RESOURCES ?? '/opt/ci
 const firstExisting = (candidates) => candidates.find((candidate) => fs.existsSync(candidate))
   ?? candidates[0];
 const assets = [
-  firstExisting([
-    `${root}/apps/claude-code-bin/linux-x64/claude`,
-  ]),
-  firstExisting([
-    `${root}/apps/codex-bin/linux-x64/codex`,
-  ]),
+  firstExisting([`${root}/apps/claude-code-bin/linux-x64/claude`]),
+  firstExisting([`${root}/apps/codex-bin/linux-x64/codex`]),
   firstExisting([
     `${packagedResources}/tools/ripgrep/rg`,
     `${root}/apps/ripgrep-bin/linux-x64/rg`,
