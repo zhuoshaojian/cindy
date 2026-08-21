@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildIOSSimulatorReleaseGateExecutableArgs,
   extractReleaseGateReport,
   parseIOSSimulatorReleaseGateCli,
   validateReleaseGateReport,
@@ -59,6 +60,24 @@ describe('iOS Simulator packaged release gate CLI', () => {
         '--require-native',
       ]),
     ).toThrow('--require-native requires');
+  });
+
+  it('isolates the packaged gate from the developer keychain', () => {
+    expect(
+      buildIOSSimulatorReleaseGateExecutableArgs(
+        {
+          appPath: '/tmp/CindyDev.app',
+          arch: 'arm64',
+          expectedTrust: 'untrusted',
+          requireNative: false,
+        },
+        '/tmp/cindy-release-gate-user-data',
+      ),
+    ).toEqual([
+      '--ios-simulator-release-gate=static',
+      '--user-data-dir=/tmp/cindy-release-gate-user-data',
+      '--use-mock-keychain',
+    ]);
   });
 
   it('extracts the last structured result from mixed Electron output', () => {

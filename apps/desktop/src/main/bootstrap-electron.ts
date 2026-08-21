@@ -258,6 +258,8 @@ import {
 import { sweepStartupDraftImages } from './imageCacheOrphanSweep';
 import { sweepLegacyDialogueWorkingDirs } from './localDb/dialogueWorkdirSelfHeal';
 import { legacyDialogueUserDataDirNames } from '@cindy/maker-shared/brand-identity';
+import { BRAND_IDENTITY } from '@cindy/maker-shared/brand-identity';
+import { enableInternalBuildAccessibilitySupport } from './accessibilitySupport.js';
 import * as videoCacheStore from './videoCacheStore';
 import { imageSchemePrivilege, registerImageProtocolHandler } from './imageProtocol';
 import { videoSchemePrivilege, registerVideoProtocolHandler } from './videoProtocol';
@@ -6924,6 +6926,14 @@ function cleanupLegacyDevShortcut(): Promise<void> {
 }
 
 app.on('ready', async () => {
+  // Electron requires the accessibility API after `ready`. Run before any BrowserWindow is
+  // created so internal builds expose a complete renderer AX tree from their first visible frame.
+  enableInternalBuildAccessibilitySupport({
+    app,
+    platform: process.platform,
+    region: CURRENT_CINDY_REGION,
+  });
+
   try {
     const releaseGate = parseIOSSimulatorReleaseGateArgs(process.argv);
     if (releaseGate.enabled) {

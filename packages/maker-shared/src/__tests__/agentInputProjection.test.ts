@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { brandDeepLinkSchemes } from '../brandIdentity.js';
+
 import {
   AGENT_MESSAGE_REFERENCE_MAX_CHARS,
   CODEX_RESUME_NOT_READY_MARKER,
@@ -45,6 +47,37 @@ function rangeFor<T extends Omit<AgentInputReference, 'start' | 'end'>>(
 }
 
 describe('agent-facing Composer projection', () => {
+  it('validates structured references against the selected build schemes', () => {
+    const devSchemes = brandDeepLinkSchemes('dev');
+    const devHref = 'cindydev://session/dev-session';
+    const productionHref = 'cindy://session/prod-session';
+    const devReference: AgentInputReference = {
+      kind: 'session',
+      start: 0,
+      end: devHref.length,
+      href: devHref,
+      sessionId: 'stale',
+    };
+    const productionReference: AgentInputReference = {
+      kind: 'session',
+      start: 0,
+      end: productionHref.length,
+      href: productionHref,
+      sessionId: 'stale',
+    };
+
+    expect(readAgentInputReferences([devReference], devHref, devSchemes)).toEqual([
+      { ...devReference, sessionId: 'dev-session' },
+    ]);
+    expect(readAgentInputReferences([productionReference], productionHref, devSchemes)).toEqual([]);
+    expect(
+      buildPluginResourceReferenceHref(
+        { ghostId: 'cindy-jira', tool: 'search', resourceId: 'PROJ-1' },
+        devSchemes,
+      ),
+    ).toBe('cindydev://plugin-resource/cindy-jira/search/PROJ-1');
+  });
+
   it('removes exact quote marker lines only when quotesEncoded is true without mutating input', () => {
     const text = `${QUOTE_MARKER}\n> selected\n\nreply`;
     const source = { text, quotesEncoded: true };

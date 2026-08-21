@@ -18,6 +18,8 @@ import {
   type AgentInputReference,
 } from '@cindy/maker-shared/agent-input-projection';
 
+import { DEEP_LINK_SCHEMES } from './deepLinkSchemes';
+
 export type { AgentInputReference } from '@cindy/maker-shared/agent-input-projection';
 
 export type AgentInputFileCategory = 'image' | 'pdf' | 'text' | 'office' | 'file';
@@ -686,6 +688,7 @@ export function getAgentFacingText(queued: AgentInputQueuedMessage): string {
     text: queued.text,
     quotesEncoded: queued.chatMessage.quotesEncoded === true,
     agentReferences: queued.agentReferences,
+    deepLinkSchemes: DEEP_LINK_SCHEMES,
   });
 }
 
@@ -723,7 +726,11 @@ function collapse(value: string): string {
 
 /** 被引用的会话 / 项目 / 消息 —— 手里就有现成的标题或名字,优先用它。 */
 function describeReferences(queued: AgentInputQueuedMessage): string | null {
-  const references = readAgentInputReferences(queued.agentReferences, queued.text);
+  const references = readAgentInputReferences(
+    queued.agentReferences,
+    queued.text,
+    DEEP_LINK_SCHEMES,
+  );
   for (const reference of references) {
     const described = describeAgentInputReference(reference);
     if (described) return described;
@@ -915,6 +922,7 @@ export function deriveAutoTitleSeed(
     text: queued.text,
     quotesEncoded: queued.chatMessage.quotesEncoded === true,
     agentReferences: queued.agentReferences,
+    deepLinkSchemes: DEEP_LINK_SCHEMES,
   });
   const prose = stripMentionTokens(literal, queued);
   if (prose) return { text: prose, isUserText: true };

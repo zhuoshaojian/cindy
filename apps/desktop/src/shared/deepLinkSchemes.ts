@@ -1,8 +1,9 @@
 /**
  * deepLinkSchemes — 深链 scheme 的 main / renderer 共用单点。
  *
- * scheme 事实源在 `@cindy/maker-shared/brand-identity`(`BRAND_IDENTITY.primaryScheme`
- * + `legacySchemes`,2026-07 品牌翻转后为 cindy 主 + xdt-maker 历史);本模块把它
+ * scheme 事实源在 `@cindy/maker-shared/brand-identity` 的
+ * `deepLinkSchemesByRegion`;正式 cn/global 为 cindy 主 + xdt-maker 历史,
+ * dev 为完全不重叠的 cindydev 主 + xdt-maker-dev。本模块把当前构建身份
  * 派生成解析 / 生成两侧需要的形态,双端(src/main、src/renderer)只从这里取值,
  * 不再各自硬编码字面量:
  *  - **生成**:新链接一律用主 scheme(`buildDeepLink` / `DEEP_LINK_URL_PREFIX`);
@@ -14,15 +15,19 @@
  * 无关,不从这里派生。
  */
 
-import { BRAND_IDENTITY, allDeepLinkSchemes } from '@cindy/maker-shared/brand-identity';
+import {
+  brandDeepLinkSchemes,
+  type CindyRegion,
+} from '@cindy/maker-shared/brand-identity';
+import { CURRENT_CINDY_REGION } from './brandRegion';
 
 /** 深链主 scheme(生成侧唯一使用的 scheme)。 */
-export const DEEP_LINK_PRIMARY_SCHEME: string = BRAND_IDENTITY.primaryScheme;
+export const DEEP_LINK_PRIMARY_SCHEME: string = brandDeepLinkSchemes(CURRENT_CINDY_REGION)[0];
 
-/** 解析 / OS 注册需要认的全部 scheme(主 + 历史),主 scheme 恒为首位。 */
-export const DEEP_LINK_SCHEMES: readonly string[] = allDeepLinkSchemes();
+/** 解析 / OS 注册需要认的本构建 scheme,主 scheme 恒为首位。 */
+export const DEEP_LINK_SCHEMES: readonly string[] = brandDeepLinkSchemes(CURRENT_CINDY_REGION);
 
-/** 生成侧 URL 前缀:`cindy://`。 */
+/** 生成侧 URL 前缀；正式包为 `cindy://`，dev 为 `cindydev://`。 */
 export const DEEP_LINK_URL_PREFIX = `${DEEP_LINK_PRIMARY_SCHEME}://`;
 
 /** 解析侧要认的全部 URL 前缀(与 DEEP_LINK_SCHEMES 同序,主前缀恒为首位)。 */
@@ -63,8 +68,17 @@ export const DEEP_LINK_SCHEME_RE_GROUP = `(?:${DEEP_LINK_SCHEMES.map((scheme) =>
  * (双 scheme 长度不同,写死长度会切错)。
  */
 export function matchDeepLinkPrefix(url: string): string | null {
+  return matchDeepLinkPrefixForRegion(url, CURRENT_CINDY_REGION);
+}
+
+/** 按显式构建身份匹配前缀；供区域契约测试与纯解析逻辑复用。 */
+export function matchDeepLinkPrefixForRegion(
+  url: string,
+  region: CindyRegion,
+): string | null {
   if (typeof url !== 'string') return null;
-  for (const prefix of DEEP_LINK_URL_PREFIXES) {
+  for (const scheme of brandDeepLinkSchemes(region)) {
+    const prefix = `${scheme}://`;
     if (url.startsWith(prefix)) return prefix;
   }
   return null;

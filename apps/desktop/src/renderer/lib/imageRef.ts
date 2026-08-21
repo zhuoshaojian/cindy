@@ -23,6 +23,8 @@ import {
   type AgentInputReference,
 } from '@cindy/maker-shared/agent-input-projection';
 
+import { DEEP_LINK_SCHEMES } from '../../shared/deepLinkSchemes';
+
 export interface ImageRef {
   /** Custom-protocol URL: 'xdt-image://{sessionId}/{filename}'. */
   url: string;
@@ -193,7 +195,11 @@ export function parseUserContent(content: unknown): UserMessageContent {
       const sessionReferences = parsePersistedSessionReferenceMetadata(obj.sessionReferences);
       const pastedTextRanges = coercePastedTextRanges(obj.pastedTextRanges, obj.text);
       const slashCommandRanges = coerceSlashCommandRanges(obj.slashCommandRanges, obj.text);
-      const agentReferences = readAgentInputReferences(obj.agentReferences, obj.text);
+      const agentReferences = readAgentInputReferences(
+        obj.agentReferences,
+        obj.text,
+        DEEP_LINK_SCHEMES,
+      );
       return {
         text: obj.text,
         images,

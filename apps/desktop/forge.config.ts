@@ -13,13 +13,14 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import type { ForgeArch, ForgeConfig, ForgePlatform } from '@electron-forge/shared-types';
 import {
   BRAND_IDENTITY,
-  allDeepLinkSchemes,
   brandAppId,
   brandBundleIdPrefix,
+  brandDeepLinkSchemes,
   brandExecutableName,
   resolveCindyRegion,
 } from '@cindy/maker-shared/brand-identity';
 import { stageMacIOSSimulatorHelper } from './forge-ios-simulator-helper';
+import { stagePackagedDevKeychainIdentity } from './forge-packaged-keychain-identity';
 import { stagePackagedThirdPartyNotices } from './forge-third-party-notices';
 import { pruneNativeBuildMetadata } from './forge-native-build-metadata';
 
@@ -48,6 +49,8 @@ const CINDY_UTI_PREFIX = brandBundleIdPrefix(CINDY_REGION);
  * 同源派生,cn/global 数据仍分库。
  */
 const CINDY_EXE = brandExecutableName(CINDY_REGION);
+/** OS 注册的深链集合；dev 与 cn/global 必须完全不重叠。 */
+const CINDY_DEEP_LINK_SCHEMES = brandDeepLinkSchemes(CINDY_REGION);
 /** 更新器二进制文件名(cindy-updater.exe)。 */
 const UPDATER_EXE = `${BRAND_IDENTITY.updaterName}.exe`;
 
@@ -643,7 +646,7 @@ function signPackagedExes(buildPath: string): void {
 
 /**
  * macOS 打包显示名(与 win32metadata 同构):packaged 后把
- * .app 的 Info.plist 里 CFBundleDisplayName 改成 Cindy——Dock 名、Cmd+Tab、
+ * .app 的 Info.plist 里 CFBundleDisplayName 按构建身份写入——Dock 名、Cmd+Tab、
  * Finder、系统通知读的都是它(显示优先级 CFBundleDisplayName > CFBundleName)。
  *
  * ⚠️ 绝不能改 CFBundleName:Electron 启动时用主 app 的 CFBundleName 拼
@@ -664,12 +667,17 @@ function signPackagedExes(buildPath: string): void {
  * userData 均为 xdt-maker 系,这里是唯一的显示名来源)。2026-07-17 身份翻转后
  * cn 构建的 packager 本身就会把 CFBundleName/CFBundleDisplayName 写成 Cindy,
  * 对 cn 是冗余兜底;2026-07-26 global exe 名与 cn 统一为 'Cindy' 后 global
- * 同样只是冗余兜底;dev 构建的 packager name 仍是 'CindyDev',本步骤把
- * Dock 名、Cmd+Tab、系统通知的**显示层**拉回 Cindy(BRAND_NAME 各区共用),
- * 对 dev 是显示名的唯一来源。正式签名/公证(外部发布流程)发生在
+ * 同样只是冗余兜底。dev 构建的 packager name 与可见显示名均保持 CindyDev，
+ * 让它在并存安装时可被明确区分。正式签名/公证(外部发布流程)发生在
  * postPackage 之后,本改动会被签名一起封印,不存在破坏签名问题。
+ * cn/global 仍逐字保持 Cindy；dev 必须显示 CindyDev，避免并存安装时用户在
+ * Finder / Dock / Cmd+Tab / 通知里误认正式版。
  */
-function applyMacPackagedDisplayName(buildPath: string, platform: string): void {
+function applyMacPackagedDisplayName(
+  buildPath: string,
+  platform: string,
+  displayName: string,
+): void {
   if (platform !== 'darwin') return;
   const apps = fs.readdirSync(buildPath).filter((n) => n.endsWith('.app'));
   for (const appDir of apps) {
@@ -681,14 +689,24 @@ function applyMacPackagedDisplayName(buildPath: string, platform: string): void 
     // 否则 Electron 找不到 Helper app(见函数头 ⚠️)。
     const key = 'CFBundleDisplayName';
     // packager 必写该键,Set 即可;Add 兜底防未来 packager 行为变化。
-    const set = spawnSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} Cindy`, plistPath]);
+    const set = spawnSync('/usr/libexec/PlistBuddy', [
+      '-c',
+      `Set :${key} ${displayName}`,
+      plistPath,
+    ]);
     if (set.status !== 0) {
-      const add = spawnSync('/usr/libexec/PlistBuddy', ['-c', `Add :${key} string Cindy`, plistPath]);
+      const add = spawnSync('/usr/libexec/PlistBuddy', [
+        '-c',
+        `Add :${key} string ${displayName}`,
+        plistPath,
+      ]);
       if (add.status !== 0) {
         throw new Error(`[forge:postPackage] PlistBuddy failed to set ${key} in ${plistPath}`);
       }
     }
-    console.log(`[forge:postPackage] mac display name → Cindy (${appDir}/Contents/Info.plist)`);
+    console.log(
+      `[forge:postPackage] mac display name → ${displayName} (${appDir}/Contents/Info.plist)`,
+    );
   }
 }
 
@@ -1203,8 +1221,8 @@ const makers: ForgeConfig['makers'] = [
     options: {
       categories: ['Development'],
       icon: path.join(__dirname, 'resources', 'icon.png'),
-      // 双 scheme:cindy 主 + xdt-maker 兼容(老分享链接不死)。
-      mimeType: allDeepLinkSchemes().map((s) => `x-scheme-handler/${s}`),
+      // 正式包保持 cindy + xdt-maker；dev 只注册自己的专属 scheme。
+      mimeType: CINDY_DEEP_LINK_SCHEMES.map((s) => `x-scheme-handler/${s}`),
       maintainer: 'Lizi <feedback@cindy.app>',
       // deb 包名规范要求小写;跟随区域 exe 名(cn/global cindy / dev cindydev)。
       name: CINDY_EXE.toLowerCase(),
@@ -1313,7 +1331,7 @@ const config: ForgeConfig = {
     // 互覆已被 owner 接受)/ dev 'CindyDev'(显式设值防 packager 回落
     // package.json productName 让 dev 与正式包撞名)。mac 的 Dock/Cmd+Tab/
     // 通知**显示名**由 postPackage 的 applyMacPackagedDisplayName 经
-    // CFBundleDisplayName 统一拉回 Cindy(对 dev 是唯一显示名来源;
+    // CFBundleDisplayName 按同一构建身份写入(cn/global Cindy,dev CindyDev;
     // CFBundleName 不可动,Electron 靠它找 Helper,见该函数注释)。
     name: CINDY_EXE,
     executableName: CINDY_EXE,
@@ -1337,8 +1355,9 @@ const config: ForgeConfig = {
     // Windows: 不读这个字段(走 app.setAsDefaultProtocolClient 写注册表), 见
     //          main/deepLink.ts registerDeepLinkProtocol()。
     protocols: [
-      // 双 scheme 注册:cindy:// 主 + xdt-maker:// 永久兼容(存量分享链接不死)。
-      { name: 'Cindy Deep Link', schemes: [...allDeepLinkSchemes()] },
+      // 正式包注册 cindy:// + xdt-maker://(存量分享链接不死)；dev 使用专属组，
+      // 绝不抢正式 Cindy 的托管登录回调。
+      { name: 'Cindy Deep Link', schemes: [...CINDY_DEEP_LINK_SCHEMES] },
     ],
     // macOS 文件夹右键 "打开方式 → Cindy" 入口:
     //   声明 app 能接受 public.folder, Finder 自动把 Cindy 出现在 "打开方式" 列表。
@@ -1446,6 +1465,17 @@ const config: ForgeConfig = {
       (buildPath, electronVersion, platform, arch, callback) => {
         (async () => {
           try {
+            const stagedKeychainIdentity = stagePackagedDevKeychainIdentity({
+              buildPath,
+              platform,
+              region: CINDY_REGION,
+            });
+            if (stagedKeychainIdentity) {
+              console.log(
+                `[forge:afterCopy] packaged dev keychain identity → ${CINDY_EXE} ` +
+                  `(${path.relative(buildPath, stagedKeychainIdentity)})`,
+              );
+            }
             bundleNativeDeps(buildPath, platform, arch);
             await rebuildNativeDepsInPackage(buildPath, electronVersion, arch);
             copySqliteVecBinary(buildPath, platform, arch);
@@ -1487,7 +1517,7 @@ const config: ForgeConfig = {
         console.log(`[forge:postPackage] staged ${noticeName} + restricted component disclosure`);
         signPackagedExes(buildPath);
         stageMacIOSSimulatorHelper(buildPath, opts.platform, opts.arch);
-        applyMacPackagedDisplayName(buildPath, opts.platform);
+        applyMacPackagedDisplayName(buildPath, opts.platform, CINDY_EXE);
       }
     },
   },

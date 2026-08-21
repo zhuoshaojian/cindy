@@ -74,6 +74,7 @@ import {
   embedMacWebAuthnProvisioningProfile,
   readMacBundleIdentifier,
   adhocSignMacApp,
+  resolveLocalMacSigningIdentity,
   resolveAppleIdentity,
   signMacAppWithIdentity,
   notarizeMacApp,
@@ -470,6 +471,9 @@ async function finishDarwin({
     // 版本无关(或显式放行)→ ad-hoc 签名,产出 .app 的 zip 供本机/内部试用。
     writeMacEntitlements(helperEntitlementsPath);
     writeMacEntitlements(mainEntitlementsPath, { appleEvents: true });
+    // build-info 如实记录:本机身份签名与 ad-hoc 的 designated requirement 形状不同
+    // (证书锚 vs cdhash),排查钥匙串反复授权时需要能从产物元数据分辨。
+    if (resolveLocalMacSigningIdentity()) signingMode = 'local-identity';
     adhocSignMacApp(appPath, helperEntitlementsPath, mainEntitlementsPath, arch);
     if (requireNativeReleaseGate) {
       throw new Error(
@@ -490,7 +494,12 @@ async function finishDarwin({
     const appZipPath = path.join(artifactDir, `${baseName}-${arch}.zip`);
     console.log('==> Creating app ZIP (ad-hoc signed)...');
     if (fs.existsSync(appZipPath)) fs.unlinkSync(appZipPath);
-    exec(`/usr/bin/ditto -c -k --keepParent "${appPath}" "${appZipPath}"`);
+    // 把资源叉 / 扩展属性的 AppleDouble 条目隔离到 __MACOSX/。没有该参数时，
+    // Apple ditto 解压会还原为 xattr，但通用 unzip 会在 .app 内留下实体 ._* 文件，
+    // 使 codesign sealed resources 校验失败。内部包必须同时兼容两种解压器。
+    exec(
+      `/usr/bin/ditto -c -k --sequesterRsrc --keepParent "${appPath}" "${appZipPath}"`,
+    );
     files.push(fileEntry('installer', appZipPath));
   }
 
