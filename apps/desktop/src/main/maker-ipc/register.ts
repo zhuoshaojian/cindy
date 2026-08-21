@@ -3298,6 +3298,29 @@ function rollbackAgentIslandUserPrompt(
 
 
 
+export interface MakerInputActivitySnapshot {
+  activeTurns: number;
+  pendingInputs: number | null;
+  pendingInteractions: number | null;
+}
+
+/**
+ * Non-throwing runtime probe for cloud idle policy. A missing coordinator is
+ * represented as unknown instead of zero so startup and failed registration
+ * cannot accidentally permit suspension.
+ */
+export function getMakerInputActivitySnapshot(
+  maker?: Pick<Maker, 'listActiveSessions'> | null,
+): MakerInputActivitySnapshot {
+  const activeTurns = maker?.listActiveSessions().filter((session) => session.isTurnRunning()).length ?? 0;
+  const input = agentInputCoordinatorHolder?.getActivitySnapshot();
+  return {
+    activeTurns,
+    pendingInputs: input?.pendingInputs ?? null,
+    pendingInteractions: input?.pendingInteractions ?? null,
+  };
+}
+
 /**
  * 当前是否有任意一个 session 正在跑 turn。
  * 给 WindowControls 关闭按钮用: 无 in-flight 直接进 closing overlay, 有 in-flight 弹确认框。

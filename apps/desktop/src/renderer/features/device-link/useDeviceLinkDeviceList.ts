@@ -87,7 +87,8 @@ function relevantEqual(a: DeviceLinkDeviceView[] | null, b: DeviceLinkDeviceView
       x.online !== y.online ||
       x.remoteControlEnabled !== y.remoteControlEnabled ||
       x.controlEnabled !== y.controlEnabled ||
-      x.isSelf !== y.isSelf
+      x.isSelf !== y.isSelf ||
+      x.deviceInfo?.kind !== y.deviceInfo?.kind
     ) {
       return false;
     }

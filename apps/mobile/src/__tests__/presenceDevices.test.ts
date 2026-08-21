@@ -90,7 +90,7 @@ describe('patchDeviceViewsWithPresence', () => {
       presence({
         deviceName: 'Studio Mac',
         selfName: 'Carol-MacBook-Pro',
-        deviceInfo: { cpuLabel: 'Apple M3 Pro', memoryGb: 36 },
+        deviceInfo: { cpuLabel: 'Apple M3 Pro', memoryGb: 36, kind: 'cloud' },
       }),
       'mobile-1',
     );
@@ -98,7 +98,7 @@ describe('patchDeviceViewsWithPresence', () => {
     expect(result.devices[0]).toMatchObject({
       name: 'Studio Mac',
       selfName: 'Carol-MacBook-Pro',
-      deviceInfo: { cpuLabel: 'Apple M3 Pro', memoryGb: 36 },
+      deviceInfo: { cpuLabel: 'Apple M3 Pro', memoryGb: 36, kind: 'cloud' },
     });
   });
 

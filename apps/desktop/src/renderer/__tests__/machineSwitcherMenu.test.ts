@@ -488,6 +488,13 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     expect(menuSource).not.toContain("from '@/components/ui/tooltip'");
   });
 
+  it('云端设备使用 Cloud 图标', () => {
+    expect(menuSource).toContain("import {");
+    expect(menuSource).toContain('Cloud,');
+    expect(menuSource).toContain("device.kind === 'cloud'");
+    expect(menuSource).toContain('<Cloud size={14} strokeWidth={2} />');
+  });
+
   it('菜单项默认单选(整体替换选择),多选走行尾 hover 浮现的多选框', () => {
     // 本机 / 设备行点击 = 单选:select([...]) 整体替换勾选集(菜单自然关闭,
     // 不再对正常项 preventDefault);多选框走 toggle。

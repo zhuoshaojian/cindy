@@ -884,6 +884,11 @@ function sendFailureLogFields(result: AgentInputSendFailure): Record<string, unk
   };
 }
 
+export interface AgentInputActivitySnapshot {
+  pendingInputs: number;
+  pendingInteractions: number | null;
+}
+
 export class AgentInputCoordinator {
   private readonly states = new Map<string, SessionInputState>();
   private readonly steerAbortControllers = new Map<string, Map<string, AbortController>>();
@@ -943,6 +948,41 @@ export class AgentInputCoordinator {
       if (state.recovery) texts.push(JSON.stringify(state.recovery));
     }
     return texts;
+  }
+
+  /**
+   * Fail-closed cloud-idle probe over the coordinator's authoritative in-memory
+   * state. Recovery, credential-switch, abort, compaction, and steering states
+   * all count as pending input; interaction/edit locks count as interactions.
+   */
+  getActivitySnapshot(): AgentInputActivitySnapshot {
+    let pendingInputs = 0;
+    let pendingInteractions = 0;
+    let interactionProbeFailed = false;
+    for (const [sessionId, state] of this.states) {
+      pendingInputs += state.pendingQueue.length;
+      pendingInputs += state.pendingCompacts.length;
+      pendingInputs += state.steeringQueueClientIds.length;
+      if (state.activeTurn !== null) pendingInputs += 1;
+      if (state.recovery !== null) pendingInputs += 1;
+      if (state.credentialSwitchWait !== null) pendingInputs += 1;
+      if (state.queueAbortPending) pendingInputs += 1;
+      if (state.pendingExternalTerminalDone) pendingInputs += 1;
+      if (state.drainScheduled) pendingInputs += 1;
+      pendingInteractions += state.queueInteractionLocks.length;
+      pendingInteractions += state.queueEditLocks.length;
+      try {
+        if (this.deps.hasPendingInteraction(sessionId)) pendingInteractions += 1;
+      } catch {
+        // Preserve the still-authoritative queue/input counts, but mark the
+        // interaction dimension unknown so cloud idle policy fails closed.
+        interactionProbeFailed = true;
+      }
+    }
+    return {
+      pendingInputs,
+      pendingInteractions: interactionProbeFailed ? null : pendingInteractions,
+    };
   }
 
   getProjection(sessionId: string): AgentInputProjection {

@@ -88,7 +88,15 @@ import {
   resolveDevKeychainDecision,
 } from './devKeychainName.js';
 import { createKeychainMarkerIo } from './devKeychainMarkerIo.js';
+import { resolvePodDeviceIdOverride } from './pod-provisioning.js';
 
+const podDeviceIdOverride = resolvePodDeviceIdOverride(process.env);
+if (podDeviceIdOverride) {
+  // authManager reads this once at module evaluation; install the Pod identity
+  // before bootstrap-electron loads authManager and device-link. dispatch()
+  // uses a dynamic import, so this block runs before authManager is evaluated.
+  process.env.XDT_DEVICE_ID_OVERRIDE = podDeviceIdOverride;
+}
 const devFlags = resolveDevCliFlags({
   argv: process.argv,
   isPackaged: app.isPackaged,

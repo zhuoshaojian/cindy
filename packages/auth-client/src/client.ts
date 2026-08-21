@@ -46,6 +46,11 @@ export type AuthFetch = (
   },
 ) => Promise<AuthFetchResponse>;
 
+export interface AccountTokenPair {
+  accountToken: string;
+  accountRefreshToken: string;
+}
+
 export interface AuthClientOptions {
   baseUrl: string;
   region: AuthRegion;
@@ -80,6 +85,10 @@ const errorResponseSchema = z.object({
     .optional(),
   code: z.string().optional(),
   message: z.string().optional(),
+});
+const accountTokenPairSchema = z.object({
+  accountToken: z.string().min(1),
+  accountRefreshToken: z.string().min(1),
 });
 
 /** Platform-neutral REST client. It never persists or logs credentials. */
@@ -294,6 +303,18 @@ export class CindyAuthClient {
         deviceId: this.options.deviceId,
       },
       { timeoutMs: 0 },
+    );
+  }
+
+  refreshAccount(
+    accountRefreshToken: string,
+    options: { timeoutMs?: number } = {},
+  ): Promise<AccountTokenPair> {
+    return this.request(
+      "/api/auth/account/refresh",
+      accountTokenPairSchema,
+      { accountRefreshToken, deviceId: this.options.deviceId },
+      { timeoutMs: options.timeoutMs },
     );
   }
 

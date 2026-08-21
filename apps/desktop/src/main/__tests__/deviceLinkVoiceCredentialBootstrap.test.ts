@@ -19,11 +19,17 @@ describe('mobile voice credential sync desktop bootstrap path', () => {
     const bootstrap = readFileSync(resolve(mainRoot, 'bootstrap-electron.ts'), 'utf8');
 
     expect(bootstrap).toMatch(/import \{[^}]*\binitDeviceLinkService\b[^}]*\} from '\.\/device-link';/);
-    const serviceInit = bootstrap.search(/\binitDeviceLinkService\s*\(\s*\{/);
+    const serviceInit = bootstrap.search(/\bstartDeviceLinkService\s*\(\s*\)\s*;/);
     const ipcRegistration = bootstrap.search(/\bregisterDeviceLinkIpc\s*\(\s*\)\s*;/);
     expect(serviceInit).toBeGreaterThanOrEqual(0);
     expect(ipcRegistration).toBeGreaterThanOrEqual(0);
-    expect(serviceInit).toBeLessThan(ipcRegistration);
+    expect(ipcRegistration).toBeLessThan(serviceInit);
+    expect(bootstrap).toContain('if (!deferDeviceLink) startDeviceLinkService();');
+    expect(bootstrap.indexOf('registerDeviceLinkIpc();')).toBeLessThan(
+      bootstrap.indexOf('if (!deferDeviceLink) startDeviceLinkService();'),
+    );
+    expect(bootstrap).toContain('await initializePodDeviceLink(podProvisioningMode, {');
+    expect(bootstrap).toContain('initDeviceLinkService: startDeviceLinkService,');
   });
 
   it('wires the DeviceLinkClient inbound frames into controlled-desktop dispatch', () => {

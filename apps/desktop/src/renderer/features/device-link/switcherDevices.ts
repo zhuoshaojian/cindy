@@ -19,6 +19,7 @@ export type DeviceConnectionStatus = 'connected' | 'connecting' | 'rejected';
 export interface SwitcherDevice {
   deviceId: string;
   name: string;
+  kind?: 'cloud';
   status: DeviceConnectionStatus;
 }
 
@@ -38,11 +39,13 @@ export function buildSwitcherDevices({
 }: BuildSwitcherDevicesInput): SwitcherDevice[] {
   const list = fullList ?? [];
   const nameById = new Map<string, string>();
+  const kindById = new Map<string, 'cloud'>();
   const selfIds = new Set<string>();
   const mobileIds = new Set<string>();
   const onlineControllable = new Set<string>();
   for (const d of list) {
     nameById.set(d.deviceId, d.name);
+    if (d.deviceInfo?.kind === 'cloud') kindById.set(d.deviceId, 'cloud');
     if (d.isSelf) {
       selfIds.add(d.deviceId);
       continue;
@@ -80,12 +83,20 @@ export function buildSwitcherDevices({
     } else if (cachedDevice && cachedDevice.connected !== false) {
       status = 'connected';
     }
-    devices.push({ deviceId, name: nameById.get(deviceId) || deviceId, status });
+    devices.push({
+      deviceId,
+      name: nameById.get(deviceId) || deviceId,
+      kind: kindById.get(deviceId),
+      status,
+    });
   }
 
-  // 统一按稳定身份(名字 → deviceId)排,不含状态/在线/时间 → 状态抖动不改变顺序
-  // (与设置「我的设备」用同一个 compareDevicesByName,规则一致)。
-  devices.sort(compareDevicesByName);
+  // 常规设备按稳定身份(名字 → deviceId)排,云端实例整体置底防止误点;
+  // 每个桶内保持原有稳定身份排序。
+  devices.sort(
+    (a, b) =>
+      Number(a.kind === 'cloud') - Number(b.kind === 'cloud') || compareDevicesByName(a, b),
+  );
   return devices;
 }
 
