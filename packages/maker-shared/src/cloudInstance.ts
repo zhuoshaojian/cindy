@@ -1,11 +1,133 @@
 import { CLOUD_DEVICE_NAME_SENTINEL } from './deviceList.js';
 
+/** 长动作终态轮询间隔；两端共享，避免进度语义漂移。 */
+export const CLOUD_ACTION_WATCH_POLL_INTERVAL_MS = 5_000;
+
 /**
- * 唤醒受理(控制面返回)到 Pod presence 上线之间约一分钟空窗,此时 pending 已清
- * 但设备仍离线;两端消费者用 wake-watch 在这段时间维持「唤醒中」态,超过此时限
- * 视为唤醒失败并解除,避免异常时入口永久卡死。桌面/手机必须同值,故落在共享层。
+ * 唤醒 / 休眠受理到 presence + runtime 终态通常约一分钟。180s 既容纳
+ * 常规启停波动，又能在失败时恢复入口，不让按钮永久禁用。
  */
-export const CLOUD_WAKE_WATCH_TIMEOUT_MS = 180_000;
+export const CLOUD_ACTION_WATCH_TIMEOUT_MS = 180_000;
+
+/**
+ * 重建包含 delete + create 两段长操作，且要等旧 instanceId 消失与新 deviceId
+ * 上线同时成立，因此给 300s 独立预算。
+ */
+export const CLOUD_REBUILD_WATCH_TIMEOUT_MS = 300_000;
+
+export type CloudInstanceTerminalAction = 'wake' | 'stop' | 'rebuild';
+
+export type CloudInstanceTerminalWatch =
+  | {
+      action: 'wake';
+      instanceId: string;
+      deviceId: string;
+    }
+  | {
+      action: 'stop';
+      instanceId: string;
+      deviceId: string;
+    }
+  | {
+      action: 'rebuild';
+      oldInstanceId: string;
+      newInstanceId: string;
+      newDeviceId: string;
+    };
+
+export interface CloudInstanceTerminalView {
+  instanceId: string;
+  deviceId: string;
+  status: {
+    runtimeState?: string | null;
+  };
+}
+
+export interface CloudInstanceTerminalState {
+  instances: readonly CloudInstanceTerminalView[];
+  onlineDeviceIds: ReadonlySet<string>;
+}
+
+/** 三个长动作的权威终态判定，Desktop / Mobile 共用。 */
+export function isCloudInstanceTerminalState(
+  watch: CloudInstanceTerminalWatch,
+  state: CloudInstanceTerminalState,
+): boolean {
+  if (watch.action === 'wake') return state.onlineDeviceIds.has(watch.deviceId);
+  if (watch.action === 'rebuild') {
+    return !state.instances.some((instance) => instance.instanceId === watch.oldInstanceId)
+      && state.instances.some((instance) => (
+        instance.instanceId === watch.newInstanceId
+        && instance.deviceId === watch.newDeviceId
+      ))
+      && state.onlineDeviceIds.has(watch.newDeviceId);
+  }
+  const target = state.instances.find((instance) => instance.instanceId === watch.instanceId);
+  return target !== undefined
+    && typeof target.status.runtimeState === 'string'
+    && target.status.runtimeState !== 'running'
+    && !state.onlineDeviceIds.has(watch.deviceId);
+}
+
+export class CloudInstanceActionTimeoutError extends Error {
+  readonly action: CloudInstanceTerminalAction;
+
+  constructor(action: CloudInstanceTerminalAction) {
+    super(`cloud instance ${action} did not reach its terminal state in time`);
+    this.name = 'CloudInstanceActionTimeoutError';
+    this.action = action;
+  }
+}
+
+export interface WaitForCloudInstanceTerminalStateOptions {
+  watch: CloudInstanceTerminalWatch;
+  getState(): CloudInstanceTerminalState;
+  refresh(): Promise<void>;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  signal?: AbortSignal;
+}
+
+function waitForDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abortSignal = signal;
+    if (abortSignal?.aborted) {
+      reject(abortSignal.reason ?? new Error('cloud instance action watch aborted'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortSignal?.reason ?? new Error('cloud instance action watch aborted'));
+    };
+    const timer = setTimeout(() => {
+      abortSignal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * 有界 anti-entropy watch：启动时先查终态，未完成才按固定间隔刷新权威列表。
+ * 超时抛可识别错误，由各端用既有 toast / Alert 告知用户并恢复按钮。
+ */
+export async function waitForCloudInstanceTerminalState(
+  options: WaitForCloudInstanceTerminalStateOptions,
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? (
+    options.watch.action === 'rebuild'
+      ? CLOUD_REBUILD_WATCH_TIMEOUT_MS
+      : CLOUD_ACTION_WATCH_TIMEOUT_MS
+  );
+  const pollIntervalMs = options.pollIntervalMs ?? CLOUD_ACTION_WATCH_POLL_INTERVAL_MS;
+  const deadline = Date.now() + timeoutMs;
+  while (!isCloudInstanceTerminalState(options.watch, options.getState())) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new CloudInstanceActionTimeoutError(options.watch.action);
+    await waitForDelay(Math.min(pollIntervalMs, remaining), options.signal);
+    await options.refresh().catch(() => undefined);
+  }
+}
 
 /**
  * Extract the explicit tag from a container image reference without guessing

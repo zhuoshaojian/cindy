@@ -49,6 +49,7 @@ import {
   activateClientEndpointRealm,
   captureNetLogAround,
   prepareEndpointNetLogFile,
+  promptEndpointManifestFailure,
   promptRetryDialog,
   verifyEndpointNetLogCapture,
   classifyManifestFailure,
@@ -104,6 +105,30 @@ const LOCAL_MANIFEST = JSON.stringify({
 });
 
 describe('启动失败系统提示框', () => {
+  it('headless Pod 在原生弹框边界前记录致命失败并直接退出', () => {
+    const guiPrompt = vi.fn();
+    const choice = promptEndpointManifestFailure(
+      {
+        reason: 'fetch-failed:ENOENT',
+        kind: 'config',
+        diagnosis: null,
+        logPath: null,
+        offlineSavedAt: null,
+      },
+      {
+        headlessPodRuntime: true,
+        sourceLabel: '/run/config/endpoint.json',
+        locale: 'zh-CN',
+        prompt: guiPrompt,
+      },
+    );
+
+    expect(choice).toBe('exit');
+    expect(guiPrompt).not.toHaveBeenCalled();
+    expect(showMessageBoxSync).not.toHaveBeenCalled();
+    expect(clipboardWriteText).not.toHaveBeenCalled();
+  });
+
   it('使用友好警告文案并展示简短错误信息,但不展示地址、网络诊断或本机路径', () => {
     showMessageBoxSync.mockReturnValueOnce(0);
 

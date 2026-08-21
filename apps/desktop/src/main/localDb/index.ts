@@ -64,10 +64,11 @@ import {
   buildPackagedReadOnlyCompatibilityMessage,
   buildSharedDbCompatibilityMessage,
 } from './sharedDbCompatibilityMessage';
-import { shouldShowNativeFatalDialog, type EnsureReadyErrorCode } from './fatalDialogPolicy';
+import { presentLocalDbFatalError, type EnsureReadyErrorCode } from './fatalDialogPolicy';
 
 import { createLogger } from '../logger';
 import { recordDesktopDevLocalDbStartupResult } from '../devStartupStatus';
+import { HEADLESS_POD_RUNTIME_ENV } from '../headless-startup';
 
 const log = createLogger('localDb');
 
@@ -747,22 +748,32 @@ function showFatalDialog(title: string, detail: string, code: EnsureReadyErrorCo
     ready: false,
     error: { code, message: detail },
   });
-  // MIGRATE_FAILED 由 renderer 的 LocalDbFatalScreen 全屏接管（可安装已暂存更新），
-  // 不再弹阻塞式原生对话框；错误详情随 ensureReady 的 invoke reply 回渲染层。
-  if (!shouldShowNativeFatalDialog(code)) {
-    log.error(JSON.stringify({ event: 'localDb.fatal.rendererOwned', code, title, detail }));
-    return;
-  }
-  try {
-    dialog.showMessageBoxSync({
-      type: 'error',
+  presentLocalDbFatalError(
+    {
+      code,
       title,
-      message: title,
-      detail: `${detail}\n\n请重启应用，或在系统资源管理器中打开数据目录手动处理。`,
-      buttons: ['好的'],
-      defaultId: 0,
-    });
-  } catch (err) {
-    log.error('showFatalDialog failed', err);
-  }
+      detail,
+      headlessPodRuntime: process.env[HEADLESS_POD_RUNTIME_ENV] === '1',
+    },
+    {
+      logError: (message, error) => {
+        if (error === undefined) log.error(message);
+        else log.error(message, error);
+      },
+      showNativeDialog: () => {
+        try {
+          dialog.showMessageBoxSync({
+            type: 'error',
+            title,
+            message: title,
+            detail: `${detail}\n\n请重启应用，或在系统资源管理器中打开数据目录手动处理。`,
+            buttons: ['好的'],
+            defaultId: 0,
+          });
+        } catch (err) {
+          log.error('showFatalDialog failed', err);
+        }
+      },
+    },
+  );
 }

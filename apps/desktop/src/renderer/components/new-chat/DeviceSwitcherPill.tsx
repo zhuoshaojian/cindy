@@ -241,11 +241,16 @@ function DeviceMenuList({
               name={resolveDesktopCloudDeviceName(device.name, t)}
               hint={
                 device.online
-                  ? t('newChat.deviceSwitcher.onlineHint')
+                  ? // 在线但没有可用模型凭据:这一行正在邀请用户建任务,不提示的话
+                    // 要到 agent 跑不动时才发现(modelAccess 不阻塞就绪,实例确实是 ready)。
+                    device.kind === 'cloud' && device.modelAccessStale
+                    ? t('newChat.deviceSwitcher.modelAccessStaleHint')
+                    : t('newChat.deviceSwitcher.onlineHint')
                   : device.kind === 'cloud'
                     ? t(waking ? 'ccAgent.sidebar.cloud.waking' : 'ccAgent.sidebar.cloud.wake')
                     : t('newChat.deviceSwitcher.offlineHint')
               }
+              hintWarning={device.online && device.kind === 'cloud' && device.modelAccessStale}
               online={device.online}
               updateAvailable={device.kind === 'cloud' && device.updateAvailable}
               // 在线行 = 切换;云端离线行 = 唤醒(busy 期间禁点防重);普通离线行不可选。
@@ -297,6 +302,8 @@ interface RowProps {
   name: string;
   /** 仅首次唤醒动作行无副文案(它不是一台已存在的设备,没有状态可描述)。 */
   hint?: string;
+  /** 副文案按警示呈现(与设置页云端卡的凭据提示同一 token)。 */
+  hintWarning?: boolean;
   online?: boolean;
   disabled?: boolean;
   selected: boolean;
@@ -310,6 +317,7 @@ function DeviceRow({
   shimmer = false,
   name,
   hint,
+  hintWarning = false,
   online,
   disabled,
   selected,
@@ -359,7 +367,15 @@ function DeviceRow({
             </span>
           </span>
           {hint && (
-            <span className="w-full truncate text-xs text-[var(--folder-item-path)]">{hint}</span>
+            <span
+              data-testid={hintWarning ? 'create-agent-cloud-model-access-stale' : undefined}
+              className={cn(
+                'w-full truncate text-xs',
+                hintWarning ? 'text-[var(--warning-fg)]' : 'text-[var(--folder-item-path)]',
+              )}
+            >
+              {hint}
+            </span>
           )}
         </div>
         {selected && (

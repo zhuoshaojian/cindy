@@ -5,6 +5,7 @@ import {
   deriveOptimisticSessionTitle,
 } from '@cindy/maker-shared/session-title';
 import { i18n } from '@/i18n';
+import type { CloudInstanceView } from '@/api/cloudInstance';
 import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import type { CreateSessionOptions, RemoteDirectoryEntry } from '@/device-link/mobileMakerTransport';
 import type { DeviceProvidersPayload } from '@/device-link/deviceProvidersCache';
@@ -74,6 +75,8 @@ export interface NewSessionDeviceOption {
   name: string;
   /** Protocol marker for product-specific device presentation. */
   kind?: 'cloud';
+  /** Persistent cloud model-credential failure hint; never blocks session creation. */
+  modelAccessStale?: boolean;
 }
 
 export interface NewSessionStoredPreferences {
@@ -109,6 +112,13 @@ export function serializeNewSessionDeviceOptions(
   options: readonly NewSessionDeviceOption[],
 ): string {
   return JSON.stringify(normalizeNewSessionDeviceOptions(options));
+}
+
+/** `unknown` / missing means the control plane does not know yet, so only `not-ready` warns. */
+export function cloudInstanceModelAccessStale(
+  instance: { status: Pick<CloudInstanceView['status'], 'modelAccess'> } | null | undefined,
+): boolean {
+  return instance?.status.modelAccess === 'not-ready';
 }
 
 export function parseNewSessionDeviceOptions(
@@ -931,7 +941,11 @@ function readNewSessionDeviceOptionsParam(value: unknown): NewSessionDeviceOptio
       if (!deviceId) return [];
       const name = readString(record.name)?.trim() || deviceId;
       const kind = record.kind === 'cloud' ? 'cloud' : undefined;
-      return [{ deviceId, name, ...(kind ? { kind } : {}) }];
+      return [{
+        deviceId,
+        name,
+        ...(kind ? { kind, modelAccessStale: record.modelAccessStale === true } : {}),
+      }];
     });
   } catch {
     return [];
@@ -950,7 +964,9 @@ function normalizeNewSessionDeviceOptions(
     result.push({
       deviceId,
       name: option.name.trim() || deviceId,
-      ...(option.kind === 'cloud' ? { kind: 'cloud' as const } : {}),
+      ...(option.kind === 'cloud'
+        ? { kind: 'cloud' as const, modelAccessStale: option.modelAccessStale === true }
+        : {}),
     });
   }
   return sortCloudDevicesLast(result);

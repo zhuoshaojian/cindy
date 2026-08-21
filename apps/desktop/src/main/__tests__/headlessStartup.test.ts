@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  HeadlessStartupFatalError,
   isHeadlessMode,
   runHeadlessStartup,
   shouldCreateMainWindow,
@@ -148,6 +149,30 @@ describe('runHeadlessStartup', () => {
       { attempt: 2, nextRetryMs: 2_000 },
     ]);
     expect(d.exit).not.toHaveBeenCalled();
+  });
+
+  it('exits immediately when provisioning reports a fatal local startup failure', async () => {
+    const wait = vi.fn(async () => {});
+    const ensureBinariesReady = vi.fn(async () => ready);
+    const d = deps({
+      provisionSession: async () => {
+        throw new HeadlessStartupFatalError('localDb failed (DB_INIT_FAILED)');
+      },
+      provisionRetry: {
+        initialDelayMs: 1_000,
+        maxDelayMs: 5_000,
+        wait,
+      },
+      ensureBinariesReady,
+    });
+
+    await expect(runHeadlessStartup(d)).resolves.toBe(false);
+    expect(wait).not.toHaveBeenCalled();
+    expect(ensureBinariesReady).not.toHaveBeenCalled();
+    expect(d.exit).toHaveBeenCalledWith(1);
+    expect(d.logger.error).toHaveBeenCalledWith('headless Pod provisioning failed fatally', {
+      error: 'localDb failed (DB_INIT_FAILED)',
+    });
   });
 
   it('caps Pod provisioning retry delay', async () => {

@@ -18,6 +18,7 @@
   "cloudInstance": {
     "cloud": "云端",
     "wakeFailed": "唤醒云端失败，请稍后重试",
+    "actionTimedOut": "操作耗时较长，请稍后重试。",
     "updateAvailable": "有可用更新",
     "updateAvailableOpenDetails": "「{{label}}」有可用更新。查看详情",
     "updateAvailableTag": "有可用更新 · {{tag}}",

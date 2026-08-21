@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { MouseEvent, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@cindy/maker-shared/cloud-instance';
 
 const mocks = vi.hoisted(() => {
   const defaultCloudInstances = () => [
@@ -48,6 +47,7 @@ vi.mock('react-router-dom', async (importOriginal) => ({
 }));
 
 vi.mock('@/features/cloud-instance/useCloudInstances', () => ({
+  CloudInstanceActionTimeoutError: class CloudInstanceActionTimeoutError extends Error {},
   useCloudInstances: () => ({
     loadState: 'ready',
     instances: mocks.cloudInstances,
@@ -160,48 +160,30 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     expect(screen.getByText('ccAgent.sidebar.cloud.wake')).toBeTruthy();
   });
 
-  it('keeps the target waking after pending clears until its presence comes online', async () => {
+  it('keeps the target waking and disabled while the shared hook is pending', () => {
     mocks.onlineDeviceIds = new Set();
-    mocks.wake.mockResolvedValue(mocks.cloudInstances[0]);
+    mocks.pending = { action: 'wake', target: 'cloud-instance-a' };
     const view = render(<MachineSwitcherMenu />);
-
-    fireEvent.click(screen.getByText('ccAgent.sidebar.cloud.wake').closest('[role="menuitem"]')!);
-
-    expect(mocks.wake).toHaveBeenCalledWith('cloud-instance-a');
-    expect(mocks.select).toHaveBeenCalledWith(['cloud-device-a']);
-    await waitFor(() => {
-      expect(screen.getByText('ccAgent.sidebar.cloud.waking')).toBeTruthy();
-    });
     expect(
       screen.getByText('ccAgent.sidebar.cloud.waking')
         .closest('[role="menuitem"]')
         ?.getAttribute('aria-disabled'),
     ).toBe('true');
 
+    mocks.pending = null;
     mocks.onlineDeviceIds = new Set(['cloud-device-a']);
     view.rerender(<MachineSwitcherMenu />);
-    await waitFor(() => {
-      expect(screen.queryByText('ccAgent.sidebar.cloud.waking')).toBeNull();
-      expect(screen.getByText('Cloud A')).toBeTruthy();
-    });
+    expect(screen.queryByText('ccAgent.sidebar.cloud.waking')).toBeNull();
+    expect(screen.getByText('Cloud A')).toBeTruthy();
   });
 
-  it('starts the same wake watch for the first-instance path', async () => {
+  it('shows the first-instance path as waking while the shared hook is pending', () => {
     mocks.cloudInstances = [];
     mocks.onlineDeviceIds = new Set();
-    mocks.wake.mockResolvedValue({
-      instanceId: 'cloud-instance-created',
-      deviceId: 'cloud-device-created',
-    });
+    mocks.pending = { action: 'wake', target: 'new' };
     render(<MachineSwitcherMenu />);
-
-    fireEvent.click(screen.getByText('ccAgent.sidebar.cloud.wake').closest('[role="menuitem"]')!);
-
-    expect(mocks.wake).toHaveBeenCalledWith();
-    await waitFor(() => {
-      expect(mocks.select).toHaveBeenCalledWith(['cloud-device-created']);
-      expect(screen.getByText('ccAgent.sidebar.cloud.waking')).toBeTruthy();
-    });
+    const row = screen.getByText('ccAgent.sidebar.cloud.waking').closest('[role="menuitem"]');
+    expect(row?.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('keeps non-wake actions disabled without relabeling, while any wake relabels the folded row', () => {
@@ -222,7 +204,7 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     expect(screen.getByText('ccAgent.sidebar.cloud.waking')).toBeTruthy();
   });
 
-  it('keeps the folded row busy when the watched instance is no longer first offline', async () => {
+  it('keeps the folded row busy when the pending instance is no longer first offline', () => {
     const cloudA = mocks.cloudInstances[0];
     const cloudB = {
       ...cloudA,
@@ -233,21 +215,15 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     };
     mocks.cloudInstances = [cloudA, cloudB];
     mocks.onlineDeviceIds = new Set();
-    mocks.wake.mockResolvedValue(cloudA);
+    mocks.pending = { action: 'wake', target: cloudA.instanceId };
     const view = render(<MachineSwitcherMenu />);
-
-    fireEvent.click(screen.getByText('ccAgent.sidebar.cloud.wake').closest('[role="menuitem"]')!);
-    await waitFor(() => {
-      expect(screen.getByText('ccAgent.sidebar.cloud.waking')).toBeTruthy();
-    });
-    expect(mocks.wake).toHaveBeenCalledTimes(1);
 
     mocks.cloudInstances = [cloudB, cloudA];
     view.rerender(<MachineSwitcherMenu />);
     const foldedRow = screen.getByText('ccAgent.sidebar.cloud.waking').closest('[role="menuitem"]')!;
     expect(foldedRow.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(foldedRow);
-    expect(mocks.wake).toHaveBeenCalledTimes(1);
+    expect(mocks.wake).not.toHaveBeenCalled();
   });
 
   it('reports a wake failure without leaving the row stuck in waking', async () => {
@@ -264,49 +240,4 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     expect(screen.queryByText('ccAgent.sidebar.cloud.waking')).toBeNull();
   });
 
-  it('does not report timeout when presence arrives just before the deadline', async () => {
-    vi.useFakeTimers();
-    mocks.onlineDeviceIds = new Set();
-    mocks.wake.mockResolvedValue(mocks.cloudInstances[0]);
-    const view = render(<MachineSwitcherMenu />);
-
-    await act(async () => {
-      fireEvent.click(screen.getByText('ccAgent.sidebar.cloud.wake').closest('[role="menuitem"]')!);
-      await Promise.resolve();
-    });
-    expect(screen.getByText('ccAgent.sidebar.cloud.waking')).toBeTruthy();
-
-    act(() => {
-      vi.advanceTimersByTime(CLOUD_WAKE_WATCH_TIMEOUT_MS - 1);
-    });
-    mocks.onlineDeviceIds = new Set(['cloud-device-a']);
-    view.rerender(<MachineSwitcherMenu />);
-    act(() => {
-      vi.advanceTimersByTime(1);
-    });
-
-    expect(mocks.toastError).not.toHaveBeenCalled();
-    expect(screen.queryByText('ccAgent.sidebar.cloud.waking')).toBeNull();
-    expect(screen.getByText('Cloud A')).toBeTruthy();
-  });
-
-  it('releases a target wake watch after the shared timeout', async () => {
-    vi.useFakeTimers();
-    mocks.onlineDeviceIds = new Set();
-    mocks.wake.mockResolvedValue(mocks.cloudInstances[0]);
-    render(<MachineSwitcherMenu />);
-
-    await act(async () => {
-      fireEvent.click(screen.getByText('ccAgent.sidebar.cloud.wake').closest('[role="menuitem"]')!);
-      await Promise.resolve();
-    });
-    expect(screen.getByText('ccAgent.sidebar.cloud.waking')).toBeTruthy();
-
-    act(() => {
-      vi.advanceTimersByTime(CLOUD_WAKE_WATCH_TIMEOUT_MS);
-    });
-
-    expect(mocks.toastError).toHaveBeenCalledWith('ccAgent.sidebar.cloud.wakeFailed');
-    expect(screen.getByText('ccAgent.sidebar.cloud.wake')).toBeTruthy();
-  });
 });

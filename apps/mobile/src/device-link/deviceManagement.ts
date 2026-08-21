@@ -105,16 +105,17 @@ export function cloudInstanceDetailActionState(input: {
   pending: CloudInstancePending;
   updateAvailable: boolean;
   upgradeState: 'idle' | 'rolled-back' | 'verifying';
-  wakeWatching: boolean;
 }): CloudInstanceDetailActionState {
   const pendingThisInstance = input.pending?.target === input.instanceId;
   const updateBusy = input.upgradeState === 'verifying'
     || (pendingThisInstance && input.pending?.action === 'upgrade');
-  const lifecycleAction = input.online ? 'stop' : 'wake';
-  const lifecycleBusy = input.wakeWatching || (
-    pendingThisInstance
-    && input.pending?.action === lifecycleAction
-  );
+  const pendingLifecycleAction = pendingThisInstance
+    && (input.pending?.action === 'wake' || input.pending?.action === 'stop')
+      ? input.pending.action
+      : null;
+  const lifecycleAction = pendingLifecycleAction ?? (input.online ? 'stop' : 'wake');
+  const lifecycleBusy = pendingThisInstance
+    && input.pending?.action === lifecycleAction;
   const anotherActionPending = input.pending !== null && !lifecycleBusy && !updateBusy;
   return {
     deleteDisabled: input.pending !== null || updateBusy,

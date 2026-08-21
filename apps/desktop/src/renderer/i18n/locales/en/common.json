@@ -3494,6 +3494,9 @@
         "currentVersionUpToDate": "Current version {{version}} · Up to date",
         "update": "Update Cloud",
         "updating": "Updating…",
+        "rebuild": "Recreate Instance",
+        "rebuilding": "Recreating…",
+        "unregisteredStatus": "The instance did not finish starting and cannot connect yet.",
         "autoUpdate": "Automatically Update When Idle",
         "autoUpdateHint": "When a new release is available, the cloud instance updates automatically while idle or sleeping.",
         "updateRolledBack": "The last update failed and was rolled back automatically.",
@@ -3501,6 +3504,12 @@
           "title": "Update Cloud Instance?",
           "description": "Updating restarts the cloud instance and interrupts any running tasks.",
           "confirm": "Update Cloud Instance",
+          "cancel": "Cancel"
+        },
+        "rebuildConfirm": {
+          "title": "Recreate Cloud Instance?",
+          "description": "This deletes the current cloud instance and its data, then creates a new instance with the current runtime environment. Running tasks will be interrupted, and deleted data cannot be recovered.",
+          "confirm": "Recreate Instance",
           "cancel": "Cancel"
         },
         "delete": "Delete Instance",
@@ -3518,8 +3527,12 @@
           "deleteFailed": "Failed to delete the cloud instance. Try again.",
           "woke": "Cloud instance is waking up.",
           "wakeFailed": "Failed to wake the cloud instance. Try again.",
+          "actionTimedOut": "This is taking longer than expected. Try again in a moment.",
           "updateStarted": "Cloud instance update started",
           "updateFailed": "Cloud instance update couldn't start. Try again.",
+          "rebuilt": "Cloud instance recreated",
+          "rebuildFailed": "The cloud instance couldn't be recreated. Try again.",
+          "rebuildCreateFailed": "The old cloud instance was deleted, but a new instance couldn't be created. Wake Cloud again from the machine menu.",
           "autoUpdateFailed": "The cloud instance auto-update setting couldn't be saved. Try again.",
           "noReleaseAvailable": "No release is available yet. Refresh and try again later."
         },
@@ -7100,6 +7113,7 @@
       "label": "Device",
       "localHint": "Runs on this computer",
       "onlineHint": "Connected — available",
+      "modelAccessStaleHint": "Model credentials need a refresh",
       "offlineHint": "Offline — available once connected",
       "attachmentsDropped": "Removed {{count}} attachment(s) — they live on the previous device",
       "attachmentsRemoteUnsupported": "File attachments aren't supported on a remote device — skipped {{count}} (images are fine)"
@@ -8188,6 +8202,8 @@
       "remoteProviderUnsupported": "This provider is not supported in SSH remote sessions — pick another source",
       "remoteNativeOauthUnavailable": "Claude.ai subscription is not connected — connect it first or pick a gateway model",
       "deviceStillLoading": "Remote device is still loading, please wait",
+      "agentAvailabilityLoading": "Checking available Agents, please wait",
+      "agentUnavailableAutoSwitch": "The selected Agent is unavailable. Switched to {{agent}}; send again.",
       "remoteDefaultsLoadFailed": "Could not load the remote device settings. Check the connection; Cindy is retrying.",
       "worktreeMissingRepo": "Can't create a worktree: the current directory's repo root is missing",
       "worktreeRepoHint": "Try picking the working directory again, and retry once the folder badge at the bottom right refreshes",
@@ -8204,6 +8220,7 @@
         "wake": "Wake Cloud",
         "waking": "Waking…",
         "wakeFailed": "Failed to wake the cloud instance. Try again.",
+        "actionTimedOut": "This is taking longer than expected. Try again in a moment.",
         "updateAvailable": "Update Available"
       },
       "machineSwitcher": {

@@ -618,6 +618,38 @@ export function promptRetryDialog(
   }
 }
 
+/**
+ * Headless Pods have no person who can dismiss an Electron modal. Convert the
+ * same blocking failure into an explicit fatal outcome before the native-dialog
+ * boundary; the resolver then invokes its existing exitApp dependency.
+ */
+export function promptEndpointManifestFailure(
+  context: ManifestPromptContext,
+  options: {
+    headlessPodRuntime: boolean;
+    sourceLabel: string;
+    locale: EndpointManifestDialogLocale;
+    prompt?: typeof promptRetryDialog;
+  },
+): EndpointManifestDialogChoice {
+  if (options.headlessPodRuntime) {
+    log.error(
+      JSON.stringify({
+        event: 'clientEndpoints.headless.fatal',
+        reason: context.reason,
+        kind: context.kind,
+        offline: context.offlineSavedAt ? 'available' : 'none',
+      }),
+    );
+    return 'exit';
+  }
+  return (options.prompt ?? promptRetryDialog)(
+    context,
+    options.sourceLabel,
+    options.locale,
+  );
+}
+
 // ── 模块状态与启动入口 ──────────────────────────────────────────────────────
 
 let resolvedEndpoints: ClientEndpointMap | null = null;
@@ -1093,9 +1125,10 @@ function cacheResolvedManifest(manifestUrl: string, manifestText: string): void 
  * 错误框选择退出(app.exit 已调用,调用方必须立即 return,不再继续启动流程)。
  */
 export async function initClientEndpoints(): Promise<boolean> {
+  const headlessPodRuntime = process.env[HEADLESS_POD_RUNTIME_ENV] === '1';
   const source = resolveEndpointSource({
     isPackaged: app.isPackaged,
-    headlessPodRuntime: process.env[HEADLESS_POD_RUNTIME_ENV] === '1',
+    headlessPodRuntime,
     env: {
       [ENDPOINTS_CDN_ENV]: process.env[ENDPOINTS_CDN_ENV],
       [ENDPOINT_MANIFEST_FILE_ENV]: process.env[ENDPOINT_MANIFEST_FILE_ENV],
@@ -1133,7 +1166,12 @@ export async function initClientEndpoints(): Promise<boolean> {
       source.kind === 'cdn'
         ? fetchManifestViaCdn
         : () => Promise.resolve(readManifestFromFile(source.filePath)),
-    promptRetry: (context) => promptRetryDialog(context, sourceLabel, dialogLocale),
+    promptRetry: (context) =>
+      promptEndpointManifestFailure(context, {
+        headlessPodRuntime,
+        sourceLabel,
+        locale: dialogLocale,
+      }),
     exitApp: () => app.exit(1),
     allowHttp: source.kind === 'file',
     expectedRegionWhenPresent: BUILD_AUTH_REGION,

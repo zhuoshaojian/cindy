@@ -10,11 +10,25 @@ import type { SelectableDevice } from '@/hooks/useControllableDevices';
  */
 export type DraftPillDevice =
   | (SelectableDevice & { kind?: undefined; cloudInstanceId?: undefined })
-  | (SelectableDevice & { kind: 'cloud'; cloudInstanceId: string; updateAvailable: boolean });
+  | (SelectableDevice & {
+      kind: 'cloud';
+      cloudInstanceId: string;
+      updateAvailable: boolean;
+      modelAccessStale: boolean;
+    });
 
 /** 用户可见的正式版更新提示：升级验证期间不重复提示。 */
 export function cloudInstanceHasAvailableUpdate(instance: CloudInstanceView): boolean {
   return instance.status.updateAvailable === true && instance.status.upgrade?.state !== 'verifying';
+}
+
+/**
+ * 云端模型凭据不可用。放到创建入口是因为「能连上」与「能跑模型」是两件事:
+ * modelAccess 不参与就绪判定(实例仍 ready),但用户如果在这里被邀请建任务,
+ * 要到 agent 跑不动时才发现没有模型可用。`unknown` 不提示——那是「还不知道」。
+ */
+export function cloudInstanceModelAccessStale(instance: CloudInstanceView): boolean {
+  return instance.status.readiness?.modelAccess === 'not-ready';
 }
 
 /**
@@ -47,6 +61,7 @@ export function buildDraftPillDevices(
       kind: 'cloud',
       cloudInstanceId: instance.instanceId,
       updateAvailable: cloudInstanceHasAvailableUpdate(instance),
+      modelAccessStale: cloudInstanceModelAccessStale(instance),
     });
   }
   return rows;

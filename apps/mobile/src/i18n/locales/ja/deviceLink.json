@@ -18,6 +18,7 @@
   "cloudInstance": {
     "cloud": "クラウド",
     "wakeFailed": "クラウドの起動に失敗しました。しばらくしてからもう一度お試しください。",
+    "actionTimedOut": "処理に時間がかかっています。しばらくしてからもう一度お試しください。",
     "updateAvailable": "アップデートあり",
     "updateAvailableOpenDetails": "{{label}}にアップデートがあります。詳細を開く",
     "updateAvailableTag": "アップデートあり · {{tag}}",

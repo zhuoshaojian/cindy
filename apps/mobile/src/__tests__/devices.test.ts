@@ -133,8 +133,9 @@ describe('mobile controllable device filter', () => {
     expect(source).toContain('const cloudItems = useMemo');
     expect(source).toContain('cloudInstanceDeviceIds,');
     expect(source).toContain('onSelect(item.filter)');
-    expect(source).toContain('void cloud.wake(item.instance.instanceId).then');
-    expect(source).toContain('onSelect(buildCloudDeviceFilterItem(result');
+    expect(source).toContain(
+      'if (!pendingThisInstance) void cloud.wake(item.instance.instanceId);',
+    );
     expect(source).toContain('const selectedCloudExists = cloudInstances.instances.some');
     expect(source).toContain('disabled={!item.online && cloud.pending !== null}');
     expect(source).toContain("status={item.online ? 'online' : 'offline'}");

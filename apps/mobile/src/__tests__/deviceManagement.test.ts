@@ -207,7 +207,6 @@ describe('device management route and cloud action state', () => {
       pending: null,
       updateAvailable: true,
       upgradeState: 'idle',
-      wakeWatching: false,
     })).toEqual({
       deleteDisabled: false,
       lifecycleAction: 'stop',
@@ -225,7 +224,6 @@ describe('device management route and cloud action state', () => {
       pending: null,
       updateAvailable: true,
       upgradeState: 'verifying',
-      wakeWatching: false,
     })).toMatchObject({
       deleteDisabled: true,
       lifecycleDisabled: true,
@@ -238,11 +236,37 @@ describe('device management route and cloud action state', () => {
       pending: null,
       updateAvailable: false,
       upgradeState: 'idle',
-      wakeWatching: false,
     })).toMatchObject({
       lifecycleAction: 'wake',
       lifecycleBusy: false,
       lifecycleDisabled: false,
+    });
+  });
+
+  it('keeps wake and stop disabled with progress while the shared hook is pending', () => {
+    expect(cloudInstanceDetailActionState({
+      instanceId: 'cloud-instance-a',
+      online: true,
+      pending: { action: 'wake', target: 'cloud-instance-a' },
+      updateAvailable: false,
+      upgradeState: 'idle',
+    })).toMatchObject({
+      lifecycleAction: 'wake',
+      lifecycleBusy: true,
+      lifecycleDisabled: true,
+      deleteDisabled: true,
+    });
+    expect(cloudInstanceDetailActionState({
+      instanceId: 'cloud-instance-a',
+      online: false,
+      pending: { action: 'stop', target: 'cloud-instance-a' },
+      updateAvailable: false,
+      upgradeState: 'idle',
+    })).toMatchObject({
+      lifecycleAction: 'stop',
+      lifecycleBusy: true,
+      lifecycleDisabled: true,
+      deleteDisabled: true,
     });
   });
 });

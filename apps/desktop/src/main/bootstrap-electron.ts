@@ -200,6 +200,7 @@ import {
 } from './agent-binaries/ensure-ready.js';
 import {
   HEADLESS_POD_RUNTIME_ENV,
+  HeadlessStartupFatalError,
   isHeadlessMode,
   runHeadlessStartup,
   shouldCreateMainWindow,
@@ -8323,7 +8324,7 @@ app.on('ready', async () => {
       }
       const localDbResult = await localDbEnsureReady(userId);
       if (!localDbResult.ready) {
-        throw new Error(
+        throw new HeadlessStartupFatalError(
           `Pod provisioning localDb failed (${localDbResult.error.code}): ${localDbResult.error.message}`,
         );
       }

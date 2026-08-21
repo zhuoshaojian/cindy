@@ -647,7 +647,8 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     expect(menuSource).toContain('onToggle={() => applyToggle(instance.deviceId)}');
     expect(menuSource).not.toContain('CloudWakeMenuItem');
     // 唤醒失败不许静默,必须有用户可见反馈。
-    expect(menuSource).toContain("t('ccAgent.sidebar.cloud.wakeFailed')");
+    expect(menuSource).toContain("'ccAgent.sidebar.cloud.wakeFailed'");
+    expect(menuSource).toContain("'ccAgent.sidebar.cloud.actionTimedOut'");
     // 在线云端行只提示正式版更新;动作仍集中在设置页。
     expect(menuSource).toContain('cloudInstanceHasAvailableUpdate(instance)');
     expect(menuSource).toContain("t('ccAgent.sidebar.cloud.updateAvailable')");

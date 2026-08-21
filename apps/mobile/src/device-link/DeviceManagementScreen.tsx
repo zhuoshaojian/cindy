@@ -19,7 +19,6 @@ import {
   type UseCloudInstances,
 } from '@/cloud-instance/useCloudInstances';
 import type { CloudInstanceView } from '@/api/cloudInstance';
-import { CLOUD_WAKE_WATCH_TIMEOUT_MS } from '@/cloud-instance/cloudInstanceWake';
 import { DEVICE_LINK_API_BASE_URL } from '@/config/env';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
 import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
@@ -266,20 +265,14 @@ function CloudInstanceManagement({
     ? status?.lastFailedUpgradeImage
       ?? (upgradeState === 'rolled-back' ? status?.upgrade.targetImage ?? null : null)
     : fallbackLastFailedUpgradeImage ?? null;
-  const [wakeWatching, setWakeWatching] = useState(false);
 
   useFocusEffect(useCallback(() => {
     void refreshCloudInstances();
   }, [refreshCloudInstances]));
 
   useEffect(() => {
-    if (!wakeWatching || online) {
-      if (online) setWakeWatching(false);
-      return undefined;
-    }
-    const timer = setTimeout(() => setWakeWatching(false), CLOUD_WAKE_WATCH_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [online, wakeWatching]);
+    cloud.updateOnlineDeviceIds(online ? new Set([deviceId]) : new Set());
+  }, [cloud.updateOnlineDeviceIds, deviceId, online]);
 
   const actionState = cloudInstanceDetailActionState({
     instanceId: instanceId ?? `unresolved:${deviceId}`,
@@ -287,7 +280,6 @@ function CloudInstanceManagement({
     pending: cloud.pending,
     updateAvailable,
     upgradeState,
-    wakeWatching,
   });
   const recordUnavailable = cloud.loadState !== 'ready' || !instance || instanceId === null;
   const autoUpdatePending = cloud.pending?.target === instanceId
@@ -297,7 +289,6 @@ function CloudInstanceManagement({
     if (!instanceId) return;
     const result = await cloud.wake(instanceId);
     if (!result) return;
-    setWakeWatching(true);
     Alert.alert(t('deviceLink.cloudInstance.woke'));
   }, [cloud, instanceId, t]);
 
