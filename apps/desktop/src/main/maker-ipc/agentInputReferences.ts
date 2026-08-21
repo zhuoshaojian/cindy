@@ -8,6 +8,7 @@ import {
 } from '@cindy/maker-shared/agent-input-projection';
 
 import type { AgentInputQueuedMessage } from '../../shared/agentInputQueue.js';
+import { DEEP_LINK_SCHEMES } from '../../shared/deepLinkSchemes.js';
 import { getDbClient } from '../localDb/client/current.js';
 import { messages, sessions } from '../localDb/schema.js';
 
@@ -42,7 +43,7 @@ async function readReferencedMessageText(
     return { state: 'hidden' };
   }
   const projected = row.role === 'user'
-    ? projectPersistedAgentFacingUserText(row.content)
+    ? projectPersistedAgentFacingUserText(row.content, DEEP_LINK_SCHEMES)
     : null;
   return {
     state: 'visible',
@@ -80,7 +81,7 @@ function readPersistedReferences(
     const record = parsed as Record<string, unknown>;
     return {
       present: Object.hasOwn(record, 'agentReferences'),
-      references: readAgentInputReferences(record.agentReferences, text),
+      references: readAgentInputReferences(record.agentReferences, text, DEEP_LINK_SCHEMES),
     };
   } catch {
     return { present: false, references: [] };
@@ -96,7 +97,7 @@ export async function hydrateQueuedAgentReferences(
 ): Promise<AgentInputQueuedMessage> {
   const persisted = readPersistedReferences(queued.persistedContent, queued.text);
   const references = queued.agentReferences !== undefined
-    ? readAgentInputReferences(queued.agentReferences, queued.text)
+    ? readAgentInputReferences(queued.agentReferences, queued.text, DEEP_LINK_SCHEMES)
     : persisted.references;
   if (references.length === 0) {
     if (queued.agentReferences === undefined && !persisted.present) return queued;

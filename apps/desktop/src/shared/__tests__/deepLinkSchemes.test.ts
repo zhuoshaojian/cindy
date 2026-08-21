@@ -18,6 +18,7 @@ import {
   isDeepLinkProviderConnectId,
   isDeepLinkUrl,
   matchDeepLinkPrefix,
+  matchDeepLinkPrefixForRegion,
   stripDeepLinkPathPrefix,
   textContainsDeepLink,
 } from '../deepLinkSchemes';
@@ -46,6 +47,19 @@ describe('matchDeepLinkPrefix / isDeepLinkUrl', () => {
     expect(matchDeepLinkPrefix('xdt-maker://session/a')).toBe('xdt-maker://');
     expect(isDeepLinkUrl('cindy://project/x')).toBe(true);
     expect(isDeepLinkUrl('xdt-maker://project/x')).toBe(true);
+  });
+
+  it('keeps production legacy parsing while dev rejects every production scheme', () => {
+    expect(matchDeepLinkPrefixForRegion('xdt-maker://session/a', 'cn')).toBe('xdt-maker://');
+    expect(matchDeepLinkPrefixForRegion('xdt-maker://session/a', 'global')).toBe(
+      'xdt-maker://',
+    );
+    expect(matchDeepLinkPrefixForRegion('cindy://session/a', 'dev')).toBeNull();
+    expect(matchDeepLinkPrefixForRegion('xdt-maker://session/a', 'dev')).toBeNull();
+    expect(matchDeepLinkPrefixForRegion('cindydev://session/a', 'dev')).toBe('cindydev://');
+    expect(matchDeepLinkPrefixForRegion('xdt-maker-dev://session/a', 'dev')).toBe(
+      'xdt-maker-dev://',
+    );
   });
 
   it('rejects other schemes, including in-process resource schemes', () => {

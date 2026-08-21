@@ -13,6 +13,8 @@
 
 import { projectPersistedAgentFacingUserText } from '@cindy/maker-shared/agent-input-projection';
 
+import { DEEP_LINK_SCHEMES } from '../../shared/deepLinkSchemes.js';
+
 /** DB 层引擎标识(sessions.agent_kind / messages.agent_kind 的值域)。 */
 export type DbAgentKind = 'cc' | 'codex' | 'pi';
 
@@ -141,7 +143,7 @@ export function extractPlainText(content: unknown): string {
   if (content && typeof content === 'object') {
     const c = content as Record<string, unknown>;
     if (typeof c.text === 'string') {
-      return projectPersistedAgentFacingUserText(c) ?? c.text;
+      return projectPersistedAgentFacingUserText(c, DEEP_LINK_SCHEMES) ?? c.text;
     }
     if (typeof c.message === 'string') return c.message;
   }

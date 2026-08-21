@@ -41,6 +41,10 @@
 
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
+
+import type { CindyRegion } from '@cindy/maker-shared/brand-identity';
+
+import { CURRENT_CINDY_REGION } from '../shared/brandRegion';
 import { createLogger } from './logger';
 import {
   DEEP_LINK_PRIMARY_SCHEME,
@@ -48,6 +52,7 @@ import {
   DEEP_LINK_URL_PREFIX,
   isDeepLinkProviderConnectId,
   matchDeepLinkPrefix,
+  matchDeepLinkPrefixForRegion,
 } from '../shared/deepLinkSchemes';
 
 const log = createLogger('deepLink');
@@ -95,9 +100,12 @@ export type DeepLinkPayload =
  * 切分行为在不同 Node 版本上有差异(`cindy://session/abc` 的 host 可能
  * 为空、pathname 可能含 `//session/abc`)。手解最稳。
  */
-export function parseDeepLink(url: string): DeepLinkPayload | null {
+export function parseDeepLink(
+  url: string,
+  region: CindyRegion = CURRENT_CINDY_REGION,
+): DeepLinkPayload | null {
   if (typeof url !== 'string') return null;
-  const prefix = matchDeepLinkPrefix(url);
+  const prefix = matchDeepLinkPrefixForRegion(url, region);
   if (prefix === null) return null;
   const rest = url.slice(prefix.length);
   const slashIdx = rest.indexOf('/');
@@ -452,10 +460,13 @@ export function takePendingDeepLink(): DeepLinkPayload | null {
  * app.on('open-url')。Linux 依赖 .desktop 的 Exec 参数传递协议 URL;首版只做
  * 打包 metadata,实际导航行为仍需要 Ubuntu 真机验收。
  */
-export function findDeepLinkInArgv(argv: readonly string[]): string | null {
+export function findDeepLinkInArgv(
+  argv: readonly string[],
+  region: CindyRegion = CURRENT_CINDY_REGION,
+): string | null {
   for (let i = argv.length - 1; i >= 0; i--) {
     const arg = argv[i];
-    if (typeof arg === 'string' && matchDeepLinkPrefix(arg) !== null) return arg;
+    if (typeof arg === 'string' && matchDeepLinkPrefixForRegion(arg, region) !== null) return arg;
   }
   return null;
 }
