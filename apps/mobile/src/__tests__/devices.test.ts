@@ -136,6 +136,20 @@ describe('mobile controllable device filter', () => {
     expect(source).not.toMatch(/<Cloud[\s/>]/);
   });
 
+  it('reports every device menu row accessibility state as an explicit boolean', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
+    // `busy: busy || undefined` 在退出 busy 时让 key 整个消失,而 key 消失不等于置 false:
+    // 实测云端行唤醒落定后 content-desc 仍是「Cloud, busy」,要重挂载才恢复,读屏会把一台
+    // 已就绪的云端一直念成忙。三个状态都必须显式给 boolean。
+    const itemStart = source.indexOf('function DeviceMenuItem');
+    const stateStart = source.indexOf('accessibilityState={{', itemStart);
+    const itemState = source.slice(stateStart, source.indexOf('}}', stateStart));
+    expect(itemState).toContain('busy,');
+    expect(itemState).toContain('checked,');
+    expect(itemState).toContain('selected,');
+    expect(itemState).not.toContain('|| undefined');
+  });
+
   it('renders each cloud instance once and wakes offline rows before switching filters', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
     expect(source).toContain('const cloudInstanceDeviceIds = useMemo');

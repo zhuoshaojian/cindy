@@ -2756,11 +2756,14 @@ function DeviceMenuItem({
     <Pressable
       accessibilityLabel={label}
       accessibilityRole="button"
+      // 每个状态都显式给 boolean。写成 `busy || undefined` 会在退出 busy 时让整个 key
+      // 消失,而 key 消失不等于置 false —— 实测唤醒结束后 Android 的 content-desc 仍是
+      // 「Cloud, busy」,要到组件重挂载才恢复,读屏会把一台已就绪的云端一直念成忙。
       accessibilityState={{
-        busy: busy || undefined,
-        checked: checked || undefined,
+        busy,
+        checked,
         disabled: rowDisabled,
-        selected: selected || undefined,
+        selected,
       }}
       disabled={rowDisabled && !onDetails && !onRename}
       onLongPress={
