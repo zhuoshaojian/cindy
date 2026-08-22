@@ -348,7 +348,9 @@ function CloudInstanceManagement({
 
   const lifecycleLabel = actionState.lifecycleBusy
     ? actionState.lifecycleAction === 'wake'
-      ? t('deviceLink.cloudInstance.waking')
+      // 唤醒中的四语文案只有 `deviceLink.cloudWaking` 一份(设备菜单也用它);
+      // 这里曾写成不存在的 `cloudInstance.waking`,界面上直接漏出 key 字面量。
+      ? t('deviceLink.cloudWaking')
       : t('deviceLink.cloudInstance.stopping')
     : actionState.lifecycleAction === 'wake'
       ? t('deviceLink.cloudInstance.wake')

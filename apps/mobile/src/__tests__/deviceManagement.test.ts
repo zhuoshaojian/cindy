@@ -269,4 +269,37 @@ describe('device management route and cloud action state', () => {
       deleteDisabled: true,
     });
   });
+
+  it('resolves every cloud lifecycle label to a key that exists in all four locales', () => {
+    // check:i18n 只比对各语言之间的 key 一致性,代码引用了一个四语都没有的 key 时它全绿放行,
+    // 界面上直接漏出 key 字面量(实测 iOS 唤醒中按钮显示 `deviceLink.cloudInstance.waking`)。
+    // 这里按真实消费点把四个生命周期文案钉在存在的 key 上。
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/device-link/DeviceManagementScreen.tsx'),
+      'utf8',
+    );
+    const lifecycleKeys = [
+      'deviceLink.cloudWaking',
+      'deviceLink.cloudInstance.stopping',
+      'deviceLink.cloudInstance.wake',
+      'deviceLink.cloudInstance.stop',
+    ];
+    for (const key of lifecycleKeys) expect(source).toContain(`t('${key}')`);
+    expect(source).not.toContain("t('deviceLink.cloudInstance.waking')");
+
+    for (const locale of ['zh-CN', 'en', 'ja', 'ko']) {
+      const bundle = JSON.parse(
+        readFileSync(resolve(process.cwd(), `src/i18n/locales/${locale}/deviceLink.json`), 'utf8'),
+      );
+      for (const key of lifecycleKeys) {
+        const value = key
+          .replace(/^deviceLink\./, '')
+          .split('.')
+          .reduce<unknown>((node, part) =>
+            typeof node === 'object' && node !== null ? (node as Record<string, unknown>)[part] : undefined,
+            bundle);
+        expect(typeof value, `${locale} 缺 ${key}`).toBe('string');
+      }
+    }
+  });
 });
