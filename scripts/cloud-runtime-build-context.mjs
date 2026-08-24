@@ -25,7 +25,6 @@ const EXACT_INPUTS = new Set([
 const INPUT_PREFIXES = [
   'appicon/',
   'apps/desktop/',
-  'cindy-protocol/packages/',
   'dependency-patches/',
   'deploy/cloud-instance/',
   'docs/legal/notices/',
@@ -115,7 +114,7 @@ export function sensitiveBuildContextPathRule(relativePath) {
 }
 
 export function sensitiveBuildContextContentRule(content) {
-  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(content)) return 'private-key-content';
+  if (/^-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\r?$/m.test(content)) return 'private-key-content';
   if (/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/.test(content)) {
     return 'github-token-content';
   }
@@ -138,11 +137,8 @@ function trackedFiles() {
   return git(['ls-files', '--cached', '--recurse-submodules', '-z']);
 }
 
-function untrackedFiles() {
-  const files = git(['ls-files', '--others', '--exclude-standard', '-z']);
-  const protocol = git(['ls-files', '--others', '--exclude-standard', '-z'], path.join(REPO_ROOT, 'cindy-protocol'))
-    .map((relativePath) => `cindy-protocol/${relativePath}`);
-  return [...files, ...protocol];
+export function untrackedFiles(repoRoot = REPO_ROOT) {
+  return git(['ls-files', '--others', '--exclude-standard', '-z'], repoRoot);
 }
 
 function validateEndpointManifest(relativePath) {

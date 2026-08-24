@@ -13,6 +13,7 @@ import {
   isExcludedCloudRuntimeBuildInput,
   sensitiveBuildContextContentRule,
   sensitiveBuildContextPathRule,
+  untrackedFiles,
 } from '../cloud-runtime-build-context.mjs';
 import {
   CLOUD_RUNTIME_ENDPOINT_DISCOVERY_SCRIPT,
@@ -167,6 +168,10 @@ test('build context whitelist excludes unrelated and credential-sensitive inputs
   assert.equal(isCloudRuntimeBuildInput('apps/desktop/src/main/index.ts'), true);
   assert.equal(isCloudRuntimeBuildInput('config/endpoint.global.json'), true);
   assert.equal(
+    isCloudRuntimeBuildInput('cindy-protocol/packages/device-link-protocol/src/index.ts'),
+    false,
+  );
+  assert.equal(
     isCloudRuntimeBuildInput('apps/mobile/modules/xdt-ios-app-distribution/package.json'),
     true,
   );
@@ -187,10 +192,33 @@ test('build context whitelist excludes unrelated and credential-sensitive inputs
   assert.equal(sensitiveBuildContextPathRule('apps/desktop/.config/gh/hosts.yml'), 'provider-config');
   assert.equal(sensitiveBuildContextPathRule('packages/example/token.ts'), null);
   assert.equal(
-    sensitiveBuildContextContentRule('-----BEGIN OPENSSH PRIVATE KEY-----\nredacted'),
+    sensitiveBuildContextContentRule([
+      '-----BEGIN OPENSSH PRIVATE KEY-----',
+      'not-a-real-key-fixture',
+      '-----END OPENSSH PRIVATE KEY-----',
+    ].join('\n')),
     'private-key-content',
   );
+  assert.equal(
+    sensitiveBuildContextContentRule(
+      String.raw`const CREDENTIAL_SCRUB_RE = /-----BEGIN OPENSSH PRIVATE KEY-----|token/g;`,
+    ),
+    null,
+  );
   assert.equal(sensitiveBuildContextContentRule('export const token = "not-a-secret";'), null);
+});
+
+test('build context untracked scan does not require the removed cindy-protocol checkout', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-cloud-untracked-contract-'));
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: tempRoot });
+    fs.writeFileSync(path.join(tempRoot, 'untracked.txt'), 'safe');
+
+    assert.equal(fs.existsSync(path.join(tempRoot, 'cindy-protocol')), false);
+    assert.deepEqual(untrackedFiles(tempRoot), ['untracked.txt']);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('content inspection rejects leaked sources, credentials and local endpoints', () => {
