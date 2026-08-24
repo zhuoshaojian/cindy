@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { CircleArrowUp, Hammer, Moon, RefreshCw, Sun, Trash2 } from 'lucide-react';
 
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -117,9 +118,13 @@ export function CloudInstancesPanel({
   const { confirm } = useConfirmDialog();
   const [refreshing, setRefreshing] = useState(false);
   const refreshInFlightRef = useRef(false);
+  // deviceId is minted into the token claim and is what the relay routes on;
+  // deviceInfo.kind is only self-reported in hello, so the prefix is stronger.
   const cloudDevicesById = new Map(
     (s.devices ?? [])
-      .filter((device) => device.deviceInfo?.kind === 'cloud')
+      .filter((device) =>
+        device.deviceInfo?.kind === 'cloud' || isCloudInstanceDeviceId(device.deviceId),
+      )
       .map((device) => [device.deviceId, device]),
   );
   const cloudInstanceIds = cloud.instances.map((instance) => instance.instanceId);

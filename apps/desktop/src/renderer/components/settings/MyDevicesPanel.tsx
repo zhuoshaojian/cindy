@@ -8,7 +8,7 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
-import { deviceDisplayName } from '@cindy/maker-shared/device-list';
+import { deviceDisplayName, isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
@@ -133,8 +133,10 @@ export function MyDevicesPanel({
   );
 
   const self = (s.devices ?? []).find((device) => device.isSelf);
+  // deviceId is minted into the token claim and is what the relay routes on;
+  // deviceInfo.kind is only self-reported in hello, so the prefix is stronger.
   const others = (s.devices ?? [])
-    .filter((d) => !d.isSelf && d.deviceInfo?.kind !== 'cloud')
+    .filter((d) => !d.isSelf && d.deviceInfo?.kind !== 'cloud' && !isCloudInstanceDeviceId(d.deviceId))
     .sort(compareDevicesByName);
   const revokedControllers = new Set(s.revokedControllers);
   const controlling = new Set(s.controlledBy.map((controller) => controller.deviceId));

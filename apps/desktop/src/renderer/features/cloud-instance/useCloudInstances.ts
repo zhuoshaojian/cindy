@@ -13,6 +13,7 @@ import {
   waitForCloudInstanceTerminalState,
   type CloudInstanceTerminalWatch,
 } from '@cindy/maker-shared/cloud-instance';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 import { extractIpcError } from '@/utils/ipcError';
 import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDeviceList';
 import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
@@ -701,7 +702,11 @@ export function useCloudInstances(enabled = true): UseCloudInstances {
         true,
         new Set(
           (deviceList ?? [])
-            .filter((device) => device.deviceInfo?.kind === 'cloud')
+            // deviceId is minted into the token claim and is what the relay routes on;
+            // deviceInfo.kind is only self-reported in hello, so the prefix is stronger.
+            .filter((device) =>
+              device.deviceInfo?.kind === 'cloud' || isCloudInstanceDeviceId(device.deviceId),
+            )
             .map((device) => device.deviceId),
         ),
       );

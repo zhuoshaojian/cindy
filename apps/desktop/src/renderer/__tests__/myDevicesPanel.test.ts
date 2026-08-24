@@ -20,7 +20,7 @@ describe('MyDevicesPanel rename guards', () => {
       'utf8',
     );
 
-    expect(source).toContain(".filter((d) => !d.isSelf && d.deviceInfo?.kind !== 'cloud')");
+    expect(source).toContain("!isCloudInstanceDeviceId(d.deviceId)");
     expect(source).not.toContain('useCloudInstances');
     expect(source).toContain('onCheckedChange={(v) => void onOutboundChange(device, v)}');
     expect(source).toContain('onCheckedChange={(v) => void onInboundChange(device, v)}');

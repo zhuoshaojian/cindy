@@ -25,6 +25,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import { useDeviceLinkSettings, type DeviceLinkSettings } from '@/hooks/useDeviceLinkSettings';
 import { useCloudInstances } from '@/features/cloud-instance/useCloudInstances';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 import { CloudInstancesPanel } from './CloudInstancesPanel';
 import { MyDevicesPanel } from './MyDevicesPanel';
 import { RemoteSection } from './RemoteSection';
@@ -101,8 +102,13 @@ function deviceSummary(
   t: (k: string, o?: Record<string, unknown>) => string,
 ): string | null {
   if (s.devices === null) return null;
+  // deviceId is minted into the token claim and is what the relay routes on;
+  // deviceInfo.kind is only self-reported in hello, so the prefix is stronger.
   const others = s.devices.filter(
-    (device) => !device.isSelf && device.deviceInfo?.kind !== 'cloud',
+    (device) =>
+      !device.isSelf &&
+      device.deviceInfo?.kind !== 'cloud' &&
+      !isCloudInstanceDeviceId(device.deviceId),
   ).length;
   return others === 0
     ? t('settings.remoteControl.summary.noOtherDevices')

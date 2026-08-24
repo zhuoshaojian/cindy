@@ -40,9 +40,32 @@ describe('CloudInstancesPanel boundaries', () => {
       'utf8',
     );
 
-    expect(source).toContain(".filter((d) => !d.isSelf && d.deviceInfo?.kind !== 'cloud')");
+    expect(source).toContain("!isCloudInstanceDeviceId(d.deviceId)");
     expect(source).not.toContain('useCloudInstances');
-    expect(source).not.toContain('cloud-instance-');
+  });
+
+  it('classifies cloud devices by trusted deviceId prefix when relay kind is absent', () => {
+    const panelSource = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/settings/CloudInstancesPanel.tsx'),
+      'utf8',
+    );
+    const summarySource = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/settings/RemoteControlSection.tsx'),
+      'utf8',
+    );
+    const cloudIdsSource = readFileSync(
+      resolve(process.cwd(), 'src/renderer/features/device-link/useCloudDeviceIds.ts'),
+      'utf8',
+    );
+    const capabilitySource = readFileSync(
+      resolve(process.cwd(), 'src/renderer/features/cloud-instance/useCloudInstances.ts'),
+      'utf8',
+    );
+
+    for (const source of [panelSource, summarySource, cloudIdsSource, capabilitySource]) {
+      expect(source).toContain('isCloudInstanceDeviceId');
+      expect(source).toContain("deviceInfo.kind is only self-reported in hello");
+    }
   });
 
   it('provides the cloud Cindy section label in every desktop locale', () => {
