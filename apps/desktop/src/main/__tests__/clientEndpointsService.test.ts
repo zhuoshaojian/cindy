@@ -247,7 +247,7 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
         env: {
           XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
           XDT_POD_DEVICE_ID: 'pod-endpoints',
-          XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE: '/run/secrets/account-refresh-token',
+          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
         },
       },
       { kind: 'file', filePath: path.resolve(REPO_ROOT, '/run/config/endpoint.json') },
@@ -260,7 +260,7 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
         env: {
           XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
           XDT_POD_DEVICE_ID: 'pod-endpoints',
-          XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE: '/run/secrets/account-refresh-token',
+          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
         },
       },
       { kind: 'cdn' },
@@ -284,7 +284,7 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
         headlessPodRuntime: false,
         env: {
           XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
-          XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE: '/run/secrets/account-refresh-token',
+          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
         },
       },
       { kind: 'cdn' },
@@ -297,7 +297,7 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
         env: {
           XDT_ENDPOINT_MANIFEST_FILE: 'config/endpoint.json',
           XDT_POD_DEVICE_ID: 'pod-endpoints',
-          XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE: '/run/secrets/account-refresh-token',
+          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
         },
       },
       { kind: 'cdn' },

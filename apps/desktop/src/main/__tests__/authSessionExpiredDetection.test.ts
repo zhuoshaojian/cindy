@@ -80,19 +80,22 @@ describe('desktop auth session-expiry detection', () => {
     const expireEnd = authSource.indexOf('if (accountSwitchTeardown)', expireStart);
     const expireBody = authSource.slice(expireStart, expireEnd);
     expect(expireBody).toContain('preservePersistedRefreshToken: opts.preservePersistedRefreshToken');
-    expect(expireBody).toContain('preserveProvisionedAccountCredentials:');
+    expect(expireBody).toContain('preserveProvisionedResourceCredentials:');
     expect(expireBody).toContain(
-      'recoverProvisionedSession !== null || mayHaveProvisionedAccountCredential',
+      'recoverProvisionedSession !== null || mayHaveProvisionedResourceCredential',
     );
   });
 
-  it('resource session expiry retains Pod Account credentials and triggers re-provision', () => {
+  it('resource session expiry retains Pod resource credentials and triggers re-provision', () => {
     const clearStart = authSource.indexOf('function clearAuth(');
     const clearEnd = authSource.indexOf('resetActiveAuthRealmToBuild();', clearStart);
     const clearBody = authSource.slice(clearStart, clearEnd);
-    const accountGuard = clearBody.indexOf('if (!opts.preserveProvisionedAccountCredentials) {');
+    const accountGuard = clearBody.indexOf('if (!opts.preserveProvisionedResourceCredentials) {');
     expect(accountGuard).toBeGreaterThan(0);
-    expect(clearBody.indexOf('removeSafe(POD_ACCOUNT_REFRESH_TOKEN_KEY);')).toBeGreaterThan(
+    expect(clearBody.indexOf('removeSafe(POD_RESOURCE_REFRESH_TOKEN_KEY);')).toBeGreaterThan(
+      accountGuard,
+    );
+    expect(clearBody.indexOf('removeSafe(LEGACY_POD_ACCOUNT_REFRESH_TOKEN_KEY);')).toBeGreaterThan(
       accountGuard,
     );
     expect(clearBody.indexOf('removeSafe(POD_MEMBERSHIP_ID_KEY);')).toBeGreaterThan(accountGuard);
@@ -101,7 +104,7 @@ describe('desktop auth session-expiry detection', () => {
     const expireEnd = authSource.indexOf('\n}\n\n/**', expireStart);
     const expireBody = authSource.slice(expireStart, expireEnd);
     expect(expireBody).toContain('const recoverProvisionedSession = provisionedSessionRecovery;');
-    expect(expireBody).toContain('readProvisionedAccountCredentialState()');
+    expect(expireBody).toContain('readProvisionedResourceCredentialState()');
     expect(expireBody).toContain("kind !== 'definitely-absent'");
     expect(expireBody).toContain("kind === 'definitely-absent'");
     expect(expireBody).toContain('await recoverProvisionedSession();');
@@ -111,23 +114,23 @@ describe('desktop auth session-expiry detection', () => {
     const recoveryEnd = bootstrapSource.indexOf('\n    }\n  }', recoveryStart);
     const recoveryBody = bootstrapSource.slice(recoveryStart, recoveryEnd);
     expect(bootstrapSource).toContain(
-      'authManager.readProvisionedAccountRefreshTokenForProvisioning',
+      'authManager.readProvisionedResourceRefreshTokenForProvisioning',
     );
     expect(recoveryBody).toContain('await provisionPodSession()');
     expect(recoveryBody).toContain('await ensureMakerReady();');
     expect(recoveryBody).toContain('await initializePodAccountRuntime();');
     expect(recoveryBody).toContain('retry scheduled');
-    expect(recoveryBody).toContain('re-provision stopped after Account credential rejection');
-    expect(recoveryBody.match(/readProvisionedAccountCredentialState\(\)/gu)).toHaveLength(2);
+    expect(recoveryBody).toContain('re-provision stopped after resource credential rejection');
+    expect(recoveryBody.match(/readProvisionedResourceCredentialState\(\)/gu)).toHaveLength(2);
     expect(recoveryBody.match(/=== 'definitely-absent'/gu)).toHaveLength(2);
-    expect(recoveryBody).not.toContain('readProvisionedAccountRefreshToken()');
+    expect(recoveryBody).not.toContain('readProvisionedResourceRefreshToken()');
 
     expect(serverApiClientSource).toContain(
       "authManager.invalidateResourceSession('resource-unauthorized-after-refresh')",
     );
   });
 
-  it('headless Pod bootstrap does not fall back while the durable Account credential is unreadable', () => {
+  it('headless Pod bootstrap does not fall back while the durable resource credential is unreadable', () => {
     const provisionStart = bootstrapSource.indexOf(
       'const provisionPodSession = async (): Promise<boolean> => {',
     );
@@ -139,10 +142,10 @@ describe('desktop auth session-expiry detection', () => {
     expect(preBootstrap).toContain(
       'const hasValidatedSession = hasValidatedLocalPodSession();',
     );
-    expect(preBootstrap).toContain('readProvisionedAccountCredentialState()');
-    expect(preBootstrap).toContain("accountCredentialState.kind === 'temporarily-unreadable'");
+    expect(preBootstrap).toContain('readProvisionedResourceCredentialState()');
+    expect(preBootstrap).toContain("resourceCredentialState.kind === 'temporarily-unreadable'");
     expect(preBootstrap).toContain(
-      'throw new authManager.ProvisionedAccountCredentialTemporarilyUnreadableError()',
+      'throw new authManager.ProvisionedResourceCredentialTemporarilyUnreadableError()',
     );
 
     const startupRetryStart = bootstrapSource.indexOf('provisionRetry: headlessPodRuntimeInput');
@@ -158,7 +161,7 @@ describe('desktop auth session-expiry detection', () => {
     const recoveryEnd = bootstrapSource.indexOf('\n    }\n  }', recoveryStart);
     const recoveryBody = bootstrapSource.slice(recoveryStart, recoveryEnd);
     const unreadableGuard = recoveryBody.indexOf(
-      "accountCredentialState.kind === 'temporarily-unreadable'",
+      "resourceCredentialState.kind === 'temporarily-unreadable'",
     );
     expect(unreadableGuard).toBeGreaterThan(0);
     expect(unreadableGuard).toBeLessThan(recoveryBody.indexOf('await provisionPodSession()'));

@@ -38,7 +38,7 @@ async function unlinkIfPresent(socketPath: string): Promise<void> {
  * Container-internal delete barrier. The Unix socket is never published or
  * mounted as a public endpoint; only a provider exec inside this Pod can reach
  * it. The HTTP response is the acknowledgement and is emitted only after both
- * durable Account credential files are proven absent.
+ * durable Pod resource credential files are proven absent.
  */
 export function createPodDeleteControlServer(
   options: PodDeleteControlOptions,
@@ -52,7 +52,7 @@ export function createPodDeleteControlServer(
       .then(() => {
         options.clearCredentials();
         if (!options.credentialsAbsent()) {
-          throw new Error('durable Pod Account credentials remain after cleanup');
+          throw new Error('durable Pod resource credentials remain after cleanup');
         }
       })
       .finally(() => {

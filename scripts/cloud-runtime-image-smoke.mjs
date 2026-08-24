@@ -140,14 +140,14 @@ function writeEndpointFixture(filePath) {
 function runPackagedStartupSmoke(image) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-cloud-runtime-smoke-'));
   const userDataDir = path.join(tempRoot, 'user-data');
-  const accountTokenFile = path.join(tempRoot, 'pod-account-refresh-token');
+  const resourceTokenFile = path.join(tempRoot, 'pod-resource-refresh-token');
   const endpointFile = path.join(tempRoot, 'endpoint.json');
   const containerName = `cindy-cloud-runtime-smoke-${process.pid}-${Date.now()}`;
   let containerCreated = false;
 
   fs.mkdirSync(userDataDir, { recursive: true, mode: 0o777 });
   fs.chmodSync(userDataDir, 0o777);
-  fs.writeFileSync(accountTokenFile, 'cloud-runtime-smoke-not-a-real-token\n', { mode: 0o444 });
+  fs.writeFileSync(resourceTokenFile, 'cloud-runtime-smoke-not-a-real-token\n', { mode: 0o444 });
   writeEndpointFixture(endpointFile);
   fs.chmodSync(endpointFile, 0o444);
 
@@ -157,10 +157,10 @@ function runPackagedStartupSmoke(image) {
     run('docker', [
       'run', '--detach', '--name', containerName,
       '--env', 'XDT_POD_DEVICE_ID=cloud-device-runtime-smoke',
-      '--env', 'XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE=/run/secrets/pod-account-refresh-token',
+      '--env', 'XDT_POD_RESOURCE_REFRESH_TOKEN_FILE=/run/secrets/pod-resource-refresh-token',
       '--env', 'XDT_ENDPOINT_MANIFEST_FILE=/run/config/endpoint.json',
       '--env', 'XDT_USER_DATA_DIR=/var/lib/cindy/user-data',
-      '--mount', `type=bind,source=${accountTokenFile},target=/run/secrets/pod-account-refresh-token,readonly`,
+      '--mount', `type=bind,source=${resourceTokenFile},target=/run/secrets/pod-resource-refresh-token,readonly`,
       '--mount', `type=bind,source=${endpointFile},target=/run/config/endpoint.json,readonly`,
       '--mount', `type=bind,source=${userDataDir},target=/var/lib/cindy/user-data`,
       image,

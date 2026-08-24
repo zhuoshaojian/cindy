@@ -34,12 +34,12 @@ describe('authManager provisioned session', () => {
     vi.restoreAllMocks();
   });
 
-  it('installs an authenticated state and persists both refresh token classes', async () => {
+  it('installs an authenticated state and persists the provisioned resource token', async () => {
     const authManager = await import('../authManager.js');
     const authListener = vi.fn();
     const unsubscribe = authManager.onAuthStateChange(authListener);
 
-    authManager.persistProvisionedAccountRefreshToken('account-refresh-test');
+    authManager.persistProvisionedResourceRefreshToken('resource-refresh-before-install');
     authManager.persistProvisionedMembershipId('membership-selection-test');
     const state = authManager.installProvisionedSession({
       accessToken: 'resource-access-test',
@@ -66,7 +66,7 @@ describe('authManager provisioned session', () => {
       membershipKind: 'personal',
     });
     expect(authManager.getAccessToken()).toBe('resource-access-test');
-    expect(authManager.readProvisionedAccountRefreshToken()).toBe('account-refresh-test');
+    expect(authManager.readProvisionedResourceRefreshToken()).toBe('resource-refresh-test');
     expect(authManager.readProvisionedMembershipId()).toBe('membership-selection-test');
     expect(authListener).toHaveBeenCalledWith(state);
     unsubscribe();
@@ -109,12 +109,12 @@ describe('authManager provisioned session', () => {
     ).toThrow('does not match');
   });
 
-  it('keeps Account credentials and triggers re-provision after resource refresh rejection', async () => {
+  it('keeps resource credentials and triggers re-provision after resource refresh rejection', async () => {
     const authManager = await import('../authManager.js');
     const recoverProvisionedSession = vi.fn();
     authManager.setAccountSwitchTeardown(vi.fn(async () => undefined));
     authManager.setProvisionedSessionRecovery(null);
-    authManager.persistProvisionedAccountRefreshToken('account-refresh-retained');
+    authManager.persistProvisionedResourceRefreshToken('resource-refresh-retained');
     authManager.persistProvisionedMembershipId('membership-retained');
     authManager.installProvisionedSession({
       accessToken: 'resource-access-rejected',
@@ -135,7 +135,7 @@ describe('authManager provisioned session', () => {
     await authManager.invalidateResourceSession('resource-refresh-rejected');
 
     expect(authManager.getAuthState().isAuthenticated).toBe(false);
-    expect(authManager.readProvisionedAccountRefreshToken()).toBe('account-refresh-retained');
+    expect(authManager.readProvisionedResourceRefreshToken()).toBe('resource-refresh-rejected');
     expect(authManager.readProvisionedMembershipId()).toBe('membership-retained');
     expect(recoverProvisionedSession).not.toHaveBeenCalled();
     authManager.setProvisionedSessionRecovery(recoverProvisionedSession);
@@ -145,13 +145,13 @@ describe('authManager provisioned session', () => {
   });
 
   it.each(['decrypt', 'io'] as const)(
-    'preserves Pod Account credentials across a temporary %s read failure',
+    'preserves Pod resource credentials across a temporary %s read failure',
     async (failureKind) => {
       const authManager = await import('../authManager.js');
       const recoverProvisionedSession = vi.fn();
       authManager.setAccountSwitchTeardown(vi.fn(async () => undefined));
       authManager.setProvisionedSessionRecovery(null);
-      authManager.persistProvisionedAccountRefreshToken('account-refresh-unreadable');
+      authManager.persistProvisionedResourceRefreshToken('resource-refresh-unreadable');
       authManager.persistProvisionedMembershipId('membership-unreadable');
       authManager.installProvisionedSession({
         accessToken: 'resource-access-unreadable',
@@ -169,10 +169,10 @@ describe('authManager provisioned session', () => {
         },
       });
 
-      const accountCredentialPath = path.join(
+      const resourceCredentialPath = path.join(
         userDataDir,
         'safe-storage',
-        'cindy_pod_account_refresh_token.enc',
+        'cindy_pod_resource_refresh_token.enc',
       );
       const membershipCredentialPath = path.join(
         userDataDir,
@@ -192,7 +192,7 @@ describe('authManager provisioned session', () => {
               filePath: unknown,
               ...args: unknown[]
             ) {
-              if (String(filePath) === accountCredentialPath) {
+              if (String(filePath) === resourceCredentialPath) {
                 throw Object.assign(new Error('temporary read failure'), { code: 'EIO' });
               }
               return Reflect.apply(originalReadFileSync, fs, [filePath, ...args]);
@@ -201,11 +201,11 @@ describe('authManager provisioned session', () => {
           })();
 
       try {
-        expect(authManager.readProvisionedAccountCredentialState()).toEqual({
+        expect(authManager.readProvisionedResourceCredentialState()).toEqual({
           kind: 'temporarily-unreadable',
         });
-        expect(() => authManager.readProvisionedAccountRefreshTokenForProvisioning()).toThrow(
-          authManager.ProvisionedAccountCredentialTemporarilyUnreadableError,
+        expect(() => authManager.readProvisionedResourceRefreshTokenForProvisioning()).toThrow(
+          authManager.ProvisionedResourceCredentialTemporarilyUnreadableError,
         );
         await authManager.invalidateResourceSession('resource-refresh-rejected');
       } finally {
@@ -213,9 +213,9 @@ describe('authManager provisioned session', () => {
       }
 
       expect(authManager.getAuthState().isAuthenticated).toBe(false);
-      expect(fs.existsSync(accountCredentialPath)).toBe(true);
+      expect(fs.existsSync(resourceCredentialPath)).toBe(true);
       expect(fs.existsSync(membershipCredentialPath)).toBe(true);
-      expect(authManager.areProvisionedAccountCredentialsAbsent()).toBe(false);
+      expect(authManager.areProvisionedResourceCredentialsAbsent()).toBe(false);
 
       authManager.setProvisionedSessionRecovery(recoverProvisionedSession);
       await vi.waitFor(() => expect(recoverProvisionedSession).toHaveBeenCalledOnce());
@@ -225,27 +225,27 @@ describe('authManager provisioned session', () => {
     15_000,
   );
 
-  it('clears both Account credential fields and cancels deferred recovery at rejection', async () => {
+  it('clears both resource credential fields and cancels deferred recovery at rejection', async () => {
     const authManager = await import('../authManager.js');
     const recoverProvisionedSession = vi.fn();
     authManager.setAccountSwitchTeardown(vi.fn(async () => undefined));
     authManager.setProvisionedSessionRecovery(null);
-    authManager.persistProvisionedAccountRefreshToken('account-refresh-rejected');
+    authManager.persistProvisionedResourceRefreshToken('resource-refresh-rejected');
     authManager.persistProvisionedMembershipId('membership-rejected');
 
     await authManager.invalidateResourceSession('resource-refresh-rejected');
 
-    authManager.clearProvisionedAccountCredentials();
+    authManager.clearProvisionedResourceCredentials();
     authManager.setProvisionedSessionRecovery(recoverProvisionedSession);
     await Promise.resolve();
 
-    expect(authManager.readProvisionedAccountRefreshToken()).toBeNull();
+    expect(authManager.readProvisionedResourceRefreshToken()).toBeNull();
     expect(authManager.readProvisionedMembershipId()).toBeNull();
-    expect(authManager.areProvisionedAccountCredentialsAbsent()).toBe(true);
+    expect(authManager.areProvisionedResourceCredentialsAbsent()).toBe(true);
     expect(fs.existsSync(path.join(
       userDataDir,
       'safe-storage',
-      'cindy_pod_account_refresh_token.enc',
+      'cindy_pod_resource_refresh_token.enc',
     ))).toBe(false);
     expect(fs.existsSync(path.join(
       userDataDir,

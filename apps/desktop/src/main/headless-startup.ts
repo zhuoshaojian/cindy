@@ -2,7 +2,7 @@ import type { AgentBinaryReadiness } from './agent-binaries/ensure-ready.js';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-export const POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV = 'XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE';
+export const POD_RESOURCE_REFRESH_TOKEN_FILE_ENV = 'XDT_POD_RESOURCE_REFRESH_TOKEN_FILE';
 export const POD_DEVICE_ID_ENV = 'XDT_POD_DEVICE_ID';
 export const POD_USER_DATA_DIR_ENV = 'XDT_USER_DATA_DIR';
 export const POD_WORKSPACES_DIR_ENV = 'XDT_POD_WORKSPACES_DIR';
@@ -33,7 +33,7 @@ export function hasHeadlessPodRuntimeInput(
   return (
     isHeadlessMode(argv) &&
     Boolean(env[POD_DEVICE_ID_ENV]?.trim()) &&
-    Boolean(env[POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]?.trim())
+    Boolean(env[POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]?.trim())
   );
 }
 

@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   bootstrapPodProvisioning,
   createNodeFetchAdapter,
-  POD_ACCOUNT_REFRESH_TOKEN_ENV,
-  POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV,
+  POD_RESOURCE_REFRESH_TOKEN_ENV,
+  POD_RESOURCE_REFRESH_TOKEN_FILE_ENV,
   POD_DEVICE_ID_ENV,
   POD_MEMBERSHIP_ID_ENV,
   POD_USER_DATA_DIR_ENV,
@@ -41,7 +41,7 @@ describe('Pod provisioning bootstrap', () => {
   it('scopes the packaged userData override to the complete headless Pod contract', () => {
     const podEnv = {
       [POD_DEVICE_ID_ENV]: 'pod-user-data',
-      [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+      [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
       [POD_USER_DATA_DIR_ENV]: ' /var/lib/cindy/user-data ',
     };
 
@@ -57,7 +57,7 @@ describe('Pod provisioning bootstrap', () => {
       resolvePodUserDataDir(
         hasHeadlessPodRuntimeInput(['electron', '--headless'], {
           ...podEnv,
-          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '',
+          [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '',
         }),
         podEnv,
       ),
@@ -107,7 +107,7 @@ describe('Pod provisioning bootstrap', () => {
     const podEnv = {
       XDT_DEV_SAFE_STORAGE_BASIC: '1',
       [POD_DEVICE_ID_ENV]: 'pod-safe-storage',
-      [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+      [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
     };
     expect(
       shouldUseBasicSafeStorage(podEnv, {
@@ -126,7 +126,7 @@ describe('Pod provisioning bootstrap', () => {
     expect(
       shouldUseBasicSafeStorage({
         ...podEnv,
-        [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '',
+        [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '',
       }, {
         isPackaged: true,
         platform: 'linux',
@@ -157,17 +157,17 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+          [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
           [POD_DEVICE_ID_ENV]: 'pod-restored',
         },
         getAuthBaseUrl: () => 'http://localhost:3344',
         authRegion: 'cn',
         fetch,
         logger,
-        readPersistedAccountRefreshToken: vi.fn(),
+        readPersistedResourceRefreshToken: vi.fn(),
         readPersistedMembershipId: vi.fn(),
         readSecretFile,
-        persistAccountRefreshToken: vi.fn(),
+        persistResourceRefreshToken: vi.fn(),
         persistMembershipId: vi.fn(),
         installSession: vi.fn(),
         hasLocalSession: () => true,
@@ -192,17 +192,17 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+          [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
           [POD_DEVICE_ID_ENV]: 'pod-raced-recovery',
         },
         getAuthBaseUrl: () => 'http://localhost:3344',
         authRegion: 'cn',
         fetch,
         logger,
-        readPersistedAccountRefreshToken: () => null,
+        readPersistedResourceRefreshToken: () => null,
         readPersistedMembershipId: () => null,
         readSecretFile: () => 'stale-mounted-token',
-        persistAccountRefreshToken: vi.fn(),
+        persistResourceRefreshToken: vi.fn(),
         persistMembershipId: vi.fn(),
         installSession: vi.fn(),
         hasLocalSession: () => localSessionReady,
@@ -214,7 +214,7 @@ describe('Pod provisioning bootstrap', () => {
     );
   });
 
-  it('refreshes, lists memberships, exchanges, then installs the personal session', async () => {
+  it('refreshes the resource token, persists the rotation, then installs the session', async () => {
     const calls: Array<{
       path: string;
       method: string;
@@ -237,25 +237,12 @@ describe('Pod provisioning bootstrap', () => {
       if (url.pathname.endsWith('/refresh')) {
         events.push('refresh');
         return response({
-          accountToken: 'account-access',
-          accountRefreshToken: 'account-rotated',
+          accessToken: 'resource-access',
+          refreshToken: 'resource-rotated',
+          membership: membership('personal-membership', 'personal'),
         });
       }
-      if (url.pathname.endsWith('/account')) {
-        events.push('list');
-        return response({
-          memberships: [
-            membership('org-membership', 'org'),
-            membership('personal-membership', 'personal'),
-          ],
-        });
-      }
-      events.push('exchange');
-      return response({
-        accessToken: 'resource-access',
-        refreshToken: 'resource-refresh',
-        membership: membership('personal-membership', 'personal'),
-      });
+      throw new Error('unexpected request');
     });
     const persist = vi.fn(() => events.push('persist'));
     const install = vi.fn(() => events.push('install'));
@@ -263,16 +250,16 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'account-injected',
+          [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'resource-injected',
           [POD_DEVICE_ID_ENV]: 'pod-1',
         },
         getAuthBaseUrl: () => 'http://localhost:3344/',
         authRegion: 'cn',
         fetch,
         logger,
-        readPersistedAccountRefreshToken: () => null,
+        readPersistedResourceRefreshToken: () => null,
         readPersistedMembershipId: () => null,
-        persistAccountRefreshToken: persist,
+        persistResourceRefreshToken: persist,
         persistMembershipId: vi.fn(),
         installSession: install,
       }),
@@ -280,41 +267,24 @@ describe('Pod provisioning bootstrap', () => {
 
     expect(calls).toEqual([
       {
-        path: '/api/auth/account/refresh',
+        path: '/api/auth/refresh',
         method: 'POST',
-        body: { accountRefreshToken: 'account-injected', deviceId: 'pod-1' },
+        body: { refreshToken: 'resource-injected', deviceId: 'pod-1' },
         token: undefined,
         hasSignal: true,
       },
-      {
-        path: '/api/auth/account',
-        method: 'GET',
-        token: 'account-access',
-        hasSignal: true,
-      },
-      {
-        path: '/api/auth/account/exchange',
-        method: 'POST',
-        body: { membershipId: 'personal-membership' },
-        token: 'account-access',
-        hasSignal: true,
-      },
     ]);
-    expect(persist).toHaveBeenCalledWith('account-rotated');
-    expect(events).toEqual(['refresh', 'persist', 'list', 'exchange', 'install']);
+    expect(persist).toHaveBeenCalledWith('resource-rotated');
+    expect(events).toEqual(['refresh', 'persist', 'install']);
     expect(logger.info.mock.calls.map(([message]) => message)).toEqual([
-      'Pod provisioning account refresh start',
-      'Pod provisioning account refresh ok',
-      'Pod provisioning memberships fetch start',
-      'Pod provisioning memberships fetched',
-      'Pod provisioning account exchange start',
-      'Pod provisioning account exchange ok',
+      'Pod provisioning resource refresh start',
+      'Pod provisioning resource refresh ok',
       'Pod provisioning session install start',
       'Pod provisioning session installed',
     ]);
     expect(install).toHaveBeenCalledWith({
       accessToken: 'resource-access',
-      refreshToken: 'resource-refresh',
+      refreshToken: 'resource-rotated',
       membership: expect.objectContaining({
         id: 'personal-membership',
         kind: 'personal',
@@ -334,9 +304,9 @@ describe('Pod provisioning bootstrap', () => {
         authRegion: 'cn',
         fetch,
         logger: { info: vi.fn() },
-        readPersistedAccountRefreshToken: read,
+        readPersistedResourceRefreshToken: read,
         readPersistedMembershipId: () => null,
-        persistAccountRefreshToken: vi.fn(),
+        persistResourceRefreshToken: vi.fn(),
         persistMembershipId: vi.fn(),
         installSession: install,
       }),
@@ -346,38 +316,35 @@ describe('Pod provisioning bootstrap', () => {
     expect(install).not.toHaveBeenCalled();
   });
 
-  it('uses the rotated persisted account token on restart', async () => {
+  it('uses the rotated persisted resource token on restart', async () => {
     const readSecretFile = vi.fn(() => 'mounted-secret');
     const fetch = vi.fn(async (input: string, _init?: Parameters<AuthFetch>[1]) => {
       const path = new URL(input).pathname;
       if (path.endsWith('/refresh')) {
-        return response({ accountToken: 'account-access', accountRefreshToken: 'next-rotation' });
+        return response({
+          accessToken: 'resource-access',
+          refreshToken: 'next-rotation',
+          membership: membership('personal', 'personal'),
+        });
       }
-      if (path.endsWith('/account')) {
-        return response({ memberships: [membership('personal', 'personal')] });
-      }
-      return response({
-        accessToken: 'resource-access',
-        refreshToken: 'resource-refresh',
-        membership: membership('personal', 'personal'),
-      });
+      throw new Error('unexpected request');
     });
 
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'stale-injected',
-          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/pod-token',
+          [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'stale-injected',
+          [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/pod-resource-refresh-token',
           [POD_DEVICE_ID_ENV]: 'pod-2',
         },
         getAuthBaseUrl: () => 'http://localhost:3344',
         authRegion: 'cn',
         fetch,
         logger: { info: vi.fn() },
-        readPersistedAccountRefreshToken: () => 'persisted-rotation',
+        readPersistedResourceRefreshToken: () => 'persisted-rotation',
         readPersistedMembershipId: () => null,
         readSecretFile,
-        persistAccountRefreshToken: vi.fn(),
+        persistResourceRefreshToken: vi.fn(),
         persistMembershipId: vi.fn(),
         installSession: vi.fn(),
       }),
@@ -385,7 +352,7 @@ describe('Pod provisioning bootstrap', () => {
 
     const refreshCall = fetch.mock.calls[0];
     expect(JSON.parse(refreshCall[1]?.body ?? '{}')).toEqual({
-      accountRefreshToken: 'persisted-rotation',
+      refreshToken: 'persisted-rotation',
       deviceId: 'pod-2',
     });
     expect(readSecretFile).not.toHaveBeenCalled();
@@ -396,8 +363,8 @@ describe('Pod provisioning bootstrap', () => {
     expect(
       resolvePodProvisioningConfig(
         {
-          [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'inline-token',
-          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+          [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'inline-token',
+          [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
           [POD_DEVICE_ID_ENV]: 'pod-secret',
         },
         null,
@@ -405,7 +372,7 @@ describe('Pod provisioning bootstrap', () => {
         readSecretFile,
       ),
     ).toEqual({
-      accountRefreshToken: 'mounted-token',
+      resourceRefreshToken: 'mounted-token',
       deviceId: 'pod-secret',
       membershipId: null,
     });
@@ -415,7 +382,7 @@ describe('Pod provisioning bootstrap', () => {
     expect(() =>
       resolvePodProvisioningConfig(
         {
-          [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'token',
+          [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'token',
           [POD_DEVICE_ID_ENV]: 'pod-conflict',
           [POD_MEMBERSHIP_ID_ENV]: 'org-membership',
         },
@@ -426,25 +393,24 @@ describe('Pod provisioning bootstrap', () => {
     ).toThrow('does not match the persisted Pod membership');
   });
 
-  it('fails closed when an explicit membership is unavailable', async () => {
-    const exchange = vi.fn();
+  it('fails closed when an explicit membership does not match the refreshed resource token', async () => {
     const install = vi.fn();
     const fetch = vi.fn(async (input: string) => {
       const path = new URL(input).pathname;
       if (path.endsWith('/refresh')) {
-        return response({ accountToken: 'account-access', accountRefreshToken: 'rotated-token' });
+        return response({
+          accessToken: 'resource-access',
+          refreshToken: 'rotated-token',
+          membership: membership('personal-membership', 'personal'),
+        });
       }
-      if (path.endsWith('/account')) {
-        return response({ memberships: [membership('personal-membership', 'personal')] });
-      }
-      exchange();
-      return response({});
+      throw new Error('unexpected request');
     });
 
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'initial',
+          [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'initial',
           [POD_DEVICE_ID_ENV]: 'pod-org-missing',
           [POD_MEMBERSHIP_ID_ENV]: 'org-membership-missing',
         },
@@ -452,39 +418,42 @@ describe('Pod provisioning bootstrap', () => {
         authRegion: 'cn',
         fetch,
         logger: { info: vi.fn() },
-        readPersistedAccountRefreshToken: () => null,
+        readPersistedResourceRefreshToken: () => null,
         readPersistedMembershipId: () => null,
-        persistAccountRefreshToken: vi.fn(),
+        persistResourceRefreshToken: vi.fn(),
         persistMembershipId: vi.fn(),
         installSession: install,
       }),
-    ).rejects.toThrow('requested membership was not found');
-    expect(exchange).not.toHaveBeenCalled();
+    ).rejects.toThrow('resource token membership does not match');
     expect(install).not.toHaveBeenCalled();
   });
 
-  it('stops before membership fetch when rotated token persistence fails', async () => {
+  it('stops before install when rotated token persistence fails', async () => {
     const fetch = vi.fn(async (input: string) => {
       const path = new URL(input).pathname;
       if (path.endsWith('/refresh')) {
-        return response({ accountToken: 'account-access', accountRefreshToken: 'rotated-token' });
+        return response({
+          accessToken: 'resource-access',
+          refreshToken: 'rotated-token',
+          membership: membership('personal-membership', 'personal'),
+        });
       }
-      throw new Error('membership fetch must not run');
+      throw new Error('unexpected request');
     });
 
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'initial',
+          [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'initial',
           [POD_DEVICE_ID_ENV]: 'pod-persist-failure',
         },
         getAuthBaseUrl: () => 'http://localhost:3344',
         authRegion: 'cn',
         fetch,
         logger: { info: vi.fn() },
-        readPersistedAccountRefreshToken: () => null,
+        readPersistedResourceRefreshToken: () => null,
         readPersistedMembershipId: () => null,
-        persistAccountRefreshToken: () => {
+        persistResourceRefreshToken: () => {
           throw new Error('safeStorage unavailable');
         },
         persistMembershipId: vi.fn(),
@@ -498,7 +467,7 @@ describe('Pod provisioning bootstrap', () => {
     expect(() =>
       resolvePodProvisioningConfig(
         {
-          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/empty-token',
+          [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/empty-token',
           [POD_DEVICE_ID_ENV]: 'pod-empty-secret',
         },
         null,
@@ -513,33 +482,25 @@ describe('Pod provisioning bootstrap', () => {
       JSON.stringify({ ctx: 'org', orgSlug: 'enterprise', adAccount: 'ad-account-1' }),
     ).toString('base64url');
     const orgAccessToken = `header.${claims}.signature`;
-    const persistAccount = vi.fn();
+    const persistResource = vi.fn();
     const persistMembership = vi.fn();
     const install = vi.fn();
     const fetch = vi.fn(async (input: string) => {
       const path = new URL(input).pathname;
       if (path.endsWith('/refresh')) {
-        return response({ accountToken: 'account-access', accountRefreshToken: 'rotated-first' });
-      }
-      if (path.endsWith('/account')) {
         return response({
-          memberships: [
-            membership('personal-membership', 'personal'),
-            membership('org-membership', 'org'),
-          ],
+          accessToken: orgAccessToken,
+          refreshToken: 'org-resource-refresh',
+          membership: membership('org-membership', 'org'),
         });
       }
-      return response({
-        accessToken: orgAccessToken,
-        refreshToken: 'org-resource-refresh',
-        membership: membership('org-membership', 'org'),
-      });
+      throw new Error('unexpected request');
     });
 
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'initial',
+          [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'initial',
           [POD_DEVICE_ID_ENV]: 'pod-org',
           [POD_MEMBERSHIP_ID_ENV]: 'org-membership',
         },
@@ -547,16 +508,16 @@ describe('Pod provisioning bootstrap', () => {
         authRegion: 'cn',
         fetch,
         logger: { info: vi.fn() },
-        readPersistedAccountRefreshToken: () => null,
+        readPersistedResourceRefreshToken: () => null,
         readPersistedMembershipId: () => null,
-        persistAccountRefreshToken: persistAccount,
+        persistResourceRefreshToken: persistResource,
         persistMembershipId: persistMembership,
         installSession: install,
       }),
     ).resolves.toBe(true);
 
-    expect(persistAccount).toHaveBeenCalledWith('rotated-first');
-    expect(persistAccount.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(persistResource).toHaveBeenCalledWith('org-resource-refresh');
+    expect(persistResource.mock.invocationCallOrder[0]).toBeLessThan(
       persistMembership.mock.invocationCallOrder[0]!,
     );
     expect(persistMembership).toHaveBeenCalledWith('org-membership');
@@ -571,11 +532,12 @@ describe('Pod provisioning bootstrap', () => {
     ).toMatchObject({ ctx: 'org', orgSlug: 'enterprise', adAccount: 'ad-account-1' });
   });
 
-  it('rejects missing personal membership and invalid device IDs', async () => {
+  it('accepts the token membership when no membership id is injected and rejects invalid device IDs', async () => {
+    const install = vi.fn();
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'token',
+          [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'token',
           [POD_DEVICE_ID_ENV]: 'pod',
         },
         getAuthBaseUrl: () => 'http://localhost:3344',
@@ -583,18 +545,25 @@ describe('Pod provisioning bootstrap', () => {
         fetch: vi.fn(async (input: string) => {
           const path = new URL(input).pathname;
           if (path.endsWith('/refresh')) {
-            return response({ accountToken: 'account', accountRefreshToken: 'rotated' });
+            return response({
+              accessToken: 'org-access',
+              refreshToken: 'org-refresh',
+              membership: membership('org', 'org'),
+            });
           }
-          return response({ memberships: [membership('org', 'org')] });
+          throw new Error('unexpected request');
         }),
         logger: { info: vi.fn() },
-        readPersistedAccountRefreshToken: () => null,
+        readPersistedResourceRefreshToken: () => null,
         readPersistedMembershipId: () => null,
-        persistAccountRefreshToken: vi.fn(),
+        persistResourceRefreshToken: vi.fn(),
         persistMembershipId: vi.fn(),
-        installSession: vi.fn(),
+        installSession: install,
       }),
-    ).rejects.toThrow('no personal membership');
+    ).resolves.toBe(true);
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({
+      membership: expect.objectContaining({ id: 'org', kind: 'org' }),
+    }));
 
     expect(() => resolvePodDeviceIdOverride({ [POD_DEVICE_ID_ENV]: 'x'.repeat(129) })).toThrow(
       'at most 128',
@@ -625,7 +594,7 @@ describe('Pod provisioning bootstrap', () => {
     );
   });
 
-  it('times out a stalled account refresh before later provisioning steps', async () => {
+  it('times out a stalled resource refresh before install', async () => {
     vi.useFakeTimers();
     try {
       const fetch = vi.fn(
@@ -647,7 +616,7 @@ describe('Pod provisioning bootstrap', () => {
       const pending = expect(
         bootstrapPodProvisioning({
           env: {
-            [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'account-injected',
+            [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'resource-injected',
             [POD_DEVICE_ID_ENV]: 'pod-timeout',
           },
           getAuthBaseUrl: () => 'http://localhost:3344',
@@ -655,9 +624,9 @@ describe('Pod provisioning bootstrap', () => {
           fetch,
           logger,
           timeoutMs: 25,
-          readPersistedAccountRefreshToken: () => null,
+          readPersistedResourceRefreshToken: () => null,
           readPersistedMembershipId: () => null,
-          persistAccountRefreshToken: vi.fn(),
+          persistResourceRefreshToken: vi.fn(),
           persistMembershipId: vi.fn(),
           installSession: install,
         }),
@@ -668,18 +637,18 @@ describe('Pod provisioning bootstrap', () => {
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(install).not.toHaveBeenCalled();
       expect(logger.info).toHaveBeenCalledTimes(1);
-      expect(logger.info).toHaveBeenCalledWith('Pod provisioning account refresh start');
+      expect(logger.info).toHaveBeenCalledWith('Pod provisioning resource refresh start');
     } finally {
       vi.useRealTimers();
     }
   });
 
   it('preserves structured auth-server errors', async () => {
-    const clearPersistedAccountCredentials = vi.fn();
+    const clearPersistedResourceCredentials = vi.fn();
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'token',
+          [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'token',
           [POD_DEVICE_ID_ENV]: 'pod',
         },
         getAuthBaseUrl: () => 'http://localhost:3344',
@@ -697,10 +666,10 @@ describe('Pod provisioning bootstrap', () => {
           ),
         ),
         logger: { info: vi.fn() },
-        readPersistedAccountRefreshToken: () => null,
+        readPersistedResourceRefreshToken: () => null,
         readPersistedMembershipId: () => null,
-        persistAccountRefreshToken: vi.fn(),
-        clearPersistedAccountCredentials,
+        persistResourceRefreshToken: vi.fn(),
+        clearPersistedResourceCredentials,
         persistMembershipId: vi.fn(),
         installSession: vi.fn(),
       }),
@@ -710,15 +679,15 @@ describe('Pod provisioning bootstrap', () => {
       statusCode: 401,
       message: 'Refresh token is invalid',
     });
-    expect(clearPersistedAccountCredentials).toHaveBeenCalledOnce();
+    expect(clearPersistedResourceCredentials).toHaveBeenCalledOnce();
   });
 
-  it('keeps a persisted account token after a transient refresh failure', async () => {
-    const clearPersistedAccountCredentials = vi.fn();
+  it('keeps a persisted resource token after a transient refresh failure', async () => {
+    const clearPersistedResourceCredentials = vi.fn();
     await expect(
       bootstrapPodProvisioning({
         env: {
-          [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+          [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
           [POD_DEVICE_ID_ENV]: 'pod-transient',
         },
         getAuthBaseUrl: () => 'http://localhost:3344',
@@ -727,11 +696,11 @@ describe('Pod provisioning bootstrap', () => {
           throw new Error('connection reset');
         }),
         logger: { info: vi.fn() },
-        readPersistedAccountRefreshToken: () => 'persisted-token',
+        readPersistedResourceRefreshToken: () => 'persisted-token',
         readPersistedMembershipId: () => null,
         readSecretFile: () => 'mounted-token',
-        persistAccountRefreshToken: vi.fn(),
-        clearPersistedAccountCredentials,
+        persistResourceRefreshToken: vi.fn(),
+        clearPersistedResourceCredentials,
         persistMembershipId: vi.fn(),
         installSession: vi.fn(),
       }),
@@ -739,47 +708,45 @@ describe('Pod provisioning bootstrap', () => {
       name: 'AuthApiError',
       code: 'NETWORK_ERROR',
     });
-    expect(clearPersistedAccountCredentials).not.toHaveBeenCalled();
+    expect(clearPersistedResourceCredentials).not.toHaveBeenCalled();
   });
 
-  it('keeps Account credentials when only the resource exchange is rejected', async () => {
-    const clearPersistedAccountCredentials = vi.fn();
+  it('keeps resource credentials when install fails after a successful refresh', async () => {
+    const clearPersistedResourceCredentials = vi.fn();
+    const persistResourceRefreshToken = vi.fn();
     const fetch = vi.fn(async (input: string) => {
       const requestPath = new URL(input).pathname;
       if (requestPath.endsWith('/refresh')) {
         return response({
-          accountToken: 'account-access',
-          accountRefreshToken: 'account-rotated',
+          accessToken: 'resource-access',
+          refreshToken: 'resource-rotated',
+          membership: membership('personal', 'personal'),
         });
       }
-      if (requestPath.endsWith('/account')) {
-        return response({ memberships: [membership('personal', 'personal')] });
-      }
-      return response(
-        { error: { code: 'INVALID_REFRESH_TOKEN', message: 'resource rejected' } },
-        false,
-        401,
-      );
+      throw new Error('unexpected request');
     });
 
     await expect(bootstrapPodProvisioning({
       env: {
-        [POD_ACCOUNT_REFRESH_TOKEN_ENV]: 'account-injected',
-        [POD_DEVICE_ID_ENV]: 'pod-resource-rejected',
+        [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'resource-injected',
+        [POD_DEVICE_ID_ENV]: 'pod-install-fails',
       },
       getAuthBaseUrl: () => 'http://localhost:3344',
       authRegion: 'cn',
       fetch,
       logger: { info: vi.fn() },
-      readPersistedAccountRefreshToken: () => 'account-persisted',
+      readPersistedResourceRefreshToken: () => 'resource-persisted',
       readPersistedMembershipId: () => 'personal',
-      persistAccountRefreshToken: vi.fn(),
-      clearPersistedAccountCredentials,
+      persistResourceRefreshToken,
+      clearPersistedResourceCredentials,
       persistMembershipId: vi.fn(),
-      installSession: vi.fn(),
-    })).rejects.toMatchObject({ code: 'INVALID_REFRESH_TOKEN' });
+      installSession: () => {
+        throw new Error('install failed');
+      },
+    })).rejects.toThrow('install failed');
 
-    expect(clearPersistedAccountCredentials).not.toHaveBeenCalled();
+    expect(persistResourceRefreshToken).toHaveBeenCalledWith('resource-rotated');
+    expect(clearPersistedResourceCredentials).not.toHaveBeenCalled();
   });
 
   it('re-reads a refreshed mounted Secret after the persisted rotation is rejected', async () => {
@@ -789,7 +756,7 @@ describe('Pod provisioning bootstrap', () => {
     const fetch = vi.fn(async (input: string, init?: Parameters<AuthFetch>[1]) => {
       const requestPath = new URL(input).pathname;
       if (requestPath.endsWith('/refresh')) {
-        const token = JSON.parse(init?.body ?? '{}').accountRefreshToken as string;
+        const token = JSON.parse(init?.body ?? '{}').refreshToken as string;
         refreshTokens.push(token);
         if (token === 'rejected-persisted-token') {
           return response(
@@ -799,35 +766,29 @@ describe('Pod provisioning bootstrap', () => {
           );
         }
         return response({
-          accountToken: 'account-access',
-          accountRefreshToken: 'next-persisted-token',
+          accessToken: 'resource-access',
+          refreshToken: 'next-persisted-token',
+          membership: membership('personal', 'personal'),
         });
       }
-      if (requestPath.endsWith('/account')) {
-        return response({ memberships: [membership('personal', 'personal')] });
-      }
-      return response({
-        accessToken: 'resource-access',
-        refreshToken: 'resource-refresh',
-        membership: membership('personal', 'personal'),
-      });
+      throw new Error('unexpected request');
     });
     const deps = {
       env: {
-        [POD_ACCOUNT_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/account-refresh-token',
+        [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
         [POD_DEVICE_ID_ENV]: 'pod-secret-retry',
       },
       getAuthBaseUrl: () => 'http://localhost:3344',
       authRegion: 'cn' as const,
       fetch,
       logger: { info: vi.fn() },
-      readPersistedAccountRefreshToken: () => persistedToken,
+      readPersistedResourceRefreshToken: () => persistedToken,
       readPersistedMembershipId: () => null,
       readSecretFile: () => mountedToken,
-      persistAccountRefreshToken: (token: string) => {
+      persistResourceRefreshToken: (token: string) => {
         persistedToken = token;
       },
-      clearPersistedAccountCredentials: () => {
+      clearPersistedResourceCredentials: () => {
         persistedToken = null;
       },
       persistMembershipId: vi.fn(),

@@ -294,7 +294,10 @@ export class CindyAuthClient {
     });
   }
 
-  refresh(refreshToken: string): Promise<AuthTokenPair> {
+  refresh(
+    refreshToken: string,
+    options: { timeoutMs?: number } = {},
+  ): Promise<AuthTokenPair> {
     return this.request(
       "/api/auth/refresh",
       tokenPairSchema,
@@ -302,7 +305,7 @@ export class CindyAuthClient {
         refreshToken,
         deviceId: this.options.deviceId,
       },
-      { timeoutMs: 0 },
+      { timeoutMs: options.timeoutMs ?? 0 },
     );
   }
 

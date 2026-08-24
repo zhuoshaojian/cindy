@@ -51,7 +51,7 @@ describe('Pod delete credential control', () => {
     expect(POD_DELETE_CREDENTIALS_PATH).toBe('/v1/delete-credentials');
   });
 
-  it('acknowledges only after durable Account credentials are absent', async () => {
+  it('acknowledges only after durable resource credentials are absent', async () => {
     const socket = await socketPath();
     let absent = false;
     const clearCredentials = vi.fn(() => { absent = true; });

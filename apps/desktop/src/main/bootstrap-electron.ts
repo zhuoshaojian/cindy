@@ -818,8 +818,8 @@ let podDeleteControlServer: PodDeleteControlServer | null = null;
 async function startPodDeleteControlServer(): Promise<void> {
   if (podDeleteControlServer) return;
   const control = createPodDeleteControlServer({
-    clearCredentials: authManager.clearProvisionedAccountCredentials,
-    credentialsAbsent: authManager.areProvisionedAccountCredentialsAbsent,
+    clearCredentials: authManager.clearProvisionedResourceCredentials,
+    credentialsAbsent: authManager.areProvisionedResourceCredentialsAbsent,
     logger: headlessStartupLog,
   });
   await control.start();
@@ -830,6 +830,7 @@ async function startPodCloudRuntimeController(): Promise<void> {
   if (cloudRuntimeController) return;
   const membershipId =
     authManager.readProvisionedMembershipId() ||
+    authManager.getCurrentUserId() ||
     process.env[POD_MEMBERSHIP_ID_ENV]?.trim() ||
     null;
   const instanceId = resolvePodDeviceIdOverride(process.env);
@@ -8300,7 +8301,7 @@ app.on('ready', async () => {
     const provisionPodSession = async (): Promise<boolean> => {
       // A resource refresh token persisted on the PVC is the authoritative
       // restart path. Finish its cold-start refresh before considering the
-      // mounted one-shot account token, otherwise a normal restart can
+      // mounted one-shot resource token, otherwise a normal restart can
       // consume an already-rotated predecessor unnecessarily.
       let pendingRestore: Promise<authManager.AuthState> | null = null;
       const restored = await authManager.initialize({
@@ -8316,14 +8317,14 @@ app.on('ready', async () => {
 
       let provisioned = hasValidatedSession;
       if (!provisioned) {
-        const accountCredentialState = authManager.readProvisionedAccountCredentialState();
-        if (accountCredentialState.kind === 'temporarily-unreadable') {
-          throw new authManager.ProvisionedAccountCredentialTemporarilyUnreadableError();
+        const resourceCredentialState = authManager.readProvisionedResourceCredentialState();
+        if (resourceCredentialState.kind === 'temporarily-unreadable') {
+          throw new authManager.ProvisionedResourceCredentialTemporarilyUnreadableError();
         }
-        if (accountCredentialState.kind === 'definitely-absent') {
+        if (resourceCredentialState.kind === 'definitely-absent') {
           headlessStartupLog.info(
-            'Pod durable Account credential absent; evaluating initial mounted credential',
-            { credentialState: accountCredentialState.kind },
+            'Pod durable resource credential absent; evaluating initial mounted credential',
+            { credentialState: resourceCredentialState.kind },
           );
         }
         provisioned = await bootstrapPodProvisioning({
@@ -8334,11 +8335,11 @@ app.on('ready', async () => {
           // exists. Node fetch uses undici and has no Electron session dependency.
           fetch: createNodeFetchAdapter(),
           logger: headlessStartupLog,
-          readPersistedAccountRefreshToken:
-            authManager.readProvisionedAccountRefreshTokenForProvisioning,
+          readPersistedResourceRefreshToken:
+            authManager.readProvisionedResourceRefreshTokenForProvisioning,
           readPersistedMembershipId: authManager.readProvisionedMembershipId,
-          persistAccountRefreshToken: authManager.persistProvisionedAccountRefreshToken,
-          clearPersistedAccountCredentials: authManager.clearProvisionedAccountCredentials,
+          persistResourceRefreshToken: authManager.persistProvisionedResourceRefreshToken,
+          clearPersistedResourceCredentials: authManager.clearProvisionedResourceCredentials,
           persistMembershipId: authManager.persistProvisionedMembershipId,
           installSession: authManager.installProvisionedSession,
           hasLocalSession: hasValidatedLocalPodSession,
@@ -8375,10 +8376,10 @@ app.on('ready', async () => {
             onFailure: async (error, context) => {
               if (
                 error
-                instanceof authManager.ProvisionedAccountCredentialTemporarilyUnreadableError
+                instanceof authManager.ProvisionedResourceCredentialTemporarilyUnreadableError
               ) {
                 headlessStartupLog.error(
-                  'Pod durable Account credential temporarily unreadable; retry scheduled',
+                  'Pod durable resource credential temporarily unreadable; retry scheduled',
                   {
                     credentialState: 'temporarily-unreadable',
                     attempt: context.attempt,
@@ -8453,7 +8454,7 @@ app.on('ready', async () => {
           let attempt = 0;
           let retryDelayMs = POD_STARTUP_RETRY_INITIAL_MS;
           const waitForRecoveryRetry = async (
-            credentialState: authManager.ProvisionedAccountCredentialState['kind'],
+            credentialState: authManager.ProvisionedResourceCredentialState['kind'],
             error: unknown,
           ): Promise<void> => {
             attempt += 1;
@@ -8471,18 +8472,18 @@ app.on('ready', async () => {
             retryDelayMs = Math.min(nextRetryMs * 2, POD_STARTUP_RETRY_MAX_MS);
           };
           for (;;) {
-            const accountCredentialState = authManager.readProvisionedAccountCredentialState();
-            if (accountCredentialState.kind === 'definitely-absent') {
+            const resourceCredentialState = authManager.readProvisionedResourceCredentialState();
+            if (resourceCredentialState.kind === 'definitely-absent') {
               headlessStartupLog.info(
-                'Pod resource session re-provision stopped; Account credential unavailable',
-                { credentialState: accountCredentialState.kind, attempt },
+                'Pod resource session re-provision stopped; resource credential unavailable',
+                { credentialState: resourceCredentialState.kind, attempt },
               );
               return;
             }
-            if (accountCredentialState.kind === 'temporarily-unreadable') {
+            if (resourceCredentialState.kind === 'temporarily-unreadable') {
               await waitForRecoveryRetry(
-                accountCredentialState.kind,
-                new authManager.ProvisionedAccountCredentialTemporarilyUnreadableError(),
+                resourceCredentialState.kind,
+                new authManager.ProvisionedResourceCredentialTemporarilyUnreadableError(),
               );
               continue;
             }
@@ -8497,10 +8498,10 @@ app.on('ready', async () => {
               return;
             } catch (error) {
               const postFailureCredentialState =
-                authManager.readProvisionedAccountCredentialState();
+                authManager.readProvisionedResourceCredentialState();
               if (postFailureCredentialState.kind === 'definitely-absent') {
                 headlessStartupLog.info(
-                  'Pod resource session re-provision stopped after Account credential rejection',
+                  'Pod resource session re-provision stopped after resource credential rejection',
                   { credentialState: postFailureCredentialState.kind, attempt },
                 );
                 return;

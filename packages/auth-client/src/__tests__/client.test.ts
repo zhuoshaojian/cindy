@@ -131,7 +131,10 @@ describe("CindyAuthClient", () => {
   });
 
   it("carries captchaToken in the email request-code body only when provided", async () => {
-    const fetch = vi.fn(async () => response(200, { status: "sent" }));
+    const fetch = vi.fn(
+      async (_input: string, _init?: Parameters<AuthFetch>[1]) =>
+        response(200, { status: "sent" }),
+    );
     await client(fetch).requestCode("email", "user@example.com");
     const bare = JSON.parse((fetch.mock.calls[0]?.[1] as { body: string }).body) as Record<
       string,

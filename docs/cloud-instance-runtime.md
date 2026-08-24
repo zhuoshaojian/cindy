@@ -32,7 +32,7 @@ NetworkPolicy、RBAC、API/orchestrator 分层和部署 BOM 只在服务端仓�
 ## 2. Pod 启动输入
 
 客户端的 strict Pod trust gate 只由 `--headless`、非空
-`XDT_POD_DEVICE_ID` 和非空 `XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE` 共同成立。缺少任一条件时，
+`XDT_POD_DEVICE_ID` 和非空 `XDT_POD_RESOURCE_REFRESH_TOKEN_FILE` 共同成立。缺少任一条件时，
 普通 Desktop 不得接受 Pod 专用的 endpoint 或存储覆盖。正式云 Provider 还必须显式提供下表
 标出的路径输入；它们是部署契约，但不额外参与客户端 strict gate 判定。
 
@@ -40,7 +40,7 @@ NetworkPolicy、RBAC、API/orchestrator 分层和部署 BOM 只在服务端仓�
 | --- | --- | --- |
 | `--headless` | 必需 | 不创建 BrowserWindow，进入 headless bootstrap |
 | `XDT_POD_DEVICE_ID` | 必需、稳定、最长 128 字符 | relay、auth 和控制面共同识别的设备身份；重启/唤醒不得变化 |
-| `XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE` | 必需；默认挂载 `/run/secrets/account-refresh-token` | 只读 bootstrap account refresh token 文件；内容不得进入 image、env、日志或 status |
+| `XDT_POD_RESOURCE_REFRESH_TOKEN_FILE` | 必需；默认挂载 `/run/secrets/resource-refresh-token` | 只读 bootstrap resource refresh token 文件；内容不得进入 image、env、日志或 status |
 | `XDT_ENDPOINT_MANIFEST_FILE` | 正式 Provider 必配绝对路径；约定 `/run/config/endpoint.json` | 不参与 strict gate；packaged Pod 仅在 gate 已成立且路径绝对时采用 override，缺失或相对路径会回退 CDN，正式 Pod spec 应 fail-fast/能力探针阻断 |
 | `XDT_USER_DATA_DIR` | 正式 Provider 必配绝对路径；约定 `/var/lib/cindy/user-data` | 不参与 strict gate；客户端仅在 gate 已成立且路径绝对时采用 override，缺失或相对路径不会采用 override，正式 Pod spec 应 fail-fast/能力探针阻断 |
 | `XDT_POD_WORKSPACES_DIR` | 可省略；默认 `/var/lib/cindy/workspaces` | 远程项目与任务工作区根；启动前创建并规范化 |
@@ -50,8 +50,8 @@ NetworkPolicy、RBAC、API/orchestrator 分层和部署 BOM 只在服务端仓�
 
 因此 `XDT_ENDPOINT_MANIFEST_FILE` 与 `XDT_USER_DATA_DIR` 的“必配”是 Provider/正式 runtime
 contract，不代表 `hasHeadlessPodRuntimeInput` 会校验它们。Secret 与 ConfigMap/配置文件必须以
-只读输入提供。挂载的 account refresh token 是首次
-bootstrap 材料；runtime 轮换后的账号凭据写入持久 `user-data`。冷启动优先验证持久凭据，再
+只读输入提供。挂载的 resource refresh token 是首次
+bootstrap 材料；runtime 轮换后的 resource 凭据写入持久 `user-data`。冷启动优先验证持久凭据，再
 考虑挂载的 bootstrap 材料，避免重复消费已经轮换的前任 token。runtime 将 endpoint manifest
 视为本次进程启动的不可变输入；服务端如何更新材料或收敛 Pod 不由本文规定。
 

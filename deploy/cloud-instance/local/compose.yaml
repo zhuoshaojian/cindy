@@ -39,14 +39,14 @@ services:
       # ELECTRON_DISABLE_SANDBOX / XDT_DEV_SAFE_STORAGE_BASIC are baked into
       # the image ENV (see the Dockerfile) so provider-launched containers get
       # them too; compose does not re-declare them.
-      XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE: /run/secrets/pod_account_refresh_token
+      XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: /run/secrets/pod_resource_refresh_token
       XDT_POD_DEVICE_ID: ${XDT_POD_DEVICE_ID:?set XDT_POD_DEVICE_ID to the provisioned stable Pod id}
       XDT_ENDPOINT_MANIFEST_FILE: /run/config/endpoint.local.json
       XDT_USER_DATA_DIR: /var/lib/cindy/user-data
       XDT_POD_WORKSPACES_DIR: /var/lib/cindy/workspaces
       CINDY_CLOUD_STATUS_FILE: /var/lib/cindy/status/status.json
     secrets:
-      - pod_account_refresh_token
+      - pod_resource_refresh_token
     volumes:
       - type: volume
         source: cindy-cloud-data
@@ -80,7 +80,7 @@ services:
       start_period: 30s
 
 secrets:
-  pod_account_refresh_token:
+  pod_resource_refresh_token:
     file: ${CINDY_POD_REFRESH_TOKEN_FILE:?set CINDY_POD_REFRESH_TOKEN_FILE to a gitignored secret file}
 
 volumes:

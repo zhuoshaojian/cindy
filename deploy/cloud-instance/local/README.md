@@ -32,7 +32,7 @@ endpoint manifest 必须与它匹配。
 apt/工具层时，可在 arm64 宿主原生构建 `--target base` 验证，无需 QEMU。
 
 客户端 strict Pod gate 只要求 `--headless`、`XDT_POD_DEVICE_ID` 和
-`XDT_POD_ACCOUNT_REFRESH_TOKEN_FILE`。gate 成立后，packaged 形态才可能接受挂载的
+`XDT_POD_RESOURCE_REFRESH_TOKEN_FILE`。gate 成立后，packaged 形态才可能接受挂载的
 `XDT_ENDPOINT_MANIFEST_FILE` 与 `XDT_USER_DATA_DIR` override，且两者只有在路径为绝对路径时
 才会采用；缺失或相对路径分别回退 CDN 清单或 Electron 默认 userData。本地 compose 会显式
 提供这两个绝对路径；正式 Provider 也必须提供，并由正式 Pod spec fail-fast/能力探针防止静默
