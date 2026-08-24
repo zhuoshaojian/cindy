@@ -72,7 +72,6 @@ function client(): CloudInstanceClient {
     }),
     delete: vi.fn().mockResolvedValue({
       status: { deviceId: 'cloud-device-a' },
-      revocation: { status: 'revoked' },
       archiveCleanup: 'removed',
     }),
   } as unknown as CloudInstanceClient;

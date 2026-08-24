@@ -285,7 +285,6 @@ describe('runCloudInstanceWake', () => {
       kind: 'ok' as const,
       value: {
         status: {},
-        revocation: { status: 'revoked' },
         archiveCleanup: 'removed',
       },
     }));

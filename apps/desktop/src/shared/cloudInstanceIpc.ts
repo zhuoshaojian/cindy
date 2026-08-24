@@ -208,17 +208,9 @@ export interface CloudInstanceDeleteInput {
   instanceId: string;
 }
 
-/** Account credential revocation result returned after permanent deletion. */
-export interface CloudInstanceRevocationResult {
-  status: 'revoked' | 'failed';
-  code?: string;
-  message?: string;
-}
-
 /** Full cleanup result returned by the control plane after permanent deletion. */
 export interface CloudInstanceDeleteResult {
   status: CloudInstanceStatus;
-  revocation: CloudInstanceRevocationResult;
   archiveCleanup: 'removed' | 'skipped-online' | 'not-configured' | 'failed';
   archiveCleanupCode?: string;
   archiveCleanupMessage?: string;

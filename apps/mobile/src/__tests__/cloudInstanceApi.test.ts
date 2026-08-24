@@ -144,7 +144,6 @@ describe('mobile cloud-instance API', () => {
       .mockResolvedValueOnce({ status: { runtimeState: 'stopped' } })
       .mockResolvedValueOnce({
         status: { runtimeState: 'deleted' },
-        revocation: { status: 'revoked' },
         archiveCleanup: 'removed',
       });
     const authenticatedFetch = apiFetch as unknown as CloudInstanceApiFetch;
@@ -157,7 +156,6 @@ describe('mobile cloud-instance API', () => {
       kind: 'ok',
       value: {
         status: normalizedStatus({ runtimeState: 'deleted' }),
-        revocation: { status: 'revoked' },
         archiveCleanup: 'removed',
       },
     });

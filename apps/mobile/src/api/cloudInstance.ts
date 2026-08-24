@@ -88,7 +88,6 @@ export interface CloudInstanceUpgradeResult {
 /** Cleanup result returned after permanently deleting an instance. */
 export interface CloudInstanceDeleteResult {
   status: CloudInstanceStatus;
-  revocation: unknown;
   archiveCleanup: unknown;
 }
 
@@ -241,14 +240,12 @@ export async function deleteCloudInstance(
     if (
       !isRecord(payload)
       || !('status' in payload)
-      || !('revocation' in payload)
       || !('archiveCleanup' in payload)
     ) {
       throw invalidResponse();
     }
     return {
       status: parseCloudInstanceStatus(payload.status),
-      revocation: payload.revocation,
       archiveCleanup: payload.archiveCleanup,
     };
   });
