@@ -66,28 +66,38 @@ describe('Pod device-link startup defaults', () => {
 });
 
 describe('Pod device-link default name', () => {
-  it('uses one locale-neutral self name for every viewer locale', () => {
+  it('normalizes a provisioned cloud marker', () => {
+    expect(
+      resolveDeviceLinkDeviceName({
+        podMode: true,
+        hostname: 'host-name-ignored',
+        provisionedName: '  __cindy_cloud_device_name__:3  ',
+      }),
+    ).toBe('__cindy_cloud_device_name__:3');
+  });
+
+  it('reports a readable provisioned name verbatim after trimming', () => {
+    expect(
+      resolveDeviceLinkDeviceName({
+        podMode: true,
+        hostname: 'host-name-ignored',
+        provisionedName: '  Build Pod  ',
+      }),
+    ).toBe('Build Pod');
+  });
+
+  it('falls back to the locale-neutral marker without a provisioned name', () => {
     expect(
       resolveDeviceLinkDeviceName({
         podMode: true,
         hostname: 'host-name-ignored',
       }),
     ).toBe('__cindy_cloud_device_name__');
-  });
-
-  it('preserves a provisioned cloud ordinal in the locale-neutral self name', () => {
     expect(
       resolveDeviceLinkDeviceName({
         podMode: true,
         hostname: 'host-name-ignored',
-        provisionedName: '__cindy_cloud_device_name__:3',
-      }),
-    ).toBe('__cindy_cloud_device_name__:3');
-    expect(
-      resolveDeviceLinkDeviceName({
-        podMode: true,
-        hostname: 'host-name-ignored',
-        provisionedName: '__cindy_cloud_device_name__:abc',
+        provisionedName: '   ',
       }),
     ).toBe('__cindy_cloud_device_name__');
   });

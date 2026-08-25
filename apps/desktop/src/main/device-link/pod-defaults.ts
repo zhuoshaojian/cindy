@@ -40,19 +40,21 @@ export async function initializePodDeviceLink(
 export interface DeviceNameOptions {
   podMode: boolean;
   hostname: string;
-  /** Locale-neutral self-name provisioned by the cloud control plane. */
+  /** Cloud-provisioned self-name: a locale-neutral marker or a readable custom label. */
   provisionedName?: string;
 }
 
 /**
  * Resolve the hello self-name without changing ordinary instances.
- * Pod names are deliberately locale-neutral: clients translate the unchanged
- * `name === selfName` sentinel for each viewer, while manual names stay raw.
+ * Pod markers remain locale-neutral for viewer-side translation, while a
+ * readable control-plane label is reported verbatim for legacy clients.
  */
 export function resolveDeviceLinkDeviceName(options: DeviceNameOptions): string {
   if (options.podMode) {
-    const marker = parseCloudDeviceName(options.provisionedName?.trim() ?? '');
-    return formatCloudDeviceName(marker?.sequence);
+    const provisionedName = options.provisionedName?.trim() ?? '';
+    const marker = parseCloudDeviceName(provisionedName);
+    if (marker) return formatCloudDeviceName(marker.sequence);
+    return provisionedName || formatCloudDeviceName();
   }
   const hostname = options.hostname.trim();
   return hostname || 'Unknown Device';
