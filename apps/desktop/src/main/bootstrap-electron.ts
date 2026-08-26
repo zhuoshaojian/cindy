@@ -92,11 +92,13 @@ function throwAuthAccountIpcError(error: unknown): never {
   }
 }
 
-if (
-  process.platform === 'linux' &&
-  !app.isPackaged &&
-  process.env.XDT_DEV_SAFE_STORAGE_BASIC === '1'
-) {
+const headlessPodRuntimeInput = process.env[HEADLESS_POD_RUNTIME_ENV] === '1';
+const allowBasicSafeStorage = shouldUseBasicSafeStorage(process.env, {
+  isPackaged: app.isPackaged,
+  platform: process.platform,
+  headlessPodRuntime: headlessPodRuntimeInput,
+});
+if (allowBasicSafeStorage) {
   app.commandLine.appendSwitch('password-store', 'basic');
   safeStorage.setUsePlainTextEncryption(true);
 }
@@ -218,6 +220,26 @@ import {
   type AgentBinaryKind,
   type PrepareResult,
 } from './agent-binaries';
+import {
+  createEnsureBinariesReady,
+  getLinuxInstallSignal,
+} from './agent-binaries/ensure-ready.js';
+import {
+  HEADLESS_POD_RUNTIME_ENV,
+  HeadlessStartupFatalError,
+  isHeadlessMode,
+  runHeadlessStartup,
+  shouldCreateMainWindow,
+  shouldQuitWhenAllWindowsClosed,
+} from './headless-startup.js';
+import {
+  bootstrapPodProvisioning,
+  createNodeFetchAdapter,
+  hasPodProvisioningInput,
+  POD_MEMBERSHIP_ID_ENV,
+  resolvePodDeviceIdOverride,
+  shouldUseBasicSafeStorage,
+} from './pod-provisioning.js';
 import { RendererBootGuard } from './renderer-boot-guard';
 import yaml from 'js-yaml';
 import matter from 'gray-matter';
@@ -289,6 +311,7 @@ import {
   BRAND_IDENTITY,
   legacyDialogueUserDataDirNames,
 } from '@cindy/maker-shared/brand-identity';
+import { enableInternalBuildAccessibilitySupport } from './accessibilitySupport.js';
 import * as videoCacheStore from './videoCacheStore';
 import { imageSchemePrivilege, registerImageProtocolHandler } from './imageProtocol';
 import { videoSchemePrivilege, registerVideoProtocolHandler } from './videoProtocol';
@@ -380,6 +403,7 @@ import {
   stopEmbeddingHostIfNoPluginVectorConsumer,
   isEmbeddingHostStarted,
   getEmbeddingService,
+  getEmbeddingServiceIfInitialized,
   isPluginVectorConsumerActive,
   registerEmbeddingHostLazyStart,
   setEmbeddingSourceSuspended,
@@ -466,15 +490,23 @@ import { issueWritableDirectoryPickerGrant } from './maker-ipc/writableDirectory
 // 设备互联(跨设备远程控制): relay 连接 host + 开关/设备列表 IPC
 import {
   initDeviceLinkService,
+  getDeviceLinkStatus,
   releaseDeviceLinkOwnershipBeforeLogout,
   handleDeviceLinkSystemResume,
+  setRemoteControlEnabled,
 } from './device-link';
+import { initializePodDeviceLink } from './device-link/pod-defaults.js';
+import { readDeviceLinkSettings } from './device-link/settings-store.js';
 import {
   getUpdateRelaunchControllers,
   hasInFlightRemoteInvokes,
   pushSessionActivityToController,
   setSessionsSubscribedListener,
 } from './device-link/dispatch';
+import {
+  getControlControllers,
+  getControllerIds,
+} from './device-link/subscriptions.js';
 import {
   registerDeviceLinkIpc,
   defaultDeps as deviceLinkIpcDeps,
@@ -617,6 +649,7 @@ import {
   clearDeferredCodexRestartForOwnerBoundary,
   collectAgentInputQueueScanTexts,
   createAutomationUserTurnGitBaselineHooks,
+  getMakerInputActivitySnapshot,
   registerModelVisibilitySyncIpc,
   registerMakerIpc as registerMakerCoreIpc,
   isSessionTurnPendingCompletion,
@@ -804,6 +837,7 @@ import {
   registerGlobalVoiceInputIpc,
 } from './voice-input/global.js';
 import { ensureMainAppPresence } from './appPresence.js';
+import { presentVisibleNativeStartupDialog } from './localDb/fatalDialogPolicy.js';
 import {
   registerDeepLinkProtocol,
   handleIncomingDeepLink,
@@ -830,6 +864,105 @@ import {
   requestWindowsTrayQuit,
 } from './windowsTrayLifecycle.js';
 import { createWindowsClosePromptFallbackController } from './windowsClosePromptFallback.js';
+import {
+  collectCloudRuntimeActivity,
+  createCloudRuntimeController,
+  createCloudStatusStore,
+  createPodDeleteControlServer,
+  initializePodUserServices,
+  startPodAccountProviderReadiness,
+  modelAccessReadiness,
+  type CloudRuntimeController,
+  type CloudReadinessComponents,
+  type PodDeleteControlServer,
+} from './cloud-runtime/index.js';
+
+const CLOUD_RUNTIME_HEARTBEAT_INTERVAL_MS = 5_000;
+const CLOUD_RUNTIME_ACTIVITY_STALE_AFTER_MS = 15_000;
+const CLOUD_RUNTIME_IDLE_AFTER_MS = 10 * 60_000;
+const CLOUD_RUNTIME_SCHEDULER_WAKE_GUARD_MS = 60_000;
+const POD_STARTUP_RETRY_INITIAL_MS = 5_000;
+const POD_STARTUP_RETRY_MAX_MS = 5 * 60_000;
+let cloudRuntimeController: CloudRuntimeController | null = null;
+let podDeleteControlServer: PodDeleteControlServer | null = null;
+
+async function startPodDeleteControlServer(): Promise<void> {
+  if (podDeleteControlServer) return;
+  const control = createPodDeleteControlServer({
+    clearCredentials: authManager.clearProvisionedResourceCredentials,
+    credentialsAbsent: authManager.areProvisionedResourceCredentialsAbsent,
+    logger: headlessStartupLog,
+  });
+  await control.start();
+  podDeleteControlServer = control;
+}
+
+async function startPodCloudRuntimeController(): Promise<void> {
+  if (cloudRuntimeController) return;
+  const membershipId =
+    authManager.readProvisionedMembershipId() ||
+    authManager.getCurrentUserId() ||
+    process.env[POD_MEMBERSHIP_ID_ENV]?.trim() ||
+    null;
+  const instanceId = resolvePodDeviceIdOverride(process.env);
+  if (!membershipId || !instanceId) {
+    throw new Error('Pod cloud runtime identity is incomplete');
+  }
+  const statusFile =
+    process.env.CINDY_CLOUD_STATUS_FILE?.trim() ||
+    path.join(app.getPath('userData'), 'cloud-runtime', 'status.json');
+  const getReadiness = async (): Promise<CloudReadinessComponents> => {
+    const state = authManager.getAuthState();
+    const maker = getMakerIfReady();
+    const deviceLinkReady =
+      readDeviceLinkSettings().remoteControlEnabled && getDeviceLinkStatus() === 'online';
+    return {
+      auth: state.isAuthenticated && state.user?.id === membershipId ? 'ready' : 'not-ready',
+      database: getDbClient() ? 'ready' : 'not-ready',
+      binaries: maker ? 'ready' : 'not-ready',
+      maker: maker ? 'ready' : 'not-ready',
+      deviceLink: deviceLinkReady ? 'ready' : 'not-ready',
+      modelAccess: modelAccessReadiness(getModelAccessStatus()),
+    };
+  };
+
+  cloudRuntimeController = createCloudRuntimeController({
+    instanceId,
+    membershipId,
+    policy: {
+      staleAfterMs: CLOUD_RUNTIME_ACTIVITY_STALE_AFTER_MS,
+      idleAfterMs: CLOUD_RUNTIME_IDLE_AFTER_MS,
+      schedulerWakeGuardMs: CLOUD_RUNTIME_SCHEDULER_WAKE_GUARD_MS,
+    },
+    heartbeatIntervalMs: CLOUD_RUNTIME_HEARTBEAT_INTERVAL_MS,
+    collectActivity: () =>
+      collectCloudRuntimeActivity({
+        getMaker: getMakerIfReady,
+        getInputActivity: () => getMakerInputActivitySnapshot(getMakerIfReady()),
+        getScheduler: getSchedulerIfInitialized,
+        getEmbeddingActivity: async () => {
+          const service = getEmbeddingServiceIfInitialized();
+          // embedding host 按 chat-embedding 设置开关启动;未启动 = 确定没有
+          // embedding 任务(known zero),不是 unknown,否则 Pod 永远 degraded。
+          if (!service) return { pendingCount: 0, runningCount: 0 };
+          return service.getStatus();
+        },
+        getDeviceLinkActivity: () => ({
+          controllers: getControlControllers().length,
+          subscriptions: getControllerIds().length,
+        }),
+        getKeepAwake: () => readDeviceLinkSettings().keepAwake,
+        now: Date.now,
+      }),
+    collectReadiness: getReadiness,
+    statusStore: createCloudStatusStore(statusFile),
+    now: Date.now,
+    schedule: (callback, delayMs) => setTimeout(callback, delayMs),
+    cancelSchedule: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    logger: createLogger('cloud-runtime'),
+  });
+  await cloudRuntimeController.start();
+}
 import {
   isWindowsCloseBehavior,
   WINDOW_BEHAVIOR_GET_WINDOWS_CLOSE_BEHAVIOR_CHANNEL,
@@ -873,6 +1006,7 @@ import {
 } from './appearance-settings-ipc.js';
 import { registerBillingIpc } from './billing/index.js';
 import {
+  getModelAccessStatus,
   initModelAccess,
   noteManualXdKeySaved,
   noteManualXdKeyRemoved,
@@ -943,6 +1077,7 @@ import { pickNativeAtResource } from './nativeAtResourcePicker.js';
 import {
   startScheduler,
   resetScheduler,
+  getSchedulerIfInitialized,
   getScheduleStorage,
   getScheduleStorageIfInitialized,
   getProjectAutomationLoader,
@@ -1001,7 +1136,7 @@ async function waitForCurrentAccountProviderModelsReady(): Promise<void> {
  * 都满足时尝试启动"，幂等性由 startScheduler 自己保证；切账号场景 `resetScheduler()`
  * 把 `_scheduler` 置 null，下次进来自然会重新启动。
  *
- * IPC 注册模型(重构):maker:schedule:* handler 在 registerMakerIpcsAfterSplash 内
+ * IPC 注册模型(重构):maker:schedule:* handler 在 ensureMakerReady 内
  * 通过 `registerScheduleHandlers()` 提前一次性注册,**不依赖 scheduler 实例**;
  * 本函数拿到 scheduler 后只调 `attachSchedulerEventListeners(scheduler, storage)`
  * 把 scheduler.on 挂上 + setSchedulerReady 喂入实例 + broadcast 'ready'。
@@ -1024,7 +1159,7 @@ function attemptStartScheduler(): Promise<void> {
 
 async function attemptStartSchedulerOnce(): Promise<void> {
   // 两个前置条件必须满足才能启动：
-  //   1. maker 单例已构造 (splash check-environment 完成 → registerMakerIpcsAfterSplash)
+  //   1. maker 单例已构造 (splash check-environment 完成 → ensureMakerReady)
   //   2. DbClient 已 smoke 通过 (user login → renderer 触发 'local-db:ensure-ready' IPC)
   // 任一未满足时 getMakerCore() / getDbClient() 抛错，整体 try/catch 兜住，等下次触发。
   let maker: Maker;
@@ -1046,10 +1181,10 @@ async function attemptStartSchedulerOnce(): Promise<void> {
     );
     return;
   }
-  // 若本调用是 getMakerCore() 的首次调用（onReady 在 registerMakerIpcsAfterSplash 之前
+  // 若本调用是 getMakerCore() 的首次调用（onReady 在 ensureMakerReady 之前
   // 触发时可能发生），_initialCustomMcpRefresh 刚启动但尚未落地；在 startScheduler 前
   // await，确保第一个 scheduler tick 能看到用户已保存的自定义 MCP 配置。
-  // 若 Maker 已被 registerMakerIpcsAfterSplash 构造过，promise 早已 resolve，no-op。
+  // 若 Maker 已被 ensureMakerReady 构造过，promise 早已 resolve，no-op。
   const goalGenBefore = getGoalTeardownGeneration();
   await waitForInitialCustomMcpRefresh();
   // If a teardown raced the await, bail out — the next account's activation
@@ -1386,6 +1521,9 @@ const updatePresentationLog = createLogger('update-presentation');
 const voicePowerBroadcastLog = createLogger('voice-input-power');
 const sessionDragPreviewLog = createLogger('session-drag-preview');
 const piSubagentLog = createLogger('pi-subagent');
+const headlessStartupLog = createLogger('headless-startup');
+const startupDialogLog = createLogger('startup-dialog');
+const headlessMode = isHeadlessMode(process.argv);
 let rendererBootGuard: RendererBootGuard | null = null;
 
 const lifecycleDbClientManager = createLifecycleDbClientManager({
@@ -3944,6 +4082,23 @@ function parseOptionalDeviceLinkDeviceId(value: unknown): string | null | undefi
   return trimmed;
 }
 
+let ensureMakerReadyImpl: (() => Promise<void>) | null = null;
+let piDisabledForLaunch = false;
+
+/**
+ * Ensure the Maker singleton and its main-process services are ready.
+ *
+ * The implementation is installed while main IPC handlers are registered,
+ * but this entry point itself has no renderer dependency and can also be
+ * called by another main-process bootstrap path.
+ */
+export async function ensureMakerReady(): Promise<void> {
+  if (ensureMakerReadyImpl == null) {
+    throw new Error('Maker readiness initializer has not been installed');
+  }
+  await ensureMakerReadyImpl();
+}
+
 const registerIpcHandlers = () => {
   // Find the primary app window, skipping transient utility BrowserWindows like
   // the voice-input overlay (minimizable:false, maximizable:false). Electron's
@@ -5922,9 +6077,10 @@ const registerIpcHandlers = () => {
       platform,
     };
   });
+  ensureMakerReadyImpl = registerMakerIpcsAfterSplash;
 
   // Codex 元 IPC (auth/binary/usage) 已升级到 maker:* 命名空间, 详见
-  // maker-ipc/auth.ts / status.ts / usage.ts, 注册于 registerMakerIpcsAfterSplash 内。
+  // maker-ipc/auth.ts / status.ts / usage.ts, 注册于 ensureMakerReady 内。
 
   const allowedSystemSettingsUrls = new Set([
     'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
@@ -7922,6 +8078,14 @@ function cleanupLegacyDevShortcut(): Promise<void> {
 }
 
 app.on('ready', async () => {
+  // Electron requires the accessibility API after `ready`. Run before any BrowserWindow is
+  // created so internal builds expose a complete renderer AX tree from their first visible frame.
+  enableInternalBuildAccessibilitySupport({
+    app,
+    platform: process.platform,
+    region: CURRENT_CINDY_REGION,
+  });
+
   try {
     const releaseGate = parseIOSSimulatorReleaseGateArgs(process.argv);
     if (releaseGate.enabled) {
@@ -7945,6 +8109,9 @@ app.on('ready', async () => {
   if (smoke.enabled) {
     await runSmokeTest(smoke.userId, smoke.pluginStorage, smoke.resultFile);
     return;
+  }
+  if (headlessMode) {
+    headlessStartupLog.info('headless mode enabled; window creation will be skipped');
   }
 
   // WebAuthn 是 app/session 级能力：在任何 RSB guest 或 popup WebContents 创建
@@ -8006,14 +8173,24 @@ app.on('ready', async () => {
   // moveToApplicationsFolder() would actually move the dev binary into
   // /Applications and break the developer's workspace.
   if (app.isPackaged && process.platform === 'darwin' && !app.isInApplicationsFolder()) {
-    const chosen = dialog.showMessageBoxSync({
-      type: 'info',
-      title: t('update.moveToApplications.title'),
-      message: t('update.moveToApplications.message'),
-      buttons: [t('update.moveToApplications.move'), t('update.moveToApplications.later')],
-      defaultId: 0,
-      cancelId: 1,
-    });
+    const chosen = presentVisibleNativeStartupDialog(
+      { event: 'startup.dialog.moveToApplications' },
+      {
+        logBeforePresent: (message) => startupDialogLog.info(message),
+        // Finder normally foregrounds this prompt already; avoid steal so a
+        // background launch cannot interrupt unrelated foreground work.
+        activateApp: () => app.focus(),
+        showNativeDialog: () =>
+          dialog.showMessageBoxSync({
+            type: 'info',
+            title: t('update.moveToApplications.title'),
+            message: t('update.moveToApplications.message'),
+            buttons: [t('update.moveToApplications.move'), t('update.moveToApplications.later')],
+            defaultId: 0,
+            cancelId: 1,
+          }),
+      },
+    );
     if (chosen === 0) {
       try {
         app.moveToApplicationsFolder();
@@ -8639,28 +8816,37 @@ app.on('ready', async () => {
   if (getActiveAppSession().mode === 'local') {
     await warmStaleProcessProvenance();
   }
-  startupWindowCreationAllowed = true;
-  createWindow();
-  // The macOS release watcher stays disarmed until a task drag begins. Start
-  // its tiny helper after the first window exists so drag latency never pays
-  // a dev swiftc compile or process-spawn cost.
-  prewarmSessionDragReleaseHelper();
-  // 预热仅服务 dev macOS，延迟执行避免和启动关键路径争用 CPU；失败由入口内部吞掉。
-  setTimeout(() => {
-    prewarmMacComputerPermissionGuideHelper();
-  }, 3_000);
+  // headless 下不建窗口,窗口相关的预热(拖拽助手 / 权限引导)也一并跳过 ——
+  // 它们都只服务有界面的会话。
+  if (shouldCreateMainWindow(headlessMode)) {
+    startupWindowCreationAllowed = true;
+    createWindow();
+    // The macOS release watcher stays disarmed until a task drag begins. Start
+    // its tiny helper after the first window exists so drag latency never pays
+    // a dev swiftc compile or process-spawn cost.
+    prewarmSessionDragReleaseHelper();
+    // 预热仅服务 dev macOS，延迟执行避免和启动关键路径争用 CPU；失败由入口内部吞掉。
+    setTimeout(() => {
+      prewarmMacComputerPermissionGuideHelper();
+    }, 3_000);
+  }
   initUpdateService();
   // 在线人数心跳:App 启动即上报,内部走 deviceId / userId 兜底,登录前后都活
   initHeartbeatService();
   // 设备互联(跨设备远程控制):登录后连 relay,登出即断;开关与设备列表 IPC 一并注册
   let updateRelaunchRemoteBusy = false;
-  initDeviceLinkService({
-    onUpdateRelaunchBusyChanged: (busy) => {
-      const transition = decideUpdateRelaunchBusyTransition(updateRelaunchRemoteBusy, busy);
-      updateRelaunchRemoteBusy = transition.nextBusy;
-      if (transition.shouldNotify) notifyUpdateAutoRelaunchBusyStateChanged();
-    },
-  });
+  const startDeviceLinkService = () => {
+    initDeviceLinkService({
+      onUpdateRelaunchBusyChanged: (busy) => {
+        const transition = decideUpdateRelaunchBusyTransition(
+          updateRelaunchRemoteBusy,
+          busy,
+        );
+        updateRelaunchRemoteBusy = transition.nextBusy;
+        if (transition.shouldNotify) notifyUpdateAutoRelaunchBusyStateChanged();
+      },
+    });
+  };
   // 上次登出时没删干净的远程会话镜像缓存(文件锁 / 权限占用),开机再清一次。
   // 不阻塞启动关键路径,失败留在队列里等下一次(见 mirrorCachePurgeQueue)。
   // 但**缓存读**要等它落定:否则 renderer 的 hydrate 可能读到正在被删的那份明文,
@@ -8679,9 +8865,299 @@ app.on('ready', async () => {
       }
     })
     .catch(() => undefined);
+  const podProvisioningMode = hasPodProvisioningInput(process.env);
+  const deferDeviceLink = headlessMode && podProvisioningMode;
+  if (!deferDeviceLink) startDeviceLinkService();
+  if (headlessMode) {
+    if (headlessPodRuntimeInput && process.platform === 'linux') {
+      headlessStartupLog.info('headless Pod safeStorage backend selected', {
+        basicAllowed: allowBasicSafeStorage,
+        backend: safeStorage.getSelectedStorageBackend(),
+      });
+    }
+    const platform = process.platform as 'darwin' | 'win32' | 'linux';
+    const ensureBinariesReady = createEnsureBinariesReady(platform, {
+      peekNeedsDownload: binaryPeekNeedsDownload,
+      prepare: binaryPrepare,
+      broadcastResetForStep: binaryBroadcastResetForStep,
+      getPiInstallSignal: () =>
+        app.isPackaged
+          ? AbortSignal.timeout(PI_AGENT_INSTALL_STARTUP_DEADLINE_MS)
+          : undefined,
+      isPiDisabledForLaunch: () => piDisabledForLaunch,
+      onPiPrepareFailed: (error) => {
+        piDisabledForLaunch = true;
+        console.warn(
+          `[bootstrap-electron] pi binary prepare failed (non-fatal, pi disabled for this launch): ${error}`,
+        );
+      },
+    });
+    // Pod retries need a fresh fallback timeout per attempt. The fallback owns
+    // that timeout internally; a single startup signal would remain aborted
+    // forever after its first five-minute deadline.
+    const linuxInstallSignal = headlessPodRuntimeInput
+      ? undefined
+      : getLinuxInstallSignal(
+          platform,
+          app.isPackaged,
+          LINUX_AGENT_INSTALL_STARTUP_DEADLINE_MS,
+        );
+    if (headlessPodRuntimeInput) {
+      try {
+        // This Unix-socket control is reachable only through provider exec.
+        // Start it before provisioning retries so deletion can always obtain a
+        // clear acknowledgement from a live Pod.
+        await startPodDeleteControlServer();
+      } catch (err) {
+        // The provider always has a physical runtimeRoot/PVC fallback. A local
+        // control-socket failure must not turn that best-effort barrier into a
+        // Pod availability failure.
+        headlessStartupLog.warn('Pod delete credential control unavailable', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      try {
+        // Start the heartbeat before provisioning. Until auth succeeds its
+        // existing fail-closed projection is phase=degraded,
+        // readiness.auth=not-ready, blocker=runtime-not-ready.
+        await startPodCloudRuntimeController();
+      } catch (err) {
+        headlessStartupLog.error('Pod cloud runtime status initialization failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        app.exit(1);
+        return;
+      }
+    }
+    const hasValidatedLocalPodSession = (): boolean => {
+      const membershipId = authManager.readProvisionedMembershipId();
+      const state = authManager.getAuthState();
+      return Boolean(
+        membershipId &&
+        state.isAuthenticated &&
+        state.user?.id === membershipId,
+      );
+    };
+    const provisionPodSession = async (): Promise<boolean> => {
+      // A resource refresh token persisted on the PVC is the authoritative
+      // restart path. Finish its cold-start refresh before considering the
+      // mounted one-shot resource token, otherwise a normal restart can
+      // consume an already-rotated predecessor unnecessarily.
+      let pendingRestore: Promise<authManager.AuthState> | null = null;
+      const restored = await authManager.initialize({
+        onColdStartPending: (completion) => {
+          pendingRestore = completion;
+        },
+      });
+      if (pendingRestore) await pendingRestore;
+      const hasValidatedSession = hasValidatedLocalPodSession();
+      if (restored.isAuthenticated || hasValidatedSession) {
+        headlessStartupLog.info('headless Pod validated local session restored');
+      }
+
+      let provisioned = hasValidatedSession;
+      if (!provisioned) {
+        const resourceCredentialState = authManager.readProvisionedResourceCredentialState();
+        if (resourceCredentialState.kind === 'temporarily-unreadable') {
+          throw new authManager.ProvisionedResourceCredentialTemporarilyUnreadableError();
+        }
+        if (resourceCredentialState.kind === 'definitely-absent') {
+          headlessStartupLog.info(
+            'Pod durable resource credential absent; evaluating initial mounted credential',
+            { credentialState: resourceCredentialState.kind },
+          );
+        }
+        provisioned = await bootstrapPodProvisioning({
+          env: process.env,
+          getAuthBaseUrl: () => getClientEndpoint('authApiBaseUrl'),
+          authRegion: import.meta.env.VITE_CINDY_AUTH_REGION === 'global' ? 'global' : 'cn',
+          // Electron net.fetch can stall before sending when no BrowserWindow
+          // exists. Node fetch uses undici and has no Electron session dependency.
+          fetch: createNodeFetchAdapter(),
+          logger: headlessStartupLog,
+          readPersistedResourceRefreshToken:
+            authManager.readProvisionedResourceRefreshTokenForProvisioning,
+          readPersistedMembershipId: authManager.readProvisionedMembershipId,
+          persistResourceRefreshToken: authManager.persistProvisionedResourceRefreshToken,
+          clearPersistedResourceCredentials: authManager.clearProvisionedResourceCredentials,
+          persistMembershipId: authManager.persistProvisionedMembershipId,
+          installSession: authManager.installProvisionedSession,
+          hasLocalSession: hasValidatedLocalPodSession,
+        });
+      }
+      if (!provisioned) return false;
+
+      const userId = authManager.getCurrentUserId();
+      if (!userId) {
+        throw new Error('Pod provisioning installed no authenticated user');
+      }
+      const localDbResult = await localDbEnsureReady(userId);
+      if (!localDbResult.ready) {
+        throw new HeadlessStartupFatalError(
+          `Pod provisioning localDb failed (${localDbResult.error.code}): ${localDbResult.error.message}`,
+        );
+      }
+      const dbClientTakeover = await ensureLifecycleDbClient(userId);
+      if (dbClientTakeover.mode === 'failed' || dbClientTakeover.mode === 'skipped') {
+        throw new Error(`Pod provisioning DbClient unavailable (${dbClientTakeover.mode})`);
+      }
+      if (dbClientTakeover.shouldReleaseMainDb && process.env.XDT_DB_INPROC !== 'true') {
+        localDbCloseDb({ preserveSchemaMigrationLease: true });
+        dbClientLog.info('[DbClient] main-side _db released after headless Pod takeover');
+      }
+      return true;
+    };
+    const started = await runHeadlessStartup({
+      provisionSession: provisionPodSession,
+      provisionRetry: headlessPodRuntimeInput
+        ? {
+            initialDelayMs: POD_STARTUP_RETRY_INITIAL_MS,
+            maxDelayMs: POD_STARTUP_RETRY_MAX_MS,
+            onFailure: async (error, context) => {
+              if (
+                error
+                instanceof authManager.ProvisionedResourceCredentialTemporarilyUnreadableError
+              ) {
+                headlessStartupLog.error(
+                  'Pod durable resource credential temporarily unreadable; retry scheduled',
+                  {
+                    credentialState: 'temporarily-unreadable',
+                    attempt: context.attempt,
+                    nextRetryMs: context.nextRetryMs,
+                    error: error.name,
+                  },
+                );
+              }
+              await cloudRuntimeController?.sampleNow();
+            },
+          }
+        : undefined,
+      ensureBinariesReady,
+      binaryRetry: headlessPodRuntimeInput
+        ? {
+            initialDelayMs: POD_STARTUP_RETRY_INITIAL_MS,
+            maxDelayMs: POD_STARTUP_RETRY_MAX_MS,
+            onFailure: async () => {
+              await cloudRuntimeController?.sampleNow();
+            },
+          }
+        : undefined,
+      linuxInstallSignal,
+      ensureMakerReady,
+      logger: headlessStartupLog,
+      exit: (code) => app.exit(code),
+    });
+    if (!started) return;
+    const initializePodAccountRuntime = async (): Promise<void> => {
+      await initializePodUserServices({
+        refreshCustomProviders: refreshCustomProvidersIntoCatalog,
+        startEmbeddingHost: attemptStartEmbeddingHost,
+        prewarmModelPricing,
+        logger: headlessStartupLog,
+      });
+      const providerScopeKey = activeOwnerScopeKey();
+      startPodAccountProviderReadiness({
+        scopeKey: providerScopeKey,
+        refreshModels: refreshXdGatewayModels,
+        // 直接用 barrier.start 拿 handle:Pod 侧要在目录同步成功后标记发现完成。
+        startReadiness: (scopeKey, task, onError) =>
+          accountProviderReadinessBarrier.start(scopeKey, task, onError),
+        logger: headlessStartupLog,
+      });
+    };
+    if (podProvisioningMode) {
+      await initializePodAccountRuntime();
+    }
+    if (deferDeviceLink) {
+      try {
+        await initializePodDeviceLink(podProvisioningMode, {
+          initDeviceLinkService: startDeviceLinkService,
+          readRemoteControlEnabled: () =>
+            readDeviceLinkSettings().remoteControlEnabled,
+          setRemoteControlEnabled,
+          logger: headlessStartupLog,
+        });
+        await startPodCloudRuntimeController();
+      } catch (err) {
+        headlessStartupLog.error('Pod device-link initialization failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        app.exit(1);
+        return;
+      }
+    }
+    if (headlessPodRuntimeInput && podProvisioningMode) {
+      let recoveryPromise: Promise<void> | null = null;
+      authManager.setProvisionedSessionRecovery(() => {
+        if (recoveryPromise) return;
+        recoveryPromise = (async () => {
+          let attempt = 0;
+          let retryDelayMs = POD_STARTUP_RETRY_INITIAL_MS;
+          const waitForRecoveryRetry = async (
+            credentialState: authManager.ProvisionedResourceCredentialState['kind'],
+            error: unknown,
+          ): Promise<void> => {
+            attempt += 1;
+            const nextRetryMs = Math.min(retryDelayMs, POD_STARTUP_RETRY_MAX_MS);
+            headlessStartupLog.error('Pod resource session re-provision failed; retry scheduled', {
+              credentialState,
+              attempt,
+              nextRetryMs,
+              error: error instanceof Error ? error.name : 'UnknownError',
+            });
+            await cloudRuntimeController?.sampleNow().catch(() => undefined);
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, nextRetryMs);
+            });
+            retryDelayMs = Math.min(nextRetryMs * 2, POD_STARTUP_RETRY_MAX_MS);
+          };
+          for (;;) {
+            const resourceCredentialState = authManager.readProvisionedResourceCredentialState();
+            if (resourceCredentialState.kind === 'definitely-absent') {
+              headlessStartupLog.info(
+                'Pod resource session re-provision stopped; resource credential unavailable',
+                { credentialState: resourceCredentialState.kind, attempt },
+              );
+              return;
+            }
+            if (resourceCredentialState.kind === 'temporarily-unreadable') {
+              await waitForRecoveryRetry(
+                resourceCredentialState.kind,
+                new authManager.ProvisionedResourceCredentialTemporarilyUnreadableError(),
+              );
+              continue;
+            }
+            try {
+              if (!(await provisionPodSession())) {
+                throw new Error('Pod resource session provisioning is unavailable');
+              }
+              await ensureMakerReady();
+              await initializePodAccountRuntime();
+              await cloudRuntimeController?.sampleNow();
+              headlessStartupLog.info('Pod resource session re-provisioned');
+              return;
+            } catch (error) {
+              const postFailureCredentialState =
+                authManager.readProvisionedResourceCredentialState();
+              if (postFailureCredentialState.kind === 'definitely-absent') {
+                headlessStartupLog.info(
+                  'Pod resource session re-provision stopped after resource credential rejection',
+                  { credentialState: postFailureCredentialState.kind, attempt },
+                );
+                return;
+              }
+              await waitForRecoveryRetry(postFailureCredentialState.kind, error);
+            }
+          }
+        })().finally(() => {
+          recoveryPromise = null;
+        });
+      });
+    }
+  }
   // 注:invoke-capture 自检(assertCaptureHealthy)不在这里——maker:create-session / maker:send
-  // 由 splash 后的 registerMakerIpcsAfterSplash 延迟注册,此刻尚未注册。自检已挪到该函数末尾
-  // (见上方),那里所有 sentinel 都已就位,结果才准确。
+  // 由 GUI splash 或 headless 就绪路径触发的 ensureMakerReady 注册,此刻尚未注册。
+  // 自检已挪到该函数末尾(见上方),那里所有 sentinel 都已就位,结果才准确。
 
   // 睡醒白屏取证:suspend/resume/lock/unlock 全部落日志,给 renderer 侧
   // render-watchdog 的漂移/无帧日志提供时间锚点。
@@ -8930,6 +9406,16 @@ onQuit(
   },
   'async',
 );
+onQuit('cloud-runtime', async () => {
+  if (!cloudRuntimeController) return;
+  await cloudRuntimeController.stop();
+  cloudRuntimeController = null;
+}, 'async');
+onQuit('pod-delete-control', async () => {
+  if (!podDeleteControlServer) return;
+  await podDeleteControlServer.close();
+  podDeleteControlServer = null;
+}, 'async');
 onQuit(
   'shutdown-maker',
   async () => {
@@ -9128,9 +9614,7 @@ onQuit('local-db-close', () => localDbCloseDb(), 'post-async');
 installQuitHandler(6000);
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (shouldQuitWhenAllWindowsClosed(headlessMode, process.platform)) app.quit();
 });
 
 app.on('activate', () => {
@@ -9148,7 +9632,7 @@ app.on('activate', () => {
   // focusMainWindow() 在 hide-on-close 模式下天然把藏起来的窗口 show 回来,
   // renderer 不重载;返回 false 表示主窗口真没了(异常或首次启动),才 createWindow。
   // 端点清单阻断期间禁止建窗(同 second-instance,防绕过阻断门 + preload 白屏)。
-  if (startupWindowCreationAllowed && !focusMainWindow()) {
+  if (!headlessMode && startupWindowCreationAllowed && !focusMainWindow()) {
     createWindow();
   }
 });

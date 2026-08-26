@@ -49,13 +49,14 @@ const GLOBAL_MANIFEST = JSON.stringify({
   cdnBaseUrl: 'https://cdn.global.example.invalid/app',
 });
 
-test('localhost 八件套覆写,默认其余字段照抄 Global 正本,返回绝对路径', () => {
+test('localhost 九件套覆写,默认其余字段照抄 Global 正本,返回绝对路径', () => {
   const repoRoot = makeRepoRoot(CN_MANIFEST, GLOBAL_MANIFEST);
   const target = generateEndpointLocalFile({ repoRoot });
   assert.equal(target, path.join(repoRoot, 'config', 'endpoint.local.json'));
   const local = JSON.parse(fs.readFileSync(target, 'utf8'));
   assert.equal(local.authApiBaseUrl, 'http://localhost:3344');
   assert.equal(local.deviceLinkApiBaseUrl, 'http://localhost:3335');
+  assert.equal(local.cloudInstanceApiBaseUrl, 'http://127.0.0.1:3343');
   assert.equal(local.ossApiBaseUrl, 'http://localhost:3340');
   assert.equal(local.modelAccessApiBaseUrl, 'http://localhost:3339');
   assert.equal(local.voiceApiBaseUrl, 'http://localhost:3342');
@@ -108,6 +109,7 @@ test('生成物能过客户端 parser 的 allowHttp 校验(与仓内正本同一
   const requiredKeys = [
     'authApiBaseUrl',
     'deviceLinkApiBaseUrl',
+    'cloudInstanceApiBaseUrl',
     'oauthBrokerApiBaseUrl',
     'ossApiBaseUrl',
     'heartbeatUrl',

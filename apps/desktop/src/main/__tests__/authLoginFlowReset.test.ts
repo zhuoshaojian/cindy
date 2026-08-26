@@ -46,6 +46,18 @@ describe('auth login-flow reset', () => {
       'if (authStateEpoch !== loginEpoch || loginFlowEpoch !== expectedLoginFlowEpoch)',
     );
     expect(completeBody).toContain('notifyRenderer();');
+    // 交互式登录走上游的事务型提交(accountSwitchTeardown / prepareCommit / commit),
+    // 它自己在 commit 里落 session;applyAuthenticatedSession 只服务 Pod 供给式登录
+    // 那条没有账号切换边界的路径。两者都必须在最后通知 renderer 与监听者。
+    expect(completeBody).toContain('prepareCommit:');
+    const applyStart = source.indexOf('function applyAuthenticatedSession(');
+    const applyEnd = source.indexOf(
+      '\n}\n\nasync function reloadPerAccountIntegrationsFromDisk',
+      applyStart,
+    );
+    const applyBody = source.slice(applyStart, applyEnd);
+    expect(applyBody).toContain('notifyRenderer();');
+    expect(applyBody).toContain('notifyAuthListeners();');
     // 防复活:主机飞书 token 链已随 refresh-feishu 退役(2026-07-17),
     // authManager 不得再接 FeishuTokenManager(飞书授权归 xd-feishu 意识
     // 的 OAuth broker 通道)。
@@ -858,7 +870,9 @@ describe('auth login-flow reset', () => {
 
   it('synchronizes canary flags on every path that establishes a new auth identity', () => {
     expect(source).not.toContain('canaryFlagStore.sync(false)');
-    expect(source.match(/scheduleCanaryFlagSync\(\{/g)).toHaveLength(3);
+    // 3 处上游路径 + applyAuthenticatedSession(Pod 供给式登录)共 4 处;
+    // 每条建立新身份的路径都必须同步 canary,漏一条就会让该身份留在旧灰度分支。
+    expect(source.match(/scheduleCanaryFlagSync\(\{/g)).toHaveLength(4);
     expect(source.match(/scheduleXdOrgBetaDefault\(\{/g)).toHaveLength(3);
     expect(source.match(/scheduleNonXdOrgBetaDefault\(\{/g)).toHaveLength(1);
     expect(source).toContain("getClientEndpoint('oauthBrokerApiBaseUrl')");

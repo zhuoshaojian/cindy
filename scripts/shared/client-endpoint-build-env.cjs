@@ -4,6 +4,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const { normalizeManifestBaseUrl } = require('./manifest-base-url.cjs');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -13,6 +14,13 @@ function resolveRegion(value) {
     throw new Error(`Invalid Cindy auth region: ${region}; expected cn, global or dev`);
   }
   return region;
+}
+
+function normalizeMobileManifestBaseUrl(raw, manifestPath) {
+  return normalizeManifestBaseUrl(raw, {
+    fieldName: 'cdnBaseUrl',
+    source: `客户端端点清单 ${manifestPath}`,
+  });
 }
 
 function loadMobileClientBuildEnv() {
@@ -37,24 +45,11 @@ function loadMobileClientBuildEnv() {
   if (!Number.isInteger(parsed?.schemaVersion) || parsed.schemaVersion < 1) {
     throw new Error(`客户端端点清单 schemaVersion 非法: ${manifestPath}`);
   }
-  const raw = parsed?.cdnBaseUrl;
-  if (typeof raw !== 'string' || !raw.trim()) {
-    throw new Error(`客户端端点清单缺少非空字段 cdnBaseUrl: ${manifestPath}`);
-  }
-  const normalized = raw.trim().replace(/\/+$/, '');
-  let url;
-  try {
-    url = new URL(normalized);
-  } catch {
-    throw new Error(`客户端端点清单字段 cdnBaseUrl 不是合法绝对 URL: ${manifestPath}`);
-  }
-  if (url.protocol !== 'https:' || url.username || url.password) {
-    throw new Error(`客户端端点清单字段 cdnBaseUrl 必须是无凭据 HTTPS URL: ${manifestPath}`);
-  }
+  const normalized = normalizeMobileManifestBaseUrl(parsed?.cdnBaseUrl, manifestPath);
   return Object.freeze({
     EXPO_PUBLIC_CINDY_AUTH_REGION: region,
     EXPO_PUBLIC_ENDPOINT_MANIFEST_BASE_URL: normalized,
   });
 }
 
-module.exports = { loadMobileClientBuildEnv };
+module.exports = { loadMobileClientBuildEnv, normalizeMobileManifestBaseUrl };

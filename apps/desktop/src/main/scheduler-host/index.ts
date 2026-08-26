@@ -231,6 +231,10 @@ async function startSchedulerInternal(deps: StartSchedulerDeps): Promise<Schedul
   return scheduler;
 }
 
+export function getSchedulerIfInitialized(): Scheduler | null {
+  return _scheduler;
+}
+
 export function getScheduler(): Scheduler {
   if (!_scheduler) {
     throw new Error('scheduler not started: call startScheduler() first');
