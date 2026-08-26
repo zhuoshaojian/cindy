@@ -8,6 +8,7 @@ import {
 import { readFileSync } from 'node:fs';
 import {
   hasHeadlessPodRuntimeInput,
+  HEADLESS_POD_RUNTIME_ENV,
   POD_RESOURCE_REFRESH_TOKEN_FILE_ENV,
   POD_DEVICE_ID_ENV,
   POD_USER_DATA_DIR_ENV,
@@ -66,7 +67,14 @@ export function createNodeFetchAdapter(
   return (input, init) => fetchImpl(input, init as RequestInit);
 }
 
+/**
+ * Pod mode for provisioning, device-link self-name and the `cloud` device kind.
+ * Gated on the same internal flag as `resolvePodDeviceIdOverride`: `index.ts`
+ * writes it unconditionally from the strict gate, so ambient `XDT_POD_*` env
+ * cannot opt an ordinary GUI launch into Pod behaviour.
+ */
 export function hasPodProvisioningInput(env: NodeJS.ProcessEnv): boolean {
+  if (env[HEADLESS_POD_RUNTIME_ENV] !== '1') return false;
   return (
     Boolean(env[POD_RESOURCE_REFRESH_TOKEN_ENV]?.trim()) ||
     Boolean(env[POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]?.trim()) ||

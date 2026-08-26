@@ -79,7 +79,15 @@ export function ensurePodWorkspacesDir(
   return workspacesDir;
 }
 
+/**
+ * Pod-only device identity. The gate is read from the internal flag that
+ * `index.ts` writes unconditionally ('1' or '0') from
+ * `hasHeadlessPodRuntimeInput` before anything else runs, so ambient
+ * `XDT_POD_*` env cannot give a normal GUI launch a container identity, and
+ * injecting the flag itself cannot forge one either.
+ */
 export function resolvePodDeviceIdOverride(env: NodeJS.ProcessEnv): string | null {
+  if (env[HEADLESS_POD_RUNTIME_ENV] !== '1') return null;
   const deviceId = env[POD_DEVICE_ID_ENV]?.trim() ?? '';
   if (!deviceId) return null;
   if (deviceId.length > 128) {

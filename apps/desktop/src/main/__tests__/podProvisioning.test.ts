@@ -7,14 +7,17 @@ import {
   POD_RESOURCE_REFRESH_TOKEN_FILE_ENV,
   POD_DEVICE_ID_ENV,
   POD_MEMBERSHIP_ID_ENV,
+  POD_DEVICE_NAME_ENV,
   POD_USER_DATA_DIR_ENV,
   hasHeadlessPodRuntimeInput,
+  hasPodProvisioningInput,
   resolvePodProvisioningConfig,
   resolvePodDeviceIdOverride,
   shouldUseBasicSafeStorage,
 } from '../pod-provisioning.js';
 import {
   DEFAULT_POD_WORKSPACES_DIR,
+  HEADLESS_POD_RUNTIME_ENV,
   POD_WORKSPACES_DIR_ENV,
   ensurePodWorkspacesDir,
   resolvePodUserDataDir,
@@ -77,6 +80,55 @@ describe('Pod provisioning bootstrap', () => {
         [POD_USER_DATA_DIR_ENV]: 'relative/user-data',
       }),
     ).toBeNull();
+  });
+
+  it('keeps ambient Pod env inert for a GUI launch and enables it for the strict gate', async () => {
+    const ambientPodEnv: NodeJS.ProcessEnv = {
+      [POD_DEVICE_ID_ENV]: 'cloud-device-gui-ambient',
+      [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
+      [POD_MEMBERSHIP_ID_ENV]: 'membership-gui-ambient',
+      [POD_DEVICE_NAME_ENV]: 'Cloud Pod',
+    };
+    const guiGate = hasHeadlessPodRuntimeInput(['electron'], ambientPodEnv);
+    const guiEnv = {
+      ...ambientPodEnv,
+      [HEADLESS_POD_RUNTIME_ENV]: guiGate ? '1' : '0',
+    };
+    expect(guiGate).toBe(false);
+    expect(resolvePodDeviceIdOverride(guiEnv)).toBeNull();
+    expect(hasPodProvisioningInput(guiEnv)).toBe(false);
+
+    const fetch = vi.fn();
+    const installSession = vi.fn();
+    const persistResourceRefreshToken = vi.fn();
+    await expect(bootstrapPodProvisioning({
+      env: guiEnv,
+      getAuthBaseUrl: () => 'http://localhost:3344',
+      authRegion: 'cn',
+      fetch,
+      logger: { info: vi.fn() },
+      readPersistedResourceRefreshToken: () => null,
+      readPersistedMembershipId: () => null,
+      persistResourceRefreshToken,
+      persistMembershipId: vi.fn(),
+      installSession,
+    })).resolves.toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(installSession).not.toHaveBeenCalled();
+    expect(persistResourceRefreshToken).not.toHaveBeenCalled();
+
+    const strictGate = hasHeadlessPodRuntimeInput(
+      ['electron', '--headless'],
+      ambientPodEnv,
+    );
+    const strictEnv = {
+      ...ambientPodEnv,
+      [HEADLESS_POD_RUNTIME_ENV]: strictGate ? '1' : '0',
+    };
+    expect(strictGate).toBe(true);
+    expect(resolvePodDeviceIdOverride(strictEnv))
+      .toBe('cloud-device-gui-ambient');
+    expect(hasPodProvisioningInput(strictEnv)).toBe(true);
   });
 
   it('creates and exports the persistent workspace root only for a strict Pod runtime', () => {
@@ -157,6 +209,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
           [POD_DEVICE_ID_ENV]: 'pod-restored',
         },
@@ -192,6 +245,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
           [POD_DEVICE_ID_ENV]: 'pod-raced-recovery',
         },
@@ -250,6 +304,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'resource-injected',
           [POD_DEVICE_ID_ENV]: 'pod-1',
         },
@@ -299,7 +354,9 @@ describe('Pod provisioning bootstrap', () => {
     const install = vi.fn();
     await expect(
       bootstrapPodProvisioning({
-        env: {},
+        env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
+        },
         getAuthBaseUrl: () => 'http://localhost:3344',
         authRegion: 'cn',
         fetch,
@@ -333,6 +390,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'stale-injected',
           [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/pod-resource-refresh-token',
           [POD_DEVICE_ID_ENV]: 'pod-2',
@@ -410,6 +468,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'initial',
           [POD_DEVICE_ID_ENV]: 'pod-org-missing',
           [POD_MEMBERSHIP_ID_ENV]: 'org-membership-missing',
@@ -444,6 +503,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'initial',
           [POD_DEVICE_ID_ENV]: 'pod-persist-failure',
         },
@@ -500,6 +560,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'initial',
           [POD_DEVICE_ID_ENV]: 'pod-org',
           [POD_MEMBERSHIP_ID_ENV]: 'org-membership',
@@ -537,6 +598,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'token',
           [POD_DEVICE_ID_ENV]: 'pod',
         },
@@ -565,7 +627,10 @@ describe('Pod provisioning bootstrap', () => {
       membership: expect.objectContaining({ id: 'org', kind: 'org' }),
     }));
 
-    expect(() => resolvePodDeviceIdOverride({ [POD_DEVICE_ID_ENV]: 'x'.repeat(129) })).toThrow(
+    expect(() => resolvePodDeviceIdOverride({
+      [HEADLESS_POD_RUNTIME_ENV]: '1',
+      [POD_DEVICE_ID_ENV]: 'x'.repeat(129),
+    })).toThrow(
       'at most 128',
     );
   });
@@ -616,6 +681,7 @@ describe('Pod provisioning bootstrap', () => {
       const pending = expect(
         bootstrapPodProvisioning({
           env: {
+            [HEADLESS_POD_RUNTIME_ENV]: '1',
             [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'resource-injected',
             [POD_DEVICE_ID_ENV]: 'pod-timeout',
           },
@@ -648,6 +714,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'token',
           [POD_DEVICE_ID_ENV]: 'pod',
         },
@@ -687,6 +754,7 @@ describe('Pod provisioning bootstrap', () => {
     await expect(
       bootstrapPodProvisioning({
         env: {
+          [HEADLESS_POD_RUNTIME_ENV]: '1',
           [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
           [POD_DEVICE_ID_ENV]: 'pod-transient',
         },
@@ -728,6 +796,7 @@ describe('Pod provisioning bootstrap', () => {
 
     await expect(bootstrapPodProvisioning({
       env: {
+        [HEADLESS_POD_RUNTIME_ENV]: '1',
         [POD_RESOURCE_REFRESH_TOKEN_ENV]: 'resource-injected',
         [POD_DEVICE_ID_ENV]: 'pod-install-fails',
       },
@@ -775,6 +844,7 @@ describe('Pod provisioning bootstrap', () => {
     });
     const deps = {
       env: {
+        [HEADLESS_POD_RUNTIME_ENV]: '1',
         [POD_RESOURCE_REFRESH_TOKEN_FILE_ENV]: '/run/secrets/resource-refresh-token',
         [POD_DEVICE_ID_ENV]: 'pod-secret-retry',
       },

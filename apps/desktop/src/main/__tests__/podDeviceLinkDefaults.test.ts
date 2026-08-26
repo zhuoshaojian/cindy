@@ -66,6 +66,17 @@ describe('Pod device-link startup defaults', () => {
 });
 
 describe('Pod device-link default name', () => {
+  it('keeps the hostname for a GUI launch even when a Pod name is provisioned', () => {
+    const options = {
+      hostname: 'SiriusMac.local',
+      provisionedName: 'Cloud Pod',
+    };
+    expect(resolveDeviceLinkDeviceName({ ...options, podMode: false }))
+      .toBe('SiriusMac.local');
+    expect(resolveDeviceLinkDeviceName({ ...options, podMode: true }))
+      .toBe('Cloud Pod');
+  });
+
   it('normalizes a provisioned cloud marker', () => {
     expect(
       resolveDeviceLinkDeviceName({
