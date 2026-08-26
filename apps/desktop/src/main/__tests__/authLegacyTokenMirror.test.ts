@@ -45,7 +45,11 @@ describe('legacy → v1 refresh token migration window', () => {
     );
     // 镜像必须挂在写入结果之后,不能无条件执行:v1 没写成功就镜像,会让 legacy 比权威
     // 记录更新,下次冷启动迁移反而读回一枚不该生效的 token。
-    expect(body).toContain('if (written) mirrorLegacyResourceRefreshToken(refreshToken, realm);');
+    expect(body).toContain('if (written) {');
+    const writtenGuardIdx = body.indexOf('if (written) {');
+    expect(
+      body.indexOf('mirrorLegacyResourceRefreshToken(refreshToken, realm);'),
+    ).toBeGreaterThan(writtenGuardIdx);
   });
 
   it('写侧:legacy 文件不存在时不镜像(不凭空复活已清理的凭证文件)', () => {

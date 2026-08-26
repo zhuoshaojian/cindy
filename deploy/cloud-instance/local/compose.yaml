@@ -1,0 +1,101 @@
+services:
+  cindy-cloud-volume-init:
+    image: node:22-bookworm-slim
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mkdir -p /data/user-data /data/workspaces /data/home
+        chown 10001:10001 /data/user-data /data/workspaces /data/home
+    restart: "no"
+    volumes:
+      - cindy-cloud-data:/data
+
+  cindy-cloud:
+    build:
+      context: ../../..
+      # The formal Dockerfile is the single stage/runtime source. Local compose
+      # only selects its development target and never maintains a forked image.
+      dockerfile: deploy/cloud-instance/Dockerfile
+      target: development
+    # Only linux/amd64 assets are pinned today. Pinning the platform keeps
+    # Apple Silicon hosts from building an arm64 image that the capability
+    # gate rejects (exit 78); Docker Desktop runs it via Rosetta.
+    platform: linux/amd64
+    # The image defaults to the packaged runtime. Local compose intentionally
+    # keeps the source/Forge dev path for interactive debugging.
+    command: ["pnpm", "dev:desktop:headless:local"]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+    depends_on:
+      cindy-cloud-volume-init:
+        condition: service_completed_successfully
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      DISPLAY: :99
+      # ELECTRON_DISABLE_SANDBOX / XDT_DEV_SAFE_STORAGE_BASIC are baked into
+      # the image ENV (see the Dockerfile) so provider-launched containers get
+      # them too; compose does not re-declare them.
+      XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: /run/secrets/pod_resource_refresh_token
+      XDT_POD_DEVICE_ID: ${XDT_POD_DEVICE_ID:?set XDT_POD_DEVICE_ID to the provisioned stable Pod id}
+      XDT_ENDPOINT_MANIFEST_FILE: /run/config/endpoint.local.json
+      XDT_USER_DATA_DIR: /var/lib/cindy/user-data
+      XDT_POD_WORKSPACES_DIR: /var/lib/cindy/workspaces
+      CINDY_CLOUD_STATUS_FILE: /var/lib/cindy/status/status.json
+    secrets:
+      - pod_resource_refresh_token
+    volumes:
+      - type: volume
+        source: cindy-cloud-data
+        target: /var/lib/cindy/user-data
+        volume:
+          subpath: user-data
+      - type: volume
+        source: cindy-cloud-data
+        target: /var/lib/cindy/workspaces
+        volume:
+          subpath: workspaces
+      - type: volume
+        source: cindy-cloud-data
+        target: /home/cindy
+        volume:
+          subpath: home
+      - type: tmpfs
+        target: /var/lib/cindy/status
+        tmpfs:
+          size: 16777216
+          mode: 01777
+      - type: bind
+        source: ${CINDY_ENDPOINT_MANIFEST_FILE:?set CINDY_ENDPOINT_MANIFEST_FILE to a host-reachable endpoint.local.json}
+        target: /run/config/endpoint.local.json
+        read_only: true
+    healthcheck:
+      test: ["CMD", "node", "/usr/local/bin/cindy-cloud-healthcheck.mjs"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+
+secrets:
+  pod_resource_refresh_token:
+    file: ${CINDY_POD_REFRESH_TOKEN_FILE:?set CINDY_POD_REFRESH_TOKEN_FILE to a gitignored secret file}
+
+volumes:
+  cindy-cloud-data:
+
+networks:
+  default:
+    name: cindy-cloud-local
+    driver: bridge
+    enable_ipv6: false
+    attachable: false
+    labels:
+      com.cindy.cloud.runtime: local
+      com.cindy.cloud.runtime.environment: development
+      com.cindy.cloud.runtime.docker-socket: "absent"
+
+# The LocalDockerProvider owns the Docker API on the host side. Never add
+# /var/run/docker.sock to this data-plane service.

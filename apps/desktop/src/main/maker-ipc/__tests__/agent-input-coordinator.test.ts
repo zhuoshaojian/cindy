@@ -611,6 +611,7 @@ function unsupportedChatBridgeImageError(feature = "input content part 'input_im
 
 function createHarness(opts?: {
   getRecoveryContextSnapshot?: (sessionId: string, userClientId: string) => Promise<RecoveryContextSnapshot>;
+  hasPendingInteraction?: (sessionId: string) => boolean;
 }) {
   let running = false;
   let liveRunningOverride: boolean | null | 'unknown' = null;
@@ -770,7 +771,7 @@ function createHarness(opts?: {
     },
     getTurnSessionIdentity: () => turnSessionIdentity,
     reconcileTurnIdle,
-    hasPendingInteraction: () => pendingInteraction,
+    hasPendingInteraction: opts?.hasPendingInteraction ?? (() => pendingInteraction),
     getAgentKind: () => agentKind,
     getSdkSessionId,
     hasAssistantProgressAfter: (sessionId, userClientId) =>
@@ -1170,6 +1171,38 @@ describe('AgentInputCoordinator trusted session reference snapshots', () => {
     expect(updated?.sessionRefs).toBeUndefined();
     expect(updated?.trustedSessionReferenceContexts).toBeUndefined();
     expect(updated?.sessionReferencesRequireTrustedSnapshot).toBeUndefined();
+  });
+});
+
+describe('AgentInputCoordinator activity snapshot', () => {
+  it('reports authoritative pending input activity', () => {
+    const h = createHarness();
+
+    expect(h.coordinator.getActivitySnapshot()).toEqual({
+      pendingInputs: 0,
+      pendingInteractions: 0,
+    });
+
+    h.coordinator.enqueue('session-activity', makeItem('activity-1', 'queued'));
+    expect(h.coordinator.getActivitySnapshot().pendingInputs).toBeGreaterThan(0);
+  });
+
+  it('marks only interactions unknown when a session interaction probe throws', () => {
+    let interactionProbeUnavailable = false;
+    const h = createHarness({
+      hasPendingInteraction: () => {
+        if (interactionProbeUnavailable) throw new Error('interaction probe unavailable');
+        return false;
+      },
+    });
+
+    h.coordinator.enqueue('session-activity', makeItem('activity-1', 'queued'));
+    interactionProbeUnavailable = true;
+
+    expect(h.coordinator.getActivitySnapshot()).toEqual({
+      pendingInputs: 1,
+      pendingInteractions: null,
+    });
   });
 });
 

@@ -53,6 +53,8 @@ export interface ApiFetchOptions {
   baseUrl: string | (() => string);
   /** Abort the request after this many milliseconds; 0 disables the deadline. */
   timeoutMs?: number;
+  /** Override Electron net.fetch for windowless runtimes that require Node's fetch. */
+  fetchImpl?: typeof globalThis.fetch;
   /** Keep upstream response/network details out of local logs for sensitive flows. */
   redactErrorDetails?: boolean;
   /**
@@ -68,6 +70,8 @@ export interface ApiFetchOptions {
    * by the caller.
    */
   allowedRedactedErrorCodes?: readonly string[];
+  /** 只记录 method/path/status/code，供携带敏感配置或凭证物料的调用方使用。 */
+  logMetadataOnly?: boolean;
 }
 
 interface RawResponse<T> {
@@ -94,7 +98,8 @@ async function rawFetch<T>(apiPath: string, opts: ApiFetchOptions): Promise<RawR
   const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
     const body = opts.bodyFactory ? opts.bodyFactory() : opts.body;
-    const response = await net.fetch(url, {
+    const fetchImpl = opts.fetchImpl ?? net.fetch;
+    const response = await fetchImpl(url, {
       method,
       headers,
       cache: opts.cache,
@@ -114,6 +119,14 @@ async function rawFetch<T>(apiPath: string, opts: ApiFetchOptions): Promise<RawR
         'serverApiFetch.redacted_network_error',
         'path=' + (opts.logLabel ?? redactedLogPath(apiPath)),
         'method=' + method,
+      );
+    } else if (opts.logMetadataOnly) {
+      log.error(
+        'serverApiFetch.network_error',
+        'path=' + apiPath,
+        'method=' + method,
+        'status=0',
+        'code=NETWORK_ERROR',
       );
     } else {
       log.error('fetch failed', opts.logLabel ?? apiPath, err);
@@ -154,11 +167,11 @@ export async function serverApiFetch<T>(apiPath: string, opts: ApiFetchOptions):
       (errCode === 'ACCOUNT_UNAVAILABLE' ||
         (refreshedAndRetried && isRefreshableUnauthorizedCode(errCode)))
     ) {
-      void authManager.invalidateSession(
-        errCode === 'ACCOUNT_UNAVAILABLE'
-          ? 'account-unavailable'
-          : 'resource-unauthorized-after-refresh',
-      );
+      if (errCode === 'ACCOUNT_UNAVAILABLE') {
+        void authManager.invalidateSession('account-unavailable');
+      } else {
+        void authManager.invalidateResourceSession('resource-unauthorized-after-refresh');
+      }
     }
     // 网络异常 rawFetch 已 log;这里补 not-ok 响应(401/5xx 等)的日志,
     // 否则上层 catch 一吞,排查调用链时完全看不到原因。
@@ -169,6 +182,14 @@ export async function serverApiFetch<T>(apiPath: string, opts: ApiFetchOptions):
         'method=' + (opts.method ?? 'GET'),
         'status=' + result.status,
         'code=' + statusToCode(result.status),
+      );
+    } else if (opts.logMetadataOnly) {
+      log.warn(
+        'serverApiFetch.not_ok',
+        'path=' + apiPath,
+        'method=' + (opts.method ?? 'GET'),
+        'status=' + result.status,
+        'code=' + errCode,
       );
     } else {
       // logLabel 表示 path 里带身份;上游 `msg` 同样可能回显身份(如「skill <name> not found」),

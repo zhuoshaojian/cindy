@@ -131,7 +131,10 @@ describe("CindyAuthClient", () => {
   });
 
   it("carries captchaToken in the email request-code body only when provided", async () => {
-    const fetch = vi.fn(async () => response(200, { status: "sent" }));
+    const fetch = vi.fn(
+      async (_input: string, _init?: Parameters<AuthFetch>[1]) =>
+        response(200, { status: "sent" }),
+    );
     await client(fetch).requestCode("email", "user@example.com");
     const bare = JSON.parse(
       (fetch.mock.calls[0]?.[1] as { body: string }).body,
@@ -381,6 +384,36 @@ describe("CindyAuthClient", () => {
     ).rejects.toEqual(
       expect.objectContaining({ code: "INVALID_CODE", statusCode: 401 }),
     );
+  });
+
+  it("applies a finite timeout to account refresh", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn(
+        async (
+          _input: string,
+          init?: { signal?: AbortSignal },
+        ): Promise<AuthFetchResponse> =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                const error = new Error("aborted");
+                error.name = "AbortError";
+                reject(error);
+              },
+              { once: true },
+            );
+          }),
+      );
+      const pending = expect(
+        client(fetch).refreshAccount("account-refresh", { timeoutMs: 25 }),
+      ).rejects.toMatchObject({ code: "REQUEST_TIMEOUT" });
+      await vi.advanceTimersByTimeAsync(25);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("discovers enterprise SSO connections by org id and maps to login methods", async () => {

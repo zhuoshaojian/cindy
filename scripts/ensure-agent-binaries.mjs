@@ -21,6 +21,12 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { downloadFromCdn } from './agent-binary-cdn-fallback.mjs';
+import {
+  installAgentBinaryFromMirror,
+  isInstalledAgentBinaryMirrorAsset,
+  resolveAgentBinaryMirrorBaseUrl,
+  supportsAgentBinaryMirror,
+} from './agent-binary-mirror.mjs';
 import { verifyDirDistManifest } from '../tools/shared/dir-dist-manifest.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -197,6 +203,12 @@ export async function ensureBinary(kind, platformKey = currentPlatformKey(), { f
   const binDirPath = path.join(ROOT, 'apps', cfg.binDir, platformKey);
   const binPath = path.join(binDirPath, binFile);
   const markerPath = path.join(binDirPath, '.version');
+  // The deterministic mirror covers both single-file runtimes and Pi's
+  // verified directory distribution; no kind falls through to upstream.
+  const mirrorBaseUrl = resolveAgentBinaryMirrorBaseUrl();
+  if (mirrorBaseUrl && !supportsAgentBinaryMirror(kind)) {
+    throw new Error(`Configured agent binary mirror has no supported installer for kind: ${kind}`);
+  }
 
   // 先解析 pin 版本——skip 判定必须同时比对版本，否则旧的合法二进制会让 pin 升级被静默跳过。
   const mod = await import(cfg.module);
@@ -213,7 +225,15 @@ export async function ensureBinary(kind, platformKey = currentPlatformKey(), { f
   const presentAndValid = cfg.dirDist
     ? isValidDirDist(binDirPath, binPath, cfg.requiredDirDistFiles)
     : isValidBinary(binPath);
-  if (!force && presentAndValid && readInstalledVersion(markerPath) === version) {
+  const mirrorVerified = mirrorBaseUrl
+    ? await isInstalledAgentBinaryMirrorAsset({
+        kind,
+        version,
+        platformKey,
+        targetPath: binPath,
+      })
+    : true;
+  if (!force && presentAndValid && mirrorVerified && readInstalledVersion(markerPath) === version) {
     log(`${kind} ${platformKey}: already present @ ${version}, skip`);
     return binPath;
   }
@@ -224,7 +244,7 @@ export async function ensureBinary(kind, platformKey = currentPlatformKey(), { f
   // 保持走正宗下载不复用。
   let reusedFrom = null;
   // dirDist kind 的产物含主执行文件之外的运行时资产，单文件复用会产出缺资产的坏安装。
-  if (!force && !cfg.dirDist) {
+  if (!force && !cfg.dirDist && !mirrorBaseUrl) {
     reusedFrom = tryReuseFromSiblingWorktree({
       candidates: listSiblingWorktreeRoots(ROOT).map((root) =>
         path.join(root, 'apps', cfg.binDir, platformKey),
@@ -240,30 +260,42 @@ export async function ensureBinary(kind, platformKey = currentPlatformKey(), { f
 
   if (!reusedFrom) {
     log(`${kind} ${platformKey}: ensuring pinned version ${version}...`);
-    try {
-      await mod.ensurePlatform({ version, platformKey, force });
-    } catch (upstreamErr) {
-      if (!supportsCdnFallback(kind)) {
-        throw new Error(
-          `Failed to download ${kind} ${platformKey}@${version} from upstream: ${upstreamErr.message}. ` +
-            'This runtime is a directory distribution, so the single-binary CDN fallback is unsafe.',
-        );
-      }
-      // claude / codex / ripgrep：上游慢/失败（含 fetch-with-timeout 的 connect/stall/total/throughput 超时）→
-      // 回退公司 CDN（国内快，.gz gunzip 后与上游裸二进制字节一致）。
-      warn(`${kind} ${platformKey}: upstream failed/slow (${upstreamErr.message}); falling back to CDN...`);
+    if (mirrorBaseUrl) {
+      // Opt-in mirror is deterministic and fail-closed: a missing/corrupt
+      // mirror asset must never silently fall back to upstream or the legacy CDN.
+      await installAgentBinaryFromMirror({
+        baseUrl: mirrorBaseUrl,
+        kind,
+        version,
+        platformKey,
+        targetPath: binPath,
+      });
+    } else {
       try {
-        const r = await downloadFromCdn({ kind, version, platformKey, binPath });
-        // CDN 兜底直接落 binPath（不走 updates/promote），手动写版本标记供后续 skip 判定与终检。
-        try { fs.writeFileSync(markerPath, version + '\n'); } catch { /* ignore */ }
-        log(`${kind} ${platformKey}: CDN fallback ok @ ${version} (gzVerified=${r.gzVerified}, binaryVerified=${r.binaryVerified})`);
-      } catch (cdnErr) {
-        throw new Error(
-          `Failed to download ${kind} ${platformKey}@${version} from both upstream and CDN fallback:\n` +
-            `  upstream: ${upstreamErr.message}\n` +
-            `  CDN:      ${cdnErr.message}\n` +
-            `  Fix: run "pnpm update:${kind}" manually, or check network / CDN availability.`,
-        );
+        await mod.ensurePlatform({ version, platformKey, force });
+      } catch (upstreamErr) {
+        if (!supportsCdnFallback(kind)) {
+          throw new Error(
+            `Failed to download ${kind} ${platformKey}@${version} from upstream: ${upstreamErr.message}. ` +
+              'This runtime is a directory distribution, so the single-binary CDN fallback is unsafe.',
+          );
+        }
+        // claude / codex / ripgrep：上游慢/失败（含 fetch-with-timeout 的 connect/stall/total/throughput 超时）→
+        // 回退公司 CDN（国内快，.gz gunzip 后与上游裸二进制字节一致）。
+        warn(`${kind} ${platformKey}: upstream failed/slow (${upstreamErr.message}); falling back to CDN...`);
+        try {
+          const r = await downloadFromCdn({ kind, version, platformKey, binPath });
+          // CDN 兜底直接落 binPath（不走 updates/promote），手动写版本标记供后续 skip 判定与终检。
+          try { fs.writeFileSync(markerPath, version + '\n'); } catch { /* ignore */ }
+          log(`${kind} ${platformKey}: CDN fallback ok @ ${version} (gzVerified=${r.gzVerified}, binaryVerified=${r.binaryVerified})`);
+        } catch (cdnErr) {
+          throw new Error(
+            `Failed to download ${kind} ${platformKey}@${version} from both upstream and CDN fallback:\n` +
+              `  upstream: ${upstreamErr.message}\n` +
+              `  CDN:      ${cdnErr.message}\n` +
+              `  Fix: run "pnpm update:${kind}" manually, or check network / CDN availability.`,
+          );
+        }
       }
     }
   }
@@ -303,18 +335,20 @@ async function main() {
     ? kinds.split(',').map((k) => k.trim()).filter(Boolean)
     : SUPPORTED_BINARY_KINDS;
   const platformKey = !platform || platform === 'current' ? currentPlatformKey() : platform;
+  const mirrorConfigured = resolveAgentBinaryMirrorBaseUrl() !== null;
 
-  // best-effort 模式（postinstall hook 用）：可被 XDT_SKIP_AGENT_BIN_INSTALL 跳过；
+  // best-effort 模式（postinstall hook 用）：无 mirror 时可被 XDT_SKIP_AGENT_BIN_INSTALL 跳过；
   // 单 kind 失败只 warn、不阻断（典型：无网络 / GitHub 限流 / 不需要桌面端的 CI），
-  // 真正的硬门槛留在 predev 的 ensure-dev-runtime-assets。
-  if (bestEffort && process.env.XDT_SKIP_AGENT_BIN_INSTALL) {
+  // 真正的硬门槛留在 predev 的 ensure-dev-runtime-assets。显式 mirror 是确定性构建
+  // 输入，任何 kind 缺失/损坏都必须直接失败，best-effort 与 skip 均不得吞掉。
+  if (bestEffort && process.env.XDT_SKIP_AGENT_BIN_INSTALL && !mirrorConfigured) {
     log(`skipped via XDT_SKIP_AGENT_BIN_INSTALL (${kindList.join(', ')}).`);
     return;
   }
 
   let failures = 0;
   for (const kind of kindList) {
-    if (bestEffort) {
+    if (bestEffort && !mirrorConfigured) {
       try {
         await ensureBinary(kind, platformKey, { force });
       } catch (err) {
