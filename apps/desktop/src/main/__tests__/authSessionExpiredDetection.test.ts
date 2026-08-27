@@ -20,6 +20,14 @@ describe('desktop auth session-expiry detection', () => {
     resolve(process.cwd(), 'src/main/device-link/index.ts'),
     'utf8',
   ).replace(/\r\n/g, '\n');
+  const bootstrapSource = readFileSync(
+    resolve(process.cwd(), 'src/main/bootstrap-electron.ts'),
+    'utf8',
+  ).replace(/\r\n/g, '\n');
+  const serverApiClientSource = readFileSync(
+    resolve(process.cwd(), 'src/main/serverApiClient.ts'),
+    'utf8',
+  ).replace(/\r\n/g, '\n');
 
   it('runtime refresh 发现磁盘 token 消失但会话活着时,按确定性失效走会话过期出口', () => {
     const start = authSource.indexOf('export async function refresh(): Promise<boolean> {');
@@ -72,6 +80,95 @@ describe('desktop auth session-expiry detection', () => {
     const expireEnd = authSource.indexOf('if (accountSwitchTeardown)', expireStart);
     const expireBody = authSource.slice(expireStart, expireEnd);
     expect(expireBody).toContain('preservePersistedRefreshToken: opts.preservePersistedRefreshToken');
+    expect(expireBody).toContain('preserveProvisionedResourceCredentials:');
+    expect(expireBody).toContain(
+      'recoverProvisionedSession !== null || mayHaveProvisionedResourceCredential',
+    );
+  });
+
+  it('resource session expiry retains Pod resource credentials and triggers re-provision', () => {
+    const clearStart = authSource.indexOf('function clearAuth(');
+    const clearEnd = authSource.indexOf('resetActiveAuthRealmToBuild();', clearStart);
+    const clearBody = authSource.slice(clearStart, clearEnd);
+    const accountGuard = clearBody.indexOf('if (!opts.preserveProvisionedResourceCredentials) {');
+    expect(accountGuard).toBeGreaterThan(0);
+    expect(clearBody.indexOf('removeSafe(POD_RESOURCE_REFRESH_TOKEN_KEY);')).toBeGreaterThan(
+      accountGuard,
+    );
+    expect(clearBody.indexOf('removeSafe(LEGACY_POD_ACCOUNT_REFRESH_TOKEN_KEY);')).toBeGreaterThan(
+      accountGuard,
+    );
+    expect(clearBody.indexOf('removeSafe(POD_MEMBERSHIP_ID_KEY);')).toBeGreaterThan(accountGuard);
+
+    const expireStart = authSource.indexOf('async function expireRuntimeAuth(');
+    const expireEnd = authSource.indexOf('\n}\n\n/**', expireStart);
+    const expireBody = authSource.slice(expireStart, expireEnd);
+    expect(expireBody).toContain('const recoverProvisionedSession = provisionedSessionRecovery;');
+    expect(expireBody).toContain('readProvisionedResourceCredentialState()');
+    expect(expireBody).toContain("kind !== 'definitely-absent'");
+    expect(expireBody).toContain("kind === 'definitely-absent'");
+    expect(expireBody).toContain('await recoverProvisionedSession();');
+    expect(expireBody).toContain('provisionedSessionRecoveryPending = true;');
+
+    const recoveryStart = bootstrapSource.indexOf('authManager.setProvisionedSessionRecovery(');
+    const recoveryEnd = bootstrapSource.indexOf('\n    }\n  }', recoveryStart);
+    const recoveryBody = bootstrapSource.slice(recoveryStart, recoveryEnd);
+    expect(bootstrapSource).toContain(
+      'authManager.readProvisionedResourceRefreshTokenForProvisioning',
+    );
+    expect(recoveryBody).toContain('await provisionPodSession()');
+    expect(recoveryBody).toContain('await ensureMakerReady();');
+    expect(recoveryBody).toContain('await initializePodAccountRuntime();');
+    expect(recoveryBody).toContain('retry scheduled');
+    expect(recoveryBody).toContain('re-provision stopped after resource credential rejection');
+    expect(recoveryBody.match(/readProvisionedResourceCredentialState\(\)/gu)).toHaveLength(2);
+    expect(recoveryBody.match(/=== 'definitely-absent'/gu)).toHaveLength(2);
+    expect(recoveryBody).not.toContain('readProvisionedResourceRefreshToken()');
+
+    expect(serverApiClientSource).toContain(
+      "authManager.invalidateResourceSession('resource-unauthorized-after-refresh')",
+    );
+  });
+
+  it('headless Pod bootstrap does not fall back while the durable resource credential is unreadable', () => {
+    const provisionStart = bootstrapSource.indexOf(
+      'const provisionPodSession = async (): Promise<boolean> => {',
+    );
+    const bootstrapCall = bootstrapSource.indexOf(
+      'provisioned = await bootstrapPodProvisioning({',
+      provisionStart,
+    );
+    const preBootstrap = bootstrapSource.slice(provisionStart, bootstrapCall);
+    expect(preBootstrap).toContain(
+      'const hasValidatedSession = hasValidatedLocalPodSession();',
+    );
+    expect(preBootstrap).toContain('readProvisionedResourceCredentialState()');
+    expect(preBootstrap).toContain("resourceCredentialState.kind === 'temporarily-unreadable'");
+    expect(preBootstrap).toContain(
+      'throw new authManager.ProvisionedResourceCredentialTemporarilyUnreadableError()',
+    );
+
+    const startupRetryStart = bootstrapSource.indexOf('provisionRetry: headlessPodRuntimeInput');
+    const startupRetryEnd = bootstrapSource.indexOf('binaryRetry:', startupRetryStart);
+    const startupRetry = bootstrapSource.slice(startupRetryStart, startupRetryEnd);
+    expect(startupRetry).toContain('credentialState: \'temporarily-unreadable\'');
+    expect(startupRetry).toContain('attempt: context.attempt');
+    expect(startupRetry).toContain('nextRetryMs: context.nextRetryMs');
+    expect(bootstrapSource).toContain('const POD_STARTUP_RETRY_INITIAL_MS = 5_000;');
+    expect(bootstrapSource).toContain('const POD_STARTUP_RETRY_MAX_MS = 5 * 60_000;');
+
+    const recoveryStart = bootstrapSource.indexOf('authManager.setProvisionedSessionRecovery(');
+    const recoveryEnd = bootstrapSource.indexOf('\n    }\n  }', recoveryStart);
+    const recoveryBody = bootstrapSource.slice(recoveryStart, recoveryEnd);
+    const unreadableGuard = recoveryBody.indexOf(
+      "resourceCredentialState.kind === 'temporarily-unreadable'",
+    );
+    expect(unreadableGuard).toBeGreaterThan(0);
+    expect(unreadableGuard).toBeLessThan(recoveryBody.indexOf('await provisionPodSession()'));
+    expect(recoveryBody).toContain('await waitForRecoveryRetry(');
+    expect(recoveryBody).toContain('credentialState,');
+    expect(recoveryBody).toContain('attempt,');
+    expect(recoveryBody).toContain('nextRetryMs,');
   });
 
   it('isPersistedSecretAbsent 只在文件确定不存在(ENOENT)时判缺席', () => {

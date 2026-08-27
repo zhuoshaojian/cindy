@@ -37,12 +37,14 @@ const ipcOn = vi.hoisted(() => vi.fn());
 const netRequest = vi.hoisted(() => vi.fn());
 const showMessageBoxSync = vi.hoisted(() => vi.fn());
 const clipboardWriteText = vi.hoisted(() => vi.fn());
+const appFocus = vi.hoisted(() => vi.fn());
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(),
     getAppPath: vi.fn(() => '/repo/apps/desktop'),
     isPackaged: false,
     exit: vi.fn(),
+    focus: appFocus,
   },
   dialog: { showMessageBoxSync },
   clipboard: { writeText: clipboardWriteText },
@@ -63,6 +65,7 @@ import {
   activateClientEndpointRealm,
   captureNetLogAround,
   prepareEndpointNetLogFile,
+  promptEndpointManifestFailure,
   promptRetryDialog,
   verifyEndpointNetLogCapture,
   classifyManifestFailure,
@@ -87,6 +90,7 @@ afterEach(() => {
   netRequest.mockReset();
   showMessageBoxSync.mockReset();
   clipboardWriteText.mockReset();
+  appFocus.mockReset();
 });
 
 const FULL_MANIFEST = JSON.stringify({
@@ -118,6 +122,30 @@ const LOCAL_MANIFEST = JSON.stringify({
 });
 
 describe('启动失败系统提示框', () => {
+  it('headless Pod 在原生弹框边界前记录致命失败并直接退出', () => {
+    const guiPrompt = vi.fn();
+    const choice = promptEndpointManifestFailure(
+      {
+        reason: 'fetch-failed:ENOENT',
+        kind: 'config',
+        diagnosis: null,
+        logPath: null,
+        offlineSavedAt: null,
+      },
+      {
+        headlessPodRuntime: true,
+        sourceLabel: '/run/config/endpoint.json',
+        locale: 'zh-CN',
+        prompt: guiPrompt,
+      },
+    );
+
+    expect(choice).toBe('exit');
+    expect(guiPrompt).not.toHaveBeenCalled();
+    expect(showMessageBoxSync).not.toHaveBeenCalled();
+    expect(clipboardWriteText).not.toHaveBeenCalled();
+  });
+
   it('使用友好警告文案并展示简短错误信息,但不展示地址、网络诊断或本机路径', () => {
     showMessageBoxSync.mockReturnValueOnce(0);
 
@@ -134,6 +162,13 @@ describe('启动失败系统提示框', () => {
     );
 
     expect(choice).toBe('retry');
+    if (process.platform === 'darwin') {
+      expect(appFocus).toHaveBeenCalledWith();
+      expect(appFocus).not.toHaveBeenCalledWith({ steal: true });
+      expect(appFocus.mock.invocationCallOrder[0]).toBeLessThan(
+        showMessageBoxSync.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
+    }
     expect(showMessageBoxSync).toHaveBeenCalledTimes(1);
     const options = showMessageBoxSync.mock.calls[0]?.[0] as {
       type: string;
@@ -215,6 +250,69 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
       {
         isPackaged: true,
         env: { XDT_ENDPOINTS_CDN: '1', XDT_ENDPOINT_MANIFEST_FILE: '/x/y.json' },
+      },
+      { kind: 'cdn' },
+    ],
+    [
+      'packaged Pod 使用显式挂载清单',
+      {
+        isPackaged: true,
+        headlessPodRuntime: true,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
+          XDT_POD_DEVICE_ID: 'pod-endpoints',
+          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
+        },
+      },
+      { kind: 'file', filePath: path.resolve(REPO_ROOT, '/run/config/endpoint.json') },
+    ],
+    [
+      'packaged 非 headless 即使完整 Pod env 也不能用文件覆写',
+      {
+        isPackaged: true,
+        headlessPodRuntime: false,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
+          XDT_POD_DEVICE_ID: 'pod-endpoints',
+          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
+        },
+      },
+      { kind: 'cdn' },
+    ],
+    [
+      'packaged headless 缺 token file 时不能用文件覆写',
+      {
+        isPackaged: true,
+        headlessPodRuntime: false,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
+          XDT_POD_DEVICE_ID: 'pod-endpoints',
+        },
+      },
+      { kind: 'cdn' },
+    ],
+    [
+      'packaged headless 缺 device id 时不能用文件覆写',
+      {
+        isPackaged: true,
+        headlessPodRuntime: false,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
+          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
+        },
+      },
+      { kind: 'cdn' },
+    ],
+    [
+      'packaged Pod 只接受绝对清单路径',
+      {
+        isPackaged: true,
+        headlessPodRuntime: true,
+        env: {
+          XDT_ENDPOINT_MANIFEST_FILE: 'config/endpoint.json',
+          XDT_POD_DEVICE_ID: 'pod-endpoints',
+          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
+        },
       },
       { kind: 'cdn' },
     ],

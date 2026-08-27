@@ -92,6 +92,7 @@ export const CLIENT_ENDPOINT_KEYS = [
   // (同 review / cdnBaseUrl 先例,理由见上方版本注释)。
   'authDesktopCallbackUrl',
   'deviceLinkApiBaseUrl',
+  'cloudInstanceApiBaseUrl',
   'oauthBrokerApiBaseUrl',
   // oss-server(公开资产直传预签名,当前场景:头像上传)。
   'ossApiBaseUrl',
@@ -165,6 +166,7 @@ const FIELD_PROTOCOLS: Record<ClientEndpointKey, readonly string[]> = {
   authApiBaseUrl: ['https:'],
   authDesktopCallbackUrl: ['https:'],
   deviceLinkApiBaseUrl: ['https:'],
+  cloudInstanceApiBaseUrl: ['https:'],
   oauthBrokerApiBaseUrl: ['https:'],
   ossApiBaseUrl: ['https:'],
   heartbeatUrl: ['https:'],
