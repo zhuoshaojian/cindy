@@ -127,4 +127,24 @@ describe('Pod device-link default name', () => {
       }),
     ).toBe('Unknown Device');
   });
+
+  /**
+   * Every assertion above passed while this resolver had no caller at all: the
+   * hello frame still reported `os.hostname()`, and the bundler dropped the
+   * whole cloud-name path as unreachable. A Pod then announced its Kubernetes
+   * object name to every client. Neither the unit tests nor typecheck can see
+   * that, because an orphaned export is well-typed and independently correct —
+   * so assert the one call site that makes any of it observable.
+   */
+  it('is wired into the hello self-name, not just independently correct', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(
+      new URL('../device-link/index.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).toContain('resolveDeviceLinkDeviceName');
+    expect(source).toContain('POD_DEVICE_NAME_ENV');
+    // The old body returned the hostname directly; its return must stay gone.
+    expect(source).not.toContain('return name || \'Unknown Device\'');
+  });
 });
