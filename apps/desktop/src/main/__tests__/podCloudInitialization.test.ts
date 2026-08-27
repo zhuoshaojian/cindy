@@ -60,6 +60,7 @@ describe('Pod user services initialization', () => {
       },
       // 与生产适配器同形:直传 barrier.start 才能把 handle 交到 task 手里。
       startReadiness: (scopeKey, task, onError) => barrier.start(scopeKey, task, onError),
+      startReadinessConsumers: () => calls.push('consumers'),
       logger: { warn: vi.fn() },
     });
 
@@ -70,5 +71,30 @@ describe('Pod user services initialization', () => {
       .toBe('startup-free');
     finishRefresh();
     await expect(readiness).resolves.toBe(true);
+    // Opening the gate is not enough: without this the cloud has no scheduler,
+    // so automations fail with SCHEDULER_NOT_READY and the instance can never
+    // read its own scheduler counters to be judged idle.
+    expect(calls).toEqual(['models', 'consumers']);
+  });
+
+  it('does not arm the consumers when discovery did not complete', async () => {
+    const calls: string[] = [];
+    const barrier = createAccountProviderReadinessBarrier();
+
+    startPodAccountProviderReadiness({
+      scopeKey: 'owner:membership-1',
+      refreshModels: async () => {
+        calls.push('models');
+      },
+      startReadiness: (scopeKey, task, onError) =>
+        // A replaced entry reports the mark as rejected; the consumers belong to
+        // whichever incarnation actually owns discovery.
+        barrier.start(scopeKey, () => task({ markDiscoveryComplete: () => false }), onError),
+      startReadinessConsumers: () => calls.push('consumers'),
+      logger: { warn: vi.fn() },
+    });
+
+    await barrier.waitForScope('owner:membership-1');
+    expect(calls).toEqual(['models']);
   });
 });

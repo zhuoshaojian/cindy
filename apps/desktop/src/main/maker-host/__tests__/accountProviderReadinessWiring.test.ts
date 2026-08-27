@@ -192,16 +192,31 @@ describe('account provider readiness wiring', () => {
 
   it('starts autonomous route consumers only after provider readiness settles', () => {
     const settledContinuation = bootstrapSource.indexOf('void providerReadiness.then(() =>');
-    const integrations = bootstrapSource.indexOf(
-      'startAccountIntegrationsAfterOwnerDbReady',
+    const consumers = bootstrapSource.indexOf(
+      'startAccountReadinessConsumers(',
       settledContinuation,
     );
-    const scheduler = bootstrapSource.indexOf('attemptStartScheduler()', settledContinuation);
 
     expect(settledContinuation).toBeGreaterThanOrEqual(0);
-    expect(integrations).toBeGreaterThan(settledContinuation);
-    expect(scheduler).toBeGreaterThan(settledContinuation);
+    expect(consumers).toBeGreaterThan(settledContinuation);
     expect(bootstrapSource).not.toContain('await attemptStartScheduler()');
+  });
+
+  /**
+   * Desktop and the cloud must arm the *same* consumer list. They used to keep
+   * per-caller copies, and the cloud copy silently lacked the scheduler: remote
+   * automations answered SCHEDULER_NOT_READY, and the missing scheduler also made
+   * its activity counters unreadable, pinning the instance to `activity-unknown`
+   * so it never looked idle enough to auto-update.
+   */
+  it('arms the cloud bootstrap from the same consumer list as Desktop', () => {
+    const podReadiness = bootstrapSource.indexOf('startPodAccountProviderReadiness({');
+    const podConsumers = bootstrapSource.indexOf('startReadinessConsumers: () =>', podReadiness);
+    const sharedList = bootstrapSource.indexOf('startAccountReadinessConsumers(', podConsumers);
+
+    expect(podReadiness).toBeGreaterThanOrEqual(0);
+    expect(podConsumers).toBeGreaterThan(podReadiness);
+    expect(sharedList).toBeGreaterThan(podConsumers);
   });
 
   it('arms Pod provider readiness without delaying device-link startup', () => {

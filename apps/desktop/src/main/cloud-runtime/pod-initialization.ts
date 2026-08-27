@@ -20,6 +20,12 @@ export interface PodAccountProviderReadinessDeps {
     task: (handle: PodReadinessHandle) => Promise<void>,
     onError: (error: unknown) => void,
   ): Promise<void>;
+  /**
+   * The shared post-discovery consumer list (`startAccountReadinessConsumers`).
+   * Marking discovery complete only opens the gate; without this call nothing
+   * behind it ever starts, which is what left the cloud without a scheduler.
+   */
+  startReadinessConsumers(): void;
   logger: Pick<CloudRuntimeLogger, 'warn'>;
 }
 
@@ -73,9 +79,13 @@ export function startPodAccountProviderReadiness(
     async (handle) => {
       await deps.refreshModels();
       // 目录同步成功才算「发现完成」。不标记的话 barrier 的 waitForScope 恒为 false,
-      // hook / IM / scheduler 这些下游消费者在 Pod 里永远不会武装 —— 表现就是远程
-      // create/send 一直 fail-closed,而模型目录其实早就同步好了。
-      handle.markDiscoveryComplete();
+      // 远程 create/send 一直 fail-closed,而模型目录其实早就同步好了。
+      if (!handle.markDiscoveryComplete()) return;
+      // 标记只是开闸;闸门后面的消费者要显式启动。Desktop 由渲染层驱动的 onReady
+      // 回调走同一份清单,Pod 没有渲染层,漏掉这一步就等于 scheduler / hook / IM
+      // 全不启动 —— 表现是自动化报 SCHEDULER_NOT_READY,而且 scheduler 计数读不到
+      // 会让活动快照永远 activity-unknown,实例因此永远不被判为空闲、无法自动更新。
+      deps.startReadinessConsumers();
     },
     (error) => {
       deps.logger.warn('Pod account provider readiness refresh failed', {
