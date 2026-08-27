@@ -547,7 +547,7 @@ import {
   resetHookControlOwnerBoundary,
   disposeHookControl,
 } from './hook-control';
-import { startAccountIntegrationsAfterOwnerDbReady } from './accountIntegrationStartup';
+import { startAccountReadinessConsumers } from './accountIntegrationStartup';
 import { registerSkillhubIpc } from './skillhub/registerIpc';
 import { listAllowedSkillhubProjectRoots } from './skillhub/allowedProjectRoots';
 import { SkillhubMarketService } from './skillhub/marketService';
@@ -8673,7 +8673,7 @@ app.on('ready', async () => {
           ) {
             return;
           }
-          startAccountIntegrationsAfterOwnerDbReady(userId, {
+          startAccountReadinessConsumers(userId, {
             isOwnerCurrent: (ownerId) =>
               isLocalDbOwnerCurrent(
                 authManager.getAuthState(),
@@ -8682,24 +8682,24 @@ app.on('ready', async () => {
               ),
             startHookControlAccount,
             startImConnection,
+            startScheduler: attemptStartScheduler,
+            startEmbeddingHost: attemptStartEmbeddingHost,
             log: dbClientLog,
           });
-          attemptStartScheduler();
-          attemptStartEmbeddingHost();
         });
       };
       // localDb 与 splash 可以任意先后完成。协调器已配置就立即开后台任务；
       // 否则只登记当前 scope 的启动闭包，不创建一个可能永久 pending 的 Promise。
       setAccountProviderReadinessReadyHandler((ownerId) => {
-        startAccountIntegrationsAfterOwnerDbReady(ownerId, {
+        startAccountReadinessConsumers(ownerId, {
           isOwnerCurrent: (id) =>
             isLocalDbOwnerCurrent(authManager.getAuthState(), id, isAppSessionBoundaryPending()),
           startHookControlAccount,
           startImConnection,
+          startScheduler: attemptStartScheduler,
+          startEmbeddingHost: attemptStartEmbeddingHost,
           log: dbClientLog,
         });
-        attemptStartScheduler();
-        attemptStartEmbeddingHost();
       });
       accountProviderReadinessArm.publish(userId, startProviderReadiness, resumeIncompleteDiscovery);
       if (makerProviderRefreshConfigured) startProviderReadiness();
@@ -9056,12 +9056,25 @@ app.on('ready', async () => {
         logger: headlessStartupLog,
       });
       const providerScopeKey = activeOwnerScopeKey();
+      const podOwnerId = authManager.getCurrentUserId() ?? providerScopeKey;
       startPodAccountProviderReadiness({
         scopeKey: providerScopeKey,
         refreshModels: refreshXdGatewayModels,
         // 直接用 barrier.start 拿 handle:Pod 侧要在目录同步成功后标记发现完成。
         startReadiness: (scopeKey, task, onError) =>
           accountProviderReadinessBarrier.start(scopeKey, task, onError),
+        // Desktop 走渲染层 onReady 回调,Pod 走这里,同一份消费者清单。
+        startReadinessConsumers: () => {
+          startAccountReadinessConsumers(podOwnerId, {
+            // 一个 Pod 就是一个账号的常驻设备,不存在切号;owner 恒为当前。
+            isOwnerCurrent: () => true,
+            startHookControlAccount,
+            startImConnection,
+            startScheduler: attemptStartScheduler,
+            startEmbeddingHost: attemptStartEmbeddingHost,
+            log: headlessStartupLog,
+          });
+        },
         logger: headlessStartupLog,
       });
     };
