@@ -121,8 +121,24 @@ COPY config/endpoint.json config/endpoint.global.json ./config/
 # Optional deterministic source for repository-pinned agent runtime assets.
 # Empty preserves the existing upstream/CDN behavior; configured mode is fail-closed.
 ARG XDT_AGENT_BINARY_MIRROR_BASE_URL=""
+# Optional Electron release mirror, same shape as DEBIAN_MIRROR_BASE_URL: empty
+# keeps @electron/get on its GitHub default. The archive is normally fetched once
+# into the shared cache mount below, so this only matters when that cache is cold
+# — but then the GitHub fetch decides whether the build finishes at all. Measured
+# from the cn-shanghai build node with a cold cache: packaging sat on an open
+# connection to GitHub's CDN with zero log output and zero CPU. Exported per RUN
+# rather than as a stage ENV so an unset value stays unset, and because the
+# runtime stage starts from `base` no mirror URL can reach the shipped image.
+ARG ELECTRON_MIRROR_BASE_URL=""
+RUN if [ -n "${ELECTRON_MIRROR_BASE_URL}" ]; then \
+      case "${ELECTRON_MIRROR_BASE_URL}" in \
+        https://*|http://*) ;; \
+        *) echo "ELECTRON_MIRROR_BASE_URL must be an absolute http(s) URL" >&2; exit 1 ;; \
+      esac; \
+    fi
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,id=cindy-cloud-pnpm-store \
     --mount=type=cache,target=/root/.cache/electron,id=cindy-cloud-electron \
+    if [ -n "${ELECTRON_MIRROR_BASE_URL}" ]; then export ELECTRON_MIRROR="${ELECTRON_MIRROR_BASE_URL}"; fi; \
     pnpm config set node-linker hoisted \
   && pnpm config set store-dir /root/.local/share/pnpm/store \
   && pnpm install --filter desktop... --prod=false --frozen-lockfile
@@ -146,9 +162,12 @@ CMD ["pnpm", "dev:desktop:headless:local"]
 # Electron-ABI native rebuild. Do not introduce a parallel headless build graph.
 FROM source AS packager
 ARG CINDY_BUILD_REGION=global
+ARG ELECTRON_MIRROR_BASE_URL=""
 # Region variants always rerun packaging; mount the shared Electron cache here
-# as well so Forge reuses the archive populated during dependency install.
+# as well so Forge reuses the archive populated during dependency install. The
+# mirror is re-exported because Forge fetches on its own when that cache is cold.
 RUN --mount=type=cache,target=/root/.cache/electron,id=cindy-cloud-electron \
+  if [ -n "${ELECTRON_MIRROR_BASE_URL}" ]; then export ELECTRON_MIRROR="${ELECTRON_MIRROR_BASE_URL}"; fi; \
   NODE_OPTIONS=--max-old-space-size=8192 \
   CINDY_AUTH_REGION="${CINDY_BUILD_REGION}" \
   pnpm --filter desktop package --platform=linux --arch=x64
