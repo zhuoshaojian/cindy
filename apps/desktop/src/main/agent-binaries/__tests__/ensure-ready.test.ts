@@ -134,6 +134,90 @@ describe('ensureAgentBinariesReady', () => {
     });
     expect(onPiPrepareFailed).toHaveBeenCalledWith('asset missing');
   });
+
+  /**
+   * A cloud instance loses the manifest race against its own egress at boot,
+   * and one such failure used to disable pi for a launch lasting days.
+   */
+  it('retries a transient Pi manifest failure and reports the later success', async () => {
+    let piAttempts = 0;
+    const onRetry = vi.fn();
+    const onPiPrepareFailed = vi.fn();
+    const d = deps({
+      prepare: vi.fn(async (kind: AgentBinaryKind) => {
+        if (kind !== 'pi') return { ready: true, path: `/tmp/${kind}`, downloaded: false };
+        piAttempts += 1;
+        return piAttempts === 1
+          ? { ready: false, error: 'manifest_failed' }
+          : { ready: true, path: '/data/pi/0.83.0/pi', downloaded: true };
+      }),
+      onPiPrepareFailed,
+      piPrepareRetry: {
+        attempts: 3,
+        delayMs: () => 0,
+        shouldRetry: (error: string) => error.includes('manifest'),
+        onRetry,
+      },
+    });
+
+    await expect(ensureAgentBinariesReady(d)).resolves.toMatchObject({
+      pi: { status: 'passed', path: '/data/pi/0.83.0/pi' },
+    });
+    expect(piAttempts).toBe(2);
+    expect(onRetry).toHaveBeenCalledWith('manifest_failed', 1);
+    // The launch must not be marked pi-disabled by an attempt that later won.
+    expect(onPiPrepareFailed).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Each attempt carries its own install deadline, so replaying a download that
+   * already timed out would multiply startup by the retry count.
+   */
+  it('does not retry a Pi failure the caller judged non-transient', async () => {
+    let piAttempts = 0;
+    const d = deps({
+      prepare: vi.fn(async (kind: AgentBinaryKind) => {
+        if (kind !== 'pi') return { ready: true, path: `/tmp/${kind}`, downloaded: false };
+        piAttempts += 1;
+        return { ready: false, error: 'download timed out' };
+      }),
+      piPrepareRetry: {
+        attempts: 3,
+        delayMs: () => 0,
+        shouldRetry: (error: string) => error.includes('manifest'),
+      },
+    });
+
+    await expect(ensureAgentBinariesReady(d)).resolves.toMatchObject({
+      pi: { status: 'failed', error: 'download timed out' },
+    });
+    expect(piAttempts).toBe(1);
+  });
+
+  it('gives up after the retry budget and still keeps the launch alive', async () => {
+    let piAttempts = 0;
+    const onPiPrepareFailed = vi.fn();
+    const d = deps({
+      prepare: vi.fn(async (kind: AgentBinaryKind) => {
+        if (kind !== 'pi') return { ready: true, path: `/tmp/${kind}`, downloaded: false };
+        piAttempts += 1;
+        return { ready: false, error: 'manifest_failed' };
+      }),
+      onPiPrepareFailed,
+      piPrepareRetry: {
+        attempts: 3,
+        delayMs: () => 0,
+        shouldRetry: () => true,
+      },
+    });
+
+    await expect(ensureAgentBinariesReady(d)).resolves.toMatchObject({
+      pi: { status: 'failed', error: 'manifest_failed' },
+      allPassed: true,
+    });
+    expect(piAttempts).toBe(3);
+    expect(onPiPrepareFailed).toHaveBeenCalledWith('manifest_failed');
+  });
 });
 
 describe('binary readiness dependency helpers', () => {
