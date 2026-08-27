@@ -8891,6 +8891,26 @@ app.on('ready', async () => {
           `[bootstrap-electron] pi binary prepare failed (non-fatal, pi disabled for this launch): ${error}`,
         );
       },
+      // A Pod starts before its egress is dependably up, and the manifest fetch
+      // is the first thing out. Losing that race disabled pi for a launch that
+      // then runs for days, with no restart the owner can reach (measured: two
+      // boots resolved pi 0.83.0, a third answered manifest_failed). Only the
+      // manifest step is retried — a download that hit its own deadline must not
+      // be replayed, or startup grows by the retry count.
+      ...(headlessPodRuntimeInput
+        ? {
+            piPrepareRetry: {
+              attempts: 3,
+              delayMs: (attempt: number) => Math.min(2000 * 2 ** (attempt - 1), 8000),
+              shouldRetry: (error: string) => error.includes('manifest'),
+              onRetry: (error: string, attempt: number) =>
+                headlessStartupLog.warn('Pod pi manifest fetch failed; retrying', {
+                  attempt,
+                  error,
+                }),
+            },
+          }
+        : {}),
     });
     // Pod retries need a fresh fallback timeout per attempt. The fallback owns
     // that timeout internally; a single startup signal would remain aborted
