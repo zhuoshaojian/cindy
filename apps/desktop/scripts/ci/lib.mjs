@@ -961,9 +961,53 @@ export function signIOSSimulatorHelper(appPath, signArgs, signing, packageArch) 
   return true;
 }
 
+/**
+ * 本机内部包的可选签名身份(`CINDY_MAC_LOCAL_SIGN_IDENTITY`)。
+ *
+ * ad-hoc 签名的 designated requirement 就是**这一个二进制的 cdhash**,每次重新打包都变。
+ * 后果是钥匙串条目的 ACL 每次都失配 —— 用户每装一版都要重新授权一次 safeStorage
+ * (`<app.name> Safe Storage`),点「始终允许」也只对那一个包有效。改用一张稳定的本机
+ * 代码签名身份后,DR 变成 `identifier <bundle-id> and certificate root = H"..."`,跨重新
+ * 打包不变:授权一次即长期有效,拿到内部包的同事也只需授权一次。
+ *
+ * 只影响 ad-hoc 这条内部包路径;Developer ID + 公证的正式路径零改动。**不设静默回落**:
+ * 变量设了但身份不存在时直接失败,否则打包看着成功、装上去却又开始反复弹窗,正是本
+ * 改动要消灭的那种困惑。私钥只在本机钥匙串,不进仓库。
+ *
+ * 判据是「身份在钥匙串里」而非 `find-identity -v` 的「身份受信任」:这条路径用的就是
+ * 自签证书,除非额外加信任设置否则永远是 CSSMERR_TP_NOT_TRUSTED,而 codesign 并不要求
+ * 信任 —— 拿未受信任的自签身份照样签出我们要的 `certificate root = H"..."` 稳定 DR。
+ * 用 -v 会让这个功能在它唯一的目标配置下直接不可用。
+ */
+export function resolveLocalMacSigningIdentity(env = process.env) {
+  const identity = String(env.CINDY_MAC_LOCAL_SIGN_IDENTITY ?? '').trim();
+  if (!identity) return null;
+  const found = spawnSync('/usr/bin/security', ['find-identity', '-p', 'codesigning'], {
+    encoding: 'utf8',
+  });
+  if (found.error || found.status !== 0) {
+    throw new Error(
+      `CINDY_MAC_LOCAL_SIGN_IDENTITY=${identity} 无法校验:security find-identity 失败(${found.error?.message ?? `exit ${found.status}`})`,
+    );
+  }
+  if (!found.stdout.includes(identity)) {
+    throw new Error(
+      `CINDY_MAC_LOCAL_SIGN_IDENTITY=${identity} 在本机钥匙串里找不到可用于代码签名的身份;` +
+        '请核对名称,或清空该变量回到 ad-hoc 签名。',
+    );
+  }
+  return identity;
+}
+
 export function adhocSignMacApp(appPath, helperEntitlementsPath, mainEntitlementsPath, arch) {
-  console.log('==> Ad-hoc signing macOS app for local packaged testing...');
-  const signBase = '/usr/bin/codesign --force --options runtime --sign -';
+  const localIdentity = resolveLocalMacSigningIdentity();
+  const signIdentityArg = localIdentity ? `"${localIdentity}"` : '-';
+  console.log(
+    localIdentity
+      ? `==> Signing macOS app with local identity for internal packaged testing: ${localIdentity}`
+      : '==> Ad-hoc signing macOS app for local packaged testing...',
+  );
+  const signBase = `/usr/bin/codesign --force --options runtime --sign ${signIdentityArg}`;
   const frameworksDir = path.join(appPath, 'Contents', 'Frameworks');
 
   const asarUnpackedDir = path.join(appPath, 'Contents', 'Resources', 'app.asar.unpacked');
@@ -982,8 +1026,8 @@ export function adhocSignMacApp(appPath, helperEntitlementsPath, mainEntitlement
   exec(`find "${frameworksDir}" -maxdepth 1 -name "*.framework" -exec ${signBase} "{}" \\;`);
   const iosSimulatorHelperSigned = signIOSSimulatorHelper(
     appPath,
-    ['--force', '--options', 'runtime', '--sign', '-'],
-    { mode: 'adhoc', teamIdentifier: null },
+    ['--force', '--options', 'runtime', '--sign', localIdentity ?? '-'],
+    { mode: localIdentity ? 'local-identity' : 'adhoc', teamIdentifier: null },
     arch,
   );
   exec(`${signBase} --entitlements "${mainEntitlementsPath}" "${appPath}"`);
