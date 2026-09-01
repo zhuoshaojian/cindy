@@ -200,9 +200,15 @@ function rethrowCloudInstanceError(error: unknown): never {
           'cloud instance rebuild operation was not found',
         );
       }
-      throwIpcError('NOT_FOUND', 'cloud instance was not found');
+      throwIpcError('NOT_FOUND', 'cloud instance is no longer available; refresh and try again');
     }
     if (error.statusCode === 409) {
+      if (error.code === 'CLOUD_INSTANCE_LOGIN_REQUIRED') {
+        throwIpcError(
+          'CLOUD_INSTANCE_LOGIN_REQUIRED',
+          'sign in once in your browser to use the cloud instance',
+        );
+      }
       if (error.code === 'REBUILD_IN_PROGRESS') {
         throwIpcError(
           'CLOUD_INSTANCE_REBUILD_IN_PROGRESS',
@@ -215,7 +221,7 @@ function rethrowCloudInstanceError(error: unknown): never {
           'cloud instance rebuild idempotency key was reused',
         );
       }
-      throwIpcError('ALREADY_EXISTS', 'cloud instance request conflicts with the current state');
+      throwIpcError('ALREADY_EXISTS', 'a cloud instance already exists; use the existing instance');
     }
     if (error.statusCode === 400) {
       if (error.code === 'INVALID_IDEMPOTENCY_KEY') {

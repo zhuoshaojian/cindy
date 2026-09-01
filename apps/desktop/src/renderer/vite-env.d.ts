@@ -1145,7 +1145,7 @@ interface ElectronAPI {
   osRelease: string;
   appVersion: string;
   /** 运行期端点清单(main 启动时远程 → 缓存 → 烘焙解析;重启生效)。 */
-  clientEndpoints: { websiteUrl: string };
+  clientEndpoints: { websiteUrl: string; cloudInstanceApiBaseUrl: string };
   appDisplayVersion: string;
   appDisplayVersionDetail: string;
   preferredSystemLocale: ApplicationMenuLocale;

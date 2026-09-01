@@ -2,7 +2,7 @@
  * CloudInstancesPanel —— 「远程连接」里的云端 Cindy 管理区。
  *
  * 控制面实例是事实源，device-link 只补在线状态与硬件信息。首次还没有实例时，
- * 本区直接提供唤醒入口；实例创建后保留唤醒、休眠、更新、自动更新、重建与删除。
+ * 本区直接提供浏览器登录入口；实例创建后保留唤醒、休眠、更新、自动更新、重建与删除。
  */
 
 import { useRef, useState } from 'react';
@@ -18,6 +18,8 @@ import {
   type UseCloudInstances,
 } from '@/features/cloud-instance/useCloudInstances';
 import { desktopCloudInstanceDisplayName } from '@/features/cloud-instance/cloudDeviceName';
+import { resolveCloudAffordance } from '@/features/cloud-instance/cloudAffordance';
+import { cloudInstanceLoginUrl } from '@/features/cloud-instance/cloudLogin';
 import {
   cloudInstanceLifecycleAction,
   cloudInstanceLifecycleActionForTarget,
@@ -29,6 +31,23 @@ import { toast } from '@/lib/toast';
 import { extractIpcError } from '@/utils/ipcError';
 
 const MIN_REFRESH_SPIN_MS = 1_000;
+
+function cloudInstanceErrorKey(error: unknown, fallback: string): string {
+  const code = extractIpcError(error)?.code;
+  if (code === 'CLOUD_INSTANCE_LOGIN_REQUIRED') {
+    return 'settings.devices.cloudInstance.loginRequired';
+  }
+  if (code === 'ALREADY_EXISTS') {
+    return 'settings.devices.cloudInstance.toast.alreadyExists';
+  }
+  if (code === 'NOT_FOUND') {
+    return 'settings.devices.cloudInstance.toast.notFound';
+  }
+  if (code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS') {
+    return 'settings.devices.cloudInstance.toast.rebuildStillCleaning';
+  }
+  return fallback;
+}
 
 function platformLabel(platform: string | null): string {
   switch (platform) {
@@ -118,6 +137,7 @@ export function CloudInstancesPanel({
   const { confirm } = useConfirmDialog();
   const [refreshing, setRefreshing] = useState(false);
   const refreshInFlightRef = useRef(false);
+  const loginUrl = cloudInstanceLoginUrl();
   const cloudDevicesById = new Map(
     (s.devices ?? [])
       .filter((device) => isCloudInstanceDeviceId(device.deviceId))
@@ -141,18 +161,8 @@ export function CloudInstancesPanel({
     }
   };
 
-  const handleFirstWake = async () => {
-    try {
-      await cloud.wake();
-      void s.refresh(true);
-      toast.success(t('settings.devices.cloudInstance.toast.woke'));
-    } catch (error) {
-      toast.error(t(extractIpcError(error)?.code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'
-        ? 'settings.devices.cloudInstance.toast.rebuildStillCleaning'
-        : error instanceof CloudInstanceActionTimeoutError
-          ? 'settings.devices.cloudInstance.toast.actionTimedOut'
-          : 'settings.devices.cloudInstance.toast.wakeFailed'));
-    }
+  const openCloudLogin = () => {
+    if (loginUrl) void window.electronAPI.openExternal(loginUrl);
   };
 
   const handleCloudStop = async (instanceId: string) => {
@@ -163,7 +173,7 @@ export function CloudInstancesPanel({
     } catch (error) {
       toast.error(t(error instanceof CloudInstanceActionTimeoutError
         ? 'settings.devices.cloudInstance.toast.actionTimedOut'
-        : 'settings.devices.cloudInstance.toast.stopFailed'));
+        : cloudInstanceErrorKey(error, 'settings.devices.cloudInstance.toast.stopFailed')));
     }
   };
 
@@ -173,11 +183,9 @@ export function CloudInstancesPanel({
       void s.refresh(true);
       toast.success(t('settings.devices.cloudInstance.toast.woke'));
     } catch (error) {
-      toast.error(t(extractIpcError(error)?.code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'
-        ? 'settings.devices.cloudInstance.toast.rebuildStillCleaning'
-        : error instanceof CloudInstanceActionTimeoutError
-          ? 'settings.devices.cloudInstance.toast.actionTimedOut'
-          : 'settings.devices.cloudInstance.toast.wakeFailed'));
+      toast.error(t(error instanceof CloudInstanceActionTimeoutError
+        ? 'settings.devices.cloudInstance.toast.actionTimedOut'
+        : cloudInstanceErrorKey(error, 'settings.devices.cloudInstance.toast.wakeFailed')));
     }
   };
 
@@ -193,8 +201,8 @@ export function CloudInstancesPanel({
       await cloud.deleteInstance(instanceId);
       void s.refresh(true);
       toast.success(t('settings.devices.cloudInstance.toast.deleted'));
-    } catch {
-      toast.error(t('settings.devices.cloudInstance.toast.deleteFailed'));
+    } catch (error) {
+      toast.error(t(cloudInstanceErrorKey(error, 'settings.devices.cloudInstance.toast.deleteFailed')));
     }
   };
 
@@ -274,31 +282,21 @@ export function CloudInstancesPanel({
   }
 
   if (cloud.instances.length === 0) {
-    const firstWakeAction =
-      cloudInstanceLifecycleActionForTarget(cloud.pending, 'new', cloudInstanceIds)
-      ?? cloudInstanceLifecycleAction(cloud.pending);
-    const lifecycleInProgress = firstWakeAction !== null;
     return (
       <div className="rounded-xl border border-[var(--border-default)] px-4 py-5 text-center">
         <p className="text-12 text-[var(--text-tertiary)]">
-          {t(cloud.rebuildAttention
-            ? 'settings.devices.cloudInstance.manualWakeRequired'
-            : 'settings.remoteControl.cloud.empty')}
+          {t('settings.devices.cloudInstance.loginRequiredZeroInstance')}
         </p>
-        <button
-          type="button"
-          data-testid="cloud-instance-first-wake"
-          onClick={() => void handleFirstWake()}
-          disabled={cloud.pending !== null}
-          className="mt-3 inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-default)] px-3 text-12 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Spinner icon={Sun} size={12} spinning={lifecycleInProgress} />
-          {t(lifecycleInProgress
-            ? cloudInstanceLifecycleProgressKey(firstWakeAction, cloud.pending)
-            : cloud.rebuildAttention
-              ? 'settings.devices.cloudInstance.manualWakeAction'
-              : 'ccAgent.sidebar.cloud.wake')}
-        </button>
+        {loginUrl ? (
+          <button
+            type="button"
+            data-testid="cloud-instance-first-login"
+            onClick={openCloudLogin}
+            className="mt-3 inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--settings-btn-primary-border)] bg-[var(--settings-btn-primary-bg)] px-3 text-12 font-medium text-[var(--settings-btn-primary-text)] transition-colors hover:bg-[var(--settings-btn-primary-hover-bg)]"
+          >
+            {t('settings.devices.cloudInstance.login')}
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -335,10 +333,16 @@ export function CloudInstancesPanel({
           const cloudAutoUpdatePending =
             cloud.pending?.target === cloudInstance.instanceId
             && cloud.pending.action === 'autoUpdate';
+          const cloudOnline = cloud.onlineDeviceIds.has(cloudInstance.deviceId);
+          const cloudAffordance = resolveCloudAffordance({
+            hasInstance: true,
+            online: cloudOnline,
+            status: cloudInstance.status,
+          });
           const cloudLifecycleAction =
             cloudProgressAction === 'wake' || cloudProgressAction === 'stop'
               ? cloudProgressAction
-              : device?.online ? 'stop' : 'wake';
+              : cloudOnline ? 'stop' : 'wake';
           const cloudVersion = resolveCloudVersionPresentation({
             image: cloudInstance.status.image,
             updateAvailable: cloudInstance.status.updateAvailable === true,
@@ -391,6 +395,11 @@ export function CloudInstancesPanel({
                       {t('settings.devices.cloudInstance.unregisteredStatus')}
                     </span>
                   )}
+                  {cloudAffordance === 'login' ? (
+                    <span className="text-11 text-[var(--warning-fg)]">
+                      {t('settings.devices.cloudInstance.loginRequired')}
+                    </span>
+                  ) : null}
                   {cloudVersion.currentVersion ? (
                     <span
                       data-testid="cloud-instance-current-version"
@@ -443,7 +452,7 @@ export function CloudInstancesPanel({
                         : 'settings.devices.cloudInstance.update')}
                     </button>
                   ) : null}
-                  {cloudRebuildAvailable ? (
+                  {cloudRebuildAvailable && cloudAffordance !== 'login' ? (
                     <button
                       type="button"
                       data-testid="cloud-instance-rebuild"
@@ -463,7 +472,18 @@ export function CloudInstancesPanel({
                       )}
                     </button>
                   ) : null}
-                  {cloudLifecycleAction === 'stop' ? (
+                  {cloudAffordance === 'login' ? (
+                    loginUrl ? (
+                      <button
+                        type="button"
+                        data-testid="cloud-instance-login"
+                        onClick={openCloudLogin}
+                        className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--settings-btn-primary-border)] bg-[var(--settings-btn-primary-bg)] px-2.5 text-11 font-medium text-[var(--settings-btn-primary-text)] transition-colors hover:bg-[var(--settings-btn-primary-hover-bg)]"
+                      >
+                        {t('settings.devices.cloudInstance.login')}
+                      </button>
+                    ) : null
+                  ) : cloudLifecycleAction === 'stop' ? (
                     <button
                       type="button"
                       onClick={() => void handleCloudStop(cloudInstance.instanceId)}

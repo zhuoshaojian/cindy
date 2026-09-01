@@ -3,13 +3,13 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('CloudInstancesPanel boundaries', () => {
-  it('owns the full cloud lifecycle, including first activation', () => {
+  it('owns cloud lifecycle while routing zero-instance state to browser login', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/renderer/components/settings/CloudInstancesPanel.tsx'),
       'utf8',
     );
 
-    expect(source).toContain('await cloud.wake()');
+    expect(source).not.toContain('await cloud.wake()');
     expect(source).toContain('await cloud.stopInstance(instanceId)');
     expect(source).toContain('await cloud.wake(instanceId)');
     expect(source).toContain('await cloud.upgradeInstance(instanceId)');
@@ -17,7 +17,9 @@ describe('CloudInstancesPanel boundaries', () => {
     expect(source).toContain('await cloud.deleteInstance(instanceId)');
     expect(source).toContain('await cloud.setAutoUpdate(instanceId, enabled)');
     expect(source).not.toContain('window.electronAPI.cloudInstances');
-    expect(source).toContain('data-testid="cloud-instance-first-wake"');
+    expect(source).toContain('data-testid="cloud-instance-first-login"');
+    expect(source).toContain("cloudInstance.loginRequiredZeroInstance");
+    expect(source).toContain('cloudInstanceLoginUrl()');
     expect(source).toContain("'cloud-instance-unregistered-card'");
     expect(source).toContain('data-testid="cloud-instance-rebuild"');
     expect(source).toContain('data-testid="cloud-instance-refresh"');
@@ -32,6 +34,11 @@ describe('CloudInstancesPanel boundaries', () => {
     expect(source).toContain('cloudInstance.status.lastFailedUpgradeImage');
     expect(source).toContain("confirmVariant: 'destructive'");
     expect(source.match(/settings\.devices\.refresh/g)).toHaveLength(2);
+    const lifecycleSource = readFileSync(
+      resolve(process.cwd(), 'src/renderer/features/cloud-instance/useCloudInstances.ts'),
+      'utf8',
+    );
+    expect(lifecycleSource).toContain('resetDeletedCloudMachineSelection(target.deviceId)');
   });
 
   it('keeps cloud products out of MyDevicesPanel', () => {

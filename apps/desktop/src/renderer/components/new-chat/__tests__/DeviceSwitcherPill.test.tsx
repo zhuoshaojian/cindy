@@ -241,20 +241,22 @@ describe('DeviceSwitcherPill 云端入口', () => {
     expect(screen.queryByTestId('create-agent-cloud-update-badge')).toBeNull();
   });
 
-  it('控制面 ready 且 0 实例时仍渲染 pill，并在尾部提供首次唤醒', () => {
+  it('控制面 ready 且 0 实例时仍渲染 pill，并在尾部提供浏览器登录', () => {
     const onWake = vi.fn();
+    const onLogin = vi.fn();
     const { onOpenChange } = renderPill({
       devices: [],
-      cloudWake: { busy: false, pending: null, onWake },
+      cloudWake: { busy: false, pending: null, onWake, onLogin },
     });
 
     expect(screen.getByTestId('create-agent-device-pill')).toBeTruthy();
-    fireEvent.click(screen.getByText('ccAgent.sidebar.cloud.wake').closest('button')!);
-    expect(onWake).toHaveBeenCalledWith();
+    fireEvent.click(screen.getByText('settings.devices.cloudInstance.login').closest('button')!);
+    expect(onLogin).toHaveBeenCalledWith();
+    expect(onWake).not.toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('重建切换实例的空窗期显示重建中而不是首次唤醒', () => {
+  it('重建切换实例的空窗期仍显示浏览器登录而不是唤醒', () => {
     renderPill({
       devices: [],
       cloudWake: {
@@ -264,8 +266,7 @@ describe('DeviceSwitcherPill 云端入口', () => {
       },
     });
 
-    const row = screen.getByText('settings.devices.cloudInstance.rebuilding').closest('button')!;
-    expect(row.disabled).toBe(true);
+    expect(screen.getByText('settings.devices.cloudInstance.login')).toBeTruthy();
     expect(screen.queryByText('ccAgent.sidebar.cloud.wake')).toBeNull();
   });
 

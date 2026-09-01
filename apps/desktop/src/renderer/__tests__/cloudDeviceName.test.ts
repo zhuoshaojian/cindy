@@ -29,6 +29,10 @@ describe('desktop cloud device name presentation', () => {
     expect(resolveDesktopCloudDeviceName('Build Pod', translate)).toBe('Build Pod');
   });
 
+  it('never exposes a trusted cloud device id as a user-facing name', () => {
+    expect(resolveDesktopCloudDeviceName('cloud-device-f59aba78b4c03b495ac9e9ef', translate)).toBe('云端');
+  });
+
   it('uses the same descriptor translation endpoint for custom/default/fallback names', () => {
     expect(translateDesktopCloudInstanceName(
       { kind: 'custom', label: 'Build Pod' },

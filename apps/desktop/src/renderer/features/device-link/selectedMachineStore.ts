@@ -141,6 +141,13 @@ export function removeCloudMachineSelection(
   return kept.length > 0 ? canonicalizeMachineEntries(kept) : MACHINE_ALL;
 }
 
+/** Permanently remove a deleted cloud device from the active and persisted selection. */
+export function resetDeletedCloudMachineSelection(deviceId: string): void {
+  if (!activeOwnerId) return;
+  const next = removeCloudMachineSelection(currentSelection, new Set([deviceId]));
+  setSelectedMachineId(next);
+}
+
 function subscribe(fn: () => void): () => void {
   subs.add(fn);
   return () => {

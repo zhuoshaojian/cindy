@@ -10,6 +10,7 @@ import {
   normalizeSelectedMachineId,
   parseMachineSelection,
   removeCloudMachineSelection,
+  resetDeletedCloudMachineSelection,
   selectVisibleSessions,
   serializeMachineSelection,
   setSelectedMachineId,
@@ -198,6 +199,33 @@ describe('cloud capability disablement', () => {
       expect(getSelectedMachineId()).toBe(MACHINE_ALL);
       expect([...values.values()][0]).toBe(persisted);
       expect(persisted).toBe('["cloud-device"]');
+    } finally {
+      setSelectedMachineId(MACHINE_ALL);
+      setSelectedMachineOwner(null);
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: originalStorage,
+      });
+    }
+  });
+
+  it('removes a deleted cloud device from current and persisted selection', () => {
+    const values = new Map<string, string>();
+    const originalStorage = globalThis.localStorage;
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    try {
+      setSelectedMachineOwner('delete-test');
+      setSelectedMachineId(['cloud-device-deleted']);
+      resetDeletedCloudMachineSelection('cloud-device-deleted');
+      expect(getSelectedMachineId()).toBe(MACHINE_ALL);
+      expect([...values.values()]).toContain('"all"');
     } finally {
       setSelectedMachineId(MACHINE_ALL);
       setSelectedMachineOwner(null);

@@ -14,6 +14,7 @@ export type CloudPillDevice = SelectableDevice & {
   cloudInstanceId: string;
   updateAvailable: boolean;
   modelAccessStale: boolean;
+  loginRequired?: boolean;
 };
 
 /** 云端行以行为必需的 instanceId 判别，不再缓存另一份合成 tag。 */
@@ -66,6 +67,7 @@ export function buildDraftPillDevices(
       cloudInstanceId: instance.instanceId,
       updateAvailable: cloudInstanceHasAvailableUpdate(instance),
       modelAccessStale: cloudInstanceModelAccessStale(instance),
+      loginRequired: instance.status.loginRequired === true,
     });
   }
   return rows;

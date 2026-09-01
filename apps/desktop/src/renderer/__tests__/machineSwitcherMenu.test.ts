@@ -639,13 +639,17 @@ describe('远程机器切换入口并入 SidebarTopNav(置顶段上方,固定不
     expect(menuSource).toContain('if (open) void refreshCloudInstances()');
   });
 
-  it('云端唤醒项并入机器菜单(0 实例首次唤醒 + offline 实例再唤醒,不独立占行)', () => {
+  it('云端动作项并入机器菜单(0 实例登录 + offline 实例再唤醒,不独立占行)', () => {
     expect(menuSource).toContain('useCloudInstances');
     expect(menuSource).toContain('!isCloudInstanceDeviceId(device.deviceId)');
     // 离线实例不以「一台机器」出现:折叠为「唤醒云端」动作行,目标取第一个离线实例。
     expect(menuSource).toContain('wakeCloud(offlineInstance.instanceId, offlineInstance.deviceId)');
     expect(menuSource).toContain('wakeFirstCloud');
-    expect(menuSource).toContain('applySelect([result.deviceId])');
+    // 0 实例没有客户端创建能力，入口固定引导浏览器登录，不发首次 wake。
+    expect(menuSource).toContain('const wakeFirstCloud = (): void => {\n    openCloudLogin();');
+    expect(menuSource).toContain("t('settings.devices.cloudInstance.login')");
+    expect(menuSource).not.toContain("label={t('settings.devices.cloudInstance.loginRequired')}");
+    expect(menuSource).not.toContain('applySelect([result.deviceId])');
     expect(menuSource).toContain('const selectedCloud = cloud.instances.find');
     // 在线/离线由图标本体表达(Cloud / CloudOff),云端行不再叠 StatusDot 双信号。
     expect(menuSource).toContain('<CloudOff size={14} strokeWidth={2} />');

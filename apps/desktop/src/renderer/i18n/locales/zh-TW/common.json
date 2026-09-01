@@ -3623,6 +3623,9 @@
         "manualWakeRequired": "舊的已刪除，但新的尚未建立，請手動喚醒雲端。",
         "manualWakeAction": "手動喚醒雲端",
         "unregisteredStatus": "實例尚未完成啟動，暫時無法連線。",
+        "loginRequired": "請先在瀏覽器中登入一次，才能使用此雲端實例。",
+        "loginRequiredZeroInstance": "在瀏覽器中登入後即可建立雲端實例。",
+        "login": "前往瀏覽器登入",
         "autoUpdate": "空閒時自動更新",
         "autoUpdateHint": "有新版本時，雲端實例會在空閒或休眠時自動更新。",
         "updateRolledBack": "上次更新失敗，已自動回滾。",
@@ -3662,7 +3665,9 @@
           "rebuildCreateFailed": "原雲端實例已刪除，但新實例建立失敗。請從機器選單重新喚醒雲端。",
           "rebuildStillCleaning": "舊雲端實例仍在清理中，請等待清理完成後再喚醒。",
           "autoUpdateFailed": "無法儲存雲端實例的自動更新設定，請稍後重試",
-          "noReleaseAvailable": "目前沒有可用的正式版，請重新整理後稍後重試"
+          "noReleaseAvailable": "目前沒有可用的正式版，請重新整理後稍後重試",
+          "alreadyExists": "雲端實例已存在，請直接使用現有實例。",
+          "notFound": "雲端實例已不存在，請重新整理後重試。"
         },
         "modelAccessStale": "雲端模型憑證需要重新整理，雲端模型可能暫時無法使用"
       },

@@ -153,7 +153,7 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     render(<MachineSwitcherMenu />);
 
     expect(screen.queryByText('Stale Cloud')).toBeNull();
-    expect(screen.getByText('ccAgent.sidebar.cloud.wake')).toBeTruthy();
+    expect(screen.getByText('settings.devices.cloudInstance.login')).toBeTruthy();
   });
 
   it('renders one control-plane row for a real prefixed cloud device without kind metadata', () => {
@@ -176,7 +176,8 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     mocks.pending = { action: 'wake', target: 'cloud-instance-a' };
     const view = render(<MachineSwitcherMenu />);
     expect(
-      screen.getByText('settings.devices.cloudInstance.waking')
+      screen
+        .getByText('settings.devices.cloudInstance.waking')
         .closest('[role="menuitem"]')
         ?.getAttribute('aria-disabled'),
     ).toBe('true');
@@ -188,13 +189,13 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     expect(screen.getByText('Cloud A')).toBeTruthy();
   });
 
-  it('shows the first-instance path as waking while the shared hook is pending', () => {
+  it('shows the first-instance path as browser login while the shared hook is pending', () => {
     mocks.cloudInstances = [];
     mocks.onlineDeviceIds = new Set();
     mocks.pending = { action: 'wake', target: 'new' };
     render(<MachineSwitcherMenu />);
     const row = screen
-      .getByText('settings.devices.cloudInstance.waking')
+      .getByText('settings.devices.cloudInstance.login')
       .closest('[role="menuitem"]');
     expect(row?.getAttribute('aria-disabled')).toBe('true');
   });
@@ -205,7 +206,8 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     const view = render(<MachineSwitcherMenu />);
 
     expect(
-      screen.getByText('settings.devices.cloudInstance.stopping')
+      screen
+        .getByText('settings.devices.cloudInstance.stopping')
         .closest('[role="menuitem"]')
         ?.getAttribute('aria-disabled'),
     ).toBe('true');
@@ -257,4 +259,17 @@ describe('MachineSwitcherMenu cloud update badge', () => {
     expect(screen.queryByText('settings.devices.cloudInstance.waking')).toBeNull();
   });
 
+  it('maps zero-instance entry to browser login without a wake request', () => {
+    mocks.cloudInstances = [];
+    mocks.onlineDeviceIds = new Set();
+    render(<MachineSwitcherMenu />);
+
+    expect(screen.getByText('settings.devices.cloudInstance.login')).toBeTruthy();
+    fireEvent.click(
+      screen
+        .getByText('settings.devices.cloudInstance.login')
+        .closest('[role="menuitem"]')!,
+    );
+    expect(mocks.wake).not.toHaveBeenCalled();
+  });
 });

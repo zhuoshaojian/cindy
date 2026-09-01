@@ -922,6 +922,7 @@ const appDisplayVersionInfo = ipcRenderer.sendSync('get-app-display-version-info
 // 只暴露 renderer 实际消费的字段,新增消费点时在此处扩展。
 const clientEndpointsInfo = ipcRenderer.sendSync('client-endpoints:get-sync') as {
   websiteUrl: string;
+  cloudInstanceApiBaseUrl: string;
 };
 
 const appearanceSettingsInfo = ipcRenderer.sendSync(
@@ -957,7 +958,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }),
   osRelease: ipcRenderer.sendSync('get-os-release') as string,
   appVersion: ipcRenderer.sendSync('get-app-version') as string,
-  clientEndpoints: { websiteUrl: clientEndpointsInfo?.websiteUrl ?? '' },
+  clientEndpoints: {
+    websiteUrl: clientEndpointsInfo?.websiteUrl ?? '',
+    cloudInstanceApiBaseUrl: clientEndpointsInfo?.cloudInstanceApiBaseUrl ?? '',
+  },
   preferredSystemLocale: readInitialPreferredSystemLocale(),
   appDisplayVersion: appDisplayVersionInfo.display,
   appDisplayVersionDetail: appDisplayVersionInfo.detail,

@@ -60,6 +60,8 @@ export interface CloudInstanceStatus {
   runtimeState: CloudInstanceRuntimeState;
   resourceTier: CloudInstanceResourceTier;
   readiness: CloudInstanceReadiness;
+  /** Control-plane authentication gate; the user must sign in once in a browser. */
+  loginRequired?: boolean;
   /** Upgrade lifecycle reported by newer control planes. Missing means idle. */
   upgrade?: {
     state: 'idle' | 'verifying' | 'rolled-back';

@@ -523,6 +523,7 @@ describe('cloud instance IPC handlers', () => {
     [new ServerApiError('MULTIPLE_INSTANCES_REQUIRE_ID', 400, 'ambiguous'), 'INVALID_PARAMS'],
     [new ServerApiError('INVALID_IDEMPOTENCY_KEY', 400, 'bad key'), 'CLOUD_INSTANCE_INVALID_IDEMPOTENCY_KEY'],
     [new ServerApiError('REBUILD_IN_PROGRESS', 409, 'busy'), 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'],
+    [new ServerApiError('CLOUD_INSTANCE_LOGIN_REQUIRED', 409, 'login'), 'CLOUD_INSTANCE_LOGIN_REQUIRED'],
     [new ServerApiError('IDEMPOTENCY_KEY_REUSED', 409, 'reused'), 'CLOUD_INSTANCE_IDEMPOTENCY_KEY_REUSED'],
     [new ServerApiError('REBUILD_OPERATION_NOT_FOUND', 404, 'missing'), 'CLOUD_INSTANCE_REBUILD_OPERATION_NOT_FOUND'],
   ])('maps control-plane failure %# to a stable IPC code', async (error, code) => {

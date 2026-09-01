@@ -56,6 +56,7 @@ describe('buildDraftPillDevices(设备 pill 云端行以控制面为唯一数据
         cloudInstanceId: 'instance-a',
         updateAvailable: false,
         modelAccessStale: false,
+        loginRequired: false,
       },
     ]);
   });
@@ -82,6 +83,7 @@ describe('buildDraftPillDevices(设备 pill 云端行以控制面为唯一数据
         cloudInstanceId: 'instance-a',
         updateAvailable: false,
         modelAccessStale: false,
+        loginRequired: false,
       },
     ]);
   });

@@ -20,6 +20,7 @@ import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore'
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { removeRemoteSessionActivityForDevice } from '@/features/device-link/remoteSessionActivityStore';
 import { setCloudCapability } from '@/features/device-link/cloudCapability';
+import { resetDeletedCloudMachineSelection } from '@/features/device-link/selectedMachineStore';
 import { getDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
 import {
   __resetCloudInstanceRendererAuthorityForTest,
@@ -589,6 +590,7 @@ function clearDeletedInstanceRendererState(target: CloudInstanceView | undefined
   remoteProjectsStore.removeDevice(target.deviceId);
   removeRemoteSessionActivityForDevice(target.deviceId);
   revokedDevicesStore.clearRevoked(target.deviceId);
+  resetDeletedCloudMachineSelection(target.deviceId);
 }
 
 async function deleteInstance(instanceId: string): Promise<void> {

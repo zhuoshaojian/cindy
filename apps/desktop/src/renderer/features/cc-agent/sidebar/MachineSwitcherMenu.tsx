@@ -81,6 +81,8 @@ import {
   desktopCloudInstanceDisplayName,
   resolveDesktopCloudDeviceName,
 } from '@/features/cloud-instance/cloudDeviceName';
+import { resolveCloudAffordance } from '@/features/cloud-instance/cloudAffordance';
+import { cloudInstanceLoginUrl } from '@/features/cloud-instance/cloudLogin';
 import { useActiveMainView } from '@/hooks/useActiveMainView';
 import {
   DropdownMenu,
@@ -122,7 +124,7 @@ export function MachineSwitcherMenu({
   );
   // 设备列表只看当前是否真有可展示的远程设备。hasRemote 还会把「目录已空、
   // raw 仍记着远端」算进去——那是旧逃生口,标题恒在后会误画出「所有 / 本机」。
-  // 云端控制面可用时也要开这一段:「0 实例首次唤醒」的入口就在这里面。
+  // 云端控制面可用时也要开这一段:「0 实例浏览器登录」的入口就在这里面。
   const showDeviceList = remoteDevices.length > 0 || cloudReady;
   // 段头标题是远程任务读取状态的固定承载点。后台 bootstrap 时只更新这一行，
   // 不再把 loading 提示插入下方会话列表，避免列表整体上下跳动。
@@ -165,26 +167,44 @@ export function MachineSwitcherMenu({
   // 云端命名:custom 直显;default 用序号插值;fallback 用通用「云端」名。
   const cloudNameOf = (instance: CloudInstanceView): string =>
     desktopCloudInstanceDisplayName(instance, t);
+  const openCloudLogin = (): void => {
+    const loginUrl = cloudInstanceLoginUrl();
+    if (loginUrl) void window.electronAPI.openExternal(loginUrl);
+  };
   const onWakeFailed = (error: unknown): void => {
-    toast.error(t(extractIpcError(error)?.code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'
-      ? 'settings.devices.cloudInstance.toast.rebuildStillCleaning'
-      : error instanceof CloudInstanceActionTimeoutError
-        ? 'ccAgent.sidebar.cloud.actionTimedOut'
-        : 'ccAgent.sidebar.cloud.wakeFailed'));
+    const code = extractIpcError(error)?.code;
+    toast.error(
+      t(
+        extractIpcError(error)?.code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'
+          ? 'settings.devices.cloudInstance.toast.rebuildStillCleaning'
+          : code === 'CLOUD_INSTANCE_LOGIN_REQUIRED'
+            ? 'settings.devices.cloudInstance.loginRequired'
+            : error instanceof CloudInstanceActionTimeoutError
+              ? 'ccAgent.sidebar.cloud.actionTimedOut'
+              : 'ccAgent.sidebar.cloud.wakeFailed',
+      ),
+    );
   };
   const wakeCloud = (instanceId: string, deviceId: string): void => {
+    const instance = cloud.instances.find((item) => item.instanceId === instanceId);
+    if (
+      resolveCloudAffordance({
+        hasInstance: instance !== undefined,
+        online: instance ? cloud.onlineDeviceIds.has(instance.deviceId) : false,
+        status: instance?.status,
+      }) === 'login'
+    ) {
+      openCloudLogin();
+      return;
+    }
     const wake = cloud.wake(instanceId);
     // 离线实例与在线设备同一心智:先切过滤,不等待 Pod 上线。
     applySelect([deviceId]);
     void wake.catch(onWakeFailed);
   };
   const wakeFirstCloud = (): void => {
-    void cloud.wake().then((result) => {
-      if (!result) return;
-      applySelect([result.deviceId]);
-    }).catch(onWakeFailed);
+    openCloudLogin();
   };
-
 
   const triggerLabel = t('ccAgent.sidebar.machineSwitcher.menuTrigger');
   const settingsItems = (
@@ -308,11 +328,16 @@ export function MachineSwitcherMenu({
               );
             })}
             {/* 机器列表只列在线云端实例;离线实例不以「一台机器」出现(选不了过滤目标),
-                统一折叠成一行「唤醒云端」动作(CloudOff),0 实例与休眠实例同一入口。 */}
+                统一折叠成一行云端动作(CloudOff),登录中与0实例都引导浏览器登录。 */}
             {cloudReady &&
               cloud.instances
                 .filter((instance) => cloud.onlineDeviceIds.has(instance.deviceId))
                 .map((instance) => {
+                  const affordance = resolveCloudAffordance({
+                    hasInstance: true,
+                    online: true,
+                    status: instance.status,
+                  });
                   // wake / stop / rebuild 共用同一份进度呈现:重建会换 instanceId,
                   // 所以要按「pending 目标是否属于当前实例集合」判定,不能只比对 id。
                   const progressAction = cloudInstanceLifecycleActionForTarget(
@@ -321,27 +346,43 @@ export function MachineSwitcherMenu({
                     cloud.instances.map((candidate) => candidate.instanceId),
                   );
                   return (
-                  <MachineMenuItem
-                    key={instance.instanceId}
-                    icon={<Cloud size={14} strokeWidth={2} />}
-                    label={progressAction
-                      ? t(cloudInstanceLifecycleProgressKey(progressAction, cloud.pending))
-                      : cloudNameOf(instance)}
-                    shimmer={progressAction !== null}
-                    disabled={progressAction !== null}
-                    badge={
-                      cloudInstanceHasAvailableUpdate(instance)
-                        ? t('ccAgent.sidebar.cloud.updateAvailable')
-                        : undefined
-                    }
-                    onBadgeSelect={() => {
-                      setOpen(false);
-                      navigate('/settings?tab=remote-control&section=devices');
-                    }}
-                    selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
-                    onSelect={() => applySelect([instance.deviceId])}
-                    onToggle={() => applyToggle(instance.deviceId)}
-                  />
+                    <MachineMenuItem
+                      key={instance.instanceId}
+                      icon={
+                        affordance === 'login' ? (
+                          <CloudOff size={14} strokeWidth={2} />
+                        ) : (
+                          <Cloud size={14} strokeWidth={2} />
+                        )
+                      }
+                      label={
+                        affordance === 'login'
+                          ? t('settings.devices.cloudInstance.login')
+                          : progressAction
+                            ? t(cloudInstanceLifecycleProgressKey(progressAction, cloud.pending))
+                            : cloudNameOf(instance)
+                      }
+                      shimmer={progressAction !== null}
+                      disabled={
+                        affordance === 'login' ? !cloudInstanceLoginUrl() : progressAction !== null
+                      }
+                      badge={
+                        cloudInstanceHasAvailableUpdate(instance)
+                          ? t('ccAgent.sidebar.cloud.updateAvailable')
+                          : undefined
+                      }
+                      onBadgeSelect={() => {
+                        setOpen(false);
+                        navigate('/settings?tab=remote-control&section=devices');
+                      }}
+                      selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
+                      onSelect={
+                        affordance === 'login'
+                          ? openCloudLogin
+                          : () => applySelect([instance.deviceId])
+                      }
+                      onToggle={() => applyToggle(instance.deviceId)}
+                    />
                   );
                 })}
             {cloudReady &&
@@ -354,21 +395,36 @@ export function MachineSwitcherMenu({
                 // 必须保持 busy，避免 first-offline 顺序变化后再次点击、重复创建/唤醒资源。
                 const progressAction = cloudInstanceLifecycleAction(cloud.pending);
                 const waking = progressAction !== null;
+                const affordance = resolveCloudAffordance({
+                  hasInstance: offlineInstance !== undefined,
+                  online: false,
+                  status: offlineInstance?.status,
+                });
                 return (
                   <MachineMenuItem
                     icon={<CloudOff size={14} strokeWidth={2} />}
-                    label={progressAction
-                      ? t(cloudInstanceLifecycleProgressKey(progressAction, cloud.pending))
-                      : t(cloud.rebuildAttention
-                        ? 'settings.devices.cloudInstance.manualWakeAction'
-                        : 'ccAgent.sidebar.cloud.wake')}
+                    label={
+                      affordance === 'login'
+                        ? t('settings.devices.cloudInstance.login')
+                        : progressAction
+                          ? t(cloudInstanceLifecycleProgressKey(progressAction, cloud.pending))
+                          : t(
+                              cloud.rebuildAttention
+                                ? 'settings.devices.cloudInstance.manualWakeAction'
+                                : 'ccAgent.sidebar.cloud.wake',
+                            )
+                    }
                     selected={false}
                     shimmer={waking}
-                    disabled={cloud.pending !== null}
+                    disabled={
+                      affordance === 'login' ? !cloudInstanceLoginUrl() : cloud.pending !== null
+                    }
                     onSelect={
-                      offlineInstance
-                        ? () => wakeCloud(offlineInstance.instanceId, offlineInstance.deviceId)
-                        : wakeFirstCloud
+                      affordance === 'login'
+                        ? openCloudLogin
+                        : offlineInstance
+                          ? () => wakeCloud(offlineInstance.instanceId, offlineInstance.deviceId)
+                          : wakeFirstCloud
                     }
                   />
                 );

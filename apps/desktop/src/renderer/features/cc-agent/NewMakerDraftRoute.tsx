@@ -178,6 +178,8 @@ import {
   desktopCloudInstanceDisplayName,
   resolveDesktopCloudDeviceName,
 } from '@/features/cloud-instance/cloudDeviceName';
+import { resolveCloudAffordance } from '@/features/cloud-instance/cloudAffordance';
+import { cloudInstanceLoginUrl } from '@/features/cloud-instance/cloudLogin';
 import {
   CloudInstanceActionTimeoutError,
   useCloudInstances,
@@ -2506,6 +2508,11 @@ export function NewMakerDraftRoute() {
     selectedFilterCloudInstance,
   ]);
 
+  const openCloudLogin = useCallback(() => {
+    const loginUrl = cloudInstanceLoginUrl();
+    if (loginUrl) void window.electronAPI.openExternal(loginUrl);
+  }, []);
+
   const handleCloudWake = useCallback(
     (instanceId?: string) => {
       if (sendInFlightRef.current) return;
@@ -2519,6 +2526,14 @@ export function NewMakerDraftRoute() {
       const instance = instanceId
         ? cloud.instances.find((item) => item.instanceId === instanceId)
         : undefined;
+      if (resolveCloudAffordance({
+        hasInstance: instance !== undefined,
+        online: instance ? cloud.onlineDeviceIds.has(instance.deviceId) : false,
+        status: instance?.status,
+      }) === 'login') {
+        openCloudLogin();
+        return;
+      }
       const previous = getDraft().pendingCloudTarget;
       const sameTarget = previous != null
         && (
@@ -2579,11 +2594,13 @@ export function NewMakerDraftRoute() {
     [
       applyDraftTarget,
       cloud.instances,
+      cloud.onlineDeviceIds,
       cloud.pending,
       cloud.wake,
       cloudNameOf,
       dropPathBackedAttachments,
       effectiveDeviceLinkDeviceId,
+      openCloudLogin,
       stripProjectRelativeMentions,
       t,
     ],
@@ -5534,6 +5551,8 @@ export function NewMakerDraftRoute() {
                           rebuildAttention: cloud.rebuildAttention,
                           onWake: handleCloudWake,
                           onReselectWake: handleCloudWake,
+                          onLogin: openCloudLogin,
+                          loginAvailable: cloudInstanceLoginUrl() !== null,
                           selectedTarget: pendingCloudTarget
                               ? {
                                 deviceId: pendingCloudTarget.deviceId,

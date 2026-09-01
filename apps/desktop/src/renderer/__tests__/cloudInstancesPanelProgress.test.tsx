@@ -86,7 +86,7 @@ function rebuildingCloud(): UseCloudInstances {
 afterEach(() => cleanup());
 
 describe('CloudInstancesPanel lifecycle progress', () => {
-  it('shows rebuilding during the zero-instance handoff instead of idle wake', () => {
+  it('shows browser login guidance for a zero-instance membership', () => {
     const cloud = rebuildingCloud();
     cloud.instances = [];
 
@@ -97,10 +97,9 @@ describe('CloudInstancesPanel lifecycle progress', () => {
       />,
     );
 
-    const firstWakeButton = screen.getByTestId('cloud-instance-first-wake');
-    expect(firstWakeButton.textContent).toContain('settings.devices.cloudInstance.rebuilding');
-    expect(firstWakeButton.textContent).not.toContain('ccAgent.sidebar.cloud.wake');
-    expect(firstWakeButton.getAttribute('disabled')).not.toBeNull();
+    expect(screen.getByText('settings.devices.cloudInstance.loginRequiredZeroInstance')).toBeTruthy();
+    expect(screen.queryByTestId('cloud-instance-first-login')).toBeNull();
+    expect(cloud.wake).not.toHaveBeenCalled();
   });
 
   it('shows rebuilding on an unregistered replacement card when pending targets the retired instance', () => {
@@ -117,7 +116,7 @@ describe('CloudInstancesPanel lifecycle progress', () => {
     expect(rebuildButton.textContent).not.toBe('settings.devices.cloudInstance.rebuild');
   });
 
-  it('keeps the recovery message visible after automatic rebuild gives up', () => {
+  it('keeps login guidance visible after automatic rebuild gives up', () => {
     const cloud = rebuildingCloud();
     cloud.instances = [];
     cloud.pending = null;
@@ -128,9 +127,7 @@ describe('CloudInstancesPanel lifecycle progress', () => {
 
     render(<CloudInstancesPanel s={settingsWithoutRelayDevice()} cloud={cloud} />);
 
-    expect(screen.getByText('settings.devices.cloudInstance.manualWakeRequired')).toBeTruthy();
-    expect(screen.getByTestId('cloud-instance-first-wake').textContent).toContain(
-      'settings.devices.cloudInstance.manualWakeAction',
-    );
+    expect(screen.getByText('settings.devices.cloudInstance.loginRequiredZeroInstance')).toBeTruthy();
+    expect(cloud.wake).not.toHaveBeenCalled();
   });
 });

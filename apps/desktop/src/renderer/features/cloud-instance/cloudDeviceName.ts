@@ -5,6 +5,7 @@ import {
 } from '@cindy/maker-shared/cloud-instance';
 import {
   CLOUD_DEVICE_NAME_SENTINEL,
+  isCloudInstanceDeviceId,
   parseCloudDeviceName,
 } from '@cindy/maker-shared/device-list';
 
@@ -39,9 +40,9 @@ export function resolveDesktopCloudDeviceName(
   translate: CloudDeviceNameTranslator,
 ): string {
   const marker = parseCloudDeviceName(name);
-  if (!marker) return name;
+  if (!marker && !isCloudInstanceDeviceId(name)) return name;
   return translateDesktopCloudInstanceName(
-    marker.sequence === null
+    marker === null || marker.sequence === null
       ? { kind: 'fallback', name: CLOUD_DEVICE_NAME_SENTINEL }
       : { kind: 'default', sequence: marker.sequence },
     translate,

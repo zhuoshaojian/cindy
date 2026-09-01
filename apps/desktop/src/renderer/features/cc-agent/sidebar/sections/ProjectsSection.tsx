@@ -30,7 +30,6 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   MessagesSquare,
-  MonitorSmartphone,
   SquarePen,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -40,6 +39,7 @@ import { Tip } from '@/components/ui/tooltip';
 import { useEffectiveSelectedMachineId } from '@/features/device-link/useMachineSwitcher';
 import { MACHINE_ALL } from '@/features/device-link/selectedMachineStore';
 import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 import {
   projectOrderWriteLedger,
   resolveDisplayedProjectOrder,
@@ -54,6 +54,7 @@ import { SortableList } from '@/components/sidebar/SortableList';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useSidebarMainViewMode } from '@/hooks/useSidebarCardMode';
 import { ProjectNode } from './ProjectNode';
+import { RemoteProjectIcon } from '../RemoteProjectIcon';
 import { UnclassifiedSection } from './UnclassifiedSection';
 import { getSessionListCollapseView } from '../../lib/sessionListCollapse';
 import {
@@ -1010,7 +1011,17 @@ export function ProjectsSection({
                     ) : (
                       <ChevronDown size={12} strokeWidth={2} className="shrink-0" />
                     )}
-                    <MonitorSmartphone size={13} strokeWidth={2} className="shrink-0" />
+                    <RemoteProjectIcon
+                      kind="device-link"
+                      cloud={section.deviceId ? isCloudInstanceDeviceId(section.deviceId) : false}
+                      connectionStatus={
+                        section.deviceId && isCloudInstanceDeviceId(section.deviceId)
+                          ? online ? 'connected' : 'disconnected'
+                          : null
+                      }
+                      size={13}
+                      strokeWidth={2}
+                    />
                     <span className="min-w-0 truncate text-xs font-medium">{name}</span>
                     {!online && (
                       <span

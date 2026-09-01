@@ -3623,6 +3623,9 @@
         "manualWakeRequired": "旧的已删、新的没建，请手动唤醒云端。",
         "manualWakeAction": "手动唤醒云端",
         "unregisteredStatus": "实例尚未完成启动，暂时无法连接。",
+        "loginRequired": "请先在浏览器中登录一次，才能使用此云端实例。",
+        "loginRequiredZeroInstance": "在浏览器中登录后即可创建云端实例。",
+        "login": "去浏览器登录",
         "autoUpdate": "空闲时自动更新",
         "autoUpdateHint": "有新版本时，云端实例会在空闲或休眠时自动更新。",
         "updateRolledBack": "上次更新失败，已自动回滚。",
@@ -3662,7 +3665,9 @@
           "rebuildCreateFailed": "原云端实例已删除，但新实例创建失败。请从机器菜单重新唤醒云端。",
           "rebuildStillCleaning": "旧云端实例仍在清理中，请等待清理完成后再唤醒。",
           "autoUpdateFailed": "无法保存云端实例的自动更新设置，请稍后重试",
-          "noReleaseAvailable": "目前没有可用的正式版，请刷新后稍后重试"
+          "noReleaseAvailable": "目前没有可用的正式版，请刷新后稍后重试",
+          "alreadyExists": "云端实例已存在，请直接使用现有实例。",
+          "notFound": "云端实例已不存在，请刷新后重试。"
         },
         "modelAccessStale": "云端模型凭据待刷新，云端模型可能暂不可用"
       },

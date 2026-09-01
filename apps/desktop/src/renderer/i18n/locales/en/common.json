@@ -3632,6 +3632,9 @@
         "manualWakeRequired": "The old instance was deleted, but the replacement was not created. Wake Cloud manually.",
         "manualWakeAction": "Wake Cloud manually",
         "unregisteredStatus": "The instance did not finish starting and cannot connect yet.",
+        "loginRequired": "Sign in once in your browser to use this cloud instance.",
+        "loginRequiredZeroInstance": "Sign in in your browser to create a cloud instance.",
+        "login": "Sign in in browser",
         "autoUpdate": "Automatically Update When Idle",
         "autoUpdateHint": "When a new release is available, the cloud instance updates automatically while idle or sleeping.",
         "updateRolledBack": "The last update failed and was rolled back automatically.",
@@ -3671,7 +3674,9 @@
           "rebuildCreateFailed": "The old cloud instance was deleted, but a new instance couldn't be created. Wake Cloud again from the machine menu.",
           "rebuildStillCleaning": "The old cloud instance is still being cleaned up. Wait for cleanup to finish before waking Cloud again.",
           "autoUpdateFailed": "The cloud instance auto-update setting couldn't be saved. Try again.",
-          "noReleaseAvailable": "No release is available yet. Refresh and try again later."
+          "noReleaseAvailable": "No release is available yet. Refresh and try again later.",
+          "alreadyExists": "A cloud instance already exists. Use the existing instance instead.",
+          "notFound": "The cloud instance is no longer available. Refresh and try again."
         },
         "modelAccessStale": "Cloud model credentials need a refresh; cloud models may be temporarily unavailable"
       },

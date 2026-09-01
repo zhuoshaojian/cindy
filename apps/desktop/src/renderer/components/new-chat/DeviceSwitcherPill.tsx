@@ -28,10 +28,10 @@ import {
   type DraftPillDevice,
 } from '@/features/cloud-instance/cloudDraftTarget';
 import {
-  cloudInstanceLifecycleAction,
   cloudInstanceLifecycleActionForTarget,
   cloudInstanceLifecycleProgressKey,
 } from '@/features/cloud-instance/cloudLifecyclePresentation';
+import { resolveCloudAffordance } from '@/features/cloud-instance/cloudAffordance';
 import type { CloudInstancePendingState } from '@/features/cloud-instance/useCloudInstances';
 import type { CloudInstanceRebuildAttention } from '@/features/cloud-instance/useCloudInstances';
 
@@ -49,8 +49,10 @@ export interface DeviceSwitcherCloudWake {
   /** 共享云端动作状态；用于呈现 wake / stop / rebuild 的真实进行中语义。 */
   pending: CloudInstancePendingState;
   rebuildAttention?: CloudInstanceRebuildAttention | null;
-  /** 省略 instanceId = 首次唤醒(控制面自动建实例)。 */
+  /** 省略 instanceId = 0 实例入口(引导浏览器登录)。 */
   onWake: (instanceId?: string) => void;
+  onLogin?: () => void;
+  loginAvailable?: boolean;
   /** 已有 wake 在途时只重新附着 transient draft，不再次发起 wake。 */
   onReselectWake?: (instanceId?: string) => void;
   /** 产品上已经选中的云端目标；设备真正上线前不写入 value(deviceLinkDeviceId)。 */
@@ -211,6 +213,10 @@ export function DeviceSwitcherPill({
                   if (instanceId === undefined) cloudWake.onReselectWake?.();
                   else cloudWake.onReselectWake?.(instanceId);
                 },
+                onLogin: () => {
+                  onOpenChange(false);
+                  cloudWake.onLogin?.();
+                },
               }}
           onOpenCloudSettings={() => {
             onOpenChange(false);
@@ -250,12 +256,6 @@ function DeviceMenuList({
   const cloudInstanceIds = devices
     .filter(isCloudPillDevice)
     .map((device) => device.cloudInstanceId);
-  const firstWakeAction =
-    cloudInstanceLifecycleActionForTarget(
-      cloudWake?.pending ?? null,
-      'new',
-      cloudInstanceIds,
-    ) ?? cloudInstanceLifecycleAction(cloudWake?.pending ?? null);
 
   return (
     <>
@@ -288,6 +288,13 @@ function DeviceMenuList({
               : null;
           const inProgress = progressAction !== null;
           const reselectingWake = progressAction === 'wake';
+          const affordance = isCloud
+            ? resolveCloudAffordance({
+                hasInstance: true,
+                online: device.online,
+                status: { loginRequired: device.loginRequired },
+              })
+            : 'open';
           const Icon = !isCloud ? Laptop : device.online ? Cloud : CloudOff;
           return (
             <DeviceRow
@@ -309,14 +316,16 @@ function DeviceMenuList({
               hint={
                 progressAction
                   ? t(cloudInstanceLifecycleProgressKey(progressAction, cloudWake?.pending))
-                  : device.online
+                  : affordance === 'login'
+                    ? t('settings.devices.cloudInstance.loginRequired')
+                    : device.online
                     ? // 在线但没有可用模型凭据:这一行正在邀请用户建任务,不提示的话
                       // 要到 agent 跑不动时才发现(modelAccess 不阻塞就绪,实例确实是 ready)。
                       isCloud && device.modelAccessStale
                       ? t('newChat.deviceSwitcher.modelAccessStaleHint')
                       : t('newChat.deviceSwitcher.onlineHint')
                     : isCloud
-                      ? t('ccAgent.sidebar.cloud.wake')
+                        ? t('ccAgent.sidebar.cloud.wake')
                       : t('newChat.deviceSwitcher.offlineHint')
               }
               hintWarning={device.online && isCloud && device.modelAccessStale}
@@ -326,17 +335,17 @@ function DeviceMenuList({
               // 在线行 = 切换;云端离线行 = 唤醒。当前这台云端已经在唤醒时仍可点：
               // 这是把用户从本机重新带回同一份 transient draft，不会再请求一次 wake。
               // 其它在途云端动作才禁点；普通离线行始终不可选。
-              disabled={
-                (inProgress && !reselectingWake)
-                || (device.online
-                  ? false
-                  : !isCloud
-                    || cloudWake == null
-                    || (cloudWake.busy && !reselectingWake))
-              }
+              disabled={(inProgress && !reselectingWake)
+                || (affordance === 'login'
+                  ? cloudWake == null || cloudWake.loginAvailable === false
+                  : device.online
+                    ? false
+                    : !isCloud || cloudWake == null || (cloudWake.busy && !reselectingWake))}
               selected={value === device.deviceId}
               onSelect={
-                reselectingWake
+                affordance === 'login'
+                  ? () => cloudWake?.onLogin?.()
+                  : reselectingWake
                   ? () => cloudWake?.onReselectWake?.(device.cloudInstanceId)
                   : device.online
                   ? () => onSelect(device.deviceId, device.name)
@@ -360,27 +369,14 @@ function DeviceMenuList({
                   strokeWidth={2}
                   className={cn(
                     'shrink-0',
-                    firstWakeAction !== null
-                      ? 'text-[var(--remote-status-progress)]'
-                      : 'text-[var(--folder-item-icon)]',
+                    'text-[var(--folder-item-icon)]',
                   )}
                 />
               }
-              shimmer={firstWakeAction !== null}
-              statusWaking={firstWakeAction !== null}
-              name={t(
-                firstWakeAction
-                  ? cloudInstanceLifecycleProgressKey(firstWakeAction, cloudWake.pending)
-                  : cloudWake.rebuildAttention
-                    ? 'settings.devices.cloudInstance.manualWakeAction'
-                    : 'ccAgent.sidebar.cloud.wake',
-              )}
+              name={t('settings.devices.cloudInstance.login')}
               selected={false}
-              // 首次创建同理：用户切回本机后仍能重新选回正在创建的云端，不重复建实例。
-              disabled={cloudWake.busy && firstWakeAction !== 'wake'}
-              onSelect={firstWakeAction === 'wake'
-                ? () => cloudWake.onReselectWake?.()
-                : () => cloudWake.onWake()}
+              disabled={cloudWake.loginAvailable === false}
+              onSelect={() => cloudWake.onLogin?.()}
             />
           </>
         )}
