@@ -1,32 +1,16 @@
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { parseCloudInstanceImageTag } from '@cindy/maker-shared/cloud-instance';
-import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 
 import { Text, TextInput } from '@/components/AppText';
-import {
-  InfoPill,
-  MainWindowActionGroup,
-  ScreenHeader,
-  StatusDot,
-} from '@/components/MobilePrimitives';
+import { MainWindowActionGroup, ScreenHeader, StatusDot } from '@/components/MobilePrimitives';
 import { useAuth } from '@/auth/AuthContext';
-import {
-  useCloudInstances,
-  type UseCloudInstances,
-} from '@/cloud-instance/useCloudInstances';
-import type { CloudInstanceView } from '@/api/cloudInstance';
 import { DEVICE_LINK_API_BASE_URL } from '@/config/env';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
 import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
-import {
-  cloudInstanceDetailActionState,
-  devicePlatformLabel,
-  resolveCloudManagementTarget,
-} from '@/device-link/deviceManagement';
+import { devicePlatformLabel } from '@/device-link/deviceManagement';
 import { formatRemoteError } from '@/device-link/remoteStatus';
 import { remoteSessionStore } from '@/session/remoteSessionStore';
 import { goBackGuarded } from '@/utils/backGuard';
@@ -39,35 +23,19 @@ export interface DeviceManagementScreenProps {
   deviceId: string;
   name: string;
   online: boolean;
-  autoUpdate?: boolean;
-  cloudCandidate?: boolean;
-  cloudInstanceId?: string;
   cpuLabel?: string;
-  image?: string;
-  kind?: string;
-  latestReleaseTag?: string;
-  lastFailedUpgradeImage?: string;
   memoryGb?: number;
   modelLabel?: string;
   platform?: string;
-  updateAvailable?: boolean;
-  upgradeState?: 'idle' | 'rolled-back' | 'verifying';
 }
 
-/** Account device management surface hosted by the dedicated management route. */
+/** Account device management surface for ordinary remote devices. */
 export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const router = useRouter();
   const { t } = useTranslation();
   const { apiFetch } = useAuth();
-  const cloudCandidate = Boolean(
-    props.cloudCandidate
-    || props.kind === 'cloud'
-    || props.cloudInstanceId
-    || isCloudInstanceDeviceId(props.deviceId),
-  );
-  const cloud = useCloudInstances(apiFetch, cloudCandidate);
   const { lastPresenceSnapshot } = useDeviceLink();
   const displayName = resolveMobileDeviceDisplayName(props.name);
   const [deviceName, setDeviceName] = useState(displayName);
@@ -75,13 +43,6 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
   const [renameEditing, setRenameEditing] = useState(false);
   const [renameSaving, setRenameSaving] = useState(false);
   const [online, setOnline] = useState(props.online);
-  const cloudTarget = resolveCloudManagementTarget({
-    cloudCandidate,
-    cloudInstanceId: props.cloudInstanceId,
-    deviceId: props.deviceId,
-    instances: cloud.instances,
-    kind: props.kind,
-  });
 
   useEffect(() => {
     setDeviceName(displayName);
@@ -89,22 +50,17 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
   }, [displayName]);
 
   useEffect(() => {
-    if (lastPresenceSnapshot?.deviceId === props.deviceId) {
-      setOnline(lastPresenceSnapshot.online);
-    }
+    if (lastPresenceSnapshot?.deviceId === props.deviceId) setOnline(lastPresenceSnapshot.online);
   }, [lastPresenceSnapshot, props.deviceId]);
-  const metadata = useMemo(() => {
-    const values = [
-      devicePlatformLabel(props.platform),
-      props.modelLabel?.trim() || null,
-      props.cpuLabel?.trim() || null,
-      typeof props.memoryGb === 'number'
-        ? t('devices.management.memory', { count: props.memoryGb })
-        : null,
-      online ? t('devices.management.online') : t('devices.management.offline'),
-    ];
-    return values.filter((value): value is string => Boolean(value)).join(' · ');
-  }, [online, props.cpuLabel, props.memoryGb, props.modelLabel, props.platform, t]);
+
+  const metadata = useMemo(() => [
+    devicePlatformLabel(props.platform),
+    props.modelLabel?.trim() || null,
+    props.cpuLabel?.trim() || null,
+    typeof props.memoryGb === 'number' ? t('devices.management.memory', { count: props.memoryGb }) : null,
+    online ? t('devices.management.online') : t('devices.management.offline'),
+  ].filter((value): value is string => Boolean(value)).join(' · '),
+  [online, props.cpuLabel, props.memoryGb, props.modelLabel, props.platform, t]);
 
   const saveRename = useCallback(async () => {
     const name = renameDraft.trim();
@@ -117,12 +73,7 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
     try {
       const result = await apiFetch<{ deviceId: string; name: string }>(
         `/api/device-link/devices/${encodeURIComponent(props.deviceId)}`,
-        {
-          baseUrl: DEVICE_LINK_API_BASE_URL,
-          body: { name },
-          method: 'PATCH',
-          timeoutMs: DEVICE_LIST_TIMEOUT_MS,
-        },
+        { baseUrl: DEVICE_LINK_API_BASE_URL, body: { name }, method: 'PATCH', timeoutMs: DEVICE_LIST_TIMEOUT_MS },
       );
       setDeviceName(result.name);
       setRenameDraft(result.name);
@@ -155,407 +106,36 @@ export function DeviceManagementScreen(props: DeviceManagementScreenProps) {
             </View>
           </View>
         </View>
-
-        {cloudTarget.isCloud ? (
-          <CloudInstanceManagement
-            {...props}
-            cloud={cloud}
-            initialInstanceId={props.cloudInstanceId}
-            resolvedInstance={cloudTarget.instance}
-            online={online}
-            onOnlineOverride={setOnline}
-            onDeleted={() => goBackGuarded(router)}
-          />
-        ) : (
-          <View style={styles.card} testID="deviceManagement.renameSection">
-            <Text style={styles.sectionTitle}>{t('devices.management.rename')}</Text>
-            <Text style={styles.sectionDescription}>{t('devices.management.renameHint')}</Text>
-            {renameEditing ? (
-              <>
-                <TextInput
-                  autoFocus
-                  editable={!renameSaving}
-                  maxLength={64}
-                  onChangeText={setRenameDraft}
-                  onSubmitEditing={() => void saveRename()}
-                  placeholder={t('devices.list.renameDevice.placeholder')}
-                  placeholderTextColor={colors.textTertiary}
-                  returnKeyType="done"
-                  selectTextOnFocus
-                  style={styles.input}
-                  testID="deviceManagement.renameInput"
-                  value={renameDraft}
-                />
-                <MainWindowActionGroup
-                  cancelAction={{
-                    disabled: renameSaving,
-                    label: t('devices.common.cancel'),
-                    onPress: () => {
-                      setRenameDraft(deviceName);
-                      setRenameEditing(false);
-                    },
-                    testID: 'deviceManagement.renameCancel',
-                  }}
-                  primaryActions={[{
-                    busy: renameSaving,
-                    disabled: !renameDraft.trim(),
-                    label: renameSaving ? t('devices.common.saving') : t('devices.common.save'),
-                    onPress: () => void saveRename(),
-                    testID: 'deviceManagement.renameSave',
-                    tone: 'primary',
-                  }]}
-                  testID="deviceManagement.renameActions"
-                />
-              </>
-            ) : (
+        <View style={styles.card} testID="deviceManagement.renameSection">
+          <Text style={styles.sectionTitle}>{t('devices.management.rename')}</Text>
+          <Text style={styles.sectionDescription}>{t('devices.management.renameHint')}</Text>
+          {renameEditing ? (
+            <>
+              <TextInput autoFocus editable={!renameSaving} maxLength={64} onChangeText={setRenameDraft} onSubmitEditing={() => void saveRename()} placeholder={t('devices.list.renameDevice.placeholder')} placeholderTextColor={colors.textTertiary} returnKeyType="done" selectTextOnFocus style={styles.input} testID="deviceManagement.renameInput" value={renameDraft} />
               <MainWindowActionGroup
-                primaryActions={[{
-                  label: t('devices.list.renameDevice.title'),
-                  onPress: () => setRenameEditing(true),
-                  testID: 'deviceManagement.renameStart',
-                }]}
+                cancelAction={{ disabled: renameSaving, label: t('devices.common.cancel'), onPress: () => { setRenameDraft(deviceName); setRenameEditing(false); }, testID: 'deviceManagement.renameCancel' }}
+                primaryActions={[{ busy: renameSaving, disabled: !renameDraft.trim(), label: renameSaving ? t('devices.common.saving') : t('devices.common.save'), onPress: () => void saveRename(), testID: 'deviceManagement.renameSave', tone: 'primary' }]}
+                testID="deviceManagement.renameActions"
               />
-            )}
-          </View>
-        )}
+            </>
+          ) : (
+            <MainWindowActionGroup primaryActions={[{ label: t('devices.list.renameDevice.title'), onPress: () => setRenameEditing(true), testID: 'deviceManagement.renameStart' }]} />
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function CloudInstanceManagement({
-  autoUpdate: fallbackAutoUpdate,
-  cloud,
-  deviceId,
-  image: fallbackImage,
-  initialInstanceId,
-  latestReleaseTag: fallbackLatestReleaseTag,
-  lastFailedUpgradeImage: fallbackLastFailedUpgradeImage,
-  onDeleted,
-  online,
-  onOnlineOverride,
-  resolvedInstance,
-  updateAvailable: fallbackUpdateAvailable = false,
-  upgradeState: fallbackUpgradeState = 'idle',
-}: DeviceManagementScreenProps & {
-  cloud: UseCloudInstances;
-  initialInstanceId?: string;
-  onDeleted(): void;
-  onOnlineOverride(value: boolean): void;
-  resolvedInstance: CloudInstanceView | null;
-}) {
-  const styles = useThemedStyles(makeStyles);
-  const { colors } = useTheme();
-  const { t } = useTranslation();
-  const refreshCloudInstances = cloud.refresh;
-  const instance = resolvedInstance;
-  const instanceId = instance?.instanceId ?? initialInstanceId ?? null;
-  const status = instance?.status;
-  const autoUpdateSupported = instance
-    ? typeof status?.autoUpdate === 'boolean'
-    : typeof fallbackAutoUpdate === 'boolean';
-  const autoUpdate = status?.autoUpdate ?? fallbackAutoUpdate ?? false;
-  const currentVersion = parseCloudInstanceImageTag(status?.image ?? fallbackImage);
-  const updateAvailable = status?.updateAvailable ?? fallbackUpdateAvailable;
-  const latestReleaseTag = instance
-    ? status?.latestReleaseTag ?? null
-    : fallbackLatestReleaseTag ?? null;
-  const upgradeState = status?.upgrade.state ?? fallbackUpgradeState;
-  const failedUpgradeImage = instance
-    ? status?.lastFailedUpgradeImage
-      ?? (upgradeState === 'rolled-back' ? status?.upgrade.targetImage ?? null : null)
-    : fallbackLastFailedUpgradeImage ?? null;
-
-  useFocusEffect(useCallback(() => {
-    void refreshCloudInstances();
-  }, [refreshCloudInstances]));
-
-  useEffect(() => {
-    cloud.updateOnlineDeviceIds(online ? new Set([deviceId]) : new Set());
-  }, [cloud.updateOnlineDeviceIds, deviceId, online]);
-
-  const actionState = cloudInstanceDetailActionState({
-    instanceId: instanceId ?? `unresolved:${deviceId}`,
-    online,
-    pending: cloud.pending,
-    updateAvailable,
-    upgradeState,
-  });
-  const recordUnavailable = cloud.loadState !== 'ready' || !instance || instanceId === null;
-  const autoUpdatePending = cloud.pending?.target === instanceId
-    && cloud.pending.action === 'autoUpdate';
-
-  const runWake = useCallback(async () => {
-    if (!instanceId) return;
-    const result = await cloud.wake(instanceId);
-    if (!result) return;
-    Alert.alert(t('deviceLink.cloudInstance.woke'));
-  }, [cloud, instanceId, t]);
-
-  const runStop = useCallback(async () => {
-    if (!instanceId) return;
-    const result = await cloud.stopInstance(instanceId);
-    if (!result) return;
-    onOnlineOverride(false);
-    Alert.alert(t('deviceLink.cloudInstance.stopped'));
-  }, [cloud, instanceId, onOnlineOverride, t]);
-
-  const confirmUpgrade = useCallback(() => {
-    if (!instanceId) return;
-    Alert.alert(
-      t('deviceLink.cloudInstance.updateConfirmTitle'),
-      t('deviceLink.cloudInstance.updateConfirmDescription'),
-      [
-        { style: 'cancel', text: t('devices.common.cancel') },
-        {
-          onPress: () => {
-            void cloud.upgradeInstance(instanceId).then((result) => {
-              if (result) Alert.alert(t('deviceLink.cloudInstance.updateStarted'));
-            });
-          },
-          text: t('deviceLink.cloudInstance.updateConfirm'),
-        },
-      ],
-    );
-  }, [cloud, instanceId, t]);
-
-  const confirmDelete = useCallback(() => {
-    if (!instanceId) return;
-    Alert.alert(
-      t('deviceLink.cloudInstance.deleteConfirmTitle'),
-      t('deviceLink.cloudInstance.deleteConfirmDescription'),
-      [
-        { style: 'cancel', text: t('devices.common.cancel') },
-        {
-          onPress: () => {
-            void cloud.deleteInstance(instanceId).then((result) => {
-              if (!result) return;
-              Alert.alert(t('deviceLink.cloudInstance.deleted'));
-              onDeleted();
-            });
-          },
-          style: 'destructive',
-          text: t('deviceLink.cloudInstance.deleteConfirm'),
-        },
-      ],
-    );
-  }, [cloud, instanceId, onDeleted, t]);
-
-  const setAutoUpdate = useCallback((enabled: boolean) => {
-    if (!instanceId) return;
-    void cloud.setAutoUpdate(instanceId, enabled);
-  }, [cloud, instanceId]);
-
-  const lifecycleLabel = actionState.lifecycleBusy
-    ? actionState.lifecycleAction === 'wake'
-      // 唤醒中的四语文案只有 `deviceLink.cloudWaking` 一份(设备菜单也用它);
-      // 这里曾写成不存在的 `cloudInstance.waking`,界面上直接漏出 key 字面量。
-      ? t('deviceLink.cloudWaking')
-      : t('deviceLink.cloudInstance.stopping')
-    : actionState.lifecycleAction === 'wake'
-      ? t('deviceLink.cloudInstance.wake')
-      : t('deviceLink.cloudInstance.stop');
-
-  return (
-    <>
-      <View style={styles.card} testID="deviceManagement.cloudUpdateSection">
-        <Text style={styles.sectionTitle}>{t('deviceLink.cloudInstance.updateSectionTitle')}</Text>
-        {currentVersion && (updateAvailable || actionState.updateBusy) ? (
-          <Text style={styles.sectionDescription} testID="deviceManagement.cloudCurrentVersion">
-            {t('deviceLink.cloudInstance.currentVersion', { version: currentVersion })}
-          </Text>
-        ) : null}
-        <View style={styles.updateStatusRow}>
-          <Text style={styles.sectionDescription}>
-            {actionState.updateBusy
-              ? t('deviceLink.cloudInstance.updating')
-              : updateAvailable
-                ? latestReleaseTag
-                  ? t('deviceLink.cloudInstance.updateAvailableTag', { tag: latestReleaseTag })
-                  : t('deviceLink.cloudInstance.updateAvailable')
-                : currentVersion
-                  ? t('deviceLink.cloudInstance.currentVersionUpToDate', { version: currentVersion })
-                  : t('deviceLink.cloudInstance.upToDate')}
-          </Text>
-          {updateAvailable && !actionState.updateBusy ? (
-            <InfoPill label={t('deviceLink.cloudInstance.updateAvailable')} />
-          ) : null}
-        </View>
-        {failedUpgradeImage ? (
-          <Text style={styles.warningText} testID="deviceManagement.cloudRollbackWarning">
-            {t('deviceLink.cloudInstance.updateRolledBack')}
-          </Text>
-        ) : null}
-        {/* 观测提示:Pod 模型凭据同步失败(不阻塞就绪,不影响本页其它操作)。 */}
-        {status?.modelAccess === 'not-ready' ? (
-          <Text style={styles.warningText} testID="deviceManagement.cloudModelAccessStale">
-            {t('deviceLink.cloudInstance.modelAccessStale')}
-          </Text>
-        ) : null}
-        {(updateAvailable || actionState.updateBusy) ? (
-          <MainWindowActionGroup
-            primaryActions={[{
-              busy: actionState.updateBusy,
-              disabled: actionState.updateDisabled || recordUnavailable,
-              label: actionState.updateBusy
-                ? t('deviceLink.cloudInstance.updating')
-                : t('deviceLink.cloudInstance.update'),
-              onPress: confirmUpgrade,
-              testID: 'deviceManagement.cloudUpdate',
-              tone: 'primary',
-            }]}
-          />
-        ) : null}
-        {autoUpdateSupported ? (
-          <View style={styles.switchRow} testID="deviceManagement.cloudAutoUpdateRow">
-            <View style={styles.switchTexts}>
-              <Text style={styles.switchLabel}>
-                {t('deviceLink.cloudInstance.autoUpdate')}
-              </Text>
-              <Text style={styles.sectionDescription}>
-                {t('deviceLink.cloudInstance.autoUpdateHint')}
-              </Text>
-            </View>
-            <Switch
-              accessibilityLabel={t('deviceLink.cloudInstance.autoUpdate')}
-              accessibilityState={{
-                busy: autoUpdatePending,
-                disabled: cloud.pending !== null || recordUnavailable,
-              }}
-              disabled={cloud.pending !== null || recordUnavailable}
-              onValueChange={setAutoUpdate}
-              testID="deviceManagement.cloudAutoUpdate"
-              trackColor={{ true: colors.inputCaret }}
-              value={autoUpdate}
-            />
-          </View>
-        ) : null}
-      </View>
-
-      <View style={styles.card} testID="deviceManagement.cloudActionsSection">
-        <Text style={styles.sectionTitle}>{t('devices.management.actions')}</Text>
-        <MainWindowActionGroup
-          primaryActions={[{
-            busy: actionState.lifecycleBusy,
-            disabled: actionState.lifecycleDisabled || recordUnavailable,
-            label: lifecycleLabel,
-            onPress: actionState.lifecycleAction === 'wake' ? () => void runWake() : () => void runStop(),
-            testID: `deviceManagement.cloud${actionState.lifecycleAction === 'wake' ? 'Wake' : 'Stop'}`,
-          }]}
-        />
-      </View>
-
-      <View style={styles.card} testID="deviceManagement.cloudDeleteSection">
-        <Text style={styles.sectionTitle}>{t('devices.management.dangerZone')}</Text>
-        <Text style={styles.sectionDescription}>
-          {t('deviceLink.cloudInstance.deleteConfirmDescription')}
-        </Text>
-        <MainWindowActionGroup
-          dangerActions={[{
-            busy: cloud.pending?.target === instanceId && cloud.pending.action === 'delete',
-            disabled: actionState.deleteDisabled || recordUnavailable,
-            label: cloud.pending?.target === instanceId && cloud.pending.action === 'delete'
-              ? t('deviceLink.cloudInstance.deleting')
-              : t('deviceLink.cloudInstance.delete'),
-            onPress: confirmDelete,
-            testID: 'deviceManagement.cloudDelete',
-            tone: 'danger',
-          }]}
-        />
-      </View>
-    </>
-  );
-}
-
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  safeArea: {
-    backgroundColor: colors.surface,
-    flex: 1,
-  },
-  content: {
-    gap: spacing.md,
-    paddingBottom: spacing.xxl,
-    paddingHorizontal: spacing.lg,
-  },
-  card: {
-    backgroundColor: colors.surfaceElevated,
-    borderColor: colors.border,
-    borderRadius: radius.container,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: spacing.md,
-    padding: spacing.lg,
-  },
-  summaryHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  summaryText: {
-    flex: 1,
-    gap: spacing.xs,
-    minWidth: 0,
-  },
-  deviceName: {
-    color: colors.textPrimary,
-    fontSize: typeScale.subtitle,
-    fontWeight: fontWeight.medium,
-    lineHeight: lineHeight.subtitle,
-  },
-  metadata: {
-    color: colors.textTertiary,
-    fontSize: typeScale.caption,
-    lineHeight: lineHeight.caption,
-  },
-  sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: typeScale.body,
-    fontWeight: fontWeight.medium,
-    lineHeight: lineHeight.body,
-  },
-  sectionDescription: {
-    color: colors.textSecondary,
-    flex: 1,
-    fontSize: typeScale.caption,
-    lineHeight: lineHeight.caption,
-  },
-  switchRow: {
-    alignItems: 'center',
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-    paddingTop: spacing.md,
-  },
-  switchTexts: {
-    flex: 1,
-    gap: spacing.xs,
-    minWidth: 0,
-  },
-  switchLabel: {
-    color: colors.textPrimary,
-    fontSize: typeScale.body,
-    lineHeight: lineHeight.body,
-  },
-  input: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.control,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: colors.textPrimary,
-    fontSize: typeScale.body,
-    minHeight: 44,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  updateStatusRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  warningText: {
-    color: colors.statusAccent,
-    fontSize: typeScale.caption,
-    lineHeight: lineHeight.caption,
-  },
+  safeArea: { backgroundColor: colors.surface, flex: 1 },
+  content: { gap: spacing.md, paddingBottom: spacing.xxl, paddingHorizontal: spacing.lg },
+  card: { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderRadius: radius.container, borderWidth: StyleSheet.hairlineWidth, gap: spacing.md, padding: spacing.lg },
+  summaryHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.md },
+  summaryText: { flex: 1, gap: spacing.xs, minWidth: 0 },
+  deviceName: { color: colors.textPrimary, fontSize: typeScale.subtitle, fontWeight: fontWeight.medium, lineHeight: lineHeight.subtitle },
+  metadata: { color: colors.textTertiary, fontSize: typeScale.caption, lineHeight: lineHeight.caption },
+  sectionTitle: { color: colors.textPrimary, fontSize: typeScale.body, fontWeight: fontWeight.medium, lineHeight: lineHeight.body },
+  sectionDescription: { color: colors.textSecondary, flex: 1, fontSize: typeScale.caption, lineHeight: lineHeight.caption },
+  input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.control, borderWidth: StyleSheet.hairlineWidth, color: colors.textPrimary, fontSize: typeScale.body, minHeight: 44, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
 });

@@ -1,5 +1,6 @@
 import {
   deviceDisplayName,
+  isCloudInstanceDeviceId,
   parseCloudDeviceName,
   type DeviceListDeviceLike,
 } from '@cindy/maker-shared/device-list';
@@ -21,7 +22,7 @@ type DevicePresentationInput = Pick<DeviceListDeviceLike, 'deviceId' | 'name' | 
 export function resolveMobileDeviceDisplayName(device: DevicePresentationInput | string): string {
   const name = typeof device === 'string' ? device : deviceDisplayName(device);
   const marker = parseCloudDeviceName(name);
-  return marker
+  return marker || isCloudInstanceDeviceId(name)
     ? formatMobileCloudDeviceName()
     : name;
 }

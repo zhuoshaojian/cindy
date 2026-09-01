@@ -13,6 +13,8 @@ export interface CloudInstanceUpgradeStatus {
 
 /** Client-facing status fields used by the mobile cloud controls. */
 export interface CloudInstanceStatus {
+  /** Control-plane credential gate; when true the user must sign in in a browser. */
+  loginRequired?: boolean;
   runtimeState?: string;
   image: string | null;
   updateAvailable: boolean;
@@ -352,6 +354,7 @@ function parseCloudInstanceStatus(value: unknown): CloudInstanceStatus {
     rawState === 'verifying' || rawState === 'rolled-back' ? rawState : 'idle';
   return {
     ...value,
+    loginRequired: typeof value.loginRequired === 'boolean' ? value.loginRequired : undefined,
     runtimeState: typeof value.runtimeState === 'string' ? value.runtimeState : undefined,
     image:
       typeof value.image === 'string' && value.image.trim()
@@ -387,6 +390,19 @@ function parseCloudInstanceStatus(value: unknown): CloudInstanceStatus {
           : null,
     },
   };
+}
+
+/** Build a safe browser login URL from the locally validated cloud endpoint. */
+export function cloudInstanceLoginUrl(): string | null {
+  const baseUrl = CLOUD_INSTANCE_API_BASE_URL.trim();
+  if (!baseUrl) return null;
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== 'https:') return null;
+    return new URL('/instance-login', parsed.origin).toString();
+  } catch {
+    return null;
+  }
 }
 
 function parseUpgradeOutcome(value: unknown): CloudInstanceUpgradeResult['outcome'] {

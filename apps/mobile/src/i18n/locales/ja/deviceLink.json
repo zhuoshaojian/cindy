@@ -17,6 +17,11 @@
   "cloudWaking": "起動中…",
   "cloudInstance": {
     "cloud": "クラウド",
+    "loginRequired": "このクラウドインスタンスを使うには、ブラウザで一度ログインしてください。",
+    "loginRequiredZeroInstance": "ブラウザでログインすると、クラウドインスタンスを作成できます。",
+    "loginRequiredAction": "ブラウザでログイン",
+    "alreadyExists": "クラウドインスタンスはすでに存在します。既存のインスタンスを使用してください。",
+    "notFound": "クラウドインスタンスが見つかりません。更新してもう一度お試しください。",
     "wakeFailed": "クラウドの起動に失敗しました。しばらくしてからもう一度お試しください。",
     "rebuilding": "再作成中…",
     "rebuildFailed": "クラウドインスタンスを再作成できませんでした。もう一度お試しください。",

@@ -8,7 +8,12 @@ import {
   StyleSheet,
   View,
   useWindowDimensions,
+  Alert,
+  Linking,
+  Switch,
 } from 'react-native';
+import { parseCloudInstanceImageTag } from '@cindy/maker-shared/cloud-instance';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 import { Text } from '@/components/AppText';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -26,6 +31,7 @@ import {
   MainWindowEmptyState,
   MainWindowMetric,
   MainWindowOptionButton,
+  InfoPill,
   RemoteListSyncingPlaceholder,
   SummaryStrip,
 } from '@/components/MobilePrimitives';
@@ -35,6 +41,12 @@ import {
 } from '@/platform/chrome';
 import { buildMainWindowLayout } from '@/components/mainWindowLayout';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
+import { useAuth } from '@/auth/AuthContext';
+import { useCloudInstances, type UseCloudInstances } from '@/cloud-instance/useCloudInstances';
+import { parseCloudOnlineRouteParam, resolveCloudAffordance } from '@/cloud-instance/cloudAffordance';
+import { cloudInstanceLoginUrl, type CloudInstanceView } from '@/api/cloudInstance';
+import { cloudInstanceDetailActionState } from '@/device-link/deviceManagement';
+import { buildDeviceDetailRouteParams } from '@/device-link/deviceDetailRoute';
 import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 import { formatRemoteError } from '@/device-link/remoteStatus';
 import { withTransientRemoteRetry } from '@/device-link/remoteRetry';
@@ -121,6 +133,7 @@ export default function DeviceDetailScreen() {
   const { t, i18n: i18nInstance } = useTranslation();
   const params = useLocalSearchParams<{
     deviceId: string;
+    online?: string;
     deviceName?: string;
     name?: string;
     workingDir?: string;
@@ -153,7 +166,20 @@ export default function DeviceDetailScreen() {
   // 前进导航统一走守卫 push,防止列表卡顿时连点把同一页压进栈 N 层(锁语义见 navigationLock.ts)。
   const guardedPush = useGuardedPush();
   const { width: screenWidth } = useWindowDimensions();
-  const { connectionIssue, invoke, status, subscribe, unsubscribe } = useDeviceLink();
+  const { connectionIssue, invoke, lastPresenceSnapshot, status, subscribe, unsubscribe } = useDeviceLink();
+  const { apiFetch } = useAuth();
+  const cloudDevice = isCloudInstanceDeviceId(deviceId);
+  const cloud = useCloudInstances(apiFetch, cloudDevice);
+  const cloudInstance = cloud.instances.find((instance) => instance.deviceId === deviceId) ?? null;
+  const routeOnline = parseCloudOnlineRouteParam(readRouteString(params.online));
+  const [online, setOnline] = useState(routeOnline);
+  useEffect(() => {
+    if (lastPresenceSnapshot?.deviceId === deviceId) setOnline(lastPresenceSnapshot.online);
+  }, [deviceId, lastPresenceSnapshot]);
+  useEffect(() => {
+    if (!cloudDevice) return;
+    cloud.updateOnlineDeviceIds(online ? new Set([deviceId]) : new Set());
+  }, [cloud.updateOnlineDeviceIds, cloudDevice, deviceId, online]);
   const maker = useMobileMakerTransport(deviceId);
   const scheduleEventSnapshot = useRemoteScheduleEventSnapshot(deviceId);
   const scheduleMirrorInvalidations = useRemoteScheduleMirrorInvalidations();
@@ -496,16 +522,17 @@ export default function DeviceDetailScreen() {
       ?.session.workingDir?.trim();
     guardedPush({
       pathname: '/devices/[deviceId]',
-      params: {
+      params: buildDeviceDetailRouteParams({
         deviceId,
         name: deviceName,
+        online,
         automationGroupKey: group.baseKey,
         automationName: group.title,
         ...(primaryWorkingDir ? { automationWorkingDir: primaryWorkingDir } : {}),
         automationSessionIds: JSON.stringify(group.sessionIds),
-      },
+      }),
     });
-  }, [deviceId, deviceName, guardedPush]);
+  }, [deviceId, deviceName, guardedPush, online]);
 
   const toggleSelection = useCallback((sessionIds: readonly string[]) => {
     setBulkConfirmAction(null);
@@ -676,6 +703,15 @@ export default function DeviceDetailScreen() {
             status={status}
           />
         ) : null}
+        {cloudDevice ? (
+          <CloudInstanceActions
+            cloud={cloud}
+            deviceId={deviceId}
+            online={online}
+            onDeleted={() => goBackGuarded(router)}
+            onOnlineChange={setOnline}
+          />
+        ) : null}
         <SectionList
           sections={runItems.length > 0 ? [{ key: 'automation-runs', title: '', data: runItems }] : []}
           keyExtractor={(item) => item.session.id}
@@ -752,6 +788,15 @@ export default function DeviceDetailScreen() {
             loading={loading}
             onSync={() => void loadSessions()}
             status={status}
+          />
+        ) : null}
+        {cloudDevice ? (
+          <CloudInstanceActions
+            cloud={cloud}
+            deviceId={deviceId}
+            online={online}
+            onDeleted={() => goBackGuarded(router)}
+            onOnlineChange={setOnline}
           />
         ) : null}
         <View style={styles.projectSearchChrome}>
@@ -872,6 +917,16 @@ export default function DeviceDetailScreen() {
         onSync={() => void loadSessions()}
         status={status}
       />
+
+      {cloudDevice ? (
+        <CloudInstanceActions
+          cloud={cloud}
+          deviceId={deviceId}
+          online={online}
+          onDeleted={() => goBackGuarded(router)}
+          onOnlineChange={setOnline}
+        />
+      ) : null}
 
       <SummaryStrip
         style={{
@@ -1195,6 +1250,220 @@ export default function DeviceDetailScreen() {
   );
 }
 
+function CloudInstanceActions({
+  cloud,
+  deviceId,
+  online,
+  onDeleted,
+  onOnlineChange,
+}: {
+  cloud: UseCloudInstances;
+  deviceId: string;
+  online: boolean;
+  onDeleted(): void;
+  onOnlineChange(value: boolean): void;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const instance = cloud.instances.find((item) => item.deviceId === deviceId) ?? null;
+  const status = instance?.status;
+  const loginUrl = cloudInstanceLoginUrl();
+  const hasInstance = cloud.loadState === 'ready' ? instance !== null : true;
+  const affordance = resolveCloudAffordance({
+    hasInstance,
+    online,
+    loginRequired: status?.loginRequired,
+  });
+  const instanceId = instance?.instanceId ?? null;
+  const actionState = cloudInstanceDetailActionState({
+    instanceId: instanceId ?? `unresolved:${deviceId}`,
+    loginRequired: affordance === 'login',
+    online,
+    pending: cloud.pending,
+    updateAvailable: status?.updateAvailable ?? false,
+    upgradeState: status?.upgrade.state ?? 'idle',
+  });
+  const currentVersion = parseCloudInstanceImageTag(status?.image);
+  const failedUpgradeImage = status?.lastFailedUpgradeImage
+    ?? (status?.upgrade.state === 'rolled-back' ? status.upgrade.targetImage : null);
+  const autoUpdate = status?.autoUpdate ?? false;
+  const autoUpdateSupported = typeof status?.autoUpdate === 'boolean';
+  const autoUpdatePending = cloud.pending?.target === instanceId
+    && cloud.pending.action === 'autoUpdate';
+  const recordUnavailable = instanceId === null;
+  const pendingThisInstance = cloud.pending?.target === instanceId;
+  const login = useCallback(() => {
+    if (loginUrl) void Linking.openURL(loginUrl).catch(() => undefined);
+  }, [loginUrl]);
+  const wake = useCallback(async () => {
+    const result = await cloud.wake(instanceId ?? undefined);
+    if (result) Alert.alert(t('deviceLink.cloudInstance.woke'));
+  }, [cloud, instanceId, t]);
+  const stop = useCallback(async () => {
+    if (!instanceId) return;
+    const result = await cloud.stopInstance(instanceId);
+    if (result) {
+      onOnlineChange(false);
+      Alert.alert(t('deviceLink.cloudInstance.stopped'));
+    }
+  }, [cloud, instanceId, onOnlineChange, t]);
+  const confirmUpgrade = useCallback(() => {
+    if (!instanceId) return;
+    Alert.alert(
+      t('deviceLink.cloudInstance.updateConfirmTitle'),
+      t('deviceLink.cloudInstance.updateConfirmDescription'),
+      [
+        { style: 'cancel', text: t('devices.common.cancel') },
+        {
+          text: t('deviceLink.cloudInstance.updateConfirm'),
+          onPress: () => {
+            void cloud.upgradeInstance(instanceId).then((result) => {
+              if (result) Alert.alert(t('deviceLink.cloudInstance.updateStarted'));
+            });
+          },
+        },
+      ],
+    );
+  }, [cloud, instanceId, t]);
+  const confirmDelete = useCallback(() => {
+    if (!instanceId) return;
+    Alert.alert(
+      t('deviceLink.cloudInstance.deleteConfirmTitle'),
+      t('deviceLink.cloudInstance.deleteConfirmDescription'),
+      [
+        { style: 'cancel', text: t('devices.common.cancel') },
+        {
+          style: 'destructive',
+          text: t('deviceLink.cloudInstance.deleteConfirm'),
+          onPress: () => {
+            void cloud.deleteInstance(instanceId).then((result) => {
+              if (!result) return;
+              Alert.alert(t('deviceLink.cloudInstance.deleted'));
+              onDeleted();
+            });
+          },
+        },
+      ],
+    );
+  }, [cloud, instanceId, onDeleted, t]);
+  const setAutoUpdate = useCallback((enabled: boolean) => {
+    if (instanceId) void cloud.setAutoUpdate(instanceId, enabled);
+  }, [cloud, instanceId]);
+  const lifecycleLabel = actionState.lifecycleBusy
+    ? actionState.lifecycleAction === 'wake' ? t('deviceLink.cloudWaking') : t('deviceLink.cloudInstance.stopping')
+    : actionState.lifecycleAction === 'wake' ? t('deviceLink.cloudInstance.wake') : t('deviceLink.cloudInstance.stop');
+  const versionStatus = actionState.updateBusy
+    ? t('deviceLink.cloudInstance.updating')
+    : currentVersion
+      ? status?.updateAvailable
+        ? t('deviceLink.cloudInstance.currentVersion', { version: currentVersion })
+        : t('deviceLink.cloudInstance.currentVersionUpToDate', { version: currentVersion })
+      : status?.updateAvailable
+        ? status.latestReleaseTag
+          ? t('deviceLink.cloudInstance.updateAvailableTag', { tag: status.latestReleaseTag })
+          : t('deviceLink.cloudInstance.updateAvailable')
+        : t('deviceLink.cloudInstance.upToDate');
+
+  return (
+    <View style={styles.cloudActionsStack} testID="deviceDetail.cloudActions">
+      {affordance === 'login' ? (
+        <View style={styles.card} testID="deviceDetail.cloudLoginSection">
+          <Text style={styles.warningText} testID="deviceDetail.cloudLoginRequired">
+            {t(hasInstance ? 'deviceLink.cloudInstance.loginRequired' : 'deviceLink.cloudInstance.loginRequiredZeroInstance')}
+          </Text>
+          {loginUrl ? (
+            <MainWindowActionGroup
+              density="compact"
+              primaryActions={[{
+                label: t('deviceLink.cloudInstance.loginRequiredAction'),
+                onPress: login,
+                testID: 'deviceDetail.cloudLogin',
+                tone: 'primary',
+              }]}
+            />
+          ) : null}
+        </View>
+      ) : (
+        <View style={styles.card} testID="deviceDetail.cloudActionsSection">
+          <View style={styles.updateStatusRow} testID="deviceDetail.cloudUpdateSection">
+            <Text style={styles.sectionDescription} testID="deviceDetail.cloudCurrentVersion">
+              {versionStatus}
+            </Text>
+            {status?.updateAvailable && !actionState.updateBusy ? (
+              <InfoPill label={t('deviceLink.cloudInstance.updateAvailable')} />
+            ) : null}
+          </View>
+          {failedUpgradeImage ? (
+            <Text style={styles.warningText} testID="deviceDetail.cloudRollbackWarning">
+              {t('deviceLink.cloudInstance.updateRolledBack')}
+            </Text>
+          ) : null}
+          {status?.modelAccess === 'not-ready' ? (
+            <Text style={styles.warningText} testID="deviceDetail.cloudModelAccessStale">
+              {t('deviceLink.cloudInstance.modelAccessStale')}
+            </Text>
+          ) : null}
+          {autoUpdateSupported ? (
+            <View style={styles.switchRow} testID="deviceDetail.cloudAutoUpdateRow">
+              <Text style={styles.switchLabel}>{t('deviceLink.cloudInstance.autoUpdate')}</Text>
+              <Switch
+                accessibilityHint={t('deviceLink.cloudInstance.autoUpdateHint')}
+                accessibilityLabel={t('deviceLink.cloudInstance.autoUpdate')}
+                accessibilityState={{ busy: autoUpdatePending, disabled: cloud.pending !== null || recordUnavailable }}
+                disabled={cloud.pending !== null || recordUnavailable}
+                onValueChange={setAutoUpdate}
+                testID="deviceDetail.cloudAutoUpdate"
+                trackColor={{ true: colors.inputCaret }}
+                value={autoUpdate}
+              />
+            </View>
+          ) : null}
+          <View style={styles.cloudActionRow} testID="deviceDetail.cloudDeleteSection">
+            <MainWindowActionButton
+              action={{
+                busy: actionState.lifecycleBusy,
+                disabled: affordance === 'wake' ? actionState.lifecycleDisabled : actionState.lifecycleDisabled || recordUnavailable,
+                label: lifecycleLabel,
+                onPress: actionState.lifecycleAction === 'wake' ? () => void wake() : () => void stop(),
+                testID: `deviceDetail.cloud${actionState.lifecycleAction === 'wake' ? 'Wake' : 'Stop'}`,
+              }}
+              density="compact"
+              grow
+            />
+            {status?.updateAvailable || actionState.updateBusy ? (
+              <MainWindowActionButton
+                action={{
+                  busy: actionState.updateBusy,
+                  disabled: actionState.updateDisabled || recordUnavailable,
+                  label: actionState.updateBusy ? t('deviceLink.cloudInstance.updating') : t('deviceLink.cloudInstance.update'),
+                  onPress: confirmUpgrade,
+                  testID: 'deviceDetail.cloudUpdate',
+                  tone: 'primary',
+                }}
+                density="compact"
+                grow
+              />
+            ) : null}
+            <MainWindowActionButton
+              action={{
+                busy: pendingThisInstance && cloud.pending?.action === 'delete',
+                disabled: actionState.deleteDisabled || recordUnavailable,
+                label: pendingThisInstance && cloud.pending?.action === 'delete' ? t('deviceLink.cloudInstance.deleting') : t('deviceLink.cloudInstance.delete'),
+                onPress: confirmDelete,
+                testID: 'deviceDetail.cloudDelete',
+                tone: 'danger',
+              }}
+              density="compact"
+              grow
+            />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function DeviceDetailSessionRow({
   asBlock = false,
   expandedAutomationGroups,
@@ -1372,6 +1641,24 @@ function readRouteString(value: unknown): string | null {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.surface },
+  cloudActionsStack: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
+  card: {
+    backgroundColor: colors.surfaceElevated,
+    borderColor: colors.border,
+    borderRadius: radius.container,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+    padding: spacing.sm,
+  },
+  sectionDescription: { color: colors.textSecondary, flex: 1, fontSize: typeScale.caption, lineHeight: lineHeight.caption },
+  warningText: { color: colors.statusAccent, fontSize: typeScale.caption, lineHeight: lineHeight.caption },
+  updateStatusRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+  switchRow: {
+    alignItems: 'center', borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row', gap: spacing.md, justifyContent: 'space-between', minHeight: 32,
+  },
+  switchLabel: { color: colors.textPrimary, flex: 1, fontSize: typeScale.body, lineHeight: lineHeight.body, minWidth: 0 },
+  cloudActionRow: { flexDirection: 'row', gap: spacing.sm },
   summaryTopRow: {
     alignItems: 'stretch',
     flexDirection: 'row',

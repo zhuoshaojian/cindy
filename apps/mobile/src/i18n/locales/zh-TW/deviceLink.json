@@ -17,6 +17,11 @@
   "cloudWaking": "喚醒中…",
   "cloudInstance": {
     "cloud": "雲端",
+    "loginRequired": "請先在瀏覽器中登入一次，才能使用此雲端實例。",
+    "loginRequiredZeroInstance": "在瀏覽器中登入後即可建立雲端實例。",
+    "loginRequiredAction": "前往瀏覽器登入",
+    "alreadyExists": "雲端實例已存在，請直接使用現有實例。",
+    "notFound": "找不到雲端實例，請重新整理後重試。",
     "wakeFailed": "喚醒雲端失敗，請稍後重試",
     "rebuilding": "重建中…",
     "rebuildFailed": "無法重建雲端實例，請稍後重試",

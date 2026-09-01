@@ -1,7 +1,8 @@
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Linking, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Cloud, Lock } from 'lucide-react-native';
 import { Text } from '@/components/AppText';
+import { cloudInstanceLoginUrl } from '@/api/cloudInstance';
 import { MainWindowActionButton, StatusDot } from '@/components/MobilePrimitives';
 import type { MobileHomeNoDeviceContext } from '@/session/mobileHome';
 import {
@@ -41,6 +42,8 @@ export interface RemoteAccessGuideCloud {
   waking?: boolean;
   busyLabel?: string;
   onWake?(): void;
+  loginRequired?: boolean;
+  loginRequiredZeroInstance?: boolean;
 }
 
 export function RemoteAccessGuide({
@@ -71,6 +74,7 @@ export function RemoteAccessGuide({
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const loginUrl = cloudInstanceLoginUrl();
   const { reason } = context;
   // 连接步骤文案。桌面端开关名称必须与 apps/desktop 设置页 devices.allowControl 保持一致。
   const connectSteps = [
@@ -169,10 +173,25 @@ export function RemoteAccessGuide({
             <Cloud color={colors.textSecondary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
             <View style={styles.teaserBody}>
               <Text style={styles.teaserTitle}>{t('deviceLink.cloudReadyTitle')}</Text>
-              <Text style={styles.teaserCopy}>{t('deviceLink.cloudReadyCopy')}</Text>
+            <Text style={styles.teaserCopy}>
+              {t(cloud.loginRequiredZeroInstance
+                ? 'deviceLink.cloudInstance.loginRequiredZeroInstance'
+                : 'deviceLink.cloudReadyCopy')}
+            </Text>
             </View>
           </View>
-          {cloud.onWake ? (
+          {cloud.loginRequired ? (
+            <MainWindowActionButton
+              action={{
+                disabled: !loginUrl,
+                label: t('deviceLink.cloudInstance.loginRequiredAction'),
+                onPress: () => { if (loginUrl) void Linking.openURL(loginUrl).catch(() => undefined); },
+                testID: 'home.remoteGuide.cloudLogin',
+                tone: 'primary',
+              }}
+              style={styles.teaserButton}
+            />
+          ) : cloud.onWake ? (
             <MainWindowActionButton
               action={{
                 busy: cloud.waking === true,

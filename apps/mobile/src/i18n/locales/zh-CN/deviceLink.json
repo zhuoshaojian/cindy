@@ -17,6 +17,11 @@
   "cloudWaking": "唤醒中…",
   "cloudInstance": {
     "cloud": "云端",
+    "loginRequired": "请先在浏览器中登录一次，才能使用此云端实例。",
+    "loginRequiredZeroInstance": "在浏览器中登录后即可创建云端实例。",
+    "loginRequiredAction": "去浏览器登录",
+    "alreadyExists": "云端实例已存在，请直接使用现有实例。",
+    "notFound": "云端实例已不存在，请刷新后重试。",
     "wakeFailed": "唤醒云端失败，请稍后重试",
     "rebuilding": "重建中…",
     "rebuildFailed": "无法重建云端实例，请稍后重试",

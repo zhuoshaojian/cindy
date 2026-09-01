@@ -61,6 +61,11 @@ describe('mobile cloud device presentation', () => {
     })).toBe('办公室 Mac');
   });
 
+  it('never exposes a trusted cloud device id as a user-facing name', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(resolveMobileDeviceDisplayName('cloud-device-f59aba78b4c03b495ac9e9ef')).toBe('云端');
+  });
+
   it('normalizes cached and route-param names at user-visible page boundaries', async () => {
     await i18n.changeLanguage('zh-CN');
     expect(resolveMobileDeviceDisplayName(CLOUD_DEVICE_NAME_SENTINEL)).toBe('云端');

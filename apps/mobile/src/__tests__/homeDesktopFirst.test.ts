@@ -650,8 +650,12 @@ describe('mobile home desktop-first surface', () => {
     expect(devicesSource).toContain('t(zeroCloudPresentation.labelKey)');
     expect(devicesSource).toContain('cloudInstances.updateOnlineDeviceIds(onlineDeviceIds);');
     expect(devicesSource).not.toContain('cloudWakeWatchDeviceId');
-    expect(devicesSource).toContain('const busy = pendingThisInstance || item.updating;');
-    expect(devicesSource).toContain('disabled={!item.online && cloud.pending !== null}');
+    expect(devicesSource).toContain(
+      "const busy = affordance === 'login' ? false : pendingThisInstance || item.updating;",
+    );
+    expect(devicesSource).toContain("disabled={affordance === 'login'");
+    expect(devicesSource).toContain('loginRequiredZeroInstance: cloudInstances.instances.length === 0');
+    expect(guideSource).toContain("deviceLink.cloudInstance.loginRequiredZeroInstance");
     expect(devicesSource).toContain('const selectedCloudWaking = isSelectedCloudInstanceWaking({');
     expect(devicesSource).toContain('sections={renderedSections}');
     expect(devicesSource).toContain('testID="home.cloudWaking"');

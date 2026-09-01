@@ -298,7 +298,15 @@ export function useCloudInstances(
             Alert.alert(i18n.t('deviceLink.cloudInstance.rebuildStillCleaning'));
             return true;
           }
-          Alert.alert(i18n.t('deviceLink.cloudInstance.wakeFailed'));
+          if (error.code === 'CLOUD_INSTANCE_LOGIN_REQUIRED') {
+            Alert.alert(i18n.t('deviceLink.cloudInstance.loginRequired'));
+          } else if (error.code === 'ALREADY_EXISTS') {
+            Alert.alert(i18n.t('deviceLink.cloudInstance.alreadyExists'));
+          } else if (error.code === 'NOT_FOUND') {
+            Alert.alert(i18n.t('deviceLink.cloudInstance.notFound'));
+          } else {
+            Alert.alert(i18n.t('deviceLink.cloudInstance.wakeFailed'));
+          }
           return false;
         },
         onAccepted: (result) => {
@@ -317,8 +325,16 @@ export function useCloudInstances(
     [apiFetch, onTerminalError, refreshAfterAction, waitForTerminal],
   );
 
-  const onActionError = useCallback((action: CloudInstanceAction) => {
-    Alert.alert(i18n.t(CLOUD_INSTANCE_ACTION_ERROR_KEYS[action]));
+  const onActionError = useCallback((action: CloudInstanceAction, error?: { code?: string }) => {
+    if (error?.code === 'CLOUD_INSTANCE_LOGIN_REQUIRED') {
+      Alert.alert(i18n.t('deviceLink.cloudInstance.loginRequired'));
+    } else if (error?.code === 'ALREADY_EXISTS') {
+      Alert.alert(i18n.t('deviceLink.cloudInstance.alreadyExists'));
+    } else if (error?.code === 'NOT_FOUND') {
+      Alert.alert(i18n.t('deviceLink.cloudInstance.notFound'));
+    } else {
+      Alert.alert(i18n.t(CLOUD_INSTANCE_ACTION_ERROR_KEYS[action]));
+    }
   }, []);
 
   const stopInstance = useCallback(
@@ -375,7 +391,7 @@ export function useCloudInstances(
             Alert.alert(i18n.t('deviceLink.cloudInstance.noReleaseAvailable'));
             return false;
           }
-          onActionError(action);
+          onActionError(action, error);
           return false;
         },
       }),

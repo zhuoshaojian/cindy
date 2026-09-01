@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DeviceView } from '@cindy/device-link';
@@ -84,13 +84,44 @@ function mobileSession(
 }
 
 describe('mobile controllable device filter', () => {
-  it('wires the shared zero-instance presentation into every mobile wake entry', () => {
+  it('routes every device-detail navigation through the required online-param builder', () => {
+    const appRoot = resolve(process.cwd(), 'app');
+    const files: string[] = [];
+    const visit = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = resolve(dir, entry.name);
+        if (entry.isDirectory()) visit(path);
+        else if (/\.(tsx|ts)$/.test(entry.name)) files.push(path);
+      }
+    };
+    visit(appRoot);
+    const bypasses = files.flatMap((path) => {
+      const lines = readFileSync(path, 'utf8').split(/\r?\n/);
+      const findings: string[] = [];
+      for (let index = 0; index < lines.length; index += 1) {
+        if (!lines[index].includes("pathname: '/devices/[deviceId]'")) continue;
+        const nextPathname = lines.findIndex(
+          (line, candidate) => candidate > index && line.includes("pathname: '/devices/[deviceId]'"),
+        );
+        const pushBlock = lines
+          .slice(index, nextPathname === -1 ? lines.length : nextPathname)
+          .join('\n');
+        if (!pushBlock.includes('params: buildDeviceDetailRouteParams(')) {
+          findings.push(`${path}:${index + 1}`);
+        }
+      }
+      return findings;
+    });
+    expect(bypasses).toEqual([]);
+  });
+
+  it('routes the zero-instance device-menu entry to browser login', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
-    expect(source).toContain(
-      'const zeroCloudPresentation = cloudInstanceZeroInstancePresentation(cloudInstances.pending)',
-    );
-    expect(source).toContain('disabled={zeroCloudPresentation.disabled}');
-    expect(source).toContain('label={t(zeroCloudPresentation.labelKey)}');
+    expect(source).toContain('testID="home.deviceMenu.cloudLogin"');
+    expect(source).toContain("label={t('deviceLink.cloudInstance.loginRequiredAction')}");
+    expect(source).not.toContain("label={t('deviceLink.cloudInstance.loginRequired')}");
+    expect(source).toContain('disabled={cloudInstanceLoginUrl() === null}');
+    expect(source).toContain('Linking.openURL(loginUrl)');
   });
 
   it('places cloud Pods after ordinary devices without changing stable order', () => {
@@ -110,14 +141,10 @@ describe('mobile controllable device filter', () => {
   it('keeps ordinary-device long press on the task detail and routes the chevron to management', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/devices/index.tsx'), 'utf8');
     expect(source).toContain("pathname: '/devices/[deviceId]'");
-    expect(source).toContain('params: { deviceId: item.deviceId, name: item.label }');
-    expect(source).toContain('onLongPress={item.deviceId ? () => onOpenDevice(item) : undefined}');
+    expect(source).toContain('deviceId: item.deviceId,');
+    expect(source).toContain('online: onlineOverride === undefined');
+    expect(source).toContain('onLongPress={item.deviceId ? () => onOpenDevice(item, item.state === \'ready\') : undefined}');
     expect(source).toContain('onDetails={item.deviceId ? () => onOpenManage(item) : undefined}');
-    expect(source).toContain('onDetails={item.deviceId ? () => onOpenManage(item, true) : undefined}');
-    expect(source).toContain('onLongPress={item.deviceId ? () => onOpenManage(item, true) : undefined}');
-    expect(source).toContain('cloudCandidate,');
-    expect(source).toContain('onOpenCloudInstance={(instance, label) => openDeviceManagement({');
-    expect(source).toContain("pathname: '/devices/manage/[deviceId]'");
     expect(source).toContain('testID={testID ? `${testID}.details` : undefined}');
     expect(source).toContain('projectDeviceMenuSources({');
     expect(source).toContain('fallbackCloudFilters.map((item) => (');
@@ -160,9 +187,11 @@ describe('mobile controllable device filter', () => {
       'if (!pendingThisInstance) void cloud.wake(item.instance.instanceId);',
     );
     expect(source).toContain('const selectedCloudExists = cloudInstances.instances.some');
-    expect(source).toContain('disabled={!item.online && cloud.pending !== null}');
+    expect(source).toContain('setSelectedDeviceId(null);');
+    expect(source).toContain('selectedCloudExists');
+    expect(source).toContain("disabled={affordance === 'login'");
     expect(source).toContain("status={item.online ? 'online' : 'offline'}");
-    expect(source).toContain('onBadgePress={() => onOpenCloudInstance(item.instance, item.label)}');
+    expect(source).toContain('onBadgePress={() => onOpenDevice(item.filter, item.online)}');
     expect(source).toContain(
       "t('deviceLink.cloudInstance.updateAvailableOpenDetails', { label })",
     );
@@ -172,8 +201,8 @@ describe('mobile controllable device filter', () => {
       source.indexOf('deviceMenuStatusSlot:'),
     );
     expect(badgeTextStyle).toContain('lineHeight: lineHeight.micro');
-    expect(source).toContain('onDetails={() => onOpenCloudInstance(item.instance, item.label)}');
-    expect(source).toContain('onLongPress={() => onOpenCloudInstance(item.instance, item.label)}');
+    expect(source).toContain('onDetails={() => onOpenDevice(item.filter, item.online)}');
+    expect(source).toContain('onLongPress={() => onOpenDevice(item.filter, item.online)}');
     expect(source).toContain('item.instance.status.updateAvailable && !busy');
     expect(source).toContain('projectCloudInstanceMenuItems({');
     expect(source).toContain('void refreshCloudInstances()');

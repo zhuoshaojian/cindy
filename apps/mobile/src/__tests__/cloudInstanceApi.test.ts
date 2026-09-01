@@ -36,6 +36,15 @@ afterEach(() => {
 });
 
 describe('mobile cloud-instance API', () => {
+  it('derives a browser login URL from a validated HTTPS endpoint only', async () => {
+    const secure = await loadCloudInstanceApi('https://cloud.example.invalid/base/');
+    expect(secure.cloudInstanceLoginUrl()).toBe('https://cloud.example.invalid/instance-login');
+    const insecure = await loadCloudInstanceApi('http://cloud.example.invalid/');
+    expect(insecure.cloudInstanceLoginUrl()).toBeNull();
+    const missing = await loadCloudInstanceApi(undefined);
+    expect(missing.cloudInstanceLoginUrl()).toBeNull();
+  });
+
   it('lists instances through authenticated apiFetch and parses the response', async () => {
     const { listCloudInstances } = await loadCloudInstanceApi('https://cloud.example.invalid/');
     const apiFetch = vi.fn(async () => ({

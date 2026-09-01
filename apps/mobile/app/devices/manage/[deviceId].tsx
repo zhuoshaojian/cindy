@@ -6,35 +6,17 @@ import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation
 export default function DeviceManagementRoute() {
   const params = useLocalSearchParams<{
     deviceId: string;
-    autoUpdate?: string;
-    cloudCandidate?: string;
     name?: string;
     online?: string;
-    cloudInstanceId?: string;
     cpuLabel?: string;
-    image?: string;
-    kind?: string;
-    latestReleaseTag?: string;
-    lastFailedUpgradeImage?: string;
     memoryGb?: string;
     modelLabel?: string;
     platform?: string;
-    updateAvailable?: string;
-    upgradeState?: string;
   }>();
-  const upgradeState = readRouteString(params.upgradeState);
-  const autoUpdate = readRouteString(params.autoUpdate);
   return (
     <DeviceManagementScreen
-      autoUpdate={autoUpdate === '1' ? true : autoUpdate === '0' ? false : undefined}
-      cloudCandidate={readRouteString(params.cloudCandidate) === '1'}
-      cloudInstanceId={readRouteString(params.cloudInstanceId) ?? undefined}
       cpuLabel={readRouteString(params.cpuLabel) ?? undefined}
       deviceId={readRouteString(params.deviceId) ?? ''}
-      image={readRouteString(params.image) ?? undefined}
-      kind={readRouteString(params.kind) ?? undefined}
-      latestReleaseTag={readRouteString(params.latestReleaseTag) ?? undefined}
-      lastFailedUpgradeImage={readRouteString(params.lastFailedUpgradeImage) ?? undefined}
       memoryGb={readFiniteNumber(params.memoryGb)}
       modelLabel={readRouteString(params.modelLabel) ?? undefined}
       name={resolveMobileDeviceDisplayName(
@@ -42,12 +24,6 @@ export default function DeviceManagementRoute() {
       )}
       online={readRouteString(params.online) === '1'}
       platform={readRouteString(params.platform) ?? undefined}
-      updateAvailable={readRouteString(params.updateAvailable) === '1'}
-      upgradeState={
-        upgradeState === 'verifying' || upgradeState === 'rolled-back'
-          ? upgradeState
-          : 'idle'
-      }
     />
   );
 }

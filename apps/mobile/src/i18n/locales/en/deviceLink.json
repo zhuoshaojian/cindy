@@ -17,6 +17,11 @@
   "cloudWaking": "Waking…",
   "cloudInstance": {
     "cloud": "Cloud",
+    "loginRequired": "Sign in once in your browser to use this cloud instance.",
+    "loginRequiredZeroInstance": "Sign in in your browser to create a cloud instance.",
+    "loginRequiredAction": "Sign in in browser",
+    "alreadyExists": "A cloud instance already exists. Use the existing instance.",
+    "notFound": "The cloud instance no longer exists. Refresh and try again.",
     "wakeFailed": "Failed to wake the cloud instance. Try again.",
     "rebuilding": "Recreating…",
     "rebuildFailed": "The cloud instance couldn't be recreated. Try again.",
