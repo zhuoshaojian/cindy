@@ -9,7 +9,8 @@ import {
   type MobileHomeOptions,
   type MobileHomePresentation,
 } from '@cindy/maker-shared/mobile-home';
-import { parseCloudDeviceName } from '@cindy/maker-shared/device-list';
+import { isCloudInstanceDeviceId, parseCloudDeviceName } from '@cindy/maker-shared/device-list';
+import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
 
 export * from '@cindy/maker-shared/mobile-home';
 
@@ -103,13 +104,16 @@ export function excludeOrcaWorkerSessions<T extends Pick<RemoteSession, 'orcaRol
 
 export interface MobileHomeSourceDevice {
   deviceId: string;
-  kind?: string;
 }
 
 /**
  * When control-plane capability is unavailable, live relay devices remain valid
  * remote targets. Only cached cloud sessions without a current relay device are
  * suppressed, so a transient control-plane failure cannot erase an online device.
+ *
+ * 顺序也在这里定:首页范围菜单、设备菜单与项目分组都消费本函数的 devices,而共享层
+ * 的 buildDeviceFilters 是原样追加、不排序的,所以云端置底必须在这一层完成。放在各个
+ * 消费点里做迟早会漏一处。
  */
 export function selectMobileHomeSources<
   TDevice extends MobileHomeSourceDevice,
@@ -119,12 +123,13 @@ export function selectMobileHomeSources<
   sessions: TSession[],
   cloudUnsupported: boolean,
 ): { devices: TDevice[]; sessions: TSession[] } {
-  if (!cloudUnsupported) return { devices, sessions };
+  const ordered = sortCloudDevicesLast(devices);
+  if (!cloudUnsupported) return { devices: ordered, sessions };
   const cloudDeviceIds = new Set(
-    devices.filter((device) => device.kind === 'cloud').map((device) => device.deviceId),
+    ordered.filter((device) => isCloudInstanceDeviceId(device.deviceId)).map((device) => device.deviceId),
   );
   return {
-    devices,
+    devices: ordered,
     sessions: sessions.filter((session) => {
       const deviceId = session.deviceLinkDeviceId ?? '';
       if (cloudDeviceIds.has(deviceId)) return true;

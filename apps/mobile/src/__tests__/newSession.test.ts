@@ -1310,9 +1310,11 @@ describe('new session model', () => {
   });
 
   it('serializes device candidates for new-session route params', () => {
+    // 云端候选的 deviceId 必然带 cloud-device- 前缀:置底判据只看前缀,不看序列化里的 kind。
+    const pod = 'cloud-device-pod';
     const encoded = serializeNewSessionDeviceOptions([
       { deviceId: ' pc ', name: ' PC ' },
-      { deviceId: 'pod', name: 'Cloud Cindy', kind: 'cloud', modelAccessStale: true },
+      { deviceId: pod, name: 'Cloud Cindy', kind: 'cloud', modelAccessStale: true },
       { deviceId: 'mac', name: '', modelAccessStale: true },
       { deviceId: 'pc', name: 'Duplicate' },
     ]);
@@ -1320,7 +1322,7 @@ describe('new session model', () => {
     expect(parseNewSessionDeviceOptions(encoded)).toEqual([
       { deviceId: 'pc', name: 'PC' },
       { deviceId: 'mac', name: 'mac' },
-      { deviceId: 'pod', name: 'Cloud Cindy', kind: 'cloud', modelAccessStale: true },
+      { deviceId: pod, name: 'Cloud Cindy', kind: 'cloud', modelAccessStale: true },
     ]);
   });
 

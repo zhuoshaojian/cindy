@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DeviceView } from '@cindy/device-link';
+import { CLOUD_DEVICE_ID_PREFIX } from '@cindy/maker-shared/device-list';
 import { sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import { i18n } from '@/i18n';
 import {
@@ -126,16 +127,31 @@ describe('mobile controllable device filter', () => {
 
   it('places cloud Pods after ordinary devices without changing stable order', () => {
     expect(sortCloudDevicesLast([
-      { id: 'normal-a' },
-      { id: 'cloud-a', kind: 'cloud' as const },
-      { id: 'normal-b' },
-      { id: 'cloud-b', kind: 'cloud' as const },
+      { deviceId: 'normal-a' },
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}a` },
+      { deviceId: 'normal-b' },
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}b` },
     ])).toEqual([
-      { id: 'normal-a' },
-      { id: 'normal-b' },
-      { id: 'cloud-a', kind: 'cloud' },
-      { id: 'cloud-b', kind: 'cloud' },
+      { deviceId: 'normal-a' },
+      { deviceId: 'normal-b' },
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}a` },
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}b` },
     ]);
+  });
+
+  // 首页范围菜单 / 设备菜单 / 项目分组都消费 selectMobileHomeSources 的 devices,而共享层
+  // 的 buildDeviceFilters 原样追加、不排序 —— 置底必须由这一层保证,两个分支都要覆盖。
+  it('orders cloud Pods last in home sources whether or not the control plane is available', () => {
+    const devices = [
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}pod` },
+      { deviceId: 'mac-1' },
+      { deviceId: 'mac-2' },
+    ];
+    for (const cloudUnsupported of [false, true]) {
+      expect(
+        selectMobileHomeSources(devices, [], cloudUnsupported).devices.map((item) => item.deviceId),
+      ).toEqual(['mac-1', 'mac-2', `${CLOUD_DEVICE_ID_PREFIX}pod`]);
+    }
   });
 
   it('keeps ordinary-device long press on the task detail and routes the chevron to management', () => {
@@ -216,24 +232,24 @@ describe('mobile controllable device filter', () => {
       deviceLinkDeviceName: 'Mac',
     };
     const cloudSession = {
-      deviceLinkDeviceId: 'cloud-device',
+      deviceLinkDeviceId: `${CLOUD_DEVICE_ID_PREFIX}live`,
       deviceLinkDeviceName: '__cindy_cloud_device_name__:7',
     };
     const hiddenCachedCloudSession = {
-      deviceLinkDeviceId: 'cached-cloud-device',
+      deviceLinkDeviceId: `${CLOUD_DEVICE_ID_PREFIX}cached`,
       deviceLinkDeviceName: '__cindy_cloud_device_name__',
     };
     const result = selectMobileHomeSources(
       [
         { deviceId: 'regular-device' },
-        { deviceId: 'cloud-device', kind: 'cloud' },
+        { deviceId: `${CLOUD_DEVICE_ID_PREFIX}live` },
       ],
       [regularSession, cloudSession, hiddenCachedCloudSession],
       true,
     );
     expect(result.devices).toEqual([
       { deviceId: 'regular-device' },
-      { deviceId: 'cloud-device', kind: 'cloud' },
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}live` },
     ]);
     expect(result.sessions).toEqual([regularSession, cloudSession]);
 
@@ -389,14 +405,16 @@ describe('mobile controllable device filter', () => {
     })[0]?.updating).toBe(true);
   });
 
-  it('keeps cloud devices and mirror sessions when cloud capability is enabled', () => {
-    const devices = [{ deviceId: 'cloud-device', kind: 'cloud' }];
+  it('keeps cloud devices and passes mirror sessions through when cloud capability is enabled', () => {
+    const cloudDeviceId = `${CLOUD_DEVICE_ID_PREFIX}live`;
+    const devices = [{ deviceId: cloudDeviceId }];
     const sessions = [{
-      deviceLinkDeviceId: 'cloud-device',
+      deviceLinkDeviceId: cloudDeviceId,
       deviceLinkDeviceName: '__cindy_cloud_device_name__:7',
     }];
     const result = selectMobileHomeSources(devices, sessions, false);
-    expect(result.devices).toBe(devices);
+    // devices 不再是原样透传:置底是无条件的,所以这里比内容而不是引用。sessions 仍是透传。
+    expect(result.devices).toEqual(devices);
     expect(result.sessions).toBe(sessions);
   });
 

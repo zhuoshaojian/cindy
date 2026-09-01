@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { resolveMobileDeviceDisplayName, sortCloudDevicesLast } from '@/device-link/devicePresentation';
 import {
+  CLOUD_DEVICE_ID_PREFIX,
   CLOUD_DEVICE_NAME_SENTINEL,
   formatCloudDeviceName,
 } from '@cindy/maker-shared/device-list';
@@ -76,15 +77,37 @@ describe('mobile cloud device presentation', () => {
   it('places cloud devices after ordinary devices without reordering either group', () => {
     const devices = [
       { deviceId: 'desktop-2' },
-      { deviceId: 'pod-1', kind: 'cloud' as const },
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}pod-1` },
       { deviceId: 'desktop-1' },
-      { deviceId: 'pod-2', kind: 'cloud' as const },
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}pod-2` },
     ];
     expect(sortCloudDevicesLast(devices).map((device) => device.deviceId)).toEqual([
       'desktop-2',
       'desktop-1',
-      'pod-1',
-      'pod-2',
+      `${CLOUD_DEVICE_ID_PREFIX}pod-1`,
+      `${CLOUD_DEVICE_ID_PREFIX}pod-2`,
+    ]);
+  });
+
+  // 回归:判据曾读调用方带来的 `kind` 字段,设备结构没有该字段时比较子恒为 0、排序静默
+  // 空转(首页范围菜单因此没置底)。这两条锁住「只看 deviceId 前缀」。
+  it('orders by device id even when no kind field is present', () => {
+    expect(sortCloudDevicesLast([
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}pod-1` },
+      { deviceId: 'desktop-1' },
+    ]).map((device) => device.deviceId)).toEqual([
+      'desktop-1',
+      `${CLOUD_DEVICE_ID_PREFIX}pod-1`,
+    ]);
+  });
+
+  it('ignores a stale kind field that disagrees with the device id', () => {
+    expect(sortCloudDevicesLast([
+      { deviceId: `${CLOUD_DEVICE_ID_PREFIX}pod-1`, kind: undefined },
+      { deviceId: 'desktop-1', kind: 'cloud' },
+    ]).map((device) => device.deviceId)).toEqual([
+      'desktop-1',
+      `${CLOUD_DEVICE_ID_PREFIX}pod-1`,
     ]);
   });
 });
