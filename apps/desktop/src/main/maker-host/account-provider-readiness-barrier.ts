@@ -196,3 +196,21 @@ export function createAccountProviderReadinessBarrier() {
 
 /** Process-lifetime barrier shared by bootstrap and every Desktop Maker instance. */
 export const accountProviderReadinessBarrier = createAccountProviderReadinessBarrier();
+
+/**
+ * Idempotent lifecycle entry shared by renderer-driven DB readiness and the
+ * rendererless Pod bootstrap. The barrier owns same-scope single-flight; this
+ * wrapper keeps both startup paths on that exact semantic boundary.
+ */
+export function startAccountProviderReadiness(input: {
+  scopeKey: string;
+  task(): Promise<void>;
+  onError(error: unknown): void;
+  barrier?: ReturnType<typeof createAccountProviderReadinessBarrier>;
+}): Promise<void> {
+  return (input.barrier ?? accountProviderReadinessBarrier).start(
+    input.scopeKey,
+    input.task,
+    input.onError,
+  );
+}

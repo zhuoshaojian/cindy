@@ -88,6 +88,23 @@ export interface CollabDraft {
   workerConfig?: CollabWorkerConfig;
 }
 
+/**
+ * 用户已经选中云端、但 relay 尚未上线时的草稿目标。
+ *
+ * 这和 deviceLinkDeviceId 必须分开：后者一旦非空，创建页的能力、供应商、模型与默认配置
+ * hooks 就会立即向被控端发请求；休眠中的实例还不可访问。pendingCloudTarget 只表达用户意图，
+ * 让真实 ChatInput 可以继续编辑，等设备上线后才提升为正式 deviceLinkDeviceId。
+ */
+export interface PendingCloudDraftTarget {
+  requestId: string;
+  /** 首次创建实例时暂时为 'new'，控制面返回实例后再补成稳定 instanceId。 */
+  instanceId: string | 'new';
+  /** 已有实例点击时立即可用；首次创建期间可能暂时未知。 */
+  deviceId: string | null;
+  deviceName: string;
+  status: 'waking' | 'failed';
+}
+
 export interface NewMakerDraft {
   /** 当前选中的 vendor。默认 'cc',用户切换后写回 + 持久化。 */
   vendor: MakerVendor;
@@ -103,6 +120,8 @@ export interface NewMakerDraft {
   deviceLinkDeviceId: string | null;
   /** device-link 目标设备友好名(草稿页横幅展示),与 deviceLinkDeviceId 同源。 */
   deviceLinkDeviceName: string | null;
+  /** 当前窗口内的待激活云端目标；不跨应用重启恢复。 */
+  pendingCloudTarget: PendingCloudDraftTarget | null;
   /** 协同模式开关 + Worker 类型(草稿期持久化,Send 时由 enableOrca 消费)。 */
   collab: CollabDraft;
   /**
@@ -220,6 +239,7 @@ function makeDefault(): NewMakerDraft {
     remoteHostId: null,
     deviceLinkDeviceId: null,
     deviceLinkDeviceName: null,
+    pendingCloudTarget: null,
     collab: defaultCollab(),
     worktreeEnabled: DEFAULT_WORKTREE_ENABLED,
     worktreePreferenceCustomized: false,
@@ -443,6 +463,8 @@ function sanitize(raw: unknown): NewMakerDraft {
     // device-link 目标**不跨重启恢复**:绑定的是活动设备,重启后可能已离线 → 一律置 null。
     deviceLinkDeviceId: null,
     deviceLinkDeviceName: null,
+    // 唤醒意图只属于当前窗口中的这份草稿；重启后实例在线状态会重新从控制面读取。
+    pendingCloudTarget: null,
     collab,
     // worktree 勾选记忆:系统默认 + 显式 override 合成。注意历史残留的
     // wtEnabled/wtName/wtSourceBranch/wtBaseRepo 根字段(2026-07 前的短暂持久化实验)
@@ -648,7 +670,10 @@ function scheduleWrite(
     currentDraft = { ...currentDraft, ...storedDefaultTuplePreference };
   }
   try {
-    window.localStorage.setItem(storageKey(), JSON.stringify(currentDraft));
+    window.localStorage.setItem(
+      storageKey(),
+      JSON.stringify({ ...currentDraft, pendingCloudTarget: null }),
+    );
     preferenceSyncFallback = null;
   } catch {
     // localStorage 满 / 私密窗口禁写——忽略,不影响内存状态。
@@ -778,6 +803,9 @@ export function setWorktreePreference(enabled: boolean): void {
           storageKey(),
           JSON.stringify({
             ...base,
+            // 单字段偏好写入也可能发生在当前窗口尚无持久草稿时；和 scheduleWrite 一样，
+            // 绝不能把只属于本次页面生命周期的云端唤醒意图带进下次启动。
+            pendingCloudTarget: null,
             worktreeEnabled,
             worktreePreferenceCustomized,
           }),
@@ -873,6 +901,7 @@ export function resetDraftWorkspaceTargets(): void {
     workingDir: null,
     extraDirs: [],
     writableDirs: [],
+    pendingCloudTarget: null,
     collab: { ...currentDraft.collab, enabled: false },
   });
 }

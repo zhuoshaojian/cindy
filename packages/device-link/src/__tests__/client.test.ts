@@ -336,10 +336,13 @@ describe('DeviceLinkClient', () => {
     await tick();
     h.current().ack();
 
+    expect(h.client.hasReliableTransport('dev-b')).toBe(false);
+    expect(h.client.isLinkReady('dev-b')).toBe(false);
     const p = h.client.invoke('dev-b', { channel: 'maker:list-active', args: [] });
     const sentInvoke = h.current().sent.find((e) => e.kind === 'invoke')!;
     expect(sentInvoke.dst).toBe('dev-b');
     expect(sentInvoke.id).toBeTruthy();
+    expect(parseTransportPayload(sentInvoke.payload)).toBeNull();
 
     h.current().push({
       v: PROTOCOL_VERSION,
@@ -1932,8 +1935,10 @@ describe('DeviceLinkClient', () => {
       },
     });
     await open;
+    expect(h.client.hasReliableTransport('dev-b')).toBe(true);
     expect(h.client.isLinkReady('dev-b')).toBe(true);
     h.client.closeLink('dev-b', 'user');
+    expect(h.client.hasReliableTransport('dev-b')).toBe(false);
     expect(h.client.isLinkReady('dev-b')).toBe(false);
 
     const sentBeforeBlockedInvoke = h.current().sent.length;
@@ -5105,6 +5110,8 @@ describe('DeviceLinkClient', () => {
     expect(h.client.getStatus()).toBe('online');
     // 建一条 reliable link:重建后它的收发 ready 必须被复位,host 才会重新 openLink
     await establishInboundReliableLink(h, 'resume-stream', 1, 'ctrl-resume');
+    expect(h.client.hasReliableTransport('ctrl-resume')).toBe(true);
+    expect(h.client.isLinkReady('ctrl-resume')).toBe(true);
 
     const before = h.sockets.length;
     h.client.restartConnection('system-resume');
@@ -5113,8 +5120,10 @@ describe('DeviceLinkClient', () => {
     h.current().ack();
     await tick();
     expect(h.client.getStatus()).toBe('online');
-    // 发送方向已复位:relay 在线 + link 未就绪 → invoke-result 走 legacy 裸帧
-    // (若 sendPhase 残留 ready,这里会被包进 transport wrapper 走旧 stream)
+    expect(h.client.hasReliableTransport('ctrl-resume')).toBe(true);
+    expect(h.client.isLinkReady('ctrl-resume')).toBe(false);
+    // linkReady 已复位:relay 在线 + link 未就绪 → invoke-result 走 legacy 裸帧
+    // (若 linkReady 残留 true,这里会被包进 transport wrapper 走旧 stream)
     h.client.sendInvokeResult('ctrl-resume', 'req-after-resume', { ok: true, result: 1 });
     const resent = h.current().sent.filter((e) => e.kind === 'invoke-result');
     expect(resent).toHaveLength(1);

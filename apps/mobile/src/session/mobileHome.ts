@@ -9,6 +9,7 @@ import {
   type MobileHomeOptions,
   type MobileHomePresentation,
 } from '@cindy/maker-shared/mobile-home';
+import { parseCloudDeviceName } from '@cindy/maker-shared/device-list';
 
 export * from '@cindy/maker-shared/mobile-home';
 
@@ -98,4 +99,36 @@ export function excludeOrcaWorkerSessions<T extends Pick<RemoteSession, 'orcaRol
   sessions: readonly T[],
 ): T[] {
   return sessions.filter((session) => session.orcaRole !== 'worker');
+}
+
+export interface MobileHomeSourceDevice {
+  deviceId: string;
+  kind?: string;
+}
+
+/**
+ * When control-plane capability is unavailable, live relay devices remain valid
+ * remote targets. Only cached cloud sessions without a current relay device are
+ * suppressed, so a transient control-plane failure cannot erase an online device.
+ */
+export function selectMobileHomeSources<
+  TDevice extends MobileHomeSourceDevice,
+  TSession extends Pick<RemoteSession, 'deviceLinkDeviceId' | 'deviceLinkDeviceName'>,
+>(
+  devices: TDevice[],
+  sessions: TSession[],
+  cloudUnsupported: boolean,
+): { devices: TDevice[]; sessions: TSession[] } {
+  if (!cloudUnsupported) return { devices, sessions };
+  const cloudDeviceIds = new Set(
+    devices.filter((device) => device.kind === 'cloud').map((device) => device.deviceId),
+  );
+  return {
+    devices,
+    sessions: sessions.filter((session) => {
+      const deviceId = session.deviceLinkDeviceId ?? '';
+      if (cloudDeviceIds.has(deviceId)) return true;
+      return parseCloudDeviceName(session.deviceLinkDeviceName ?? '') === null;
+    }),
+  };
 }

@@ -45,6 +45,7 @@ import {
 import { useNavigate, useMatch } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { projectDraftSessionTitle } from '@cindy/maker-shared/session-title';
+import { formatDesktopDeviceNameList } from '@/features/cloud-instance/cloudDeviceName';
 
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
@@ -1355,18 +1356,20 @@ function ExpandedView({
     ? deviceListRequestState.status
     : 'ready';
   const loadingRemoteDeviceLabel = useMemo(
-    () =>
-      new Intl.ListFormat(i18n.language, { style: 'short', type: 'conjunction' }).format(
-        remoteSessionBootstrapLoadingDevices.map((device) => device.name),
-      ),
-    [i18n.language, remoteSessionBootstrapLoadingDevices],
+    () => formatDesktopDeviceNameList(
+      remoteSessionBootstrapLoadingDevices.map((device) => device.name),
+      i18n.language,
+      t,
+    ),
+    [i18n.language, remoteSessionBootstrapLoadingDevices, t],
   );
   const failedRemoteDeviceLabel = useMemo(
-    () =>
-      new Intl.ListFormat(i18n.language, { style: 'short', type: 'conjunction' }).format(
-        remoteSessionBootstrapFailures.map((device) => device.name),
-      ),
-    [i18n.language, remoteSessionBootstrapFailures],
+    () => formatDesktopDeviceNameList(
+      remoteSessionBootstrapFailures.map((device) => device.name),
+      i18n.language,
+      t,
+    ),
+    [i18n.language, remoteSessionBootstrapFailures, t],
   );
   const isLoadingSidebarSessions =
     sessionsHook.isLoading ||

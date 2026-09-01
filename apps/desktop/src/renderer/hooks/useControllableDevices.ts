@@ -9,12 +9,16 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { isMobilePlatform } from '@cindy/maker-shared/device-list';
+import {
+  deviceDisplayName,
+  isMobilePlatform,
+} from '@cindy/maker-shared/device-list';
 
 export interface ControllableDevice {
   deviceId: string;
   name: string;
   platform: string | null;
+  selfName?: string | null;
 }
 
 /**
@@ -36,7 +40,12 @@ export function isControllableDevice(d: DeviceLinkDeviceView): boolean {
 export function toControllableDevices(list: readonly DeviceLinkDeviceView[]): ControllableDevice[] {
   return list
     .filter(isControllableDevice)
-    .map((d) => ({ deviceId: d.deviceId, name: d.name, platform: d.platform }));
+    .map((d) => ({
+      deviceId: d.deviceId,
+      name: deviceDisplayName(d),
+      platform: d.platform,
+      selfName: d.selfName,
+    }));
 }
 
 /**
@@ -50,7 +59,12 @@ export function sameControllableList(
 ): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    if (a[i].deviceId !== b[i].deviceId || a[i].name !== b[i].name || a[i].platform !== b[i].platform) {
+    if (
+      a[i].deviceId !== b[i].deviceId
+      || a[i].name !== b[i].name
+      || a[i].platform !== b[i].platform
+      || a[i].selfName !== b[i].selfName
+    ) {
       return false;
     }
   }
@@ -89,7 +103,12 @@ export function isSelectableDevice(d: DeviceLinkDeviceView): boolean {
 export function toSelectableDevices(list: readonly DeviceLinkDeviceView[]): SelectableDevice[] {
   return list
     .filter(isSelectableDevice)
-    .map((d) => ({ deviceId: d.deviceId, name: d.name, platform: d.platform, online: d.online }));
+    .map((d) => ({
+      deviceId: d.deviceId,
+      name: d.name,
+      platform: d.platform,
+      online: d.online,
+    }));
 }
 
 /** 同 sameControllableList,但把 online 也纳入比较(掉线/上线必须触发重渲染)。 */

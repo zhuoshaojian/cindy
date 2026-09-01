@@ -141,6 +141,19 @@
       "descriptionWithSkipped": "선택한 작업 {{count}}개에 {{action}} 작업을 적용하며, 해당하지 않는 {{skippedCount}}개는 건너뜁니다."
     }
   },
+  "management": {
+    "eyebrow": "기기",
+    "rename": "기기 이름",
+    "renameHint": "이 이름은 같은 계정의 기기에 표시됩니다.",
+    "renameSaved": "기기 이름을 변경했습니다.",
+    "actions": "작업",
+    "dangerZone": "삭제",
+    "online": "온라인",
+    "offline": "오프라인",
+    "unknown": "알 수 없음",
+    "memory": "{{count}}GB",
+    "openDetails": "{{label}} 세부 정보 열기"
+  },
   "list": {
     "thisComputer": "이 기기",
     "allConversations": "모든 세션",
@@ -174,7 +187,6 @@
       "sync": "다시 동기화",
       "pinnedConversations": "고정된 세션 {{count}}개",
       "newRemoteConversation": "새 원격 세션",
-      "renameDevice": "{{label}} 이름 변경",
       "project": "프로젝트 {{title}}",
       "dialogue": "채팅",
       "openAutomationLatest": "자동화 작업 {{title}}의 최근 세션 열기",
@@ -187,7 +199,8 @@
       "doneUnread": "완료·읽지 않음",
       "running": "실행 중",
       "close": "닫기",
-      "cancelRename": "이름 변경 취소"
+      "cancelRename": "이름 변경 취소",
+      "renameDevice": "{{label}} 이름 변경"
     },
     "accounts": {
       "title": "계정 전환",

@@ -195,6 +195,14 @@ Cindy AI 个人账号的免费会员身份标签。只在服务端明确下发 a
 
 远端主机上由 Cindy 管理的 Codex 凭证目录（~/.xdt-server/v1/codex-home/），与用户本机 ~/.codex 相区分。四语统一保留英文原词（home 小写），避免各语言自造「Codex 主目录」等不同说法；syncAuth 与 codexAuthMissing 等远端登录态文案使用。
 
+### Cloud
+
+云端 Cindy 与云端设备入口的用户可见简称。登记为 proposed，避免与云服务、云存储等泛化语境混为同一产品术语。
+
+### Cloud instance
+
+用户账号下可休眠、唤醒、更新与删除的 Cindy 云端运行实例。先登记为 proposed，待云端实例产品术语评审后固化。
+
 ### Content Update
 
 指不更换 TestFlight 或商店安装包、可通过 OTA 下发的 JS 与资源更新。当前先采用四语直译并登记为待讨论术语，避免与整包更新或测试版本更新混称。
@@ -238,6 +246,10 @@ OAuth 2.0 Device Authorization Grant 中由用户在另一设备验证页输入�
 ### Harness
 
 用户确认并公开提交 Issue 时显示承载当前 Agent 的运行框架。五语暂统一保留英文 Harness；具体值固定使用 Claude Code、Codex、Pi 的公开全名，不使用 cc/cx/pi 等内部缩写。
+
+### Instance
+
+云端实例操作按钮里的短称，与普通设备区分。登记为 proposed，避免各端在「实例／主机／设备」之间漂移。
 
 ### iOS Simulator
 
@@ -357,6 +369,10 @@ macOS TCC 的 kTCCServiceListenEvent(系统设置里叫「输入监控」)在 Ci
 
 登录页免账号入口的动作名（面板内文字按钮 + 登录服务不可用时的 error 步逃生按钮，#697 起取代原游客圆钮）。与 not-signed-in 成对：动作叫「跳过登录」，进入后的状态叫「未登录」。历史说法「本地模式」「游客登录」已废弃——前者暗示另一种服务端连接方式，后者在本产品里没有对应的 guest 账号概念（代码里 GuestRoute 等内部标识不受本条约束）。先登记 proposed：en 的 Title Case 形态（Skip Sign-In）与本仓其它按钮的句首大写风格不一致，待随登录页文案统一时裁决。
 
+### Sleep
+
+暂停云端实例运行但保留持久数据的操作与状态。登记为 proposed；仅约束云端实例语境，不替代电脑系统电源管理的既有文案。
+
 ### Token Plan
 
 阿里云百炼与小米 MiMo 的外部订阅产品名称，四语统一保留官方英文写法；与 Coding Plan 是不同套餐和凭证类型，先登记为 proposed，避免供应商预设中混用产品名。
@@ -364,6 +380,10 @@ macOS TCC 的 kTCCServiceListenEvent(系统设置里叫「输入监控」)在 Ci
 ### Ungrouped
 
 模型目录中没有可信厂商 group、但仍可用于对话的兜底分组。它不推断产地或厂商；服务端补充明确 group 后模型会自动归入对应分组。与不能用于对话、沿用原短名称的 Other（其它）分开。
+
+### Update Available
+
+云端实例发现可升级版本时的状态标签。登记为 proposed，统一桌面与手机端的短文案。
 
 ### Upload code
 
@@ -380,6 +400,10 @@ macOS TCC 的 kTCCServiceListenEvent(系统设置里叫「输入监控」)在 Ci
 ### Voice dictionary
 
 语音输入的用户自定义术语表(人名、产品名、代号与其常见误识别写法),在同账号的电脑之间自动同步、手机只读查看。当前先采用四语直译并登记为待讨论术语,避免与「自定义词典」「术语表」「用户词库」等说法混用。
+
+### Wake
+
+把休眠中的云端实例恢复为可用状态的操作。登记为 proposed；日语沿用现有云端入口的「起動」，韩语沿用「깨우기」。
 
 ### WeChat
 

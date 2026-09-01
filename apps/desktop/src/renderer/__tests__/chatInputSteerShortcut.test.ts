@@ -145,6 +145,25 @@ describe('ChatInput steer shortcut contract', () => {
     expect(pendingQueuePanelSource).toContain('isPendingQueueSteerShortcut');
     expect(pendingQueuePanelSource).toContain('void onSteer(entry.clientId);');
   });
+
+  it('routes blocked button and keyboard sends through one visible reason', () => {
+    const dispatchSendBlock = extractBetween(
+      chatInputSource,
+      'const dispatchSend = useCallback(',
+      'useEffect(() => {\n    dispatchSendRef.current = dispatchSend;',
+    );
+    const sendButtonBlock = extractBetween(
+      chatInputSource,
+      '<Tip\n                        text={',
+      '                      </Tip>',
+    );
+
+    expect(dispatchSendBlock).toContain('if (sendDisabled) {');
+    expect(dispatchSendBlock).toContain('notifySendDisabled();');
+    expect(sendButtonBlock).toContain('sendDisabledReason');
+    expect(sendButtonBlock).toContain('delay={sendDisabledReason ? 0 : undefined}');
+    expect(sendButtonBlock).toContain("sendButtonDisabled && '[&>button]:pointer-events-none'");
+  });
 });
 
 function makeEnterEvent(overrides: Partial<ComposerEnterEvent> = {}): ComposerEnterEvent {

@@ -28,7 +28,10 @@ describe('sidebar remote project icon', () => {
   });
 
   it('maps device-link sessions to the device-link project icon and SSH sessions to the SSH project icon', () => {
-    expect(remoteProjectIconSource).toContain("kind === 'device-link' ? MonitorSmartphone : Globe");
+    expect(remoteProjectIconSource).toContain("kind === 'device-link'");
+    expect(remoteProjectIconSource).toContain('cloud');
+    expect(remoteProjectIconSource).toContain('CloudOff');
+    expect(remoteProjectIconSource).toContain('MonitorSmartphone');
     expect(sessionItemSource).toMatch(
       /const remoteIconKind = session\.deviceLinkDeviceId\s+\?\s+'device-link'\s+:\s+session\.remoteHostId\s+\?\s+'ssh'\s+:\s+null/,
     );
@@ -38,6 +41,10 @@ describe('sidebar remote project icon', () => {
     expect(sessionHeaderSource).toMatch(
       /const remoteIconKind = session\.deviceLinkDeviceId\s+\?\s+'device-link'\s+:\s+session\.remoteHostId\s+\?\s+'ssh'\s+:\s+null/,
     );
+    for (const source of [projectNodeSource, sessionItemSource, sessionCardSource, sessionHeaderSource]) {
+      expect(source).toContain('useCloudDeviceIds');
+      expect(source).toContain('cloud={');
+    }
   });
 
   it('does not use the generic link icon for remote session markers', () => {

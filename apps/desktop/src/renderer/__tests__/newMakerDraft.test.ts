@@ -545,6 +545,46 @@ describe('newMakerDraft store', () => {
     expect(m2.getDraft().extraDirs).toEqual([]);
   });
 
+  it('pendingCloudTarget 只存在当前运行内，不写入 localStorage 且重启后清空', async () => {
+    const m1 = await loadModule();
+    m1.patchDraft({
+      pendingCloudTarget: {
+        requestId: 'wake-1',
+        instanceId: 'instance-1',
+        deviceId: 'device-1',
+        deviceName: '云端 Cindy',
+        status: 'waking',
+      },
+    });
+
+    expect(m1.getDraft().pendingCloudTarget?.requestId).toBe('wake-1');
+    expect(JSON.parse(memStorage.getItem(m1.__STORAGE_KEY) ?? '{}').pendingCloudTarget).toBeNull();
+
+    vi.resetModules();
+    const m2 = await loadModule();
+    expect(m2.getDraft().pendingCloudTarget).toBeNull();
+  });
+
+  it('setWorktreePreference 首次落盘也不会持久化 pendingCloudTarget', async () => {
+    const m = await loadModule();
+    m.patchDraft({
+      pendingCloudTarget: {
+        requestId: 'wake-2',
+        instanceId: 'instance-2',
+        deviceId: 'device-2',
+        deviceName: '云端 Cindy',
+        status: 'failed',
+      },
+    });
+    // 模拟当前窗口已有 transient 草稿，但该 owner 的持久命名空间尚无快照。
+    memStorage.clear();
+
+    m.setWorktreePreference(true);
+
+    expect(m.getDraft().pendingCloudTarget?.requestId).toBe('wake-2');
+    expect(JSON.parse(memStorage.getItem(m.__STORAGE_KEY) ?? '{}').pendingCloudTarget).toBeNull();
+  });
+
   it('collab.workerConfig 跨重启保留耐久字段,丢弃一次性 initialTask(codex P2)', async () => {
     const m1 = await loadModule();
     m1.patchDraft({
@@ -603,6 +643,23 @@ describe('newMakerDraft store', () => {
       model: 'gpt-5.5',
       workerPermissionMode: 'bypassPermissions',
     });
+  });
+
+  it('另起干净任务时清除尚未完成的云端唤醒目标', async () => {
+    const { getDraft, patchDraft, resetDraftWorkspaceTargets } = await loadModule();
+    patchDraft({
+      pendingCloudTarget: {
+        requestId: 'wake-3',
+        instanceId: 'instance-3',
+        deviceId: 'device-3',
+        deviceName: '云端 Cindy',
+        status: 'waking',
+      },
+    });
+
+    resetDraftWorkspaceTargets();
+
+    expect(getDraft().pendingCloudTarget).toBeNull();
   });
 
   it('patchDraft: Cindy worktree 路径会折回项目根目录', async () => {

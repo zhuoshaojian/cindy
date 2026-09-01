@@ -33,6 +33,12 @@ export interface ResolveRemoteProjectIdentityOptions {
    * (2026-08-12 用户裁决);只有两台设备撞名、光看名字分不出来时才附在名字后面消歧。
    */
   ambiguousDeviceNames?: ReadonlySet<string>;
+  /**
+   * 设备名展示前的翻译钩子(云端实例的 relay 名是英文 stable 名,界面要显示本地化
+   * 名称)。默认原样返回。消歧判定仍按 relay 原名做:翻译只影响显示,不影响
+   * 「哪些名字撞车」这件事实。
+   */
+  resolveDeviceName?: (name: string) => string;
 }
 
 /**
@@ -73,7 +79,10 @@ export function resolveRemoteProjectMachineIdentity(
 
   if (project.deviceLinkDeviceId) {
     const resolvedName = project.deviceLinkDeviceName?.trim();
-    const name = resolvedName || project.deviceLinkDeviceId;
+    // 翻译只作用于展示;撞名判定仍按 relay 原名(见 resolveDeviceName 注释)。
+    const name = resolvedName
+      ? (options?.resolveDeviceName?.(resolvedName) ?? resolvedName)
+      : project.deviceLinkDeviceId;
     // 设备 ID 只在撞名时才露出来消歧(见 ResolveRemoteProjectIdentityOptions);
     // 名字都拿不到时 label 已经退化成 ID 本身,不再重复附一遍。
     const detail =

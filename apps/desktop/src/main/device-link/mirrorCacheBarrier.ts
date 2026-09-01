@@ -21,7 +21,7 @@
 
 import path from 'node:path';
 import fsp from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 /** 控制面目录后缀(与缓存根同级,clearAll 不会删它)。 */
 export const CACHE_CONTROL_SUFFIX = '.control';
@@ -68,9 +68,123 @@ export function clearedMarkPath(root: string, key: string): string {
  * 下次启动仍会重新发起 clearDevice;登出走 clearAll)把它清掉。
  */
 const PENDING_DIR = 'pending';
+const DEVICE_RETIREMENT_PREFIX = 'retired-device-';
+
+export function isDeviceRetirementScope(scope: string): boolean {
+  return scope.startsWith(DEVICE_RETIREMENT_PREFIX);
+}
+
+export interface DeviceRetirementTombstone {
+  deviceId: string;
+  instanceId?: string;
+  createdAtMs: number;
+}
 
 export function pendingClearDir(root: string): string {
   return path.join(controlDir(root), PENDING_DIR);
+}
+
+function retirementScope(deviceId: string): string {
+  return `${DEVICE_RETIREMENT_PREFIX}${createHash('sha256').update(deviceId.trim()).digest('hex')}`;
+}
+
+function parseRetirementTombstone(raw: string, scope: string): DeviceRetirementTombstone | null {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const deviceId = typeof parsed.deviceId === 'string' ? parsed.deviceId.trim() : '';
+    const instanceId = typeof parsed.instanceId === 'string' ? parsed.instanceId.trim() : undefined;
+    const createdAtMs = parsed.createdAtMs;
+    if (
+      parsed.version !== 1
+      || parsed.kind !== 'device-retirement'
+      || !deviceId
+      || typeof createdAtMs !== 'number'
+      || !Number.isFinite(createdAtMs)
+      || createdAtMs < 0
+      || retirementScope(deviceId) !== scope
+    ) {
+      return null;
+    }
+    return { deviceId, ...(instanceId ? { instanceId } : {}), createdAtMs };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 云端设备删除后的长期退役墓碑。与清理过程墓碑共用 control/pending 目录，但内容带类型与
+ * 原始 deviceId，供重启后继续对账。落位失败必须抛出：没有墓碑就不能声称已阻止后续镜像回写。
+ */
+export async function markDeviceRetirement(
+  root: string,
+  deviceId: string,
+  createdAtMs = Date.now(),
+  instanceId?: string,
+): Promise<void> {
+  const id = deviceId.trim();
+  if (!id) throw new Error('mirror cache: device retirement requires deviceId');
+  const dir = pendingClearDir(root);
+  await fsp.mkdir(dir, { recursive: true });
+  const file = path.join(dir, retirementScope(id));
+  const tmp = `${file}.${randomBytes(6).toString('hex')}.tmp`;
+  const oldInstanceId = instanceId?.trim();
+  const payload = JSON.stringify({
+    version: 1,
+    kind: 'device-retirement',
+    deviceId: id,
+    ...(oldInstanceId ? { instanceId: oldInstanceId } : {}),
+    createdAtMs,
+  });
+  try {
+    await fsp.writeFile(tmp, payload, 'utf8');
+    await fsp.rename(tmp, file);
+  } catch (err) {
+    await fsp.rm(tmp, { force: true }).catch(() => undefined);
+    throw err;
+  }
+}
+
+export async function clearDeviceRetirement(root: string, deviceId: string): Promise<void> {
+  await fsp.rm(path.join(pendingClearDir(root), retirementScope(deviceId)), { force: true });
+}
+
+/**
+ * 单设备写入闸。读取失败一律按 tombstoned 处理：少写一次可重建缓存，优于把已删设备写回来。
+ */
+export async function hasDeviceRetirement(root: string, deviceId: string): Promise<boolean> {
+  const id = deviceId.trim();
+  if (!id) return false;
+  const scope = retirementScope(id);
+  try {
+    await fsp.readFile(path.join(pendingClearDir(root), scope), 'utf8');
+    // 文件存在但内容损坏也必须封锁；把损坏当“不存在”会正好在最不可信时放行回写。
+    return true;
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+    return true;
+  }
+}
+
+/** 列出持久退役墓碑；目录或内容不可读时抛出，调用方不得据此错误解除。 */
+export async function listDeviceRetirements(root: string): Promise<DeviceRetirementTombstone[]> {
+  let names: string[];
+  try {
+    names = await fsp.readdir(pendingClearDir(root));
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code === 'ENOENT' || code === 'ENOTDIR') return [];
+    throw err;
+  }
+  const tombstones: DeviceRetirementTombstone[] = [];
+  for (const scope of names) {
+    if (!isDeviceRetirementScope(scope) || scope.endsWith('.tmp')) continue;
+    const raw = await fsp.readFile(path.join(pendingClearDir(root), scope), 'utf8');
+    const parsed = parseRetirementTombstone(raw, scope);
+    if (!parsed) throw new Error(`mirror cache: malformed device retirement tombstone (${scope})`);
+    tombstones.push(parsed);
+  }
+  return tombstones;
 }
 
 /** 落墓碑。**失败会抛** —— 落不下去就不该开始删(等于没有"没删完"的痕迹)。 */
@@ -100,7 +214,23 @@ export async function clearPendingMark(root: string, scope: string): Promise<voi
 export async function hasPendingClears(root: string): Promise<boolean> {
   try {
     const names = await fsp.readdir(pendingClearDir(root));
-    return names.some((name) => !name.endsWith('.tmp'));
+    for (const name of names) {
+      if (name.endsWith('.tmp')) continue;
+      if (!isDeviceRetirementScope(name)) return true;
+      let raw: string;
+      try {
+        raw = await fsp.readFile(path.join(pendingClearDir(root), name), 'utf8');
+      } catch (err) {
+        const code = errnoCode(err);
+        // releaseRetiredDevice 可在 readdir 之后原子移除这一份长期墓碑；它不代表其它
+        // scope 也不存在，继续检查快照里的剩余名字。其它读取失败仍 fail-closed。
+        if (code === 'ENOENT' || code === 'ENOTDIR') continue;
+        return true;
+      }
+      // 长期退役墓碑只封锁目标设备；损坏 / 伪造的同前缀文件继续按全 root pending 处理。
+      if (!parseRetirementTombstone(raw, name)) return true;
+    }
+    return false;
   } catch (err) {
     const code = errnoCode(err);
     if (code === 'ENOENT' || code === 'ENOTDIR') return false;

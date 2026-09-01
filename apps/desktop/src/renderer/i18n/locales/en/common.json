@@ -3312,6 +3312,7 @@
       },
       "sections": {
         "myDevices": "My devices",
+        "cloudCindy": "Cloud Cindy",
         "ssh": "SSH remote hosts",
         "hook": "Cindy IM bots"
       },
@@ -3536,6 +3537,10 @@
           }
         }
       },
+      "cloud": {
+        "empty": "No cloud instance yet. Wake Cloud to create one and use it from any device.",
+        "loadFailed": "Cloud Cindy could not be loaded. Check the connection and try again."
+      },
       "summary": {
         "otherDevices": "{{count}} other device(s)",
         "noOtherDevices": "No other devices",
@@ -3595,6 +3600,7 @@
       "refresh": "Refresh",
       "empty": "No other devices yet. Sign in to {{appName}} with the same account on another computer and it will show up here.",
       "thisDevice": "This device",
+      "cloudDeviceName": "Cloud",
       "status": {
         "online": "Online",
         "busy": "Busy"
@@ -3609,6 +3615,66 @@
       "renameCancel": "Cancel",
       "delete": "Delete",
       "deleteOnlineHint": "Online devices cannot be deleted",
+      "cloudInstance": {
+        "stop": "Sleep Instance",
+        "stopping": "Sleeping…",
+        "wake": "Wake Instance",
+        "waking": "Waking…",
+        "updateAvailable": "Update Available",
+        "updateAvailableTag": "Update Available · {{tag}}",
+        "currentVersion": "Current version {{version}}",
+        "currentVersionUpToDate": "Current version {{version}} · Up to date",
+        "update": "Update Cloud",
+        "updating": "Updating…",
+        "rebuild": "Recreate Instance",
+        "rebuilding": "Recreating…",
+        "rebuildStatusUnknown": "Rebuild status awaiting sync…",
+        "manualWakeRequired": "The old instance was deleted, but the replacement was not created. Wake Cloud manually.",
+        "manualWakeAction": "Wake Cloud manually",
+        "unregisteredStatus": "The instance did not finish starting and cannot connect yet.",
+        "autoUpdate": "Automatically Update When Idle",
+        "autoUpdateHint": "When a new release is available, the cloud instance updates automatically while idle or sleeping.",
+        "updateRolledBack": "The last update failed and was rolled back automatically.",
+        "updateConfirm": {
+          "title": "Update Cloud Instance?",
+          "description": "Updating restarts the cloud instance and interrupts any running tasks.",
+          "confirm": "Update Cloud Instance",
+          "cancel": "Cancel"
+        },
+        "rebuildConfirm": {
+          "title": "Recreate Cloud Instance?",
+          "description": "This deletes the current cloud instance and its data, then creates a new instance with the current runtime environment. Running tasks will be interrupted, and deleted data cannot be recovered.",
+          "confirm": "Recreate Instance",
+          "cancel": "Cancel"
+        },
+        "delete": "Delete Instance",
+        "deleting": "Deleting…",
+        "deleteConfirm": {
+          "title": "Delete Cloud Instance?",
+          "description": "The cloud data will be deleted and cannot be recovered. The corresponding device will also be removed.",
+          "confirm": "Delete Instance",
+          "cancel": "Cancel"
+        },
+        "toast": {
+          "stopped": "Cloud instance is sleeping",
+          "deleted": "Cloud instance deleted",
+          "stopFailed": "Failed to sleep the cloud instance. Try again.",
+          "deleteFailed": "Failed to delete the cloud instance. Try again.",
+          "woke": "Cloud instance is waking up.",
+          "wakeFailed": "Failed to wake the cloud instance. Try again.",
+          "actionTimedOut": "This is taking longer than expected. Try again in a moment.",
+          "updateStarted": "Cloud instance update started",
+          "updateFailed": "Cloud instance update couldn't start. Try again.",
+          "rebuilt": "Cloud instance recreated",
+          "rebuildStarted": "Cloud instance rebuild started",
+          "rebuildFailed": "The cloud instance couldn't be recreated. Try again.",
+          "rebuildCreateFailed": "The old cloud instance was deleted, but a new instance couldn't be created. Wake Cloud again from the machine menu.",
+          "rebuildStillCleaning": "The old cloud instance is still being cleaned up. Wait for cleanup to finish before waking Cloud again.",
+          "autoUpdateFailed": "The cloud instance auto-update setting couldn't be saved. Try again.",
+          "noReleaseAvailable": "No release is available yet. Refresh and try again later."
+        },
+        "modelAccessStale": "Cloud model credentials need a refresh; cloud models may be temporarily unavailable"
+      },
       "error": {
         "unavailable": "Device Link service is unavailable (not enabled on server or network error)",
         "listFailed": "Failed to load device list"
@@ -7358,6 +7424,7 @@
       "label": "Device",
       "localHint": "Runs on this computer",
       "onlineHint": "Connected — available",
+      "modelAccessStaleHint": "Model credentials need a refresh",
       "offlineHint": "Offline — available once connected",
       "attachmentsDropped": "Removed {{count}} attachment(s) — they live on the previous device",
       "attachmentsRemoteUnsupported": "File attachments aren't supported on a remote device — skipped {{count}} (images are fine)"
@@ -8480,18 +8547,32 @@
       "remoteProviderUnsupported": "This provider is not supported in SSH remote sessions — pick another source",
       "remoteNativeOauthUnavailable": "Claude.ai subscription is not connected — connect it first or pick a gateway model",
       "deviceStillLoading": "Remote device is still loading, please wait",
+      "agentAvailabilityLoading": "Checking available Agents, please wait",
+      "agentUnavailableAutoSwitch": "The selected Agent is unavailable. Switched to {{agent}}; send again.",
       "remoteDefaultsLoadFailed": "Could not load the remote device settings. Check the connection; Cindy is retrying.",
       "worktreeMissingRepo": "Can't create a worktree: the current directory's repo root is missing",
       "worktreeRepoHint": "Try picking the working directory again, and retry once the folder badge at the bottom right refreshes",
       "sessionInactive": "Session is no longer active",
       "remoteProjectBanner": "New session in {{project}} on {{device}}",
-      "remoteDialogueBanner": "New chat on {{device}} (no project)"
+      "remoteDialogueBanner": "New chat on {{device}} (no project)",
+      "cloudWaking": "Waking Cloud Cindy — you can keep typing",
+      "cloudWakingSendBlocked": "Cloud Cindy is waking up. You can send once it's ready.",
+      "cloudModelsLoading": "Loading Cloud models…",
+      "cloudWakeFailed": "Cloud Cindy could not be woken yet. Your draft is still here.",
+      "cloudWakeRetry": "Retry"
     },
     "jumpSession": {
       "emptyId": "Enter a sessionId to jump to",
       "notFound": "Session not found"
     },
     "sidebar": {
+      "cloud": {
+        "wake": "Wake Cloud",
+        "waking": "Waking…",
+        "wakeFailed": "Failed to wake the cloud instance. Try again.",
+        "actionTimedOut": "This is taking longer than expected. Try again in a moment.",
+        "updateAvailable": "Update Available"
+      },
       "machineSwitcher": {
         "allMachines": "All",
         "localMachine": "This device",

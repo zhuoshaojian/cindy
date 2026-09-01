@@ -34,6 +34,7 @@ import {
 } from '@/platform/chrome';
 import { buildMainWindowLayout } from '@/components/mainWindowLayout';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
+import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 import { formatRemoteError } from '@/device-link/remoteStatus';
 import { withTransientRemoteRetry } from '@/device-link/remoteRetry';
 import { useRemoteSyncTask } from '@/device-link/remoteSyncTask';
@@ -134,7 +135,7 @@ export default function AutomationsScreen() {
   const { t } = useTranslation();
   const params = useLocalSearchParams<{ deviceId: string; name?: string }>();
   const deviceId = String(params.deviceId ?? '');
-  const deviceName = String(params.name ?? deviceId);
+  const deviceName = resolveMobileDeviceDisplayName(String(params.name ?? deviceId));
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const { connectionIssue, openLink, status, subscribe, unsubscribe } = useDeviceLink();

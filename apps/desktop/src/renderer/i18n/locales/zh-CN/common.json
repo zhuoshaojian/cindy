@@ -3303,6 +3303,7 @@
       },
       "sections": {
         "myDevices": "我的设备",
+        "cloudCindy": "云端 Cindy",
         "ssh": "SSH 远程主机",
         "hook": "Cindy IM 机器人"
       },
@@ -3527,6 +3528,10 @@
           }
         }
       },
+      "cloud": {
+        "empty": "还没有云端实例。唤醒云端后会自动创建，可从任意设备使用。",
+        "loadFailed": "暂时无法加载云端 Cindy，请检查连接后重试。"
+      },
       "summary": {
         "otherDevices": "其它设备 {{count}} 台",
         "noOtherDevices": "无其它设备",
@@ -3586,6 +3591,7 @@
       "refresh": "刷新",
       "empty": "暂无其它设备。在另一台电脑上用同一账号登录 {{appName}} 后，这里会显示该设备。",
       "thisDevice": "本机",
+      "cloudDeviceName": "云端",
       "status": {
         "online": "在线",
         "busy": "忙碌中"
@@ -3600,6 +3606,66 @@
       "renameCancel": "取消",
       "delete": "删除",
       "deleteOnlineHint": "在线设备无法删除",
+      "cloudInstance": {
+        "stop": "休眠实例",
+        "stopping": "休眠中…",
+        "wake": "唤醒实例",
+        "waking": "唤醒中…",
+        "updateAvailable": "有可用更新",
+        "updateAvailableTag": "有可用更新 · {{tag}}",
+        "currentVersion": "当前版本 {{version}}",
+        "currentVersionUpToDate": "当前版本 {{version}} · 已是最新版本",
+        "update": "更新云端",
+        "updating": "更新中…",
+        "rebuild": "重建实例",
+        "rebuilding": "重建中…",
+        "rebuildStatusUnknown": "重建状态待同步…",
+        "manualWakeRequired": "旧的已删、新的没建，请手动唤醒云端。",
+        "manualWakeAction": "手动唤醒云端",
+        "unregisteredStatus": "实例尚未完成启动，暂时无法连接。",
+        "autoUpdate": "空闲时自动更新",
+        "autoUpdateHint": "有新版本时，云端实例会在空闲或休眠时自动更新。",
+        "updateRolledBack": "上次更新失败，已自动回滚。",
+        "updateConfirm": {
+          "title": "更新云端实例？",
+          "description": "更新会重启云端实例，并中断正在运行的任务。",
+          "confirm": "更新云端实例",
+          "cancel": "取消"
+        },
+        "rebuildConfirm": {
+          "title": "重建云端实例？",
+          "description": "重建会先删除当前云端实例及其中的数据，再使用当前运行环境创建新实例。正在运行的任务会中断，删除的数据无法恢复。",
+          "confirm": "重建实例",
+          "cancel": "取消"
+        },
+        "delete": "删除实例",
+        "deleting": "删除中…",
+        "deleteConfirm": {
+          "title": "删除云端实例？",
+          "description": "删除后，云端数据将被删除且无法恢复，同时会移除对应设备。",
+          "confirm": "删除实例",
+          "cancel": "取消"
+        },
+        "toast": {
+          "stopped": "云端实例已休眠",
+          "deleted": "云端实例已删除",
+          "stopFailed": "休眠云端实例失败，请稍后重试",
+          "deleteFailed": "删除云端实例失败，请稍后重试",
+          "woke": "云端实例正在唤醒",
+          "wakeFailed": "唤醒云端实例失败，请稍后重试",
+          "actionTimedOut": "操作耗时较长，请稍后重试。",
+          "updateStarted": "云端实例已开始更新",
+          "updateFailed": "无法开始更新云端实例，请稍后重试",
+          "rebuilt": "云端实例已重新创建",
+          "rebuildStarted": "云端实例已开始重建",
+          "rebuildFailed": "无法重建云端实例，请稍后重试",
+          "rebuildCreateFailed": "原云端实例已删除，但新实例创建失败。请从机器菜单重新唤醒云端。",
+          "rebuildStillCleaning": "旧云端实例仍在清理中，请等待清理完成后再唤醒。",
+          "autoUpdateFailed": "无法保存云端实例的自动更新设置，请稍后重试",
+          "noReleaseAvailable": "目前没有可用的正式版，请刷新后稍后重试"
+        },
+        "modelAccessStale": "云端模型凭据待刷新，云端模型可能暂不可用"
+      },
       "error": {
         "unavailable": "设备互联服务暂不可用(服务端未启用或网络异常)",
         "listFailed": "设备列表获取失败"
@@ -7342,6 +7408,7 @@
       "label": "设备",
       "localHint": "在这台电脑上运行",
       "onlineHint": "已连接，可在其上创建",
+      "modelAccessStaleHint": "模型凭据待刷新",
       "offlineHint": "离线 · 连上后可用",
       "attachmentsDropped": "已移除 {{count}} 个附件：它们是上一台设备上的文件",
       "attachmentsRemoteUnsupported": "远程设备暂不支持文件附件，已跳过 {{count}} 个（图片可以）"
@@ -8451,18 +8518,32 @@
       "remoteProviderUnsupported": "该供应商不支持 SSH 远程会话，请更换来源",
       "remoteNativeOauthUnavailable": "未连接 Claude.ai 订阅，请先连接或选择网关模型",
       "deviceStillLoading": "远程设备仍在加载中，请稍候",
+      "agentAvailabilityLoading": "正在检查可用 Agent，请稍候",
+      "agentUnavailableAutoSwitch": "所选 Agent 当前不可用，已切换到 {{agent}}。请重新发送。",
       "remoteDefaultsLoadFailed": "无法读取远程设备配置。请检查连接，Cindy 正在重试。",
       "worktreeMissingRepo": "无法开 worktree：缺少当前目录的仓库根",
       "worktreeRepoHint": "可尝试重新选一次工作目录，等右下角文件夹标识刷新后再试",
       "sessionInactive": "任务已不再处于活跃状态",
       "remoteProjectBanner": "在 {{device}} 的 {{project}} 中新建任务",
-      "remoteDialogueBanner": "在 {{device}} 上新建对话（不绑定项目）"
+      "remoteDialogueBanner": "在 {{device}} 上新建对话（不绑定项目）",
+      "cloudWaking": "正在唤醒云端 Cindy，期间可以继续输入",
+      "cloudWakingSendBlocked": "云端 Cindy 正在唤醒，唤醒完成后即可发送",
+      "cloudModelsLoading": "云端模型加载中…",
+      "cloudWakeFailed": "暂时未能唤醒云端 Cindy，你的草稿仍在",
+      "cloudWakeRetry": "重试"
     },
     "jumpSession": {
       "emptyId": "请输入要跳转的任务 ID",
       "notFound": "未找到该任务"
     },
     "sidebar": {
+      "cloud": {
+        "wake": "唤醒云端",
+        "waking": "唤醒中…",
+        "wakeFailed": "唤醒云端失败，请稍后重试",
+        "actionTimedOut": "操作耗时较长，请稍后重试。",
+        "updateAvailable": "有可用更新"
+      },
       "machineSwitcher": {
         "allMachines": "所有",
         "localMachine": "本机",

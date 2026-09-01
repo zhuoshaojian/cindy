@@ -23,7 +23,9 @@
  * 各 hook 共用 useSwitcherDevices(),读同一份共享设备列表,无重复拉取。
  */
 
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
+import { useCloudCapability } from './cloudCapability';
 import {
   useRemoteBootstrapFailedDeviceIds,
   useRemoteBootstrapLoadingDeviceIds,
@@ -37,7 +39,9 @@ import {
   MACHINE_ALL,
   MACHINE_LOCAL,
   normalizeSelectedMachineId,
+  removeCloudMachineSelection,
   setSelectedMachineId,
+  setSelectedMachineIdTransient,
   toggleMachineSelection,
   useSelectedMachineId,
   type MachineSelection,
@@ -177,14 +181,30 @@ export function shouldShowSelectedMachineConnectingPlaceholder({
 export function useSwitcherDevices(): SwitcherDevice[] {
   const fullList = useDeviceLinkDeviceList();
   const synced = useRemoteDevices();
+  const cloudCapability = useCloudCapability();
   const revoked = useSyncExternalStore(
     revokedDevicesStore.subscribe,
     revokedDevicesStore.getSnapshot,
   );
   return useMemo(
-    () => buildSwitcherDevices({ fullList, syncedDevices: synced, revoked }),
-    [fullList, synced, revoked],
+    () => {
+      const devices = buildSwitcherDevices({ fullList, syncedDevices: synced, revoked });
+      return cloudCapability.unsupported
+        ? devices.filter((device) => !isCloudInstanceDeviceId(device.deviceId))
+        : devices;
+    },
+    [cloudCapability.unsupported, fullList, synced, revoked],
   );
+}
+
+function useCloudSelectionFallback(raw: MachineSelection): void {
+  const cloudCapability = useCloudCapability();
+  useEffect(() => {
+    if (!cloudCapability.unsupported || raw === MACHINE_ALL) return;
+    setSelectedMachineIdTransient(
+      removeCloudMachineSelection(raw, cloudCapability.cloudDeviceIds),
+    );
+  }, [cloudCapability, raw]);
 }
 
 /**
@@ -231,6 +251,7 @@ export function shouldShowMachineSwitcher(
 /** 勾选的设备仍可选中(已连接 / 连接中)则保留,否则从勾选集裁掉(裁空回落「所有」)。供侧边栏合并点过滤用。 */
 export function useEffectiveSelectedMachineId(): MachineSelection {
   const raw = useSelectedMachineId();
+  useCloudSelectionFallback(raw);
   const devices = useSwitcherDevices();
   const selectable = useSelectableIdsForNormalize(devices);
   return useMemo(() => normalizeSelectedMachineId(raw, selectable), [raw, selectable]);
@@ -341,6 +362,7 @@ export interface MachineSwitcherState {
 export function useMachineSwitcher(): MachineSwitcherState {
   const devices = useSwitcherDevices();
   const raw = useSelectedMachineId();
+  useCloudSelectionFallback(raw);
   const normalizeSelectable = useSelectableIdsForNormalize(devices);
   const effective = useMemo(
     () => normalizeSelectedMachineId(raw, normalizeSelectable),

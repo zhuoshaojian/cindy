@@ -34,11 +34,15 @@
  * 仅在分片真正变化时才换新数组(满足 getSnapshot 引用稳定性,否则无限重渲染)。
  */
 
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { DEFAULT_DRAFT_SESSION_TITLE } from '@cindy/maker-shared/session-title';
 import type { DeviceLinkConnectionStatus, Session } from '@/lib/ccAgent.types';
 import type { ListStatusFilter } from '@/lib/sessionService';
 import { clearCachedMessages } from './mirrorCacheClient';
+import {
+  useCloudCapability,
+  type CloudCapabilitySnapshot,
+} from './cloudCapability';
 
 export type RemoteSessionStatus = Exclude<ListStatusFilter, 'all'>;
 
@@ -479,7 +483,11 @@ const actions = {
    *  - 不清 bootstrapFailed、不动 epoch:种入不是一次拉取,不参与乱序保护。
    */
   hydrateFromCache(
-    devices: ReadonlyArray<{ deviceId: string; deviceName: string; sessions: readonly Session[] }>,
+    devices: ReadonlyArray<{
+      deviceId: string;
+      deviceName: string;
+      sessions: readonly Session[];
+    }>,
   ): void {
     let changed = false;
     for (const device of devices) {
@@ -1016,14 +1024,38 @@ export function retryRemoteSessionBootstrap(deviceId: string): void {
   bootstrapRetryImpl?.(deviceId);
 }
 
+export function filterRemoteSessionsForCloudCapability(
+  sessions: Session[],
+  cloudCapability: CloudCapabilitySnapshot,
+): Session[] {
+  return cloudCapability.unsupported
+    ? sessions.filter(
+        (session) => !cloudCapability.cloudDeviceIds.has(session.deviceLinkDeviceId ?? ''),
+      )
+    : sessions;
+}
+
 /** 组件内订阅:返回扁平远端会话快照(喂给 sidebar 合并点)。 */
 export function useRemoteProjectSessions(): Session[] {
-  return useSyncExternalStore(subscribe, actions.getMergedRemoteSessions);
+  const sessions = useSyncExternalStore(subscribe, actions.getMergedRemoteSessions);
+  const cloudCapability = useCloudCapability();
+  return useMemo(
+    () => filterRemoteSessionsForCloudCapability(sessions, cloudCapability),
+    [cloudCapability, sessions],
+  );
 }
 
 /** 组件内订阅:返回当前已连接的被控设备摘要列表(机器切换栏 chips)。 */
 export function useRemoteDevices(): RemoteDeviceSummary[] {
-  return useSyncExternalStore(subscribe, actions.getDeviceList);
+  const devices = useSyncExternalStore(subscribe, actions.getDeviceList);
+  const cloudCapability = useCloudCapability();
+  return useMemo(
+    () =>
+      cloudCapability.unsupported
+        ? devices.filter((device) => !cloudCapability.cloudDeviceIds.has(device.deviceId))
+        : devices,
+    [cloudCapability, devices],
+  );
 }
 
 /** 组件内订阅：bootstrap 已终态失败、下一次重试尚未开始的设备集合。 */

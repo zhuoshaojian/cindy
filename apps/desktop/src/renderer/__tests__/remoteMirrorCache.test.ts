@@ -830,6 +830,7 @@ describe('remoteProjectsStore.hydrateFromCache', () => {
     ]);
     expect(remoteProjectsStore.hasDevice('dev-empty')).toBe(false);
   });
+
 });
 
 describe('在途 hydrate 遇上权威删除', () => {
@@ -1394,7 +1395,12 @@ describe('列表快照的采集口径', () => {
   // 而离线可见正是这份缓存存在的理由。
   it('断连设备仍进快照(否则冷启动就恢复不出离线设备)', () => {
     remoteProjectsStore.setDeviceSessions('dev-online', 'Online Mac', [{ id: 's-on' }] as never);
-    remoteProjectsStore.setDeviceSessions('dev-offline', 'Offline Mac', [{ id: 's-off' }] as never);
+    remoteProjectsStore.setDeviceSessions(
+      'dev-offline',
+      'Offline Mac',
+      [{ id: 's-off' }] as never,
+      'active',
+    );
     remoteProjectsStore.markDeviceDisconnected('dev-offline');
 
     const snapshot = collectSessionListSnapshot();

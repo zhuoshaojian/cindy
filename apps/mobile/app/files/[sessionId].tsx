@@ -54,6 +54,7 @@ import { goBackGuarded } from '@/utils/backGuard';
 import { useAuth } from '@/auth/AuthContext';
 import { DEVICE_LINK_API_BASE_URL } from '@/config/env';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
+import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 import { onFileBrowserWatchEvent } from '@/device-link/fileBrowserWatch';
 import { formatRemoteError } from '@/device-link/remoteStatus';
 import { withTransientRemoteRetry } from '@/device-link/remoteRetry';
@@ -128,7 +129,7 @@ export default function RemoteFileBrowserScreen() {
   const sessionId = String(params.sessionId ?? '');
   const routeDeviceId = readRouteString(params.deviceId);
   const deviceId = routeDeviceId ?? remoteSessionStore.getSessionDeviceId(sessionId) ?? '';
-  const deviceName = readRouteString(params.deviceName) ?? deviceId;
+  const deviceName = resolveMobileDeviceDisplayName(readRouteString(params.deviceName) ?? deviceId);
   const relPath = readRouteString(params.relPath) ?? '';
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();

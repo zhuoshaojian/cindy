@@ -46,11 +46,13 @@
  * 颜色全走主题 token(规则 16),文案全走 i18n(规则 18)。
  */
 
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Ban,
   Check,
   ChevronDown,
+  Cloud,
+  CloudOff,
   Loader2,
   Monitor,
   MonitorCog,
@@ -59,9 +61,26 @@ import {
 } from 'lucide-react';
 import { useMatch, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
+import { extractIpcError } from '@/utils/ipcError';
+import {
+  CloudInstanceActionTimeoutError,
+  useCloudInstances,
+  type CloudInstanceView,
+} from '@/features/cloud-instance/useCloudInstances';
+import { cloudInstanceHasAvailableUpdate } from '@/features/cloud-instance/cloudDraftTarget';
+import {
+  cloudInstanceLifecycleAction,
+  cloudInstanceLifecycleActionForTarget,
+  cloudInstanceLifecycleProgressKey,
+} from '@/features/cloud-instance/cloudLifecyclePresentation';
+import {
+  desktopCloudInstanceDisplayName,
+  resolveDesktopCloudDeviceName,
+} from '@/features/cloud-instance/cloudDeviceName';
 import { useActiveMainView } from '@/hooks/useActiveMainView';
 import {
   DropdownMenu,
@@ -94,12 +113,27 @@ export function MachineSwitcherMenu({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { devices, selectedDeviceId, select, toggle } = useMachineSwitcher();
+  // 云端实例由控制面列表统一驱动,再以 stable deviceId join relay presence。
+  // device-link 的 cloud 项仅作 presence 来源,不直接渲染,避免 online/offline 双行。
+  const cloud = useCloudInstances();
+  const cloudReady = cloud.loadState === 'ready';
+  const remoteDevices = devices.filter(
+    (device) => !isCloudInstanceDeviceId(device.deviceId),
+  );
   // 设备列表只看当前是否真有可展示的远程设备。hasRemote 还会把「目录已空、
   // raw 仍记着远端」算进去——那是旧逃生口,标题恒在后会误画出「所有 / 本机」。
-  const showDeviceList = devices.length > 0;
+  // 云端控制面可用时也要开这一段:「0 实例首次唤醒」的入口就在这里面。
+  const showDeviceList = remoteDevices.length > 0 || cloudReady;
   // 段头标题是远程任务读取状态的固定承载点。后台 bootstrap 时只更新这一行，
   // 不再把 loading 提示插入下方会话列表，避免列表整体上下跳动。
   const remoteSessionBootstrapLoading = useRemoteSessionBootstrapLoading(selectedDeviceId);
+  // 菜单是点击展开(上游 2026-08-13 定稿已去掉 hover 展开)。这里只为「打开时拉一次
+  // 最新云端状态」而受控:菜单里要显示「更新可用」等随时间变化的信息。
+  const refreshCloudInstances = cloud.refresh;
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (open) void refreshCloudInstances();
+  }, [open, refreshCloudInstances]);
   // 本行随 SidebarTopNav 在所有非 rail 视图常驻,但机器过滤只作用于会话列表侧栏——
   // 选机器后必须让过滤结果可见(Codex P2):
   //   - /settings 等非 view 路由 → navigateToView('cc-agent') 切回会话视图
@@ -126,6 +160,31 @@ export function MachineSwitcherMenu({
     toggle(id);
     ensureConversationListVisible();
   };
+  const displayDeviceName = (name: string): string => resolveDesktopCloudDeviceName(name, t);
+
+  // 云端命名:custom 直显;default 用序号插值;fallback 用通用「云端」名。
+  const cloudNameOf = (instance: CloudInstanceView): string =>
+    desktopCloudInstanceDisplayName(instance, t);
+  const onWakeFailed = (error: unknown): void => {
+    toast.error(t(extractIpcError(error)?.code === 'CLOUD_INSTANCE_REBUILD_IN_PROGRESS'
+      ? 'settings.devices.cloudInstance.toast.rebuildStillCleaning'
+      : error instanceof CloudInstanceActionTimeoutError
+        ? 'ccAgent.sidebar.cloud.actionTimedOut'
+        : 'ccAgent.sidebar.cloud.wakeFailed'));
+  };
+  const wakeCloud = (instanceId: string, deviceId: string): void => {
+    const wake = cloud.wake(instanceId);
+    // 离线实例与在线设备同一心智:先切过滤,不等待 Pod 上线。
+    applySelect([deviceId]);
+    void wake.catch(onWakeFailed);
+  };
+  const wakeFirstCloud = (): void => {
+    void cloud.wake().then((result) => {
+      if (!result) return;
+      applySelect([result.deviceId]);
+    }).catch(onWakeFailed);
+  };
+
 
   const triggerLabel = t('ccAgent.sidebar.machineSwitcher.menuTrigger');
   const settingsItems = (
@@ -159,10 +218,16 @@ export function MachineSwitcherMenu({
   if (showDeviceList && selectedDeviceId !== MACHINE_ALL) {
     if (selectedDeviceId.length === 1) {
       const only = selectedDeviceId[0];
+      // 云端实例的标题走控制面名称(带序号 / 自定义名),不用 relay 的英文 stable 名。
+      const selectedCloud = cloud.instances.find((instance) => instance.deviceId === only);
       triggerText =
         only === MACHINE_LOCAL
           ? t('ccAgent.sidebar.scopeLocalSessions')
-          : (devices.find((device) => device.deviceId === only)?.name ?? triggerLabel);
+          : selectedCloud
+            ? cloudNameOf(selectedCloud)
+            : displayDeviceName(
+              remoteDevices.find((device) => device.deviceId === only)?.name ?? triggerLabel,
+            );
     } else {
       triggerText = t('ccAgent.sidebar.machineSwitcher.selectedCount', {
         count: selectedDeviceId.length,
@@ -173,7 +238,7 @@ export function MachineSwitcherMenu({
   // 点击展开(2026-08-13 定稿,推翻 2026-07-12 的 hover 展开——作为段头标题,
   // hover 扫过就弹菜单太吵)。modal={false}:侧栏是常驻面板,不锁列表滚动。
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -220,14 +285,14 @@ export function MachineSwitcherMenu({
               onSelect={() => applySelect([MACHINE_LOCAL])}
               onToggle={() => applyToggle(MACHINE_LOCAL)}
             />
-            {devices.map((device) => {
+            {remoteDevices.map((device) => {
               const rejected = device.status === 'rejected';
               const connecting = device.status === 'connecting';
               return (
                 <MachineMenuItem
                   key={device.deviceId}
                   icon={<MonitorSmartphone size={14} strokeWidth={2} />}
-                  label={device.name}
+                  label={displayDeviceName(device.name)}
                   selected={isMachineSelected(selectedDeviceId, device.deviceId)}
                   shimmer={connecting}
                   rejected={rejected}
@@ -242,6 +307,72 @@ export function MachineSwitcherMenu({
                 />
               );
             })}
+            {/* 机器列表只列在线云端实例;离线实例不以「一台机器」出现(选不了过滤目标),
+                统一折叠成一行「唤醒云端」动作(CloudOff),0 实例与休眠实例同一入口。 */}
+            {cloudReady &&
+              cloud.instances
+                .filter((instance) => cloud.onlineDeviceIds.has(instance.deviceId))
+                .map((instance) => {
+                  // wake / stop / rebuild 共用同一份进度呈现:重建会换 instanceId,
+                  // 所以要按「pending 目标是否属于当前实例集合」判定,不能只比对 id。
+                  const progressAction = cloudInstanceLifecycleActionForTarget(
+                    cloud.pending,
+                    instance.instanceId,
+                    cloud.instances.map((candidate) => candidate.instanceId),
+                  );
+                  return (
+                  <MachineMenuItem
+                    key={instance.instanceId}
+                    icon={<Cloud size={14} strokeWidth={2} />}
+                    label={progressAction
+                      ? t(cloudInstanceLifecycleProgressKey(progressAction, cloud.pending))
+                      : cloudNameOf(instance)}
+                    shimmer={progressAction !== null}
+                    disabled={progressAction !== null}
+                    badge={
+                      cloudInstanceHasAvailableUpdate(instance)
+                        ? t('ccAgent.sidebar.cloud.updateAvailable')
+                        : undefined
+                    }
+                    onBadgeSelect={() => {
+                      setOpen(false);
+                      navigate('/settings?tab=remote-control&section=devices');
+                    }}
+                    selected={isMachineSelected(selectedDeviceId, instance.deviceId)}
+                    onSelect={() => applySelect([instance.deviceId])}
+                    onToggle={() => applyToggle(instance.deviceId)}
+                  />
+                  );
+                })}
+            {cloudReady &&
+              (() => {
+                const offlineInstance = cloud.instances.find(
+                  (instance) => !cloud.onlineDeviceIds.has(instance.deviceId),
+                );
+                if (!offlineInstance && cloud.instances.length > 0) return null;
+                // 折叠行代表「当前可唤醒的云端」而非一条具名实例行。任一动作已受理时都
+                // 必须保持 busy，避免 first-offline 顺序变化后再次点击、重复创建/唤醒资源。
+                const progressAction = cloudInstanceLifecycleAction(cloud.pending);
+                const waking = progressAction !== null;
+                return (
+                  <MachineMenuItem
+                    icon={<CloudOff size={14} strokeWidth={2} />}
+                    label={progressAction
+                      ? t(cloudInstanceLifecycleProgressKey(progressAction, cloud.pending))
+                      : t(cloud.rebuildAttention
+                        ? 'settings.devices.cloudInstance.manualWakeAction'
+                        : 'ccAgent.sidebar.cloud.wake')}
+                    selected={false}
+                    shimmer={waking}
+                    disabled={cloud.pending !== null}
+                    onSelect={
+                      offlineInstance
+                        ? () => wakeCloud(offlineInstance.instanceId, offlineInstance.deviceId)
+                        : wakeFirstCloud
+                    }
+                  />
+                );
+              })()}
             <DropdownMenuSeparator className={MENU_SEPARATOR_CLASS} />
           </>
         ) : null}
@@ -266,20 +397,28 @@ export function MachineSwitcherMenu({
 function MachineMenuItem({
   icon,
   label,
+  badge,
+  onBadgeSelect,
   selected,
   onSelect,
   onToggle,
   shimmer = false,
   rejected = false,
+  disabled = false,
 }: {
   icon?: ReactNode;
   label: string;
+  badge?: string;
+  /** 行内附加动作；点击不触发行主体的机器选择。 */
+  onBadgeSelect?: () => void;
   selected: boolean;
   onSelect: () => void;
   /** 多选动作(勾选 / 取消勾选);不传则该项无复选框、无修饰键 toggle(「所有」/ 被拒项)。 */
   onToggle?: () => void;
   shimmer?: boolean;
   rejected?: boolean;
+  /** 动作在途(如云端唤醒已受理但 Pod 未上线):置灰且不可点,防重复触发。 */
+  disabled?: boolean;
 }): ReactNode {
   const { t } = useTranslation();
   // Radix 的 onSelect 自定义事件不携带修饰键信息,且键盘 Enter/Space 会合成一次
@@ -292,8 +431,9 @@ function MachineMenuItem({
       className={cn(
         MENU_ITEM_CLASS,
         'group/machine-item',
-        rejected && 'text-[var(--text-tertiary)]',
+        (rejected || disabled) && 'text-[var(--text-tertiary)]',
       )}
+      disabled={disabled}
       onClick={(event) => {
         if (event.isTrusted) modifierHeldRef.current = event.metaKey || event.ctrlKey;
       }}
@@ -327,6 +467,22 @@ function MachineMenuItem({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {badge && onBadgeSelect ? (
+        <button
+          type="button"
+          data-testid="machine-cloud-update-badge"
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onBadgeSelect();
+          }}
+          className="shrink-0 select-none rounded-full bg-[var(--surface-chip)] px-2 py-0.5 text-10 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+        >
+          {badge}
+        </button>
+      ) : null}
       {/* 右槽:恒定 w-4 占位(所有行都渲染),复选框浮现 / 消失只切 visibility / 边框——
           整行宽度与 label 截断位置在 hover 前后完全不变。
           已勾选且可多选 → 恒显 ✓,✓ 即取消勾选的点击目标(鼠标悬停到 ✓ 自身时才

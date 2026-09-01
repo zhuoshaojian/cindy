@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Dialog from '@radix-ui/react-dialog';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 import { X, Folder, FolderSymlink, ChevronLeft, RotateCw } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ import { toast } from '@/lib/toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { mapIpcErrorToI18nKey } from '@/utils/ipcError';
 import { useControllableDevices } from '@/hooks/useControllableDevices';
+import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
 import { useCCSessions } from '@/hooks/useCCSessions';
 import {
   sshBrowseAdapter,
@@ -49,7 +51,7 @@ export type RemoteProjectTarget =
 /** 下拉里的一个可选远程目标(SSH 主机 / 被控设备)。 */
 type RemoteTarget =
   | { key: string; kind: 'ssh'; hostId: string; label: string }
-  | { key: string; kind: 'device'; deviceId: string; deviceName: string; label: string };
+  | { key: string; kind: 'device'; deviceId: string; deviceName: string; label: string; cloud?: boolean };
 
 interface Props {
   open: boolean;
@@ -99,18 +101,27 @@ export function AddRemoteProjectDialog({
           hostId: h.config.id,
           label: `${h.config.id} (${h.config.user}@${h.config.hostname})`,
         }));
-    const dev: RemoteTarget[] = devices.map((d) => ({
-      key: `device:${d.deviceId}`,
-      kind: 'device',
-      deviceId: d.deviceId,
-      deviceName: d.name,
-      label: d.name,
-    }));
+    const dev: RemoteTarget[] = devices.map((d) => {
+      const displayName = resolveDesktopCloudDeviceName(d.name, t);
+      return {
+        key: `device:${d.deviceId}`,
+        kind: 'device',
+        deviceId: d.deviceId,
+        deviceName: displayName,
+        label: displayName,
+        ...(isCloudInstanceDeviceId(d.deviceId) ? { cloud: true } : {}),
+      };
+    });
     return [...ssh, ...dev];
-  }, [excludeSsh, sshHosts, devices]);
+  }, [excludeSsh, sshHosts, devices, t]);
 
   const sshTargets = useMemo(() => targets.filter((tg) => tg.kind === 'ssh'), [targets]);
-  const deviceTargets = useMemo(() => targets.filter((tg) => tg.kind === 'device'), [targets]);
+  const deviceTargets = useMemo(
+    () => targets
+      .filter((tg): tg is Extract<RemoteTarget, { kind: 'device' }> => tg.kind === 'device')
+      .sort((a, b) => Number(a.cloud === true) - Number(b.cloud === true)),
+    [targets],
+  );
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selectedTarget = useMemo(

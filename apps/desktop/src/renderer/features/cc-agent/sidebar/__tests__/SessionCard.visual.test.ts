@@ -17,6 +17,14 @@ const mocks = vi.hoisted(() => ({
   pendingPluginSetupSessionIds: new Set<string>(),
   attentionKindBySession: new Map<string, 'done' | 'awaiting' | 'error'>(),
   ensureInitialMessages: vi.fn(),
+  deviceLink: {
+    listDevices: vi.fn(
+      () => new Promise<{ devices: never[] }>(() => {}),
+    ),
+    onPresenceChanged: vi.fn(() => () => {}),
+    onStatusChanged: vi.fn(() => () => {}),
+    onControlTargetChanged: vi.fn(() => () => {}),
+  },
 }));
 
 vi.mock('react-router-dom', () => ({
@@ -210,6 +218,13 @@ function sessionRowEl(): HTMLElement {
 
 describe('SessionCard visual cases', () => {
   beforeEach(() => {
+    // 只补 electronAPI,**不要**整体替换 window:替换成裸对象会连带抹掉 jsdom 的
+    // addEventListener,任何在 effect 里订阅 storage/resize 的上游 hook(如
+    // useTaskInfoFields)一挂载就抛,而这跟被测行为毫无关系。
+    vi.stubGlobal('electronAPI', { deviceLink: mocks.deviceLink });
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      deviceLink: mocks.deviceLink,
+    };
     mocks.navigate.mockReset();
     mocks.dropdownMenuOpen = false;
     mocks.boundSchedulesBySession.clear();
@@ -218,6 +233,10 @@ describe('SessionCard visual cases', () => {
     mocks.pendingPluginSetupSessionIds.clear();
     mocks.attentionKindBySession.clear();
     mocks.ensureInitialMessages.mockReset();
+    mocks.deviceLink.listDevices.mockClear();
+    mocks.deviceLink.onPresenceChanged.mockClear();
+    mocks.deviceLink.onStatusChanged.mockClear();
+    mocks.deviceLink.onControlTargetChanged.mockClear();
   });
 
   afterEach(() => {

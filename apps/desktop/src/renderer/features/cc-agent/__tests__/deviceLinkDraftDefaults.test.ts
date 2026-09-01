@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { ProviderView } from '@cindy/model-providers';
 
 import {
+  coerceModelToRoutableSource,
   resolveDeviceLinkDraftDefaults,
   shouldReseedDeviceLinkDraftDefaults,
 } from '../deviceLinkDraftDefaults';
@@ -432,5 +434,63 @@ describe('capabilities refresh clamp contract', () => {
       permissionMode: undefined,
       providerId: 'anthropic',
     });
+  });
+});
+
+// 最小 ProviderView:只覆盖 sourcesForModel/chatEligibleSourcesForModel 判定用到的字段。
+function provider(id: string, connected: boolean, modelIds: string[]): ProviderView {
+  return {
+    id,
+    name: id,
+    source: 'builtin',
+    agents: ['claude-code'],
+    auth: { method: 'oauth' },
+    access: { kind: 'subscription', product: id },
+    connected,
+    // hasEnabledAgentRuntime 要求 routing[agent] 存在且未禁用。
+    routing: { 'claude-code': {} },
+    models: {
+      'claude-code': modelIds.map((mid) => ({ id: mid, name: mid, group: 'anthropic' })),
+    },
+  } as unknown as ProviderView;
+}
+
+describe('coerceModelToRoutableSource', () => {
+  const base = { capabilities: caps(), remoteDraft: null, agentKind: 'claude-code' as const };
+
+  it('当前模型有已连接来源 → 原样不动', () => {
+    const sel = resolveDeviceLinkDraftDefaults(caps(), { model: 'claude-haiku-4-5' });
+    const out = coerceModelToRoutableSource(sel, {
+      ...base,
+      providers: [provider('xd', true, ['claude-haiku-4-5'])],
+    });
+    expect(out).toEqual(sel);
+  });
+
+  it('默认模型无来源(云端仅连 xd 网关,不 offer opus)→ 回退到引擎首个可路由模型', () => {
+    // seed = opus-4-8(引擎能力集里,availableModels[0]);xd connected 但只 offer haiku,
+    // anthropic offer opus 却未连接 → opus 无可路由来源 → 回退到首个可路由 = haiku。
+    const seeded = resolveDeviceLinkDraftDefaults(caps(), null);
+    expect(seeded.model).toBe('claude-opus-4-8');
+    const out = coerceModelToRoutableSource(seeded, {
+      ...base,
+      providers: [
+        provider('xd', true, ['claude-haiku-4-5']),
+        provider('anthropic', false, ['claude-opus-4-8', 'claude-haiku-4-5']),
+      ],
+    });
+    expect(out.model).toBe('claude-haiku-4-5');
+    // effort 按新模型(Haiku 无 effort 档)重算,而非沿用 opus 的档。
+    expect(out.effort).toBe('high');
+    expect(out.fastMode).toBe(false);
+  });
+
+  it('无任何已连接来源(rail 空 / 老被控端)→ 不回退,保持原 seed 交发送门', () => {
+    const seeded = resolveDeviceLinkDraftDefaults(caps(), null);
+    const out = coerceModelToRoutableSource(seeded, {
+      ...base,
+      providers: [provider('anthropic', false, ['claude-opus-4-8', 'claude-haiku-4-5'])],
+    });
+    expect(out.model).toBe('claude-opus-4-8');
   });
 });

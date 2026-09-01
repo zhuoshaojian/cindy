@@ -71,6 +71,8 @@ const newGoalDialogSource = readSource('components', 'new-chat', 'NewGoalDialog.
 
 const chatInputSource = readSource('components', 'new-chat', 'ChatInput.tsx');
 
+const extraDirsButtonSource = readSource('components', 'new-chat', 'ExtraDirsButton.tsx');
+
 const sidebarUpperSource = readSource('features', 'cc-agent', 'CCAgentSidebarUpper.tsx');
 
 describe('Shared create project picker', () => {
@@ -550,13 +552,14 @@ describe('Shared create project picker', () => {
     expect(availableAgentsHookSource).toContain(
       "dl.invoke(deviceId, 'maker:list-available-agents', [])",
     );
-    // claude-code → cc 归一,fail-open(未加载不隐藏)。
+    // claude-code → cc 归一,fail-open(查询失败不隐藏)。
     expect(availableAgentsHookSource).toContain("agent === 'claude-code' ? 'cc' : agent");
     expect(availableAgentsHookSource).toContain('refreshLocalCapabilities');
     expect(availableAgentsHookSource).toContain('evictDeviceCapabilities');
     expect(availableAgentsHookSource).toContain('prefetchDeviceCapabilities');
-    // 未加载完成时不隐藏任何入口(loaded 保持 false → 空 hidden)。
+    // loaded 继续服务展示层；status 额外区分「仍在加载」与「查询失败后 fail-open」。
     expect(availableAgentsHookSource).toMatch(/loaded/);
+    expect(availableAgentsHookSource).toContain('status: AvailableAgentsStatus');
 
     // 开关按 hiddenVendors 过滤 OPTIONS,但保留当前选中段避免"无选中"过渡帧。
     expect(vendorSwitcherSource).toContain('hiddenVendors');
@@ -573,10 +576,10 @@ describe('Shared create project picker', () => {
       /hiddenSwitcherVendors\.includes\(draft\.vendor\)/,
     );
 
+
     // 2026-08-12 统一模型选择器(M5):新会话工具条上的引擎下拉常态已撤除(只在
-    // device-link 老被控端的降级分支里保留),上面那条 hiddenVendors 断言因此不再是
-    // 常态路径的门禁。**门禁没放松,只是换了承载物**:ChatInput 按同一个 runtime 注册
-    // 结果算出 unifiedAgents 交给联合列表,未注册的引擎连行都不出现。
+    // device-link 老被控端的降级分支里保留)。**门禁没放松,只是换了承载物**:ChatInput
+    // 按同一个 runtime 注册结果算出 unifiedAgents 交给联合列表,未注册的引擎连行都不出现。
     expect(newMakerDraftRouteSource).toContain('hiddenVendors={hiddenSwitcherVendors}');
     expect(chatInputSource).toMatch(/useAvailableAgents\(deviceLinkDeviceId\)/);
     expect(chatInputSource).toContain('unifiedAgents={effectiveUnifiedAgents}');
@@ -585,6 +588,14 @@ describe('Shared create project picker', () => {
     expect(chatInputSource).toContain(
       'kind === agentKind || runtimeAvailableVendors.has(agentKindToVendor(kind)),',
     );
+    // 草稿侧的 `hiddenSwitcherVendors.includes(draft.vendor)` 内联判定已被抽取成
+    // resolveDraftAgentAvailability + guardDraftAgentAvailability:内联判定只在 render 后
+    // 的 effect 里收敛,创建瞬间仍可能用不可用的 agent 建会话。断言随之搬到下面三条。
+    expect(newMakerDraftRouteSource).toContain('if (!availableAgentsLoaded) return;');
+    // 创建边界必须复核，不能只依赖 render 后的 effect 收敛；Send 与 Goal 共用同一 guard。
+    expect(newMakerDraftRouteSource).toContain('const guardDraftAgentAvailability = useCallback(');
+    expect(newMakerDraftRouteSource.match(/guardDraftAgentAvailability\(\)/g)).toHaveLength(2);
+    expect(newMakerDraftRouteSource).toContain('resolveDraftAgentAvailability(');
   });
 
   it('does not hide SSH targets for Pi (Pi SSH remote runtime landed)', () => {
@@ -597,15 +608,14 @@ describe('Shared create project picker', () => {
   });
 
   // #807:设备切换 pill。三条产品裁决写进源码断言,防后续重构悄悄改掉。
-  it('wires the device switcher pill and keeps it invisible without paired devices', () => {
+  it('wires the device switcher pill and only stays visible empty for first cloud wake', () => {
     expect(newMakerDraftRouteSource).toContain(
       'const { devices: selectableDevices, loaded: selectableDevicesLoaded } = useSelectableDevices();',
     );
     expect(newMakerDraftRouteSource).toContain('<DeviceSwitcherPill');
-    // 没有对端设备 → 组件自己返回 null,只有本机的用户看不到任何新增控件。
-    expect(deviceSwitcherPillSource).toContain('if (devices.length === 0) return null');
-    // 离线设备列出但禁用 —— 掉线时从列表消失会让用户以为配对丢了。
-    expect(deviceSwitcherPillSource).toContain('disabled={!device.online}');
+    // 具体行语义(离线云端可唤醒 / 普通离线禁用 / 0 实例首次唤醒 / 空列表隐藏)由
+    // DeviceSwitcherPill.test.tsx 的行为测试锁定,这里只钉跨文件接线,不锁表达式写法。
+    expect(deviceSwitcherPillSource).toContain('cloudWake?.onWake(device.cloudInstanceId)');
     // 换设备后停在这台设备的「对话」:上一台的项目路径在新机器上基本不存在,
     // 留着会让用户以为项目跟过来了、发送时才在被控端 path guard 上失败。
     expect(newMakerDraftRouteSource).toContain('const handleDeviceChange = useCallback(');
@@ -650,7 +660,7 @@ describe('Shared create project picker', () => {
     const body = handler.slice(0, handler.indexOf('    [applyDraftTarget'));
     expect(body).toContain('deviceId: draft.deviceLinkDeviceId,');
     expect(body).toContain('workingDir: dir,');
-    // 而那个动作**总是**显式带上设备字段,所以这条不变量对四条路径一次性成立,
+    // 而那个动作**总是**显式带上设备字段,所以这条不变量对六条路径一次性成立,
     // 不再依赖每个调用方各自记得拼一个 keepDevice。
     const action = newMakerDraftRouteSource.slice(
       newMakerDraftRouteSource.indexOf('const applyDraftTarget = useCallback('),
@@ -735,7 +745,7 @@ describe('Shared create project picker', () => {
   // 就静默丢掉已选项目和部分已写好的消息(mention chip 被剥、workingDir/extraDirs 被清)。
   it('ignores reselecting the current device before touching either draft store', () => {
     expect(newMakerDraftRouteSource).toContain(
-      'if (deviceId === (effectiveDeviceLinkDeviceId ?? null)) return;',
+      'if (deviceId === (effectiveDeviceLinkDeviceId ?? null) && pendingCloudTarget == null) return;',
     );
   });
 
@@ -1273,18 +1283,20 @@ describe('Shared create project picker', () => {
    * ─── 草稿运行目标的转移:两条主不变量 ────────────────────────────────────────
    *
    * 这两条替代了先前十余条按「路径 × 状态」逐格 pin 的断言。那种写法锁的是矩阵的每一格,
-   * 而矩阵本身就是缺陷来源:4 条转移路径 × 9 处连带状态,漏掉一格既不会编译失败也不会有测试
+   * 而矩阵本身就是缺陷来源:六条转移路径 × 9 处连带状态,漏掉一格既不会编译失败也不会有测试
    * 变红,#807 的 review 里约十轮都在补格子(切设备漏 worktree 三态、同机换项目误重置运行配置、
    * 指向设备前忘了作废快照、回落路径两样清理都漏、picker 换项目不作废 worktree……)。
    *
-   * 收敛之后只需要锁两件事:① 四条路径都**只声明目标**,不自己做副作用;② 每处连带状态绑对了
-   * 它真正依赖的那一半(设备 / 项目)。第五条路径出现时,①会直接失败,而②保证它自动是对的。
+   * 收敛之后只需要锁两件事:① 六条路径都**只声明目标**,不自己做副作用;② 每处连带状态绑对了
+   * 它真正依赖的那一半(设备 / 项目)。第七条路径出现时,①会直接失败,而②保证它自动是对的。
    */
   it('routes every draft-target transition through the single action', () => {
-    // 五条路径:设备 pill、设备域浏览器选项目、工作区 picker、所选设备失效后的自动回落、
-    // “对话”分组导航请求。声明本身是 `= useCallback(` 不匹配这个模式,所以数出来的就是调用点。
+    // 七条路径:设备 pill、设备域浏览器选项目、工作区 picker、所选设备失效后的自动回落、
+    // “对话”分组导航请求、云端终态上线后的激活、选择休眠云端时先收回本机正式目标。
+    // 切回本机统一走设备 pill。
+    // 声明本身是 `= useCallback(` 不匹配这个模式,所以数出来的就是调用点。
     const calls = newMakerDraftRouteSource.match(/applyDraftTarget\(\{/g) ?? [];
-    expect(calls.length).toBe(5);
+    expect(calls.length).toBe(7);
     // 组件里不得再有任何一处手写这些副作用 —— 手写一处就等于又开了一条绕过推导的路。
     // patchDraft 仍可出现(入场清 extraDirs、发送后复位),但不得再带设备字段。
     expect(newMakerDraftRouteSource).not.toContain('deviceLinkDeviceId: deviceId,');
@@ -1750,6 +1762,26 @@ describe('Shared create project picker', () => {
     expect(newMakerDraftRouteSource).not.toContain(
       'isDeviceLinkDraft\n    ? (deviceLinkInitial?.providerId ?? null)',
     );
+  });
+
+  it('云端创建入口只由设备 pill 承载，并消费共享 hook 的终态在途状态', () => {
+    expect(newMakerDraftRouteSource).not.toContain('create-agent-cloud-toggle');
+    expect(newMakerDraftRouteSource).not.toContain('cloudToggleState');
+    expect(newMakerDraftRouteSource).not.toContain('handleCloudToggle');
+    expect(newMakerDraftRouteSource).toContain('onWake: handleCloudWake');
+    expect(newMakerDraftRouteSource).toContain('pending: cloud.pending,');
+    expect(newMakerDraftRouteSource).toContain(
+      'activateCloudDevice(pendingCloudTarget.deviceId, pendingCloudTarget.deviceName);',
+    );
+    // wake Promise 只补全实例身份；必须等共享 hook 的终态 watch 收口后才正式激活，
+    // 否则 relay presence 早到会让远端模型请求撞在尚未就绪的端点上。
+    expect(newMakerDraftRouteSource).toContain('if (cloud.pending?.action === \'wake\') return;');
+    expect(newMakerDraftRouteSource).toContain('instanceId: result.instanceId,');
+    expect(newMakerDraftRouteSource).not.toContain(
+      'activateCloudDevice(result.deviceId, cloudNameOf(result));',
+    );
+    expect(newMakerDraftRouteSource).not.toContain('wakeActivation');
+    expect(deviceSwitcherPillSource).toContain('cloudWake?.onWake(device.cloudInstanceId)');
   });
 
   it('keeps recent-folder storage out of project-option selection', () => {

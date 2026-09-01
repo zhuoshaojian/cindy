@@ -32,6 +32,7 @@
  */
 
 import { useEffect } from 'react';
+import { isCloudInstanceDeviceId } from '@cindy/maker-shared/device-list';
 import { useAuth } from '@/contexts/AuthContext';
 import { isDeviceLinkRemotePushCurrent } from '@/lib/remoteDataOwnerPushFence';
 import { createLogger } from '@/lib/logger';
@@ -65,6 +66,11 @@ import {
   prefetchDeviceGitSafetySettings,
 } from '@/hooks/useGitSafetySettings';
 import { extractIpcError } from '@/utils/ipcError';
+import {
+  getCloudInstanceRendererAuthority,
+  rememberRetiredCloudDevice,
+  subscribeCloudInstanceRendererAuthority,
+} from '@/features/cloud-instance/cloudInstanceRendererAuthority';
 
 const log = createLogger('device-link-remote-projects');
 
@@ -249,6 +255,22 @@ export function resolveIneligibleRemoteProjectAction(input: {
   return 'remove';
 }
 
+/**
+ * Select cached shards that a successful authoritative device-directory read
+ * proves no longer exist. Offline devices that remain in the directory and
+ * devices still managed by a newer presence event are deliberately retained.
+ */
+export function selectRemoteProjectShardsMissingFromDirectory(input: {
+  authoritativeDeviceIds: ReadonlySet<string>;
+  cachedDeviceIds: Iterable<string>;
+  eligibleDeviceIds: { has(deviceId: string): boolean };
+}): string[] {
+  return [...input.cachedDeviceIds].filter(
+    (deviceId) =>
+      !input.authoritativeDeviceIds.has(deviceId) && !input.eligibleDeviceIds.has(deviceId),
+  );
+}
+
 export function useDeviceLinkRemoteProjects(): void {
   const { isAuthenticated, deviceId: selfDeviceId, dataOwnerId } = useAuth();
 
@@ -303,6 +325,8 @@ export function useDeviceLinkRemoteProjects(): void {
     /** archived 读取终态失败后的 per-device 自动重试。 */
     const archivedRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const archivedRetryDelayMs = new Map<string, number>();
+    let directoryReseedTimer: ReturnType<typeof setTimeout> | null = null;
+    let directoryReseedInFlight: Promise<void> | null = null;
     const bootstrapTasks = new Map<
       string,
       { promise: Promise<void>; rerun: boolean; name: string }
@@ -323,6 +347,49 @@ export function useDeviceLinkRemoteProjects(): void {
       for (const timer of archivedRetryTimers.values()) clearTimeout(timer);
       archivedRetryTimers.clear();
       archivedRetryDelayMs.clear();
+    };
+
+    /**
+     * Only a complete successful cloud-instance list may retire a cloud peer.
+     * Unknown (startup / list failure / owner switch) is deliberately fail-open:
+     * treating it as an empty set would unsubscribe every live cloud peer during
+     * a control-plane outage and discard their in-memory session projections.
+     */
+    const cloudAuthorityRejects = (deviceId: string): boolean => {
+      if (!isCloudInstanceDeviceId(deviceId)) return false;
+      const authority = getCloudInstanceRendererAuthority();
+      if (authority.activeDeviceIds?.has(deviceId)) return false;
+      if (authority.retiredDeviceIds.has(deviceId)) return true;
+      if (authority.activeDeviceIds === undefined) return false;
+      rememberRetiredCloudDevice(deviceId);
+      return true;
+    };
+
+    const retireCloudDevice = (deviceId: string): void => {
+      const wasEligible = eligible.delete(deviceId);
+      clearArchivedSessionRetry(deviceId);
+      if (wasEligible) {
+        window.electronAPI.deviceLink.unsubscribe(deviceId, ['sessions']).catch(() => {});
+      }
+      cacheHydrationBlocked.add(deviceId);
+      remoteProjectsStore.removeDevice(deviceId);
+      removeRemoteSessionActivityForDevice(deviceId);
+      evictDeviceCapabilities(deviceId);
+      evictDeviceProviders(deviceId);
+      evictDeviceGitSafetySettings(deviceId);
+    };
+
+    const reconcileCloudInstanceAuthority = (): void => {
+      const authority = getCloudInstanceRendererAuthority();
+      if (authority.activeDeviceIds === undefined) return;
+      const candidates = new Set([
+        ...eligible.keys(),
+        ...remoteProjectsStore.getAllDeviceIds(),
+      ]);
+      for (const deviceId of candidates) {
+        if (!cloudAuthorityRejects(deviceId)) continue;
+        retireCloudDevice(deviceId);
+      }
     };
 
     const scheduleArchivedSessionRetry = (deviceId: string): void => {
@@ -428,6 +495,11 @@ export function useDeviceLinkRemoteProjects(): void {
       remoteControlEnabled: boolean;
       isSelf: boolean;
     }): void => {
+      if (cloudAuthorityRejects(d.deviceId)) {
+        retireCloudDevice(d.deviceId);
+        return;
+      }
+      if (isCloudInstanceDeviceId(d.deviceId)) cacheHydrationBlocked.delete(d.deviceId);
       const ok =
         !d.isSelf &&
         d.online &&
@@ -478,7 +550,8 @@ export function useDeviceLinkRemoteProjects(): void {
 
     /** 全量重播(初始 + WS 重连):listDevices 带 isSelf,权威。 */
     const reseed = (): void => {
-      void window.electronAPI.deviceLink
+      if (directoryReseedInFlight) return;
+      const task = window.electronAPI.deviceLink
         .listDevices()
         .then(({ devices }) => {
           if (disposed) return;
@@ -501,8 +574,11 @@ export function useDeviceLinkRemoteProjects(): void {
           // `getDeviceIds()` 只返回 connected —— 用它的话这个收敛循环恰好**永远看不到**
           // 要收的那些分片(review: codex 指出上一轮的修复因此无效)。
           const authoritative = new Set(devices.map((d) => d.deviceId));
-          for (const deviceId of remoteProjectsStore.getAllDeviceIds()) {
-            if (authoritative.has(deviceId) || eligible.has(deviceId)) continue;
+          for (const deviceId of selectRemoteProjectShardsMissingFromDirectory({
+            authoritativeDeviceIds: authoritative,
+            cachedDeviceIds: remoteProjectsStore.getAllDeviceIds(),
+            eligibleDeviceIds: eligible,
+          })) {
             log.debug(`removing cached shard absent from listDevices: ${deviceId.slice(0, 8)}`);
             clearArchivedSessionRetry(deviceId);
             remoteProjectsStore.removeDevice(deviceId);
@@ -514,7 +590,20 @@ export function useDeviceLinkRemoteProjects(): void {
             clearCachedDevice(deviceId);
           }
         })
-        .catch((err) => log.debug('listDevices reseed failed', err));
+        .catch((err) => log.debug('listDevices reseed failed', err))
+        .finally(() => {
+          if (directoryReseedInFlight === task) directoryReseedInFlight = null;
+        });
+      directoryReseedInFlight = task;
+      void task;
+    };
+
+    const scheduleDirectoryReseed = (): void => {
+      if (directoryReseedTimer) clearTimeout(directoryReseedTimer);
+      directoryReseedTimer = setTimeout(() => {
+        directoryReseedTimer = null;
+        if (!disposed) reseed();
+      }, RESEED_DEBOUNCE_MS);
     };
 
     // 冷启动首屏:用上次落盘的列表快照把侧边栏画出来(标 disconnected),不等 bootstrap 往返。
@@ -526,12 +615,22 @@ export function useDeviceLinkRemoteProjects(): void {
     // 账号里删掉设备的情形,都靠补这一轮收敛(reseed 末尾还会清掉权威列表中缺席的分片)。
     // 仍在 listDevices 里但离线的设备照既有语义保留为 disconnected —— 与「断连保留最近
     // 一次快照让 All Sessions 稳定」一致,不是本次引入的行为。
+    const offCloudInstanceAuthority = subscribeCloudInstanceRendererAuthority(
+      reconcileCloudInstanceAuthority,
+    );
+    reconcileCloudInstanceAuthority();
+
     void readCachedSessionList().then((devices) => {
       if (disposed || devices.length === 0) return;
       // 读快照这一跳期间被**明确移除**的设备(撤销访问 / 关闭被控 / 本机停用控制)不许种回来:
       // 那些路径已经删了分片并清了盘,而这次种入拿的是它们之前读到的旧快照;紧随的 reseed
       // 在 listDevices 离线时也纠正不了,于是那台设备会一直留在侧边栏(review: codex P1)。
-      const usable = devices.filter((device) => !cacheHydrationBlocked.has(device.deviceId));
+      const usable = devices.filter((device) => {
+        if (cacheHydrationBlocked.has(device.deviceId)) return false;
+        if (!cloudAuthorityRejects(device.deviceId)) return true;
+        retireCloudDevice(device.deviceId);
+        return false;
+      });
       if (usable.length === 0) return;
       remoteProjectsStore.hydrateFromCache(usable);
       reseed();
@@ -637,6 +736,7 @@ export function useDeviceLinkRemoteProjects(): void {
       });
 
     const offPresence = window.electronAPI.deviceLink.onPresenceChanged((snap) => {
+      if (disposed) return;
       applyDevice({
         deviceId: snap.deviceId,
         name: snap.deviceName,
@@ -644,6 +744,16 @@ export function useDeviceLinkRemoteProjects(): void {
         remoteControlEnabled: snap.remoteControlEnabled,
         isSelf: snap.deviceId === selfDeviceId,
       });
+      // A delete first arrives as presence-offline. Re-read the authoritative
+      // directory so its success-only cleanup can distinguish deletion from a
+      // normal offline device; failures intentionally keep the cached shard.
+      if (
+        !snap.online &&
+        snap.deviceId !== selfDeviceId &&
+        remoteProjectsStore.hasDevice(snap.deviceId)
+      ) {
+        scheduleDirectoryReseed();
+      }
     });
 
     // 被控端 active-catalog 变化：供应商目录与 capabilities.availableModels 必须同代刷新。
@@ -745,12 +855,14 @@ export function useDeviceLinkRemoteProjects(): void {
       for (const t of reseedTimers.values()) clearTimeout(t);
       reseedTimers.clear();
       clearAllArchivedSessionRetries();
+      if (directoryReseedTimer) clearTimeout(directoryReseedTimer);
       bootstrapTasks.clear();
       offPresence();
       offRemotePush();
       offStatus();
       offAccessRevoked();
       offControlTarget();
+      offCloudInstanceAuthority();
       offRename();
       offShardChange();
       offResponsiveness();

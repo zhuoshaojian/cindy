@@ -35,6 +35,7 @@ import type { TextInput as NativeTextInput } from 'react-native';
 import {
   Camera,
   Check,
+  Cloud,
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
@@ -62,6 +63,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ScreenBackButton } from '@/components/MobilePrimitives';
 import { PaperPlaneIcon } from '@/components/PaperPlaneIcon';
 import { useDeviceLink } from '@/device-link/DeviceLinkContext';
+import { resolveMobileDeviceDisplayName } from '@/device-link/devicePresentation';
 import type {
   MobileAtResourceItem,
   MobileSlashCommand,
@@ -418,7 +420,7 @@ export default function NewRemoteSessionScreen() {
     visualDraft?: string;
   }>();
   const routeDeviceId = String(params.deviceId ?? '');
-  const routeDeviceName = String(params.deviceName ?? routeDeviceId);
+  const routeDeviceName = resolveMobileDeviceDisplayName(String(params.deviceName ?? routeDeviceId));
   const initialWorkingDir = readRouteString(params.workingDir);
   const visualFocusComposer = MOBILE_VISUAL_MOCK_ENABLED && readRouteString(params.visualFocusComposer) === '1';
   const visualInitialDraft = MOBILE_VISUAL_MOCK_ENABLED ? readRouteString(params.visualDraft) : null;
@@ -468,6 +470,9 @@ export default function NewRemoteSessionScreen() {
     [deviceOptions, routeDeviceFallback, selectedDeviceId],
   );
   const selectedDeviceLabel = selectedDeviceOption?.name || selectedDeviceName || selectedDeviceId || t('session.new.selectDevice');
+  const selectedDeviceModelAccessStale = selectedDeviceOption?.kind === 'cloud'
+    && selectedDeviceOption.modelAccessStale === true;
+  const modelAccessStaleHint = t('deviceLink.cloudInstance.modelAccessStale');
   const maker = useMobileMakerTransport(selectedDeviceId);
   const worktreePreference = useRemoteNewMakerWorktreePreference(selectedDeviceId);
   const worktreeEnabled = worktreePreference.enabled;
@@ -610,7 +615,7 @@ export default function NewRemoteSessionScreen() {
     if (stashed.notice) setAttachmentError(stashed.notice);
     if (stashed.deviceId) {
       setSelectedDeviceId(stashed.deviceId);
-      setSelectedDeviceName(stashed.deviceName || stashed.deviceId);
+      setSelectedDeviceName(resolveMobileDeviceDisplayName(stashed.deviceName || stashed.deviceId));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时领取一次信箱
   }, []);
@@ -851,7 +856,9 @@ export default function NewRemoteSessionScreen() {
     if (appliedDefaultDeviceKeyRef.current === key) return;
     appliedDefaultDeviceKeyRef.current = key;
     setSelectedDeviceId(preferredDefaultDevice?.deviceId ?? '');
-    setSelectedDeviceName(preferredDefaultDevice?.name ?? preferredDefaultDevice?.deviceId ?? '');
+    setSelectedDeviceName(resolveMobileDeviceDisplayName(
+      preferredDefaultDevice?.name ?? preferredDefaultDevice?.deviceId ?? '',
+    ));
     setDevicePickerOpen(false);
   }, [
     deviceOptions,
@@ -1638,7 +1645,7 @@ export default function NewRemoteSessionScreen() {
     userTouchedDeviceRef.current = true;
     explicitProviderModelSelectionRef.current = null;
     setSelectedDeviceId(option.deviceId);
-    setSelectedDeviceName(option.name || option.deviceId);
+    setSelectedDeviceName(resolveMobileDeviceDisplayName(option.name || option.deviceId));
     void saveNewSessionPreferences({
       device: {
         deviceId: option.deviceId,
@@ -5307,6 +5314,7 @@ export default function NewRemoteSessionScreen() {
             <View style={styles.selectorStack}>
               <View style={styles.deviceSelectorWrap}>
               <Pressable
+                accessibilityHint={selectedDeviceModelAccessStale ? modelAccessStaleHint : undefined}
                 accessibilityLabel={t('session.new.selectControlledDevice')}
                 accessibilityRole="button"
                 accessibilityState={{
@@ -5323,8 +5331,22 @@ export default function NewRemoteSessionScreen() {
                 style={({ pressed }) => [styles.selectorRow, pressed && styles.pressed]}
                 testID="newSession.deviceSelector"
               >
-                <Laptop color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
-                <Text style={styles.selectorText} numberOfLines={1}>{selectedDeviceLabel}</Text>
+                {selectedDeviceOption?.kind === 'cloud' ? (
+                  <Cloud color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+                ) : (
+                  <Laptop color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+                )}
+                <View style={styles.deviceOptionTextStack}>
+                  <Text style={styles.selectorText} numberOfLines={1}>{selectedDeviceLabel}</Text>
+                  {selectedDeviceModelAccessStale ? (
+                    <Text
+                      style={styles.modelAccessStaleText}
+                      testID="newSession.selectedCloudModelAccessStale"
+                    >
+                      {modelAccessStaleHint}
+                    </Text>
+                  ) : null}
+                </View>
                 {deviceHasChoices ? (
                   <ChevronsUpDown color={colors.borderStrong} size={iconSize.sm} strokeWidth={iconStroke.regular} />
                 ) : null}
@@ -5333,8 +5355,11 @@ export default function NewRemoteSessionScreen() {
                 <View style={styles.devicePickerPanel} testID="newSession.devicePickerPanel">
                   {deviceOptions.map((option) => {
                     const selected = option.deviceId === selectedDeviceId;
+                    const modelAccessStale = option.kind === 'cloud'
+                      && option.modelAccessStale === true;
                     return (
                       <Pressable
+                        accessibilityHint={modelAccessStale ? modelAccessStaleHint : undefined}
                         accessibilityLabel={t('session.new.selectDeviceNamed', { name: option.name || option.deviceId })}
                         accessibilityRole="button"
                         key={option.deviceId}
@@ -5342,14 +5367,32 @@ export default function NewRemoteSessionScreen() {
                         style={({ pressed }) => [styles.deviceOptionRow, pressed && styles.pressed]}
                         testID="newSession.deviceOption"
                       >
-                        <Laptop
-                          color={selected ? colors.textPrimary : colors.textTertiary}
-                          size={iconSize.action}
-                          strokeWidth={iconStroke.thin}
-                        />
-                        <Text style={styles.deviceOptionText} numberOfLines={1}>
-                          {option.name || option.deviceId}
-                        </Text>
+                        {option.kind === 'cloud' ? (
+                          <Cloud
+                            color={selected ? colors.textPrimary : colors.textTertiary}
+                            size={iconSize.action}
+                            strokeWidth={iconStroke.thin}
+                          />
+                        ) : (
+                          <Laptop
+                            color={selected ? colors.textPrimary : colors.textTertiary}
+                            size={iconSize.action}
+                            strokeWidth={iconStroke.thin}
+                          />
+                        )}
+                        <View style={styles.deviceOptionTextStack}>
+                          <Text style={styles.deviceOptionText} numberOfLines={1}>
+                            {option.name || option.deviceId}
+                          </Text>
+                          {modelAccessStale ? (
+                            <Text
+                              style={styles.modelAccessStaleText}
+                              testID="newSession.deviceOptionCloudModelAccessStale"
+                            >
+                              {modelAccessStaleHint}
+                            </Text>
+                          ) : null}
+                        </View>
                         {selected ? (
                           <Check color={colors.textPrimary} size={iconSize.lg} strokeWidth={iconStroke.medium} />
                         ) : null}
@@ -6271,11 +6314,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   deviceOptionText: {
     color: colors.textPrimary,
-    flex: 1,
     fontSize: typeScale.body,
     fontWeight: fontWeight.medium,
     lineHeight: lineHeight.body,
+  },
+  deviceOptionTextStack: {
+    flex: 1,
     minWidth: 0,
+  },
+  modelAccessStaleText: {
+    color: colors.statusAccent,
+    fontSize: typeScale.caption,
+    fontWeight: fontWeight.regular,
+    lineHeight: lineHeight.caption,
   },
   agentSelectorWrap: {
     position: 'relative',

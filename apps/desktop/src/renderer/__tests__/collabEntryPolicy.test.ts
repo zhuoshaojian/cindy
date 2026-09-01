@@ -152,10 +152,14 @@ describe('drift 守卫:两个入口共用同一份判定', () => {
       expect(src, f).toContain('resolveCollabEntryPolicy({');
       expect(src, f).toContain('collabEntry.eligible');
       expect(src, f).toContain('workspaceKind: collabWorkspaceKind');
+      const collabEntryStart = src.indexOf('const collabEntry = resolveCollabEntryPolicy({');
+      const collabEntryEnd = src.indexOf('const collabPolicy = useCollabProjectPolicy(', collabEntryStart);
+      const collabEntryBlock = src.slice(collabEntryStart, collabEntryEnd);
       // 内联判据的两个历史形态:草稿的 `effectiveDeviceLinkDeviceId == null`(把
-      // device-link 整个排除掉)与会话页的 `orcaRole !== 'worker'` 链。
-      expect(src, f).not.toContain('effectiveDeviceLinkDeviceId == null');
-      expect(src, f).not.toContain("orcaRole !== 'worker'");
+      // device-link 整个排除掉)与会话页的 `orcaRole !== 'worker'` 链。只检查协同入口
+      // 判定区块，避免误伤同一大路由里与协同无关的设备切换/云端唤醒逻辑。
+      expect(collabEntryBlock, f).not.toContain('effectiveDeviceLinkDeviceId == null');
+      expect(collabEntryBlock, f).not.toContain("orcaRole !== 'worker'");
     }
   });
 

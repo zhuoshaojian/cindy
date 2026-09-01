@@ -13,4 +13,16 @@ describe('MyDevicesPanel rename guards', () => {
     expect(source).toContain('if (name && name === currentName) return;');
     expect(source).toContain('await s.rename(deviceId, name || null);');
   });
+
+  it('excludes cloud devices from the physical device list', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/settings/MyDevicesPanel.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain("!isCloudInstanceDeviceId(d.deviceId)");
+    expect(source).not.toContain('useCloudInstances');
+    expect(source).toContain('onCheckedChange={(v) => void onOutboundChange(device, v)}');
+    expect(source).toContain('onCheckedChange={(v) => void onInboundChange(device, v)}');
+  });
 });

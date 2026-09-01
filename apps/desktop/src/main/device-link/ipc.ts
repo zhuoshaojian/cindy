@@ -76,6 +76,7 @@ import {
   type MirrorCache,
 } from './mirrorCacheStore';
 import { enqueuePurge, hasPendingPurgeRecords } from './mirrorCachePurgeQueue';
+import type { DeviceRetirementTombstone } from './mirrorCacheBarrier';
 import {
   recordSubscribe,
   recordUnsubscribe,
@@ -483,10 +484,14 @@ export async function handleDeleteDevice(
     throwIpcError('INVALID_PARAMS', 'deviceId is required');
   }
   try {
-    return await deps.apiFetch<{ deviceId: string; deleted: boolean }>(
+    const result = await deps.apiFetch<{ deviceId: string; deleted: boolean }>(
       `/api/device-link/devices/${encodeURIComponent(deviceId)}`,
       { method: 'DELETE' },
     );
+    if (result.deleted) {
+      void deps.forgetLastKnownDeviceName(deviceId);
+    }
+    return result;
   } catch (err) {
     rethrowServerError(err);
   }
@@ -1005,6 +1010,7 @@ export async function handleMirrorCachePutMessages(
     paths?: readonly string[],
     barriers?: readonly string[],
     tombstones?: readonly string[],
+    retirements?: readonly DeviceRetirementTombstone[],
   ) => Promise<void> = enqueuePurge,
   expectedInvalidation?: unknown,
   expectedOwnerToken?: unknown,
@@ -1091,6 +1097,7 @@ export async function handleMirrorCachePutSessionList(
     paths?: readonly string[],
     barriers?: readonly string[],
     tombstones?: readonly string[],
+    retirements?: readonly DeviceRetirementTombstone[],
   ) => Promise<void> = enqueuePurge,
   expectedOwnerToken?: unknown,
   expectedAccountCounter?: unknown,
@@ -1104,9 +1111,14 @@ export async function handleMirrorCachePutSessionList(
   // 展开会让 main 先枚举 + 复制整份,结构 / 字节预算要等 boundedItems 才生效(review: codex P1)。
   // session 先经过与落盘侧相同的白名单投影;否则完整 session 上的 summary / extra
   // 字段会在投影前触发预算,把本可缓存的会话误判成 oversized(review: codex P1)。
+  // 云端身份不再随投影传输:使用点按 deviceId 前缀自行判定(见 isCloudInstanceDeviceId)。
   const trimmed = devices.slice(0, MIRROR_CACHE_MAX_INBOUND_DEVICES).map((device) => {
     if (!device || typeof device !== 'object') return device;
-    const source = device as { deviceId?: unknown; deviceName?: unknown; sessions?: unknown };
+    const source = device as {
+      deviceId?: unknown;
+      deviceName?: unknown;
+      sessions?: unknown;
+    };
     const sessions: Record<string, unknown>[] = [];
     if (Array.isArray(source.sessions)) {
       for (
@@ -1163,6 +1175,7 @@ async function queuePurgeRetry(
     paths?: readonly string[],
     barriers?: readonly string[],
     tombstones?: readonly string[],
+    retirements?: readonly DeviceRetirementTombstone[],
   ) => Promise<void>,
   where: string,
 ): Promise<void> {
@@ -1172,7 +1185,13 @@ async function queuePurgeRetry(
   // put 迟到"的写入会在消化之后通过比对(见 MirrorCachePurgeError.barriers)。
   // tombstones = 还挂着的"清理没确认完成"墓碑 scope:补删成功后由队列撤掉,否则一次瞬时失败
   // 会让整个账号的缓存读永久不命中(见 MirrorCachePurgeError.tombstones)。
-  await enqueueRetry(err.root, err.remaining, err.barriers, err.tombstones).catch(
+  await enqueueRetry(
+    err.root,
+    err.remaining,
+    err.barriers,
+    err.tombstones,
+    err.retirements,
+  ).catch(
     (queueErr: unknown) => {
       log.error(`failed to queue ${where} purge retry`, queueErr);
     },
@@ -1196,6 +1215,7 @@ export async function handleMirrorCacheClear(
     paths?: readonly string[],
     barriers?: readonly string[],
     tombstones?: readonly string[],
+    retirements?: readonly DeviceRetirementTombstone[],
   ) => Promise<void> = enqueuePurge,
 ): Promise<{ ok: true }> {
   const device = requireCacheId(deviceId, 'deviceId');

@@ -140,6 +140,19 @@
       "descriptionWithSkipped": "選択した {{count}} 件のタスクを{{action}}します。対象外の {{skippedCount}} 件はスキップされます。"
     }
   },
+  "management": {
+    "eyebrow": "デバイス",
+    "rename": "デバイス名",
+    "renameHint": "この名前は同じアカウントのデバイスに表示されます。",
+    "renameSaved": "デバイス名を更新しました。",
+    "actions": "操作",
+    "dangerZone": "削除",
+    "online": "オンライン",
+    "offline": "オフライン",
+    "unknown": "不明",
+    "memory": "{{count}} GB",
+    "openDetails": "{{label}}の詳細を開く"
+  },
   "list": {
     "thisComputer": "このデバイス",
     "allConversations": "すべてのセッション",
@@ -173,7 +186,6 @@
       "sync": "再同期",
       "pinnedConversations": "ピン留めしたセッション {{count}} 件",
       "newRemoteConversation": "新しいリモートセッション",
-      "renameDevice": "{{label}} の名前を変更",
       "project": "プロジェクト {{title}}",
       "dialogue": "チャット",
       "openAutomationLatest": "自動化タスク {{title}} の最新セッションを開く",
@@ -186,7 +198,8 @@
       "doneUnread": "完了・未読",
       "running": "実行中",
       "close": "閉じる",
-      "cancelRename": "名前の変更をキャンセル"
+      "cancelRename": "名前の変更をキャンセル",
+      "renameDevice": "{{label}} の名前を変更"
     },
     "accounts": {
       "title": "アカウントを切り替え",

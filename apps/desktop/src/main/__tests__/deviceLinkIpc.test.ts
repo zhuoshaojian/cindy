@@ -459,6 +459,31 @@ describe('device-link IPC handlers', () => {
     expect(rememberLastKnownDeviceName).toHaveBeenCalledWith('dev-1', 'MacBook Pro');
   });
 
+  it('deleteDevice:成功删除后只 forget 目标设备缓存名', async () => {
+    const forgetLastKnownDeviceName = vi.fn(async () => true);
+    const deps = makeDeps({
+      apiFetch: vi.fn().mockResolvedValue({ deviceId: 'dev-1', deleted: true }),
+      forgetLastKnownDeviceName,
+    });
+
+    await expect(handleDeleteDevice(deps, 'dev-1')).resolves.toEqual({
+      deviceId: 'dev-1',
+      deleted: true,
+    });
+    expect(forgetLastKnownDeviceName).toHaveBeenCalledWith('dev-1');
+  });
+
+  it('deleteDevice:删除失败不 forget 缓存名', async () => {
+    const forgetLastKnownDeviceName = vi.fn(async () => true);
+    const deps = makeDeps({
+      apiFetch: vi.fn().mockRejectedValue(new ServerApiError('CONFLICT', 409, 'online')),
+      forgetLastKnownDeviceName,
+    });
+
+    await expect(handleDeleteDevice(deps, 'dev-1')).rejects.toThrow();
+    expect(forgetLastKnownDeviceName).not.toHaveBeenCalled();
+  });
+
   it.each(['unknown', 'no'])('listDevices:离线设备返回 %s 时用本地 last-known 名字补齐', async (name) => {
     const deps = makeDeps({
       apiFetch: vi.fn().mockResolvedValue({

@@ -1,4 +1,4 @@
-import { Globe, MonitorOff, MonitorSmartphone } from 'lucide-react';
+import { Cloud, CloudOff, Globe, MonitorOff, MonitorSmartphone } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type { DeviceLinkConnectionStatus } from '@/lib/ccAgent.types';
@@ -10,6 +10,7 @@ interface RemoteProjectIconProps {
   size?: number;
   strokeWidth?: number;
   connectionStatus?: DeviceLinkConnectionStatus | null;
+  cloud?: boolean;
   className?: string;
 }
 
@@ -19,10 +20,20 @@ export function RemoteProjectIcon({
   size = 14,
   strokeWidth = 2,
   connectionStatus,
+  cloud = false,
   className,
 }: RemoteProjectIconProps) {
   const disconnected = kind === 'device-link' && connectionStatus === 'disconnected';
-  const Icon = disconnected ? MonitorOff : kind === 'device-link' ? MonitorSmartphone : Globe;
+  const Icon =
+    kind === 'device-link' && cloud
+      ? disconnected
+        ? CloudOff
+        : Cloud
+      : disconnected
+        ? MonitorOff
+        : kind === 'device-link'
+          ? MonitorSmartphone
+          : Globe;
   return (
     <Icon
       size={size}

@@ -3311,6 +3311,7 @@
       },
       "sections": {
         "myDevices": "マイデバイス",
+        "cloudCindy": "クラウド Cindy",
         "ssh": "SSH リモートホスト",
         "hook": "Cindy IM ボット"
       },
@@ -3535,6 +3536,10 @@
           }
         }
       },
+      "cloud": {
+        "empty": "クラウドインスタンスはまだありません。クラウドを起動すると自動で作成され、どのデバイスからでも利用できます。",
+        "loadFailed": "クラウド Cindy を読み込めませんでした。接続を確認して、もう一度お試しください。"
+      },
       "summary": {
         "otherDevices": "他のデバイス {{count}} 台",
         "noOtherDevices": "他のデバイスなし",
@@ -3594,6 +3599,7 @@
       "refresh": "更新",
       "empty": "他のデバイスはまだありません。別のパソコンで同じアカウントで {{appName}} にログインすると、ここに表示されます。",
       "thisDevice": "このデバイス",
+      "cloudDeviceName": "クラウド",
       "status": {
         "online": "オンライン",
         "busy": "作業中"
@@ -3608,6 +3614,66 @@
       "renameCancel": "キャンセル",
       "delete": "削除",
       "deleteOnlineHint": "オンラインのデバイスは削除できません",
+      "cloudInstance": {
+        "stop": "インスタンスをスリープ",
+        "stopping": "スリープ中…",
+        "wake": "インスタンスを起動",
+        "waking": "起動中…",
+        "updateAvailable": "アップデートあり",
+        "updateAvailableTag": "アップデートあり · {{tag}}",
+        "currentVersion": "現在のバージョン {{version}}",
+        "currentVersionUpToDate": "現在のバージョン {{version}} · 最新版です",
+        "update": "クラウドをアップデート",
+        "updating": "アップデート中…",
+        "rebuild": "インスタンスを再作成",
+        "rebuilding": "再作成中…",
+        "rebuildStatusUnknown": "再作成状態の同期を待っています…",
+        "manualWakeRequired": "以前のインスタンスは削除されましたが、新しいインスタンスは作成されませんでした。クラウドを手動で起動してください。",
+        "manualWakeAction": "クラウドを手動で起動",
+        "unregisteredStatus": "インスタンスの起動が完了していないため、まだ接続できません。",
+        "autoUpdate": "アイドル時に自動アップデート",
+        "autoUpdateHint": "新しいバージョンがある場合、クラウドインスタンスはアイドル中またはスリープ中に自動アップデートされます。",
+        "updateRolledBack": "前回のアップデートに失敗し、自動的にロールバックしました。",
+        "updateConfirm": {
+          "title": "クラウドインスタンスをアップデートしますか？",
+          "description": "アップデートするとクラウドインスタンスが再起動し、実行中のタスクが中断されます。",
+          "confirm": "クラウドインスタンスをアップデート",
+          "cancel": "キャンセル"
+        },
+        "rebuildConfirm": {
+          "title": "クラウドインスタンスを再作成しますか？",
+          "description": "現在のクラウドインスタンスとそのデータを削除し、現在の実行環境で新しいインスタンスを作成します。実行中のタスクは中断され、削除したデータは復元できません。",
+          "confirm": "インスタンスを再作成",
+          "cancel": "キャンセル"
+        },
+        "delete": "インスタンスを削除",
+        "deleting": "削除中…",
+        "deleteConfirm": {
+          "title": "クラウドインスタンスを削除しますか？",
+          "description": "クラウド上のデータは削除され、元に戻せません。対応するデバイスも削除されます。",
+          "confirm": "インスタンスを削除",
+          "cancel": "キャンセル"
+        },
+        "toast": {
+          "stopped": "クラウドインスタンスをスリープしました",
+          "deleted": "クラウドインスタンスを削除しました",
+          "stopFailed": "クラウドインスタンスのスリープに失敗しました。しばらくしてからもう一度お試しください。",
+          "deleteFailed": "クラウドインスタンスの削除に失敗しました。しばらくしてからもう一度お試しください。",
+          "woke": "クラウドインスタンスを起動しています。",
+          "wakeFailed": "クラウドインスタンスの起動に失敗しました。しばらくしてからもう一度お試しください。",
+          "actionTimedOut": "処理に時間がかかっています。しばらくしてからもう一度お試しください。",
+          "updateStarted": "クラウドインスタンスのアップデートを開始しました",
+          "updateFailed": "クラウドインスタンスのアップデートを開始できませんでした。もう一度お試しください。",
+          "rebuilt": "クラウドインスタンスを再作成しました",
+          "rebuildStarted": "クラウドインスタンスの再作成を開始しました",
+          "rebuildFailed": "クラウドインスタンスを再作成できませんでした。もう一度お試しください。",
+          "rebuildCreateFailed": "元のクラウドインスタンスは削除されましたが、新しいインスタンスを作成できませんでした。マシンメニューからクラウドをもう一度起動してください。",
+          "rebuildStillCleaning": "以前のクラウドインスタンスをまだクリーンアップしています。完了後にもう一度起動してください。",
+          "autoUpdateFailed": "クラウドインスタンスの自動アップデート設定を保存できませんでした。もう一度お試しください。",
+          "noReleaseAvailable": "利用可能な正式版はまだありません。更新してから、しばらくしてもう一度お試しください。"
+        },
+        "modelAccessStale": "クラウドのモデル資格情報の更新が必要です。モデルが一時的に利用できない場合があります"
+      },
       "error": {
         "unavailable": "デバイス連携サービスは現在利用できません(サーバー未対応またはネットワークエラー)",
         "listFailed": "デバイス一覧の取得に失敗しました"
@@ -7350,6 +7416,7 @@
       "label": "デバイス",
       "localHint": "このパソコンで実行",
       "onlineHint": "接続済み — 作成できます",
+      "modelAccessStaleHint": "モデル資格情報の更新が必要",
       "offlineHint": "オフライン — 接続後に利用可能",
       "attachmentsDropped": "添付ファイル {{count}} 件を削除しました（前のデバイス上のファイルです）",
       "attachmentsRemoteUnsupported": "リモートデバイスではファイル添付に未対応のため {{count}} 件をスキップしました（画像は可）"
@@ -8459,18 +8526,32 @@
       "remoteProviderUnsupported": "このプロバイダーは SSH リモートセッションに対応していません。別のソースを選択してください",
       "remoteNativeOauthUnavailable": "Claude.ai サブスクリプションが未接続です。先に接続するか、ゲートウェイモデルを選択してください",
       "deviceStillLoading": "リモートデバイスの読み込み中です。しばらくお待ちください",
+      "agentAvailabilityLoading": "利用可能な Agent を確認しています。しばらくお待ちください",
+      "agentUnavailableAutoSwitch": "選択した Agent は現在利用できません。{{agent}} に切り替えました。もう一度送信してください。",
       "remoteDefaultsLoadFailed": "リモートデバイスの設定を読み込めませんでした。接続を確認してください。Cindy が再試行しています。",
       "worktreeMissingRepo": "worktree を作成できません：現在のディレクトリのリポジトリルートが見つかりません",
       "worktreeRepoHint": "作業ディレクトリを選び直し、右下のフォルダー表示が更新されてから再試行してください",
       "sessionInactive": "セッションはすでにアクティブではありません",
       "remoteProjectBanner": "{{device}} の {{project}} で新しいセッションを作成",
-      "remoteDialogueBanner": "{{device}} で新しい対話（プロジェクトなし）"
+      "remoteDialogueBanner": "{{device}} で新しい対話（プロジェクトなし）",
+      "cloudWaking": "クラウド Cindy を起動しています。入力は続けられます",
+      "cloudWakingSendBlocked": "クラウド Cindy を起動しています。起動が完了すると送信できます",
+      "cloudModelsLoading": "クラウドのモデルを読み込み中…",
+      "cloudWakeFailed": "クラウド Cindy を起動できませんでした。下書きは残っています。",
+      "cloudWakeRetry": "再試行"
     },
     "jumpSession": {
       "emptyId": "移動先の sessionId を入力してください",
       "notFound": "セッションが見つかりません"
     },
     "sidebar": {
+      "cloud": {
+        "wake": "クラウドを起動",
+        "waking": "起動中…",
+        "wakeFailed": "クラウドの起動に失敗しました。しばらくしてからもう一度お試しください。",
+        "actionTimedOut": "処理に時間がかかっています。しばらくしてからもう一度お試しください。",
+        "updateAvailable": "アップデートあり"
+      },
       "machineSwitcher": {
         "allMachines": "すべて",
         "localMachine": "このデバイス",

@@ -1740,6 +1740,78 @@
       "note": "文本转成的数值向量，用于语义检索。zh-CN 用「向量」而非「嵌入」——设置页的模型分组、UnifiedModelList 的能力分类既有注释都已用「向量」，「嵌入」在中文里更容易被读成动作。指模型本身时说「向量模型」，不说「嵌入模型」。插件 cindy.embed 能力与 embedding-client 的四语文案使用。"
     },
     {
+      "id": "cloud",
+      "status": "proposed",
+      "en": "Cloud",
+      "translations": {
+        "zh-CN": "云端",
+        "zh-TW": "雲端",
+        "ja": "クラウド",
+        "ko": "클라우드"
+      },
+      "note": "云端 Cindy 与云端设备入口的用户可见简称。登记为 proposed，避免与云服务、云存储等泛化语境混为同一产品术语。"
+    },
+    {
+      "id": "cloud-instance",
+      "status": "proposed",
+      "en": "Cloud instance",
+      "translations": {
+        "zh-CN": "云端实例",
+        "zh-TW": "雲端實例",
+        "ja": "クラウドインスタンス",
+        "ko": "클라우드 인스턴스"
+      },
+      "note": "用户账号下可休眠、唤醒、更新与删除的 Cindy 云端运行实例。先登记为 proposed，待云端实例产品术语评审后固化。"
+    },
+    {
+      "id": "instance",
+      "status": "proposed",
+      "en": "Instance",
+      "translations": {
+        "zh-CN": "实例",
+        "zh-TW": "實例",
+        "ja": "インスタンス",
+        "ko": "인스턴스"
+      },
+      "note": "云端实例操作按钮里的短称，与普通设备区分。登记为 proposed，避免各端在「实例／主机／设备」之间漂移。"
+    },
+    {
+      "id": "sleep-instance",
+      "status": "proposed",
+      "en": "Sleep",
+      "translations": {
+        "zh-CN": "休眠",
+        "zh-TW": "休眠",
+        "ja": "スリープ",
+        "ko": "절전"
+      },
+      "note": "暂停云端实例运行但保留持久数据的操作与状态。登记为 proposed；仅约束云端实例语境，不替代电脑系统电源管理的既有文案。"
+    },
+    {
+      "id": "wake-instance",
+      "status": "proposed",
+      "en": "Wake",
+      "translations": {
+        "zh-CN": "唤醒",
+        "zh-TW": "喚醒",
+        "ja": "起動",
+        "ko": "깨우기"
+      },
+      "note": "把休眠中的云端实例恢复为可用状态的操作。登记为 proposed；日语沿用现有云端入口的「起動」，韩语沿用「깨우기」。"
+    },
+    {
+      "id": "update-available",
+      "status": "proposed",
+      "en": "Update Available",
+      "translations": {
+        "zh-CN": "有可用更新",
+        "zh-TW": "有可用更新",
+        "ja": "アップデートあり",
+        "ko": "업데이트 있음"
+      },
+      "note": "云端实例发现可升级版本时的状态标签。登记为 proposed，统一桌面与手机端的短文案。"
+    },
+    {
       "id": "resource-usage",
       "status": "proposed",
       "en": "Activity Monitor",

@@ -12,7 +12,12 @@
  */
 
 import type { RemoteDeviceSummary } from './remoteProjectsStore';
-import { compareDevicesByName, isMobilePlatform } from '@cindy/maker-shared/device-list';
+import {
+  compareDevicesByName,
+  deviceDisplayName,
+  isCloudInstanceDeviceId,
+  isMobilePlatform,
+} from '@cindy/maker-shared/device-list';
 
 export type DeviceConnectionStatus = 'connected' | 'connecting' | 'rejected';
 
@@ -37,12 +42,14 @@ export function buildSwitcherDevices({
   revoked,
 }: BuildSwitcherDevicesInput): SwitcherDevice[] {
   const list = fullList ?? [];
+  const deviceById = new Map<string, DeviceLinkDeviceView>();
   const nameById = new Map<string, string>();
   const selfIds = new Set<string>();
   const mobileIds = new Set<string>();
   const onlineControllable = new Set<string>();
   for (const d of list) {
-    nameById.set(d.deviceId, d.name);
+    deviceById.set(d.deviceId, d);
+    nameById.set(d.deviceId, deviceDisplayName(d));
     if (d.isSelf) {
       selfIds.add(d.deviceId);
       continue;
@@ -62,7 +69,13 @@ export function buildSwitcherDevices({
     cached.set(s.deviceId, s);
     // 已连接设备的名字以同步分片(remoteProjectsStore)为准:REST 改名只更新它、不广播 presence,
     // fullList 的名字会滞后 → chip 标签需用同步分片名覆盖。空名才回退 fullList 既有名 / deviceId。
-    if (s.deviceName) nameById.set(s.deviceId, s.deviceName);
+    if (s.deviceName) {
+      const full = deviceById.get(s.deviceId);
+      nameById.set(
+        s.deviceId,
+        full ? deviceDisplayName({ ...full, name: s.deviceName }) : s.deviceName,
+      );
+    }
     else if (!nameById.has(s.deviceId)) nameById.set(s.deviceId, s.deviceName);
   }
 
@@ -80,12 +93,20 @@ export function buildSwitcherDevices({
     } else if (cachedDevice && cachedDevice.connected !== false) {
       status = 'connected';
     }
-    devices.push({ deviceId, name: nameById.get(deviceId) || deviceId, status });
+    devices.push({
+      deviceId,
+      name: nameById.get(deviceId) || deviceId,
+      status,
+    });
   }
 
-  // 统一按稳定身份(名字 → deviceId)排,不含状态/在线/时间 → 状态抖动不改变顺序
-  // (与设置「我的设备」用同一个 compareDevicesByName,规则一致)。
-  devices.sort(compareDevicesByName);
+  // 常规设备按稳定身份(名字 → deviceId)排,云端实例整体置底防止误点;
+  // 每个桶内保持原有稳定身份排序。
+  devices.sort(
+    (a, b) =>
+      Number(isCloudInstanceDeviceId(a.deviceId)) - Number(isCloudInstanceDeviceId(b.deviceId))
+      || compareDevicesByName(a, b),
+  );
   return devices;
 }
 

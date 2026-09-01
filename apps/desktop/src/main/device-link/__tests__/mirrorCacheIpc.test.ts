@@ -62,7 +62,15 @@ function fakeCache() {
       accountCounter: 0,
     })),
     writeSessionList: vi.fn(async () => undefined),
+    captureOwnerScope: vi.fn(async () => ({
+      ownerRoot: '/data/owners/owner-a/device-link-mirror-cache',
+      accountCounter: 0,
+    })),
+    reconcileCloudSessionList: vi.fn(async () => undefined),
     clearDevice: vi.fn(async () => undefined),
+    retireDevice: vi.fn(async () => undefined),
+    releaseRetiredDevice: vi.fn(async () => undefined),
+    listRetiredDevices: vi.fn(async () => []),
     clearAll: vi.fn(async () => undefined),
   } satisfies Record<keyof MirrorCache, unknown> as unknown as MirrorCache & {
     readMessages: ReturnType<typeof vi.fn>;
@@ -71,7 +79,12 @@ function fakeCache() {
     readSessionList: ReturnType<typeof vi.fn>;
     readSessionListWithInvalidation: ReturnType<typeof vi.fn>;
     writeSessionList: ReturnType<typeof vi.fn>;
+    captureOwnerScope: ReturnType<typeof vi.fn>;
+    reconcileCloudSessionList: ReturnType<typeof vi.fn>;
     clearDevice: ReturnType<typeof vi.fn>;
+    retireDevice: ReturnType<typeof vi.fn>;
+    releaseRetiredDevice: ReturnType<typeof vi.fn>;
+    listRetiredDevices: ReturnType<typeof vi.fn>;
     clearAll: ReturnType<typeof vi.fn>;
   };
 }
@@ -287,11 +300,15 @@ describe('payload 有界校验', () => {
       {
         deviceId: 'dev-1',
         deviceName: 'Mac',
+        kind: 'cloud',
         sessions: Array.from({ length: 5_000 }, (_, i) => ({ id: `s${i}`, status: 'active' })),
       },
     ];
     await handleMirrorCachePutSessionList(cache, devices);
-    const passed = cache.writeSessionList.mock.calls[0]?.[0] as Array<{ sessions: unknown[] }>;
+    const passed = cache.writeSessionList.mock.calls[0]?.[0] as Array<{
+      sessions: unknown[];
+    }>;
+    expect(passed[0]).not.toHaveProperty('kind');
     expect(passed[0].sessions.length).toBe(500);
   });
 });
@@ -513,9 +530,14 @@ describe('清理失败登记重试', () => {
       handleMirrorCachePutMessages(cache, 'dev-1', 'sess-1', [], enqueue),
     ).resolves.toEqual({ ok: true });
 
-    // 第三、四个参数是待补自增的作废屏障 key 与待退役的墓碑 scope(见 MirrorCachePurgeError);
-    // 这些用例造的错误两者都没带,于是传空数组。
-    expect(enqueue).toHaveBeenCalledWith('/data/owners/x/device-link-mirror-cache', stuck, [], []);
+    // 后三个参数依次是作废屏障、过程墓碑与长期退役墓碑元数据；本例都没带。
+    expect(enqueue).toHaveBeenCalledWith(
+      '/data/owners/x/device-link-mirror-cache',
+      stuck,
+      [],
+      [],
+      [],
+    );
   });
 
   it('列表快照的删除类失败 → 登记进 purge 队列,IPC 仍返回 ok', async () => {
@@ -529,9 +551,14 @@ describe('清理失败登记重试', () => {
       ok: true,
     });
 
-    // 第三、四个参数是待补自增的作废屏障 key 与待退役的墓碑 scope(见 MirrorCachePurgeError);
-    // 这些用例造的错误两者都没带,于是传空数组。
-    expect(enqueue).toHaveBeenCalledWith('/data/owners/x/device-link-mirror-cache', stuck, [], []);
+    // 后三个参数依次是作废屏障、过程墓碑与长期退役墓碑元数据；本例都没带。
+    expect(enqueue).toHaveBeenCalledWith(
+      '/data/owners/x/device-link-mirror-cache',
+      stuck,
+      [],
+      [],
+      [],
+    );
   });
 
   it('写入的非 purge 类错误照常抛出', async () => {
@@ -638,9 +665,14 @@ describe('clear', () => {
 
     await expect(handleMirrorCacheClear(cache, 'dev-1', enqueue)).resolves.toEqual({ ok: true });
 
-    // 第三、四个参数是待补自增的作废屏障 key 与待退役的墓碑 scope(见 MirrorCachePurgeError);
-    // 这些用例造的错误两者都没带,于是传空数组。
-    expect(enqueue).toHaveBeenCalledWith('/data/owners/x/device-link-mirror-cache', stuck, [], []);
+    // 后三个参数依次是作废屏障、过程墓碑与长期退役墓碑元数据；本例都没带。
+    expect(enqueue).toHaveBeenCalledWith(
+      '/data/owners/x/device-link-mirror-cache',
+      stuck,
+      [],
+      [],
+      [],
+    );
   });
 
   it('登记重试本身失败也不让 IPC 失败(已记 error,清理是 best-effort)', async () => {

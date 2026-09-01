@@ -3303,6 +3303,7 @@
       },
       "sections": {
         "myDevices": "我的裝置",
+        "cloudCindy": "雲端 Cindy",
         "ssh": "SSH 遠端主機",
         "hook": "Cindy IM 機器人"
       },
@@ -3527,6 +3528,10 @@
           }
         }
       },
+      "cloud": {
+        "empty": "還沒有雲端實例。喚醒雲端後會自動建立，可從任意裝置使用。",
+        "loadFailed": "暫時無法載入雲端 Cindy，請檢查連線後重試。"
+      },
       "summary": {
         "otherDevices": "其它裝置 {{count}} 臺",
         "noOtherDevices": "無其它裝置",
@@ -3586,6 +3591,7 @@
       "refresh": "重新整理",
       "empty": "暫無其它裝置。在另一臺電腦上用同一帳號登入 {{appName}} 後，這裡會顯示該裝置。",
       "thisDevice": "本機",
+      "cloudDeviceName": "雲端",
       "status": {
         "online": "線上",
         "busy": "忙碌中"
@@ -3600,6 +3606,66 @@
       "renameCancel": "取消",
       "delete": "刪除",
       "deleteOnlineHint": "線上裝置無法刪除",
+      "cloudInstance": {
+        "stop": "休眠實例",
+        "stopping": "休眠中…",
+        "wake": "喚醒實例",
+        "waking": "喚醒中…",
+        "updateAvailable": "有可用更新",
+        "updateAvailableTag": "有可用更新 · {{tag}}",
+        "currentVersion": "目前版本 {{version}}",
+        "currentVersionUpToDate": "目前版本 {{version}} · 已是最新版本",
+        "update": "更新雲端",
+        "updating": "更新中…",
+        "rebuild": "重建實例",
+        "rebuilding": "重建中…",
+        "rebuildStatusUnknown": "重建狀態等待同步…",
+        "manualWakeRequired": "舊的已刪除，但新的尚未建立，請手動喚醒雲端。",
+        "manualWakeAction": "手動喚醒雲端",
+        "unregisteredStatus": "實例尚未完成啟動，暫時無法連線。",
+        "autoUpdate": "空閒時自動更新",
+        "autoUpdateHint": "有新版本時，雲端實例會在空閒或休眠時自動更新。",
+        "updateRolledBack": "上次更新失敗，已自動回滾。",
+        "updateConfirm": {
+          "title": "更新雲端實例？",
+          "description": "更新會重新啟動雲端實例，並中斷正在執行的任務。",
+          "confirm": "更新雲端實例",
+          "cancel": "取消"
+        },
+        "rebuildConfirm": {
+          "title": "重建雲端實例？",
+          "description": "重建會先刪除目前的雲端實例及其中的資料，再使用目前的執行環境建立新實例。正在執行的任務會中斷，刪除的資料無法復原。",
+          "confirm": "重建實例",
+          "cancel": "取消"
+        },
+        "delete": "刪除實例",
+        "deleting": "刪除中…",
+        "deleteConfirm": {
+          "title": "刪除雲端實例？",
+          "description": "刪除後，雲端資料將被刪除且無法復原，同時會移除對應裝置。",
+          "confirm": "刪除實例",
+          "cancel": "取消"
+        },
+        "toast": {
+          "stopped": "雲端實例已休眠",
+          "deleted": "雲端實例已刪除",
+          "stopFailed": "休眠雲端實例失敗，請稍後重試",
+          "deleteFailed": "刪除雲端實例失敗，請稍後重試",
+          "woke": "雲端實例正在喚醒",
+          "wakeFailed": "喚醒雲端實例失敗，請稍後重試",
+          "actionTimedOut": "操作耗時較長，請稍後重試。",
+          "updateStarted": "雲端實例已開始更新",
+          "updateFailed": "無法開始更新雲端實例，請稍後重試",
+          "rebuilt": "雲端實例已重新建立",
+          "rebuildStarted": "雲端實例已開始重建",
+          "rebuildFailed": "無法重建雲端實例，請稍後重試",
+          "rebuildCreateFailed": "原雲端實例已刪除，但新實例建立失敗。請從機器選單重新喚醒雲端。",
+          "rebuildStillCleaning": "舊雲端實例仍在清理中，請等待清理完成後再喚醒。",
+          "autoUpdateFailed": "無法儲存雲端實例的自動更新設定，請稍後重試",
+          "noReleaseAvailable": "目前沒有可用的正式版，請重新整理後稍後重試"
+        },
+        "modelAccessStale": "雲端模型憑證需要重新整理，雲端模型可能暫時無法使用"
+      },
       "error": {
         "unavailable": "裝置互聯服務暫不可用(服務端未啟用或網路異常)",
         "listFailed": "裝置列表獲取失敗"
@@ -7342,6 +7408,7 @@
       "label": "裝置",
       "localHint": "在這臺電腦上執行",
       "onlineHint": "已連線，可在其上建立",
+      "modelAccessStaleHint": "模型憑證需要重新整理",
       "offlineHint": "離線 · 連上後可用",
       "attachmentsDropped": "已移除 {{count}} 個附件：它們是上一臺裝置上的檔案",
       "attachmentsRemoteUnsupported": "遠端裝置暫不支援檔案附件，已跳過 {{count}} 個（圖片可以）"
@@ -8451,18 +8518,32 @@
       "remoteProviderUnsupported": "該供應商不支援 SSH 遠端會話，請更換來源",
       "remoteNativeOauthUnavailable": "未連線 Claude.ai 訂閱，請先連線或選擇閘道器模型",
       "deviceStillLoading": "遠端裝置仍在載入中，請稍候",
+      "agentAvailabilityLoading": "正在檢查可用 Agent，請稍候",
+      "agentUnavailableAutoSwitch": "所選 Agent 目前不可用，已切換到 {{agent}}。請重新傳送。",
       "remoteDefaultsLoadFailed": "無法讀取遠端裝置配置。請檢查連線，Cindy 正在重試。",
       "worktreeMissingRepo": "無法開 worktree：缺少當前目錄的倉庫根",
       "worktreeRepoHint": "可嘗試重新選一次工作目錄，等右下角資料夾標識重新整理後再試",
       "sessionInactive": "任務已不再處於活躍狀態",
       "remoteProjectBanner": "在 {{device}} 的 {{project}} 中新建任務",
-      "remoteDialogueBanner": "在 {{device}} 上新建對話（不繫結專案）"
+      "remoteDialogueBanner": "在 {{device}} 上新建對話（不繫結專案）",
+      "cloudWaking": "正在喚醒雲端 Cindy，期間可以繼續輸入",
+      "cloudWakingSendBlocked": "雲端 Cindy 正在喚醒，喚醒完成後即可傳送",
+      "cloudModelsLoading": "雲端模型載入中…",
+      "cloudWakeFailed": "暫時未能喚醒雲端 Cindy，你的草稿仍在",
+      "cloudWakeRetry": "重試"
     },
     "jumpSession": {
       "emptyId": "請輸入要跳轉的任務 ID",
       "notFound": "未找到該任務"
     },
     "sidebar": {
+      "cloud": {
+        "wake": "喚醒雲端",
+        "waking": "喚醒中…",
+        "wakeFailed": "喚醒雲端失敗，請稍後重試",
+        "actionTimedOut": "操作耗時較長，請稍後重試。",
+        "updateAvailable": "有可用更新"
+      },
       "machineSwitcher": {
         "allMachines": "所有",
         "localMachine": "本機",

@@ -111,6 +111,24 @@ type RemoteHostSnapshot = import('@cindy/maker-remote-ssh').HostSnapshot & {
   /** 隧道实时状态 (main 进程内存态); 无记录 → null。 */
   agentProxyTunnel: AgentProxyTunnelStatePayload | null;
 };
+type CloudInstanceCreateInput = import('../shared/cloudInstanceIpc').CloudInstanceCreateInput;
+type CloudInstanceDeleteInput = import('../shared/cloudInstanceIpc').CloudInstanceDeleteInput;
+type CloudInstanceDeleteResult = import('../shared/cloudInstanceIpc').CloudInstanceDeleteResult;
+type CloudInstanceEnableResult = import('../shared/cloudInstanceIpc').CloudInstanceEnableResult;
+type CloudInstanceListResult = import('../shared/cloudInstanceIpc').CloudInstanceListResult;
+type CloudInstanceRenameInput = import('../shared/cloudInstanceIpc').CloudInstanceRenameInput;
+type CloudInstanceRenameResult = import('../shared/cloudInstanceIpc').CloudInstanceRenameResult;
+type CloudInstanceRebuildInput = import('../shared/cloudInstanceIpc').CloudInstanceRebuildInput;
+type CloudInstanceContinueRebuildInput = import('../shared/cloudInstanceIpc').CloudInstanceContinueRebuildInput;
+type CloudInstanceRebuildResult = import('../shared/cloudInstanceIpc').CloudInstanceRebuildResult;
+type CloudInstancePatchInput = import('../shared/cloudInstanceIpc').CloudInstancePatchInput;
+type CloudInstanceStatus = import('../shared/cloudInstanceIpc').CloudInstanceStatus;
+type CloudInstanceStatusInput = import('../shared/cloudInstanceIpc').CloudInstanceStatusInput;
+type CloudInstanceStopInput = import('../shared/cloudInstanceIpc').CloudInstanceStopInput;
+type CloudInstanceUpgradeInput = import('../shared/cloudInstanceIpc').CloudInstanceUpgradeInput;
+type CloudInstanceUpgradeResult = import('../shared/cloudInstanceIpc').CloudInstanceUpgradeResult;
+type CloudInstanceView = import('../shared/cloudInstanceIpc').CloudInstanceView;
+type CloudInstanceWakeInput = import('../shared/cloudInstanceIpc').CloudInstanceWakeInput;
 /** 设备互联:REST 设备视图(同 shared/deviceLinkIpc.ts DeviceLinkDeviceView) */
 interface DeviceLinkDeviceInfo {
   cpuLabel?: string;
@@ -1132,6 +1150,20 @@ interface ElectronAPI {
   appDisplayVersionDetail: string;
   preferredSystemLocale: ApplicationMenuLocale;
   onLocaleChanged?: (cb: (locale: import('../shared/locale').SupportedLocale) => void) => () => void;
+  /** 账号级云端实例 control-plane；鉴权和网络均封装在 main。 */
+  cloudInstances: {
+    list: () => Promise<CloudInstanceListResult>;
+    wake: (input?: CloudInstanceWakeInput) => Promise<CloudInstanceEnableResult>;
+    create: (input?: CloudInstanceCreateInput) => Promise<CloudInstanceEnableResult>;
+    rename: (input: CloudInstanceRenameInput) => Promise<CloudInstanceRenameResult>;
+    patch: (input: CloudInstancePatchInput) => Promise<void>;
+    status: (input?: CloudInstanceStatusInput) => Promise<{ status: CloudInstanceStatus }>;
+    stop: (input: CloudInstanceStopInput) => Promise<{ status: CloudInstanceStatus }>;
+    upgrade: (input: CloudInstanceUpgradeInput) => Promise<CloudInstanceUpgradeResult>;
+    rebuild: (input: CloudInstanceRebuildInput) => Promise<CloudInstanceRebuildResult>;
+    continueRebuild: (input: CloudInstanceContinueRebuildInput) => Promise<CloudInstanceRebuildResult>;
+    delete: (input: CloudInstanceDeleteInput) => Promise<CloudInstanceDeleteResult>;
+  };
   getDeviceId: () => Promise<string>;
   windowMinimize: () => void;
   windowMaximize: () => void;

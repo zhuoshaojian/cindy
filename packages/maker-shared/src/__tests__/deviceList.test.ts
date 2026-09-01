@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDeviceListPresentation,
+  CLOUD_DEVICE_ID_PREFIX,
+  CLOUD_DEVICE_NAME_SENTINEL,
   deviceAccessState,
+  deviceDisplayName,
+  formatCloudDeviceName,
   isControllableDevice,
+  isCloudInstanceDeviceId,
+  parseCloudDeviceName,
   platformLabel,
   toDeviceListItems,
   type DeviceListDeviceLike,
@@ -24,6 +30,12 @@ function device(patch: Partial<DeviceListDeviceLike> = {}): DeviceListDeviceLike
 }
 
 describe('shared device list presentation model', () => {
+  it('recognizes the reserved cloud device-id namespace', () => {
+    expect(CLOUD_DEVICE_ID_PREFIX).toBe('cloud-device-');
+    expect(isCloudInstanceDeviceId('cloud-device-abc')).toBe(true);
+    expect(isCloudInstanceDeviceId('desktop-device-abc')).toBe(false);
+  });
+
   it('requires online, remoteControlEnabled and not self', () => {
     expect(isControllableDevice(device())).toBe(true);
     expect(isControllableDevice(device({ busy: true }))).toBe(true);
@@ -32,6 +44,45 @@ describe('shared device list presentation model', () => {
     expect(isControllableDevice(device({ isSelf: true }))).toBe(false);
     expect(isControllableDevice(device({ platform: 'ios' }))).toBe(false);
     expect(isControllableDevice(device({ platform: 'android' }))).toBe(false);
+  });
+
+  it('uses a display sentinel only for an unrenamed cloud device', () => {
+    const cloud = device({
+      deviceId: 'cloud-device-display',
+      name: 'Cloud',
+      selfName: 'Cloud',
+    });
+    expect(deviceDisplayName(cloud)).toBe(CLOUD_DEVICE_NAME_SENTINEL);
+    expect(deviceDisplayName({ ...cloud, name: 'My Pod' })).toBe('My Pod');
+    expect(deviceDisplayName({ ...cloud, deviceId: 'desktop-device' })).toBe('Cloud');
+    expect(deviceDisplayName({ ...cloud, selfName: null })).toBe('Cloud');
+  });
+
+  it('formats and parses legacy and ordinal cloud device name sentinels', () => {
+    expect(formatCloudDeviceName()).toBe(CLOUD_DEVICE_NAME_SENTINEL);
+    expect(formatCloudDeviceName(3)).toBe(`${CLOUD_DEVICE_NAME_SENTINEL}:3`);
+    expect(parseCloudDeviceName(CLOUD_DEVICE_NAME_SENTINEL)).toEqual({ sequence: null });
+    expect(parseCloudDeviceName(`${CLOUD_DEVICE_NAME_SENTINEL}:3`)).toEqual({ sequence: 3 });
+  });
+
+  it.each([
+    `${CLOUD_DEVICE_NAME_SENTINEL}:0`,
+    `${CLOUD_DEVICE_NAME_SENTINEL}:03`,
+    `${CLOUD_DEVICE_NAME_SENTINEL}:abc`,
+    `${CLOUD_DEVICE_NAME_SENTINEL}:-1`,
+    `${CLOUD_DEVICE_NAME_SENTINEL}:1.5`,
+    'Office Mac',
+  ])('rejects an invalid or ordinary cloud name marker: %s', (name) => {
+    expect(parseCloudDeviceName(name)).toBeNull();
+  });
+
+  it('preserves an ordinal sentinel through the unrenamed cloud display model', () => {
+    const name = formatCloudDeviceName(7);
+    expect(deviceDisplayName(device({
+      deviceId: 'cloud-device-ordinal',
+      name,
+      selfName: name,
+    }))).toBe(name);
   });
 
   it('uses user-facing platform labels', () => {

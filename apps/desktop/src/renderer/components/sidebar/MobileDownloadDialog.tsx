@@ -7,6 +7,7 @@ import * as QRCode from 'qrcode';
 import cindyIconUrl from '@/../../resources/icon.png?url';
 import { Spinner } from '@/components/ui/spinner';
 import { Tip } from '@/components/ui/tooltip';
+import { resolveDesktopCloudDeviceName } from '@/features/cloud-instance/cloudDeviceName';
 import { compareDevicesByName } from '@/features/device-link/deviceSort';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -548,7 +549,7 @@ export function MobileDownloadDialog({
                         </span>
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate text-13 font-medium text-[var(--confirm-title)]">
-                            {device.name}
+                            {resolveDesktopCloudDeviceName(device.name, t)}
                           </span>
                           <span className="mt-0.5 flex items-center gap-1.5 text-11 text-[var(--confirm-desc)]">
                             <span

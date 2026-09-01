@@ -140,6 +140,19 @@
       "descriptionWithSkipped": "Apply {{action}} to {{count}} selected sessions; {{skippedCount}} inapplicable sessions will be skipped."
     }
   },
+  "management": {
+    "eyebrow": "Device",
+    "rename": "Device Name",
+    "renameHint": "This name appears on your signed-in devices.",
+    "renameSaved": "Device name updated.",
+    "actions": "Actions",
+    "dangerZone": "Delete",
+    "online": "Online",
+    "offline": "Offline",
+    "unknown": "Unknown",
+    "memory": "{{count}} GB",
+    "openDetails": "Open details for {{label}}"
+  },
   "list": {
     "thisComputer": "This device",
     "allConversations": "All Sessions",
@@ -173,7 +186,6 @@
       "sync": "Sync again",
       "pinnedConversations": "{{count}} pinned sessions",
       "newRemoteConversation": "New remote session",
-      "renameDevice": "Rename {{label}}",
       "project": "Project {{title}}",
       "dialogue": "Chat",
       "openAutomationLatest": "Open the latest session of automation {{title}}",
@@ -186,7 +198,8 @@
       "doneUnread": "Completed, unread",
       "running": "Running",
       "close": "Close",
-      "cancelRename": "Cancel rename"
+      "cancelRename": "Cancel rename",
+      "renameDevice": "Rename {{label}}"
     },
     "accounts": {
       "title": "Switch account",

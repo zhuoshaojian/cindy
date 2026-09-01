@@ -15,6 +15,73 @@ export interface DeviceListDeviceLike {
   online: boolean;
   platform: string | null;
   remoteControlEnabled: boolean;
+  selfName?: string | null;
+}
+
+/**
+ * Display-model sentinel for a cloud Pod that still has its self-reported name.
+ * Clients translate this sentinel with their own viewer-locale i18n; raw `name`
+ * remains the authoritative value used for rename/reset requests.
+ *
+ * Wire contract twin: cindy-server/cloud-instance-server/src/provider-shared.ts.
+ * Canonical syntax is this legacy sentinel or `${sentinel}:<positive decimal>`;
+ * changing it requires updating both repositories together.
+ */
+export const CLOUD_DEVICE_NAME_SENTINEL = '__cindy_cloud_device_name__';
+const CLOUD_DEVICE_NAME_WITH_SEQUENCE_PATTERN =
+  /^__cindy_cloud_device_name__:([1-9]\d*)$/;
+
+/**
+ * Stable relay device-id namespace for cloud instances.
+ *
+ * This predicate is only for display and local convergence. A server must never
+ * use an id shape as authorization evidence.
+ *
+ * Wire contract twin: cindy-server/cloud-instance-server/src/identity.ts.
+ * Changing this prefix requires updating both repositories together.
+ */
+export const CLOUD_DEVICE_ID_PREFIX = 'cloud-device-';
+
+export function isCloudInstanceDeviceId(deviceId: string): boolean {
+  return deviceId.startsWith(CLOUD_DEVICE_ID_PREFIX);
+}
+
+export interface CloudDeviceNameMarker {
+  /** null keeps compatibility with cloud devices registered before ordinals existed. */
+  sequence: number | null;
+}
+
+/** Build the locale-neutral relay self-name for a cloud device. */
+export function formatCloudDeviceName(sequence?: number | null): string {
+  return typeof sequence === 'number' && Number.isSafeInteger(sequence) && sequence > 0
+    ? `${CLOUD_DEVICE_NAME_SENTINEL}:${sequence}`
+    : CLOUD_DEVICE_NAME_SENTINEL;
+}
+
+/** Parse either the legacy sentinel or its positive-decimal ordinal form. */
+export function parseCloudDeviceName(name: string): CloudDeviceNameMarker | null {
+  if (name === CLOUD_DEVICE_NAME_SENTINEL) return { sequence: null };
+  const match = CLOUD_DEVICE_NAME_WITH_SEQUENCE_PATTERN.exec(name);
+  if (!match) return null;
+  const sequence = Number(match[1]);
+  return Number.isSafeInteger(sequence) ? { sequence } : null;
+}
+
+/**
+ * A cloud device is still on its relay-provided self name when `name` matches
+ * `selfName`. A different name is a user-selected manual name and must win.
+ */
+export function deviceDisplayName(device: Pick<DeviceListDeviceLike, 'deviceId' | 'name' | 'selfName'>): string {
+  if (
+    isCloudInstanceDeviceId(device.deviceId)
+    && device.selfName != null
+    && device.name === device.selfName
+  ) {
+    return parseCloudDeviceName(device.name)
+      ? device.name
+      : CLOUD_DEVICE_NAME_SENTINEL;
+  }
+  return device.name;
 }
 
 export interface DeviceListItem<TDevice extends DeviceListDeviceLike = DeviceListDeviceLike> {

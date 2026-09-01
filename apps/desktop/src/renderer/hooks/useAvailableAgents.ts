@@ -10,8 +10,8 @@
  * device-link:远程草稿的可用性以**被控端**为准 —— 传 deviceId 时走隧道 invoke
  * (channel 在 REMOTE_INVOKE_ALLOWLIST 内)。省略 = 本机。
  *
- * 加载语义:未加载完成时 `loaded=false` 且 `availableVendors` 为空;消费方必须把
- * "未加载" 当作 "先别隐藏任何入口"(避免异步 fetch 期间误隐藏合法 agent)。
+ * 加载语义:`status` 区分 loading / ready / error；`loaded` 只表示 ready，继续供展示层
+ * 决定是否隐藏入口。创建边界必须等待 loading，error 则保持既有 fail-open。
  */
 import { useEffect, useState } from 'react';
 
@@ -48,6 +48,7 @@ function refreshRemoteCapabilitiesOnce(deviceId: string): void {
 }
 
 type RuntimeAgentKind = 'claude-code' | 'codex' | 'pi';
+export type AvailableAgentsStatus = 'loading' | 'ready' | 'error';
 
 /** runtime agent id → NewMaker vendor(其余保持同名)。 */
 function toVendor(agent: RuntimeAgentKind): MakerVendor {
@@ -224,38 +225,83 @@ export interface UseAvailableAgentsResult {
   availableVendors: ReadonlySet<MakerVendor>;
   /** 首次结果是否已返回。未加载完成时消费方不应据此隐藏任何入口。 */
   loaded: boolean;
+  /**
+   * `loaded=false` 同时覆盖「仍在加载」与「查询失败后 fail-open」，创建边界不能只靠它
+   * 区分两者：前者必须等权威结果，后者沿用 main 的 requireAgent 最终裁决。
+   */
+  status: AvailableAgentsStatus;
 }
+
+interface AvailableAgentsState {
+  deviceId: string | null;
+  availableVendors: ReadonlySet<MakerVendor>;
+  status: AvailableAgentsStatus;
+}
+
+const EMPTY_AVAILABLE_VENDORS: ReadonlySet<MakerVendor> = new Set();
 
 /**
  * @param deviceId 省略/undefined = 本机;传值 = 该被控端(device-link)。
  */
 export function useAvailableAgents(deviceId?: string | null): UseAvailableAgentsResult {
-  const cached = agentsCache.get(cacheKeyOf(deviceId));
-  // 初值取缓存:同一 deviceId 已经查过时,新实例挂载即出值,不再走一遍「空集合 → loaded」
+  const normalizedDeviceId = deviceId ?? null;
+  // 初值取缓存:同一 deviceId 已经查过时,新实例挂载即出值,不再走一遍「空集合 → ready」
   // 的闪帧。useState 的 lazy 初值只在首次 render 取一次,后续由下面的 effect 维护。
-  const [availableVendors, setAvailableVendors] = useState<ReadonlySet<MakerVendor>>(
-    () => cached?.vendors ?? new Set(),
-  );
-  const [loaded, setLoaded] = useState(() => cached !== undefined);
+  const [state, setState] = useState<AvailableAgentsState>(() => {
+    const hit = agentsCache.get(cacheKeyOf(deviceId));
+    return {
+      deviceId: normalizedDeviceId,
+      availableVendors: hit?.vendors ?? EMPTY_AVAILABLE_VENDORS,
+      status: hit === undefined ? 'loading' : 'ready',
+    };
+  });
+
+  // effect 在 render 之后才跑。结果按 deviceId 打标,避免切换创建目标后某一帧仍然
+  // 暴露上一台设备的 Agent 列表。
+  const currentState =
+    state.deviceId === normalizedDeviceId
+      ? state
+      : {
+          deviceId: normalizedDeviceId,
+          availableVendors: EMPTY_AVAILABLE_VENDORS,
+          status: 'loading' as const,
+        };
 
   useEffect(() => {
     let cancelled = false;
     const hit = agentsCache.get(cacheKeyOf(deviceId));
-    setAvailableVendors(hit?.vendors ?? new Set());
-    setLoaded(hit !== undefined);
+    setState({
+      deviceId: normalizedDeviceId,
+      availableVendors: hit?.vendors ?? EMPTY_AVAILABLE_VENDORS,
+      status: hit === undefined ? 'loading' : 'ready',
+    });
     const key = cacheKeyOf(deviceId);
     const run = (): void => {
       const requestGeneration = currentAgentsCacheGeneration(key);
       loadAvailableAgents(deviceId)
         .then((vendors) => {
+          // 代次守卫来自 main:缓存在请求在途时被作废,这一次的结果就不能再写回。
           if (cancelled || currentAgentsCacheGeneration(key) !== requestGeneration) return;
-          setAvailableVendors(vendors);
-          setLoaded(true);
+          setState({
+            deviceId: normalizedDeviceId,
+            availableVendors: vendors,
+            status: 'ready',
+          });
         })
         .catch((err: unknown) => {
           if (cancelled) return;
-          // fail-open:查询失败时不隐藏任何入口(loaded 保持原值)——宁可多显示一个
-          // 也不因一次 IPC 抖动把合法 agent 从创建入口里抹掉。真正的兜底是创建期 requireAgent。
+          // fail-open:查询失败时不隐藏任何入口——宁可多显示一个,也不因一次 IPC 抖动把
+          // 合法 agent 从创建入口里抹掉。已拿到权威结果就保留它,不要退回 error。
+          // 真正的兜底是创建期 requireAgent;status='error' 让创建边界能与「仍在加载」区分。
+          setState((current) =>
+            current.deviceId === normalizedDeviceId && current.status === 'ready'
+              ? current
+              : {
+                  deviceId: normalizedDeviceId,
+                  availableVendors: EMPTY_AVAILABLE_VENDORS,
+                  status: 'error',
+                },
+          );
           log.warn('listAvailableAgents failed; not gating agent entries this cycle', {
             error: err instanceof Error ? err.message : String(err),
           });
@@ -276,9 +322,13 @@ export function useAvailableAgents(deviceId?: string | null): UseAvailableAgents
       window.removeEventListener('focus', onFocus);
       offRosterChanged();
     };
-  }, [deviceId]);
+  }, [deviceId, normalizedDeviceId]);
 
-  return { availableVendors, loaded };
+  return {
+    availableVendors: currentState.availableVendors,
+    loaded: currentState.status === 'ready',
+    status: currentState.status,
+  };
 }
 
 /** 测试用 —— 清进程内缓存与在途请求(其它代码不应调用)。 */

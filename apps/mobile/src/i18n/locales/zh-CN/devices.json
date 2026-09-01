@@ -140,6 +140,19 @@
       "descriptionWithSkipped": "将对当前选中的 {{count}} 个任务执行{{action}}，并跳过 {{skippedCount}} 个不适用的任务。"
     }
   },
+  "management": {
+    "eyebrow": "设备",
+    "rename": "设备名称",
+    "renameHint": "此名称会显示在同账号设备上。",
+    "renameSaved": "设备名称已更新",
+    "actions": "操作",
+    "dangerZone": "删除",
+    "online": "在线",
+    "offline": "离线",
+    "unknown": "未知",
+    "memory": "{{count}} GB",
+    "openDetails": "查看「{{label}}」的详情"
+  },
   "list": {
     "thisComputer": "这台设备",
     "allConversations": "所有任务",
@@ -173,7 +186,6 @@
       "sync": "重新同步",
       "pinnedConversations": "置顶 {{count}} 条任务",
       "newRemoteConversation": "新建远程任务",
-      "renameDevice": "重命名 {{label}}",
       "project": "项目 {{title}}",
       "dialogue": "对话",
       "openAutomationLatest": "打开自动化 {{title}} 的最新任务",
@@ -186,7 +198,8 @@
       "doneUnread": "已完成未读",
       "running": "运行中",
       "close": "关闭",
-      "cancelRename": "取消重命名"
+      "cancelRename": "取消重命名",
+      "renameDevice": "重命名 {{label}}"
     },
     "accounts": {
       "title": "切换账号",
