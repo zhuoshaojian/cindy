@@ -3,10 +3,8 @@ import type { Envelope } from '@cindy/device-link';
 import {
   handlePeerLinkCloseFrame,
   invalidatePeerLinkState,
-  liftConnectionSuppressionForNewConnection,
-  liftConnectionSuppressionForPeer,
+  liftRehydrateSuppressionForNewConnection,
   liftRehydrateSuppressionOnExplicitOpen,
-  RehydrateSuppressionState,
   updateRehydrateSuppressionOnLinkClose,
 } from '@/device-link/linkClose';
 
@@ -52,69 +50,46 @@ describe('handlePeerLinkCloseFrame', () => {
 });
 
 describe('updateRehydrateSuppressionOnLinkClose', () => {
-  it.each(['user', 'toggle-off', 'revoked', 'future-unknown', undefined])(
-    'durable close reason(%s) survives a shared socket reconnect',
+  it.each(['user', 'toggle-off', 'shutdown', 'revoked', 'future-unknown', undefined])(
+    '永久关闭 reason(%s)抑制后台重建',
     (reason) => {
-      const suppressed = new RehydrateSuppressionState();
-      suppressed.resetForOwner('account-a');
+      const suppressed = new Set<string>();
       updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-a', reason as string | undefined);
-      expect(suppressed.has('desktop-a')).toBe(true);
-      liftConnectionSuppressionForNewConnection(suppressed);
       expect(suppressed.has('desktop-a')).toBe(true);
     },
   );
 
   it('transport-timeout 解除抑制:只有它能继续恢复', () => {
-    const suppressed = new RehydrateSuppressionState();
-    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-a', 'user');
+    const suppressed = new Set<string>(['desktop-a']);
     updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-a', 'transport-timeout');
     expect(suppressed.has('desktop-a')).toBe(false);
   });
 
-  it('shutdown only suppresses the current connection/peer generation', () => {
-    const suppressed = new RehydrateSuppressionState();
+  it('抑制后收到 transport-timeout 再次可恢复(抑制 → 解除 → 再抑制 的往返稳定)', () => {
+    const suppressed = new Set<string>();
+    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-a', 'user');
+    expect(suppressed.has('desktop-a')).toBe(true);
+    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-a', 'transport-timeout');
+    expect(suppressed.has('desktop-a')).toBe(false);
     updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-a', 'shutdown');
     expect(suppressed.has('desktop-a')).toBe(true);
-    liftConnectionSuppressionForNewConnection(suppressed);
-    expect(suppressed.has('desktop-a')).toBe(false);
-
-    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-a', 'shutdown');
-    expect(suppressed.has('desktop-a')).toBe(true);
-    liftConnectionSuppressionForPeer(suppressed, 'desktop-a');
-    expect(suppressed.has('desktop-a')).toBe(false);
   });
 
-  it('explicit user open only lifts its target durable suppression', () => {
-    const suppressed = new RehydrateSuppressionState();
-    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-a', 'user');
-    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-b', 'revoked');
+  it('解除点只有三个:transport-timeout / 新连接代际 / 显式 openLink 成功;普通可用快照不解除', () => {
+    const suppressed = new Set<string>(['desktop-a', 'desktop-b']);
+
+    // 普通 available=true presence 快照:没有对应的 lift API——在线 ≠ 重新授权,
+    // context 的快照处理分支不碰抑制集(本用例固化该契约:抑制集只能经
+    // 下列具名入口变更)。
+
+    // 显式 openLink 成功:只解除目标设备
     liftRehydrateSuppressionOnExplicitOpen(suppressed, 'desktop-a');
     expect(suppressed.has('desktop-a')).toBe(false);
     expect(suppressed.has('desktop-b')).toBe(true);
-  });
 
-  it('logout/account switch clears every suppression from the previous owner', () => {
-    const suppressed = new RehydrateSuppressionState();
-    suppressed.resetForOwner('account-a');
-    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-user', 'user');
-    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-shutdown', 'shutdown');
-
-    expect(suppressed.resetForOwner('account-b')).toBe(true);
-    expect(suppressed.has('desktop-user')).toBe(false);
-    expect(suppressed.has('desktop-shutdown')).toBe(false);
-
-    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-b', 'user');
-    expect(suppressed.resetForOwner(null)).toBe(true);
-    expect(suppressed.has('desktop-b')).toBe(false);
-  });
-
-  it('failed explicit open can restore the prior durable suppression', () => {
-    const suppressed = new RehydrateSuppressionState();
-    updateRehydrateSuppressionOnLinkClose(suppressed, 'desktop-a', 'user');
-    const previous = suppressed.take('desktop-a');
-    expect(suppressed.has('desktop-a')).toBe(false);
-    suppressed.restore('desktop-a', previous);
-    expect(suppressed.has('desktop-a')).toBe(true);
+    // 新连接代际:世界重置,全部解除
+    liftRehydrateSuppressionForNewConnection(suppressed);
+    expect(suppressed.size).toBe(0);
   });
 });
 

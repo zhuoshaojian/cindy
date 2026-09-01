@@ -160,7 +160,6 @@ export function createVisualMockDeviceLinkContext(): DeviceLinkContextValue {
       allowlistHash: 'visual-mock',
     }),
     closeLink: () => undefined,
-    subscribePeerLinkRecovered: () => () => undefined,
     invoke: visualMockInvoke,
     subscribe: async () => undefined,
     unsubscribe: async () => undefined,

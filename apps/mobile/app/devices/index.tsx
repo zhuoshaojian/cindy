@@ -2423,7 +2423,13 @@ export default function HomeScreen() {
       if (!item?.deviceId) return;
       guardedPush({
         pathname: '/devices/[deviceId]',
-        params: { deviceId: item.deviceId, name: item.label },
+        params: buildDeviceDetailRouteParams({
+          deviceId: item.deviceId,
+          name: item.label,
+          online: Boolean(
+            displayDevices.find((device) => device.deviceId === item.deviceId)?.online,
+          ),
+        }),
       });
       return;
     }
@@ -2434,7 +2440,7 @@ export default function HomeScreen() {
     }
     const item = home.deviceFilters.find((filter) => filter.id === parsed.filterId);
     if (item) selectHomeScope(item);
-  }, [guardedPush, home.deviceFilters, openRenameDevice, selectHomeScope]);
+  }, [displayDevices, guardedPush, home.deviceFilters, openRenameDevice, selectHomeScope]);
   const homeDisplayPullDownActions = useMemo(
     () => buildHomeDisplayPullDownActions({
       groupByProject,
