@@ -1009,19 +1009,25 @@ function contentToSessionPreview(content: unknown): string {
   const preview = rawContentToSessionPreview(content);
   // 合成 UI 指令行(桌面「失败后继续」等隐藏续跑 prompt)不进预览:返回空让调用方
   // 落到上一条可见消息(latestSearchableMessagePreview 的倒序循环靠 falsy 跳过)。
-  // structuredContentPreview 拼接时 text 恒在最前,startsWith 判定对拼接结果同样成立。
+  // structuredContentPreview 先过滤内部块,再保留可见内容;对最终预览做同一判定。
   return isSyntheticTriggerText(preview) ? '' : preview;
 }
 
 function rawContentToSessionPreview(content: unknown): string {
   const structured = structuredContentPreview(content);
   if (structured) return structured;
+  // A recognized structured block can intentionally preview as empty (for
+  // example, hidden tool activity or host image-reference metadata). Do not
+  // fall through to messageContentToPreview, which would stringify that
+  // internal block back into the user-visible row.
+  if (hasStructuredContentNode(content)) return '';
   if (typeof content === 'string') {
     const text = content.trim();
     const parsed = parseStructuredJsonString(text);
     if (parsed.didParse) {
       const parsedStructured = structuredContentPreview(parsed.value);
       if (parsedStructured) return parsedStructured;
+      if (hasStructuredContentNode(parsed.value)) return '';
       const parsedPreview = messageContentToPreview(parsed.value).trim();
       if (parsedPreview && !looksLikeSerializedJson(parsedPreview)) return parsedPreview;
       return parsedPreview ? '结构化内容' : '';
@@ -1045,19 +1051,95 @@ function looksLikeSerializedJson(value: string): boolean {
   return first === '{' || first === '[';
 }
 
+const INTERNAL_CONTENT_TYPES = new Set([
+  'thinking',
+  'toolCall',
+  'tool_call',
+  'tool_use',
+  'toolUse',
+  'toolResult',
+  'tool_result',
+]);
+const PROSE_CONTENT_TYPES = new Set(['text']);
+const HOST_IMAGE_REFERENCES_PREFIX = '<cindy-host-image-references>';
+
+function isInternalContentType(type: unknown): boolean {
+  return typeof type === 'string' && INTERNAL_CONTENT_TYPES.has(type);
+}
+
+function isMachineMarkerText(text: string): boolean {
+  return text.startsWith(HOST_IMAGE_REFERENCES_PREFIX);
+}
+
+function hasStructuredContentNode(content: unknown): boolean {
+  if (Array.isArray(content)) return content.some(hasStructuredContentNode);
+  if (!content || typeof content !== 'object') return false;
+  const record = content as Record<string, unknown>;
+  const type = typeof record.type === 'string' ? record.type : '';
+  return (
+    isInternalContentType(type) ||
+    ['image', 'file', 'attachment', 'media', 'audio', 'video'].includes(type) ||
+    typeof record.text === 'string' ||
+    Array.isArray(record.images) ||
+    Array.isArray(record.files) ||
+    Array.isArray(record.attachments) ||
+    Array.isArray(record.media)
+  );
+}
+
+function hasVisibleProseText(content: unknown): boolean {
+  if (Array.isArray(content)) return content.some(hasVisibleProseText);
+  if (!content || typeof content !== 'object') return false;
+  const record = content as Record<string, unknown>;
+  const hasType = Object.prototype.hasOwnProperty.call(record, 'type');
+  const type = typeof record.type === 'string' ? record.type : '';
+  const text = typeof record.text === 'string' ? record.text.trim() : '';
+  return text.length > 0
+    && !isInternalContentType(type)
+    && !isMachineMarkerText(text)
+    && (!hasType || PROSE_CONTENT_TYPES.has(type));
+}
+
 function structuredContentPreview(content: unknown): string | null {
   if (Array.isArray(content)) {
-    const parts = content.map(structuredContentPreview).filter(Boolean);
-    return parts.length > 0 ? parts.join(' · ') : null;
+    // Keep prose first, matching the object envelope's text → attachments
+    // order even when a typed attachment block precedes the text block.
+    const textParts: string[] = [];
+    const attachmentParts: string[] = [];
+    for (const item of content) {
+      const part = structuredContentPreview(item);
+      if (!part) continue;
+      (hasVisibleProseText(item) ? textParts : attachmentParts).push(part);
+    }
+    const parts = [...textParts, ...attachmentParts];
+    return parts.length > 0 ? parts.join(' · ') : content.length > 0 ? '' : null;
   }
   if (!content || typeof content !== 'object') return null;
 
   const record = content as Record<string, unknown>;
+  const type = typeof record.type === 'string' ? record.type : '';
+  // Internal activity is persisted alongside visible messages in some agent
+  // transcripts. Keep it out of the row preview even when a provider happens
+  // to expose a text-shaped field on the activity block.
+  if (isInternalContentType(type)) {
+    return null;
+  }
   const text = typeof record.text === 'string' ? record.text.trim() : '';
+  if (isMachineMarkerText(text)) return null;
+  if (type === 'image') {
+    return summarizeContentRefs([record], '图片');
+  }
+  if (type === 'file' || type === 'attachment') {
+    return summarizeContentRefs([record], '附件');
+  }
+  if (type === 'media' || type === 'audio' || type === 'video') {
+    return summarizeContentRefs([record], '媒体');
+  }
   const images = summarizeContentRefs(record.images, '图片');
   const files = summarizeContentRefs(record.files ?? record.attachments, '附件');
   const media = summarizeContentRefs(record.media, '媒体');
-  const parts = [text, images, files, media].filter((part): part is string => !!part);
+  const prose = hasVisibleProseText(record) ? text : '';
+  const parts = [prose, images, files, media].filter((part): part is string => !!part);
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 

@@ -834,6 +834,57 @@ describe('sessionList', () => {
     expect(sections[0].data[0].messagePreview).not.toContain('{');
   });
 
+  it('keeps visible text blocks and typed attachment summaries in structured previews', () => {
+    const preview = (content: unknown): string | null => sessionRowMessagePreview(
+      session('structured-preview', { lastMessageContent: content } as Partial<RemoteSession>),
+    );
+
+    expect(preview([{ type: 'text', text: 'first' }])).toBe('first');
+    // Desktop composer persists the common envelope without a type field;
+    // this shape is the primary legacy prose path and must remain visible.
+    expect(preview({ text: 'legacy envelope', images: [], files: [] })).toBe('legacy envelope');
+    // Multiple prose blocks are valid transcript content (for example, a handoff
+    // note followed by the user's message), so preserve both rather than dropping
+    // the second block as if it were always tool noise.
+    expect(preview([
+      { type: 'text', text: 'first' },
+      { type: 'text', text: 'second' },
+    ])).toBe('first · second');
+    expect(preview({
+      text: 'look here',
+      images: [{ name: 'screenshot.png' }],
+    })).toBe('look here · 图片 screenshot.png');
+    expect(preview({ images: [{ name: 'screenshot.png' }] })).toBe('图片 screenshot.png');
+    expect(preview([])).toBeNull();
+    expect(preview([
+      { type: 'file', path: '/tmp/notes.txt' },
+      { type: 'text', text: 'summarize it' },
+    ])).toBe('summarize it · 附件 notes.txt');
+    expect(preview([
+      [{ type: 'text', text: 'nested' }],
+      [{ type: 'file', path: '/tmp/notes.txt' }],
+    ])).toBe('nested · 附件 notes.txt');
+  });
+
+  it('omits internal activity and host image-reference blocks from previews', () => {
+    const preview = (content: unknown): string | null => sessionRowMessagePreview(
+      session('internal-preview', { lastMessageContent: content } as Partial<RemoteSession>),
+    );
+
+    expect(preview([
+      { type: 'thinking', text: 'hidden reasoning' },
+      { type: 'toolCall', text: 'Bash' },
+      { type: 'toolResult', text: 'command output' },
+      { type: 'text', text: 'visible answer' },
+    ])).toBe('visible answer');
+    expect(preview([
+      { type: 'text', text: '<cindy-host-image-references>\n{"image":1}' },
+    ])).toBeNull();
+    // Unknown typed text is deny-by-default: it must not leak into a user-facing
+    // preview until its block semantics are explicitly classified as prose.
+    expect(preview([{ type: 'future-internal', text: 'hidden activity' }])).toBeNull();
+  });
+
   it('never leaks hidden synthetic trigger prompts into session previews', () => {
     // 桌面「失败后继续」的隐藏续跑 prompt(带 [UI_ACTION_TRIGGER] 前缀)常是会话
     // 最后一条 user 行:预览必须回落到上一条可见消息,而不是把裸英文指令亮出来。
