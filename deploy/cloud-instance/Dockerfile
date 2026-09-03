@@ -102,9 +102,13 @@ WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY dependency-patches/ ./dependency-patches/
 COPY apps/desktop/ ./apps/desktop/
-# The shared lockfile contains five Mobile file: snapshots. pnpm validates
-# their package manifests even for a Desktop-filtered install; source is not
-# included in the generated build context.
+# The shared lockfile carries a Mobile `file:` snapshot per native module. pnpm
+# validates every one of their package manifests even for a Desktop-filtered
+# install, so a module missing here fails the install with ENOENT; source is not
+# included in the generated build context. The list must therefore track the
+# lockfile exactly — `cloud-runtime-image.test.mjs` asserts that, because
+# upstream adding a module would otherwise only surface as a broken image build.
+COPY apps/mobile/modules/xdt-ios-action-sheet/package.json ./apps/mobile/modules/xdt-ios-action-sheet/package.json
 COPY apps/mobile/modules/xdt-ios-app-distribution/package.json ./apps/mobile/modules/xdt-ios-app-distribution/package.json
 COPY apps/mobile/modules/xdt-mobile-realtime-audio/package.json ./apps/mobile/modules/xdt-mobile-realtime-audio/package.json
 COPY apps/mobile/modules/xdt-screenshot-monitor/package.json ./apps/mobile/modules/xdt-screenshot-monitor/package.json
