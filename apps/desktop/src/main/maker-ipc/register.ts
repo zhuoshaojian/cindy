@@ -196,6 +196,7 @@ import {
   getCurrentDbClientSnapshot,
   getDbClient,
   isDbClientNotReadyError,
+  tryGetDbClient,
 } from '../localDb/client/current.js';
 import { getMessagesForHistory } from '../localDb/chatHistoryReader.js';
 import {
@@ -394,6 +395,7 @@ import {
 } from './collabProjectPolicy.js';
 import type { GitSnapshotCoordinator } from '../git-snapshot/gitSnapshotCoordinator.js';
 import {
+  getNewMakerDraftCacheSnapshot,
   getRemoteNewMakerDefaults,
   getRemoteNewMakerDefaultsByVendor,
   getWorkerDefaultsFromNewMaker,
@@ -404,6 +406,12 @@ import {
   setProviderModelMemoryCache,
   setWorkerCreationPrefsCache,
 } from '../maker-host/newMakerDefaultsCache.js';
+import {
+  applyPodDraftPref,
+  computePodNewMakerDefaultsSeed,
+  podSeedToDraftSnapshot,
+} from '../maker-host/podNewMakerDefaultsSeed.js';
+import { HEADLESS_POD_RUNTIME_ENV } from '../headless-startup.js';
 import {
   applyNewMakerWorktreeBranchPreference,
   getNewMakerWorktreeBranchPreference,
@@ -1089,6 +1097,57 @@ import { normalizeWorkingDirForStorage } from '../../shared/workingDir.js';
 import { openMainWindowSession } from '../deepLink.js';
 
 const log = createLogger('maker-ipc');
+
+/**
+ * 云端 Pod:惰性播种 newMakerDefaultsCache(见 podNewMakerDefaultsSeed 的模块注释)。
+ *
+ * 挂在**控制端来拉**这条路径上而不是启动序列:拉取必然发生在 device-link 上线之后,
+ * 那时本地库早已 ready,不需要往启动流程里再插一步等库的逻辑。
+ *
+ * 只在 cache 仍为空时查库,所以正常情况下每个 Pod 进程只跑一次;之后 cache 由
+ * applyPodDraftPref 维护。库未就绪 / 查询失败都静默跳过 —— 播不上顶多回落到控制端
+ * 目录默认,不该因此让控制端拉不到草稿。
+ */
+async function seedPodNewMakerDefaultsOnce(): Promise<void> {
+  if (process.env[HEADLESS_POD_RUNTIME_ENV] !== '1') return;
+  if (getNewMakerDraftCacheSnapshot()) return;
+  const client = tryGetDbClient();
+  if (!client) return;
+  // 'cc' 与 'claude-code' 是 sessions.agent_kind 的两种历史写法,同属一个 vendor。
+  const vendorKinds = [['cc', 'claude-code'], ['codex'], ['pi']];
+  try {
+    const rows = await Promise.all(
+      vendorKinds.map(async (kinds) => {
+        const [row] = await client.drizzle
+          .select({
+            agentKind: sessions.agentKind,
+            model: sessions.model,
+            updatedAt: sessions.updatedAt,
+          })
+          .from(sessions)
+          .where(inArray(sessions.agentKind, kinds))
+          .orderBy(desc(sessions.updatedAt))
+          .limit(1);
+        return row ?? null;
+      }),
+    );
+    // 再查一次:上面 await 期间控制端可能已下发过一次显式选择(APPLY 走 applyPodDraftPref,
+    // cache 从空建起),此时播种会把那次选择顶掉。
+    if (getNewMakerDraftCacheSnapshot()) return;
+    const seed = computePodNewMakerDefaultsSeed({
+      recentSessions: rows.filter((row) => row !== null),
+    });
+    setNewMakerDraftCache(podSeedToDraftSnapshot(seed));
+    log.info('pod new-maker draft defaults seeded from local session history', {
+      vendorsWithHistory: Object.keys(seed.lastByVendor),
+      vendorsUsingCatalogDefault: Object.keys(seed.modelChosenByVendor),
+    });
+  } catch (err) {
+    log.warn('pod new-maker draft defaults seeding failed (swallowed)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 async function prepareProjectSkillLinksFailSoft(workingDir: unknown): Promise<boolean> {
   // Slash/@ palettes are read-only device-link surfaces. Their remote invokes must not
@@ -6659,8 +6718,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // device-link 远程草稿镜像(只读):返回某 vendor 在 New Maker 草稿里的当前完整选择
   // (model/effort/fast/permission/source/是否显式选过模型)。控制端经隧道调用 → seed 远程项目草稿。
   // 缓存未就绪 / 该 vendor 无草稿 model → 返回 {},控制端按 capabilities 默认兜底。
-  ipcMain.handle(MAKER_INVOKE.GET_NEW_MAKER_DEFAULTS, (_e, agentKind: unknown) => {
-    return getRemoteNewMakerDefaults(requireAgentKind(agentKind));
+  // 云端 Pod 没有 renderer 来 push 草稿,故先惰性播种一次(见 seedPodNewMakerDefaultsOnce)。
+  ipcMain.handle(MAKER_INVOKE.GET_NEW_MAKER_DEFAULTS, async (_e, agentKind: unknown) => {
+    const kind = requireAgentKind(agentKind);
+    await seedPodNewMakerDefaultsOnce();
+    return getRemoteNewMakerDefaults(kind);
   });
 
   // device-link 草稿「模型 effort/fast」写穿:控制端经隧道调用 → 跑在**被控端**。被控端不直接改
@@ -6713,6 +6775,24 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       ...(p.fast !== undefined ? { fast: p.fast } : {}),
       ...(p.thinking !== undefined ? { thinking: p.thinking } : {}),
     });
+    // 云端 Pod:上面那次广播的接收者是零个 —— headless 启动跳过窗口创建,没有 renderer
+    // 去写真实草稿,于是既没有 SYNC_NEW_MAKER_DRAFT 回写、也没有 NEW_MAKER_DRAFT_CHANGED
+    // 回流,控制端选的模型静默丢失。这里由 main 自己走完 renderer 那一步:把同一条 pref
+    // 叠加到镜像上,再调同一个回流函数。**只在 Pod 走**:普通桌面 renderer 才是真源,
+    // 抢先写镜像会与它的回写打架。
+    if (process.env[HEADLESS_POD_RUNTIME_ENV] === '1') {
+      setNewMakerDraftCache(
+        applyPodDraftPref(getNewMakerDraftCacheSnapshot(), {
+          agent: p.agent,
+          modelId: p.modelId,
+          active: p.active === true,
+          ...(typeof p.providerId === 'string' ? { providerId: p.providerId } : {}),
+          ...(typeof p.effort === 'string' ? { effort: p.effort } : {}),
+          ...(typeof p.fast === 'boolean' ? { fast: p.fast } : {}),
+        }),
+      );
+      broadcastNewMakerDraftChanged();
+    }
   });
 
   // device-link 草稿「新建会话默认启用 worktree」写穿:与上面的模型 pref 同款转发模式——
