@@ -13,7 +13,10 @@ const EXACT_INPUTS = new Set([
   'pnpm-workspace.yaml',
   // pnpm validates every file: snapshot in the shared lockfile even when the
   // install is filtered to Desktop. Only these package manifests are needed;
-  // no Mobile runtime source enters the cloud image context.
+  // no Mobile runtime source enters the cloud image context. Keep in sync with
+  // the lockfile and the Dockerfile COPY list — cloud-runtime-image.test.mjs
+  // fails when they drift, so upstream adding a module cannot reach the builder.
+  'apps/mobile/modules/xdt-ios-action-sheet/package.json',
   'apps/mobile/modules/xdt-ios-app-distribution/package.json',
   'apps/mobile/modules/xdt-mobile-realtime-audio/package.json',
   'apps/mobile/modules/xdt-screenshot-monitor/package.json',

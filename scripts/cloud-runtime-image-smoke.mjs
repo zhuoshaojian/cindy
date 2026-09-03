@@ -157,6 +157,11 @@ function runPackagedStartupSmoke(image) {
     run('docker', [
       'run', '--detach', '--name', containerName,
       '--env', 'XDT_POD_DEVICE_ID=cloud-device-runtime-smoke',
+      // 控制面注入的 membership 是 Pod 身份的必需一半:startPodCloudRuntimeController
+      // 按 provisioned session → 当前用户 → 本环境变量三级取值,而 smoke 用的是假 token,
+      // 前两级必然为空。少了它启动会以 'Pod cloud runtime identity is incomplete'
+      // 硬失败 —— 这条门禁此前一直因此过不去,并非被测镜像有问题。
+      '--env', 'XDT_POD_MEMBERSHIP_ID=membership-runtime-smoke',
       '--env', 'XDT_POD_RESOURCE_REFRESH_TOKEN_FILE=/run/secrets/pod-resource-refresh-token',
       '--env', 'XDT_ENDPOINT_MANIFEST_FILE=/run/config/endpoint.json',
       '--env', 'XDT_USER_DATA_DIR=/var/lib/cindy/user-data',
