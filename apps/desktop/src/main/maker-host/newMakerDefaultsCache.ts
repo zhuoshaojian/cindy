@@ -70,6 +70,16 @@ export type ProviderModelMemorySnapshot = Record<
 let providerMemoryCache: ProviderModelMemorySnapshot | null = null;
 
 /** Renderer push handler 调; 整体替换缓存 (而不是合并), 跟 source of truth 对齐。 */
+/**
+ * 原样读取草稿镜像。仅供 headless Pod 的 read-modify-write 使用:那里没有 renderer
+ * 来持有真实草稿,main 必须自己把控制端下发的 pref 叠加到镜像上(见
+ * podNewMakerDefaultsSeed.applyPodDraftPref)。普通桌面**不要**用它反推真相 ——
+ * renderer 的 localStorage 才是真源。
+ */
+export function getNewMakerDraftCacheSnapshot(): NewMakerDraftSnapshot | null {
+  return cache;
+}
+
 export function setNewMakerDraftCache(snapshot: NewMakerDraftSnapshot): void {
   cache = snapshot;
 }
