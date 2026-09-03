@@ -1,5 +1,7 @@
 import type { BrowserRuntimeConfig } from '@cindy/browser-control-runtime';
 
+import { HEADLESS_POD_RUNTIME_ENV } from '../headless-startup.js';
+
 /**
  * Managed profile identity. The profile key is the on-disk folder
  * `browser/<key>/user-data`. Chrome's top-right chip follows `displayName` when
@@ -73,13 +75,22 @@ export const MANAGED_CDP_PORT = 18800;
  *    same-origin `fetch` there can reach any host the browser can. This residual
  *    surface is accepted as inherent to browser automation (it's the same
  *    capability the `act:evaluate` tool already exposes), not a regression.
+ *
+ * 云端 Pod 例外:容器里以非 root 运行,没有 user namespace 也没有 CAP_SYS_ADMIN,
+ * Chrome 的 setuid sandbox 起不来,不给 --no-sandbox 就直接启动失败。判定放在这个
+ * 构造函数内部而不是各调用点 —— 有四处调用它,放到调用点上迟早漏一处。
+ * 与 Electron 侧的 ELECTRON_DISABLE_SANDBOX 同一取舍:Pod/容器边界才是隔离层。
+ * **绝不放宽到普通桌面**:那里 sandbox 是真实的安全边界,不是配置偏好。
  */
 export function buildManagedConfig(options?: {
   useRealProfile?: boolean;
   executablePath?: string;
   cdpPort?: number;
+  /** 仅测试用于绕开 env 探测;运行期一律由 HEADLESS_POD_RUNTIME_ENV 决定。 */
+  podRuntime?: boolean;
 }): BrowserRuntimeConfig {
   const useRealProfile = options?.useRealProfile === true;
+  const podRuntime = options?.podRuntime ?? process.env[HEADLESS_POD_RUNTIME_ENV] === '1';
   const defaultProfile = useRealProfile ? REAL_MANAGED_PROFILE : MANAGED_PROFILE;
   const executablePath = options?.executablePath;
   const cdpPort = options?.cdpPort ?? MANAGED_CDP_PORT;
@@ -88,6 +99,8 @@ export function buildManagedConfig(options?: {
       enabled: true,
       defaultProfile,
       headless: false, // headed so the user can see + log into sites
+      // Pod 里 Xvfb 已在 entrypoint 起好,headed 同样可渲染,所以这里不按 Pod 分叉。
+      ...(podRuntime ? { noSandbox: true } : {}),
       ...(executablePath ? { executablePath } : {}),
       ssrfPolicy: {
         allowRfc2544BenchmarkRange: true,
