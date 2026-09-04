@@ -4,12 +4,20 @@
   "assets": {
     "claude": {
       "format": "raw-gzip",
-      "version": "2.1.219",
-      "relativePath": "claude-code/2.1.219/linux-x64/claude.gz",
-      "binarySha256": "22cfd6f5b3061c0391ba84e9cf8c9deaa37783aac18b004d42ec061e98f00691",
-      "binarySize": 275004400
+      "version": "2.1.259",
+      "relativePath": "claude-code/2.1.259/linux-x64/claude.gz",
+      "binarySha256": "f7dd62ae415378018cd21dd950eb3bac174ab085830304d3b8b098146bfd47b6",
+      "binarySize": 216677784
     },
     "codex": {
+      "format": "directory-tar-gzip",
+      "version": "0.153.0",
+      "relativePath": "codex-package/0.153.0/linux-x64/codex-package-linux-x64.tar.gz",
+      "archiveSha256": "27b0d7a753ac190c343918541a42067be307cc88a32b1a9feaf6f93648a0e9ea",
+      "archiveSize": 126134505,
+      "binaryName": "bin/codex"
+    },
+    "codex-cli": {
       "format": "raw-gzip",
       "version": "0.145.0",
       "relativePath": "codex/0.145.0/linux-x64/codex.gz",
@@ -25,10 +33,10 @@
     },
     "pi": {
       "format": "directory-tar-gzip",
-      "version": "0.83.0",
-      "relativePath": "pi/0.83.0/linux-x64/pi-linux-x64.tar.gz",
-      "archiveSha256": "b0625eb623197b0afe20c870d21ef2f34481f1504e5777df3f698a66c7636f5f",
-      "archiveSize": 43612248,
+      "version": "0.84.4",
+      "relativePath": "pi/0.84.4/linux-x64/pi-linux-x64.tar.gz",
+      "archiveSha256": "c2f3c3e6a1850bd87654cc3ca8811013272397c3d042a4e2a64c43ee1b423972",
+      "archiveSize": 42464648,
       "binaryName": "pi"
     }
   }

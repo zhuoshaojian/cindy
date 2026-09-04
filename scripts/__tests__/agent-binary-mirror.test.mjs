@@ -103,17 +103,45 @@ test('mirror base rejects HTTP, credentials, query, and hash', () => {
   }
 });
 
-test('repository pins resolve all linux-x64 mirror paths', () => {
+test('repository pins resolve all linux-x64 mirror paths', async () => {
   const rootDir = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-  const versions = {
-    claude: JSON.parse(fs.readFileSync(path.join(rootDir, 'tools/claude/latest.json'))).version,
-    codex: JSON.parse(fs.readFileSync(path.join(rootDir, 'tools/codex/latest.json'))).version,
-    ripgrep: JSON.parse(fs.readFileSync(path.join(rootDir, 'tools/ripgrep/latest.json'))).version,
-    pi: JSON.parse(fs.readFileSync(path.join(rootDir, 'tools/pi/latest.json'))).version,
+  // 台账条目必须按**消费者**对齐，不能按 kind 名去猜 tools/<kind>/latest.json。
+  // 一个 kind 名对应哪个 pin 源，取决于谁消费它：
+  //   codex      → 构建期 ensure-agent-binaries（KINDS 的 pinDir: 'codex-package'）
+  //   codex-cli  → 运行期 apps/desktop 的 Linux runtime fallback，它要求精确等于
+  //                tools/codex 的 pin（app-server 协议对齐），版本比上面那个旧
+  // 2026-09-07 这里按 kind 名猜路径，让台账拿另一个消费者的 pin 自证通过，
+  // 构建仍然 fail-closed 失败；改成 codex-package 后又把镜像装成了运行期不接受的
+  // 版本，打断了 8 台存量实例。两个方向都栽过，所以逐个消费者钉住。
+  const pinSources = {
+    claude: async () =>
+      (await import(new URL('../../tools/claude/update.mjs', import.meta.url).href))
+        .readPinnedVersion(),
+    codex: async () =>
+      (await import(new URL('../../tools/codex-package/update.mjs', import.meta.url).href))
+        .readPinnedVersion(),
+    'codex-cli': async () =>
+      JSON.parse(fs.readFileSync(path.join(rootDir, 'tools/codex/latest.json'), 'utf8')).version,
+    ripgrep: async () =>
+      (await import(new URL('../../tools/ripgrep/update.mjs', import.meta.url).href))
+        .readPinnedVersion(),
+    pi: async () =>
+      (await import(new URL('../../tools/pi/update.mjs', import.meta.url).href))
+        .readPinnedVersion(),
   };
+  const versions = {};
+  for (const [kind, read] of Object.entries(pinSources)) versions[kind] = await read();
+  // codex 与 codex-cli 是两个不同版本的条目，混用任一个都会在构建或运行期炸。
+  assert.notEqual(
+    versions.codex,
+    versions['codex-cli'],
+    'codex(codex-package) 与 codex-cli(tools/codex) 的 pin 一旦相同，说明上游已收敛，'
+      + '此时应把镜像与台账收敛回单一 codex 条目，而不是继续维护两份',
+  );
   const expectedPaths = {
     claude: `claude-code/${versions.claude}/linux-x64/claude.gz`,
-    codex: `codex/${versions.codex}/linux-x64/codex.gz`,
+    codex: `codex-package/${versions.codex}/linux-x64/codex-package-linux-x64.tar.gz`,
+    'codex-cli': `codex/${versions['codex-cli']}/linux-x64/codex.gz`,
     ripgrep: `ripgrep/${versions.ripgrep}/linux-x64/rg.gz`,
     pi: `pi/${versions.pi}/linux-x64/pi-linux-x64.tar.gz`,
   };
@@ -130,6 +158,41 @@ test('repository pins resolve all linux-x64 mirror paths', () => {
       `https://mirror.example.test/base/${expectedPaths[kind]}`,
     );
   }
+});
+
+test('cloud image installs the codex build that the Linux runtime fallback accepts', () => {
+  const rootDir = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
+  const readRoot = (relativePath) => fs.readFileSync(path.join(rootDir, relativePath), 'utf8');
+
+  // 运行期判据的唯一真源：apps/desktop 的 Linux runtime fallback 用 tools/codex 的 pin,
+  // 且对 codex 走 runtimeVersionMatchesPin（精确相等,不接受更新版本）。
+  const fallback = readRoot('apps/desktop/src/main/agent-binaries/linux-runtime-fallback.ts');
+  assert.match(fallback, /import codexLatest from '.*tools\/codex\/latest\.json'/);
+  assert.match(fallback, /if \(runtimeVersionMatchesPin\(kind, versionOutput\)\) return candidate;/);
+  const runtimePin = JSON.parse(readRoot('tools/codex/latest.json')).version;
+
+  // 镜像侧必须按同一个 pin 装,并放到 PATH 上那个目录。
+  const direct = readRoot('scripts/ensure-agent-binaries-direct.mjs');
+  assert.match(direct, /readJson\('tools\/codex\/latest\.json'\)/);
+  assert.match(direct, /'apps\/codex-bin', PLATFORM, 'codex'/);
+  assert.match(direct, /kind: 'codex-cli'/);
+  assert.equal(
+    JSON.parse(readRoot('tools/agent-binary-mirror/linux-x64.json')).assets['codex-cli'].version,
+    runtimePin,
+  );
+
+  // Dockerfile 的 PATH 与 runtime COPY 都必须指向那份单文件,否则 Pod 找不到它就会
+  // 回落去联网下载 —— 集群内取不到 GitHub,实例卡在 binaries not-ready。
+  const dockerfile = readRoot('deploy/cloud-instance/Dockerfile');
+  assert.match(dockerfile, /PATH=[^\n]*\/workspace\/apps\/codex-bin\/linux-x64/);
+  assert.match(
+    dockerfile,
+    /COPY --from=packager --chown=cindy:cindy \/workspace\/apps\/codex-bin\/linux-x64\/ \/workspace\/apps\/codex-bin\/linux-x64\//,
+  );
+  assert.match(
+    readRoot('deploy/cloud-instance/check-capabilities.mjs'),
+    /apps\/codex-bin\/linux-x64\/codex/,
+  );
 });
 
 test('directory-distribution mirror verifies the pinned archive and installs all Pi assets', async () => {

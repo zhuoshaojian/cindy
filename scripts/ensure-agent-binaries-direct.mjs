@@ -119,12 +119,23 @@ async function main() {
   }
 
   const mirrorBaseUrl = resolveAgentBinaryMirrorBaseUrl();
+  // 这里刻意跟 tools/codex/（单文件 pin），**不是** tools/codex-package/。
+  //
+  // 上游 v0.1.73 新增了 tools/codex-package/（目录分发，当前 0.153.0）并把构建期的
+  // ensure-agent-binaries 迁了过去,但 apps/desktop 的 Linux runtime fallback 仍然要求
+  // codex 精确等于 tools/codex 的 pin —— 那是 app-server 协议对齐的硬要求
+  // （linux-runtime-fallback.ts:288 用 runtimeVersionMatchesPin,claude 才允许更新版本）。
+  // Pod 是 packaged Linux,启动时只会在 PATH / userData 里找那个精确版本;装成 0.153.0
+  // 会判失配,然后回落去联网下载 0.145.0 —— 而集群内取不到 GitHub,实例就卡在
+  // binaries not-ready。2026-09-07 这样打断过 8 台存量实例,由健康门禁回滚收场。
   const codex = readJson('tools/codex/latest.json');
   const codexPin = codex.runtimeAssets[PLATFORM];
   const codexTarget = path.join(ROOT, 'apps/codex-bin', PLATFORM, 'codex');
   if (mirrorBaseUrl) {
     const mirrorOptions = {
-      kind: 'codex',
+      // 台账里 'codex' 是 codex-package 的目录分发(给构建期 ensure-agent-binaries),
+      // 'codex-cli' 才是这个单文件 pin。两者版本不同,不能混用同一个条目。
+      kind: 'codex-cli',
       version: codex.version,
       platformKey: PLATFORM,
       targetPath: codexTarget,

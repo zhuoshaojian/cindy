@@ -15,7 +15,12 @@ const { normalizeManifestBaseUrl } = manifestBaseUrl;
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 export const AGENT_BINARY_MIRROR_ENV = 'XDT_AGENT_BINARY_MIRROR_BASE_URL';
-const MIRRORED_KINDS = new Set(['claude', 'codex', 'ripgrep', 'pi']);
+// 'codex-cli' 是 tools/codex/ 那个单文件 pin，与 'codex'（tools/codex-package/ 的目录
+// 分发）并存且版本不同。上游 v0.1.73 起把构建期的 codex 迁到了 codex-package，但
+// apps/desktop 的 Linux runtime fallback 仍要求 codex 精确等于 tools/codex 的 pin
+// （app-server 协议对齐，见 linux-runtime-fallback.ts 的注释）。云端镜像必须同时满足
+// 两个消费者，所以台账要为它们各留一个条目。
+const MIRRORED_KINDS = new Set(['claude', 'codex', 'codex-cli', 'ripgrep', 'pi']);
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 export function supportsAgentBinaryMirror(kind) {
@@ -101,7 +106,14 @@ export function loadAgentBinaryMirrorAsset({
     if (!Number.isSafeInteger(asset.archiveSize) || asset.archiveSize < 1024) {
       throw new Error(`${source} ${kind}.archiveSize must be an integer >= 1024`);
     }
-    if (typeof asset.binaryName !== 'string' || !/^[a-zA-Z0-9._-]+$/.test(asset.binaryName)) {
+    // 主执行文件可以在归档根（pi），也可以在子目录（codex 的 bin/codex）。允许
+    // 正斜杠分隔的相对路径，但每一段都必须是普通名字——'..'、绝对路径和空段一律
+    // 拒绝，否则台账就能把文件写到安装目录之外。
+    if (
+      typeof asset.binaryName !== 'string'
+      || asset.binaryName.length === 0
+      || asset.binaryName.split('/').some((segment) => !/^[a-zA-Z0-9._-]+$/.test(segment) || segment === '..')
+    ) {
       throw new Error(`${source} ${kind}.binaryName is invalid`);
     }
     return {
@@ -156,6 +168,8 @@ export async function isInstalledAgentBinaryMirrorAsset({
   version,
   platformKey,
   targetPath,
+  // 与 installAgentBinaryFromMirror 同义:目录分发的安装根不能从 targetPath 反推。
+  installDir,
   rootDir = ROOT,
 }) {
   const asset = loadAgentBinaryMirrorAsset({
@@ -165,7 +179,7 @@ export async function isInstalledAgentBinaryMirrorAsset({
     rootDir,
   });
   if (asset.format === 'directory-tar-gzip') {
-    const targetDir = path.dirname(targetPath);
+    const targetDir = installDir ?? path.dirname(targetPath);
     try {
       return verifyDirDistManifest(targetDir)
         && fs.readFileSync(path.join(targetDir, '.mirror-archive-sha256'), 'utf8').trim()
@@ -188,6 +202,10 @@ export async function installAgentBinaryFromMirror({
   version,
   platformKey,
   targetPath,
+  // 目录分发的安装根。必须由调用方显式给出：主执行文件不一定在归档根（codex 的
+  // 主程序是 bin/codex），从 targetPath 反推 dirname 会把整棵目录树和 .version
+  // 标记装进 bin/ 里,ensure 侧随后按 <binDir>/.version 判定就会永远失配。
+  installDir,
   rootDir = ROOT,
   fetchImpl = fetch,
 }) {
@@ -237,7 +255,7 @@ export async function installAgentBinaryFromMirror({
         throw new Error(`${kind} mirror directory distribution failed manifest verification`);
       }
 
-      const targetDir = path.dirname(targetPath);
+      const targetDir = installDir ?? path.dirname(targetPath);
       fs.rmSync(targetDir, { recursive: true, force: true });
       fs.cpSync(extractRoot, targetDir, { recursive: true });
       fs.writeFileSync(path.join(targetDir, '.version'), `${version}\n`);

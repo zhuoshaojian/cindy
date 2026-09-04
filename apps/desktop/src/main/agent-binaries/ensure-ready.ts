@@ -31,6 +31,26 @@ export interface EnsureAgentBinariesReadyDeps {
   getPiInstallSignal?: () => AbortSignal | undefined;
   isPiDisabledForLaunch?: () => boolean;
   onPiPrepareFailed?: (error: string) => void;
+  /**
+   * Bounded retry for the pi manifest/download step. A cloud instance starts
+   * before its egress is reliably up, and one `manifest_failed` there disables
+   * pi for a launch that may then run for days — the owner has no convenient
+   * restart. Retrying the fetch does not touch the deliberate invariant that pi
+   * only ever runs the binary this launch prepared (docs/dev-rules/pi-harness.md);
+   * it just keeps a transient failure from becoming a permanent one. Absent for
+   * Desktop, where a relaunch is the cheaper remedy.
+   */
+  piPrepareRetry?: {
+    attempts: number;
+    delayMs(attempt: number): number;
+    /**
+     * Only the caller knows which failures are worth another round. Each attempt
+     * gets its own install deadline, so retrying a download that genuinely ran
+     * out of time would multiply startup by the retry count — keep this narrow.
+     */
+    shouldRetry(error: string): boolean;
+    onRetry?(error: string, attempt: number): void;
+  };
 }
 
 export interface EnsureBinariesReadyProviderDeps {
@@ -40,6 +60,26 @@ export interface EnsureBinariesReadyProviderDeps {
   getPiInstallSignal?: () => AbortSignal | undefined;
   isPiDisabledForLaunch?: () => boolean;
   onPiPrepareFailed?: (error: string) => void;
+  /**
+   * Bounded retry for the pi manifest/download step. A cloud instance starts
+   * before its egress is reliably up, and one `manifest_failed` there disables
+   * pi for a launch that may then run for days — the owner has no convenient
+   * restart. Retrying the fetch does not touch the deliberate invariant that pi
+   * only ever runs the binary this launch prepared (docs/dev-rules/pi-harness.md);
+   * it just keeps a transient failure from becoming a permanent one. Absent for
+   * Desktop, where a relaunch is the cheaper remedy.
+   */
+  piPrepareRetry?: {
+    attempts: number;
+    delayMs(attempt: number): number;
+    /**
+     * Only the caller knows which failures are worth another round. Each attempt
+     * gets its own install deadline, so retrying a download that genuinely ran
+     * out of time would multiply startup by the retry count — keep this narrow.
+     */
+    shouldRetry(error: string): boolean;
+    onRetry?(error: string, attempt: number): void;
+  };
 }
 
 /** Share one startup deadline across sequential packaged-Linux installs. */
@@ -216,24 +256,32 @@ export async function ensureAgentBinariesReady(
       error: 'pi disabled for this launch after an earlier prepare failure',
     };
   } else {
-    try {
-      const piRes = await prepare('pi', {
-        ...stepOptsFor('pi'),
-        broadcastFailure: false,
-        signal: getPiInstallSignal?.(),
-      });
-      piInfo =
-        piRes.ready && piRes.path
-          ? { status: 'passed', path: piRes.path }
-          : {
-              status: 'failed',
-              error: piRes.error ?? 'pi binary not available',
-            };
-    } catch (err: unknown) {
-      piInfo = {
-        status: 'failed',
-        error: err instanceof Error ? err.message : String(err),
-      };
+    const totalAttempts = Math.max(1, deps.piPrepareRetry?.attempts ?? 1);
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        const piRes = await prepare('pi', {
+          ...stepOptsFor('pi'),
+          broadcastFailure: false,
+          signal: getPiInstallSignal?.(),
+        });
+        piInfo =
+          piRes.ready && piRes.path
+            ? { status: 'passed', path: piRes.path }
+            : {
+                status: 'failed',
+                error: piRes.error ?? 'pi binary not available',
+              };
+      } catch (err: unknown) {
+        piInfo = {
+          status: 'failed',
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+      if (piInfo.status === 'passed' || attempt >= totalAttempts) break;
+      if (deps.piPrepareRetry?.shouldRetry(piInfo.error) !== true) break;
+      deps.piPrepareRetry.onRetry?.(piInfo.error, attempt);
+      const delayMs = deps.piPrepareRetry.delayMs(attempt);
+      if (delayMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
     }
   }
   if (piInfo.status === 'failed') onPiPrepareFailed?.(piInfo.error);

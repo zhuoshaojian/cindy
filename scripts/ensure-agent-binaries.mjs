@@ -302,6 +302,7 @@ export async function ensureBinary(kind, platformKey = currentPlatformKey(), { f
         version,
         platformKey,
         targetPath: binPath,
+        installDir: binDirPath,
       });
     } else {
       try {
