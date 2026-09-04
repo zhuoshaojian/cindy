@@ -92,10 +92,16 @@ export interface BrandIdentity {
    * 必须逐字符一致,否则 Windows toast 通知被静默丢弃。取值经 `brandAppId()`。
    */
   readonly appIdByRegion: Readonly<Record<CindyRegion, string>>;
-  /** 深链主 scheme(OS 级注册,`<scheme>://session/...`;cn/global 不区分)。 */
+  /** 深链主 scheme(正式版兼容标量；cn/global 的首项仍为该值)。 */
   readonly primaryScheme: string;
-  /** 历史 scheme,永久保持注册 + 解析兼容(存量链接不能死)。只增不减。 */
+  /** 历史正式版 scheme,永久保持注册 + 解析兼容(存量链接不能死)。只增不减。 */
   readonly legacySchemes: readonly string[];
+  /**
+   * OS 级深链 scheme,按构建身份派生。cn/global 必须逐字保持
+   * `['cindy', 'xdt-maker']`:托管登录回调与存量分享链接都依赖这两个值。
+   * dev 必须使用不重叠的专属 scheme,否则安装开发包会抢走正式版登录回调。
+   */
+  readonly deepLinkSchemesByRegion: Readonly<Record<CindyRegion, readonly string[]>>;
   /**
    * Electron 默认派生的 userData 目录名(= package.json productName)。已发布的
    * cn 构建沿用该目录；global 继续使用历史独立目录 `CindyGlobal`，避免启动时
@@ -141,10 +147,11 @@ export interface BrandIdentity {
  * 区域差异字段:appId、userDataDirName 按区域派生(cn/global 是两个可并存
  * 的系统身份,数据分库);executableName 自 2026-07-26 起 cn/global 同值
  * (显示统一为 Cindy,放弃文件层双装隔离,见 executableNameByRegion doc),
- * 仅 dev 保持独立名;深链 scheme、展示名 BRAND_NAME、cdnPrefix、dbFilePrefix、
- * updaterName 两区共用(scheme 共用是 owner 决策:双装时后注册者赢,单装用户
- * 无感;cdnPrefix 共用因发布渠道靠不同 OSS bucket 区分;db 前缀因 userData
- * 已分目录无需再区分)。
+ * 仅 dev 保持独立名。深链 scheme 在正式 cn/global 间继续共用 cindy +
+ * xdt-maker(存量登录回调/分享链接兼容),dev 改用专属组，避免安装开发包后
+ * 抢占正式协议。展示名 BRAND_NAME、cdnPrefix、dbFilePrefix、updaterName 两个
+ * 正式区域共用(cdnPrefix 共用因发布渠道靠不同 OSS bucket 区分;db 前缀因
+ * userData 已分目录无需再区分)。
  */
 export const BRAND_IDENTITY: BrandIdentity = Object.freeze({
   displayName: BRAND_NAME,
@@ -163,6 +170,13 @@ export const BRAND_IDENTITY: BrandIdentity = Object.freeze({
   }),
   primaryScheme: 'cindy',
   legacySchemes: Object.freeze(['xdt-maker']),
+  deepLinkSchemesByRegion: Object.freeze({
+    // 正式版兼容红线:生产托管 OAuth 回调与历史分享链接均依赖这两项。
+    cn: Object.freeze(['cindy', 'xdt-maker']),
+    global: Object.freeze(['cindy', 'xdt-maker']),
+    // 开发包不得注册或解析正式 scheme,避免抢走正式 Cindy 的登录回调。
+    dev: Object.freeze(['cindydev', 'xdt-maker-dev']),
+  }),
   userDataDirName: 'Cindy',
   userDataDirNameByRegion: Object.freeze({
     cn: 'Cindy',
@@ -219,7 +233,18 @@ export function brandUserDataDirName(
   return identity.userDataDirNameByRegion[region];
 }
 
-/** 深链需要注册/解析的全部 scheme(主 + 历史),顺序稳定:主 scheme 恒为首位。 */
+/** 按构建身份取深链注册/解析集合；首项是该构建生成新链接时使用的主 scheme。 */
+export function brandDeepLinkSchemes(
+  region: CindyRegion = DEFAULT_CINDY_REGION,
+  identity: BrandIdentity = BRAND_IDENTITY,
+): readonly string[] {
+  return identity.deepLinkSchemesByRegion[region];
+}
+
+/**
+ * 正式版深链兼容集合(主 + 历史)。保留旧 helper 给不具备构建区域上下文的共享
+ * 投影代码使用；Desktop OS 注册、生成与解析必须走 `brandDeepLinkSchemes(region)`。
+ */
 export function allDeepLinkSchemes(identity: BrandIdentity = BRAND_IDENTITY): readonly string[] {
   return [identity.primaryScheme, ...identity.legacySchemes];
 }

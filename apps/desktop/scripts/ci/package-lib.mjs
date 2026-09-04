@@ -70,9 +70,11 @@ export function parsePackageArgs(argv, defaults = {}) {
     skipSmoke: false,
     allowUnsigned: false,
     noSign: false,
+    endpointManifestBasesFile: null,
   };
   let archFlag = null;
   let regionSpecified = false;
+  let endpointManifestBasesFileSpecified = false;
   const takeValue = (flag, i) => {
     const v = argv[i + 1];
     if (!v || v.startsWith('--')) throw new Error(`${flag} 需要一个值`);
@@ -93,6 +95,14 @@ export function parsePackageArgs(argv, defaults = {}) {
         i++;
         break;
       case '--version': out.versionSpec = takeValue(a, i); i++; break;
+      case '--endpoint-manifest-bases-file':
+        if (endpointManifestBasesFileSpecified) {
+          throw new Error('--endpoint-manifest-bases-file 只能传一次');
+        }
+        endpointManifestBasesFileSpecified = true;
+        out.endpointManifestBasesFile = takeValue(a, i);
+        i++;
+        break;
       case '--skip-smoke': out.skipSmoke = true; break;
       case '--allow-unsigned': out.allowUnsigned = true; break;
       // 主动跳过签名(即使签名配置在手)。外部签名命令依赖发布方自己的构建
@@ -100,7 +110,7 @@ export function parsePackageArgs(argv, defaults = {}) {
       // (放行"缺配置")语义互补。
       case '--no-sign': out.noSign = true; out.allowUnsigned = true; break;
       default:
-        throw new Error(`未知参数: ${a}(支持 --platform/--arch/--region/--version/--skip-smoke/--allow-unsigned/--no-sign)`);
+        throw new Error(`未知参数: ${a}(支持 --platform/--arch/--region/--version/--endpoint-manifest-bases-file/--skip-smoke/--allow-unsigned/--no-sign)`);
     }
   }
 

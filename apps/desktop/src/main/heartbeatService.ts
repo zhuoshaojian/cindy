@@ -2,7 +2,8 @@
  * heartbeatService.ts — Desktop main 进程的心跳 host 适配层。
  *
  * 职责:
- *  - 从运行期端点清单读 endpoint(getClientEndpoint('heartbeatUrl'))
+ *  - 从运行期端点清单读 endpoint(getClientEndpoint('heartbeatUrl'));清单没有这一项时
+ *    (自托管部署常见)按「该部署未启用云端心跳」处理,不启动客户端
  *  - 把 @cindy/heartbeat-client 按 app-mode 接入 authManager:
  *      · 仅已验证的 cloud 会话(mode === 'cloud' 且 isAuthenticated 且有 user)才启动
  *        云端心跳;signed-out / local 模式不与云端联络(account-free 本地模式的
@@ -48,9 +49,20 @@ function verifiedCloudUserId(state: AuthStateSnapshot): string | null {
 
 function startCloudHeartbeat(uid: string): void {
   // 运行期端点清单(initClientEndpoints 在 app.ready 内早于本服务,清单全权无兜底)
-  const endpoint = getClientEndpoint('heartbeatUrl');
+  const endpoint = getClientEndpoint('heartbeatUrl').trim();
+  // 归属先记下,即使下面因缺少 endpoint 不启动 —— applyAuthState 靠它去重,否则每个
+  // auth 事件都会重跑一遍并重复记日志。
   handleUid = uid;
   handleRealm = authManager.getActiveAuthRealm();
+  // 清单缺少 heartbeatUrl 时 clientEndpointsService 按设计归一为空串(不阻断启动),
+  // 语义就是「这个部署没有心跳端点」。必须在这里止住:heartbeat-client 会拼
+  // `${endpoint}/heartbeat`,空串拼出相对路径 /heartbeat,fetch 直接 TypeError,而
+  // 客户端契约是单次失败只 warn 不抛 —— 结果是每个 interval 刷一条 WARN 且永不自愈
+  // (自托管 dev 实测每分钟一条)。
+  if (!endpoint) {
+    log.info('cloud heartbeat disabled: no heartbeatUrl in the runtime endpoint manifest');
+    return;
+  }
   handle = createHeartbeatClient({
     endpoint,
     intervalMs: DEFAULT_INTERVAL_MS,
@@ -84,14 +96,15 @@ function stopCloudHeartbeat(): void {
 function applyAuthState(state: AuthStateSnapshot): void {
   const uid = verifiedCloudUserId(state);
   if (!uid) {
-    if (handle) {
-      stopCloudHeartbeat();
-      log.info('heartbeat client stopped (left verified cloud session)');
-    }
+    // stop 无条件走一遍:心跳因缺少 endpoint 未启动时 handle 是 null 但归属已记下,
+    // 不清掉的话回到同一 cloud 归属会被下面的去重跳过、再也不重新判定。
+    const wasRunning = handle !== null;
+    stopCloudHeartbeat();
+    if (wasRunning) log.info('heartbeat client stopped (left verified cloud session)');
     return;
   }
   const realm = authManager.getActiveAuthRealm();
-  if (handle && handleUid === uid && handleRealm === realm) return;
+  if (handleUid === uid && handleRealm === realm) return;
   if (handle) stopCloudHeartbeat();
   startCloudHeartbeat(uid);
 }

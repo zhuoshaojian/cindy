@@ -77,10 +77,15 @@ export interface CredentialsSyncDeps {
   onStatusChange(status: ModelAccessStatus): void;
   /** 自动重试退避(默认 [2s, 8s];首次尝试不算)。 */
   retryDelaysMs?: number[];
+  /**
+   * Optional retry policy. Returning null stops automatic recovery; returning
+   * a delay keeps retrying. Pod mode uses this for a capped long-term backoff.
+   */
+  nextRetryDelayMs?(attempt: number): number | null;
   sleep?(ms: number): Promise<void>;
   log?: {
-    info(msg: string): void;
-    warn(msg: string): void;
+    info(msg: string, context?: unknown): void;
+    warn(msg: string, context?: unknown): void;
   };
 }
 
@@ -133,18 +138,24 @@ export function createCredentialsSync(deps: CredentialsSyncDeps): CredentialsSyn
   function snapshot(
     state: ModelAccessStatus['state'],
     errorCode?: string,
+    consecutiveFailures?: number,
   ): ModelAccessStatus {
     return {
       state,
       ...(errorCode ? { errorCode } : {}),
+      ...(consecutiveFailures ? { consecutiveFailures } : {}),
       source: deps.store.getSource(),
       endpoint: deps.store.getServerEndpoint(),
       accountTier: null,
     };
   }
 
-  function setStatus(state: ModelAccessStatus['state'], errorCode?: string): ModelAccessStatus {
-    status = snapshot(state, errorCode);
+  function setStatus(
+    state: ModelAccessStatus['state'],
+    errorCode?: string,
+    consecutiveFailures?: number,
+  ): ModelAccessStatus {
+    status = snapshot(state, errorCode, consecutiveFailures);
     deps.onStatusChange(status);
     return status;
   }
@@ -154,34 +165,56 @@ export function createCredentialsSync(deps: CredentialsSyncDeps): CredentialsSyn
     myEpoch: number,
     state: ModelAccessStatus['state'],
     errorCode?: string,
+    consecutiveFailures?: number,
   ): ModelAccessStatus {
     if (myEpoch !== epoch) return status;
-    return setStatus(state, errorCode);
+    return setStatus(state, errorCode, consecutiveFailures);
   }
 
-  /** 单次拉取 + 落盘。返回终局状态;'retryable' 可退避重试;'stale' = 世代已过期。 */
-  async function attemptOnce(myEpoch: number): Promise<ModelAccessStatus | 'retryable' | 'stale'> {
+  /** 单次拉取 + 落盘。可重试结果保留服务端子码，最终状态与日志不丢诊断信息。 */
+  async function attemptOnce(
+    myEpoch: number,
+  ): Promise<ModelAccessStatus | { kind: 'retryable'; errorCode: string } | 'stale'> {
     let payload: CredentialsPayload;
     try {
       payload = await deps.fetchCredentials();
     } catch (err) {
       if (myEpoch !== epoch) return 'stale';
       const e = asFetchError(err);
-      if (e.statusCode === 503 || e.code === 'MODEL_ACCESS_DISABLED') {
-        deps.log?.info('model-access disabled on server, falling back to manual key flow');
-        return setStatusIfFresh(myEpoch, 'disabled');
+      if (e.code === 'MODEL_ACCESS_DISABLED') {
+        deps.log?.info('model-access disabled on server, falling back to manual key flow', {
+          code: e.code,
+          statusCode: e.statusCode,
+        });
+        return setStatusIfFresh(myEpoch, 'disabled', e.code);
       }
-      if (e.statusCode === 403 || e.code === 'ORG_NOT_SUPPORTED') {
-        deps.log?.info('org not supported by model-access, xd provider unavailable');
-        return setStatusIfFresh(myEpoch, 'unsupported');
+      if (e.code === 'ORG_NOT_SUPPORTED') {
+        deps.log?.info('org not supported by model-access, xd provider unavailable', {
+          code: e.code,
+          statusCode: e.statusCode,
+        });
+        return setStatusIfFresh(myEpoch, 'unsupported', e.code);
       }
-      deps.log?.warn(`model-access credentials fetch failed: ${e.code} (${e.statusCode})`);
-      return 'retryable';
+      if (e.code === 'AD_ACCOUNT_MISSING') {
+        deps.log?.warn('model-access credentials unavailable because adAccount is missing', {
+          code: e.code,
+          statusCode: e.statusCode,
+        });
+        return setStatusIfFresh(myEpoch, 'failed', e.code);
+      }
+      deps.log?.warn('model-access credentials fetch failed', {
+        code: e.code,
+        statusCode: e.statusCode,
+      });
+      return { kind: 'retryable', errorCode: e.code };
     }
     if (myEpoch !== epoch) return 'stale'; // 响应归属旧账号,丢弃
     if (!isValidCredentialsPayload(payload)) {
-      deps.log?.warn('model-access credentials response invalid (empty key / bad endpoint), kept local');
-      return 'retryable';
+      deps.log?.warn(
+        'model-access credentials response invalid (empty key / bad endpoint), kept local',
+        { code: 'INVALID_RESPONSE' },
+      );
+      return { kind: 'retryable', errorCode: 'INVALID_RESPONSE' };
     }
     return applyPayload(payload, myEpoch);
   }
@@ -208,14 +241,23 @@ export function createCredentialsSync(deps: CredentialsSyncDeps): CredentialsSyn
   async function runSync(myEpoch: number): Promise<ModelAccessStatus> {
     if (myEpoch !== epoch) return status;
     setStatus('syncing');
+    let consecutiveFailures = 0;
     for (let attempt = 0; ; attempt++) {
       const result = await attemptOnce(myEpoch);
       if (result === 'stale' || myEpoch !== epoch) return status; // 登出/换账号,放弃本轮
-      if (result !== 'retryable') return result;
-      if (attempt >= retryDelays.length) {
-        return setStatusIfFresh(myEpoch, 'failed', 'SYNC_FAILED');
+      if (!('kind' in result)) return result;
+      consecutiveFailures += 1;
+      const retryDelayMs = deps.nextRetryDelayMs
+        ? deps.nextRetryDelayMs(attempt)
+        : (retryDelays[attempt] ?? null);
+      if (retryDelayMs === null) {
+        return setStatusIfFresh(myEpoch, 'failed', result.errorCode);
       }
-      await sleep(retryDelays[attempt]);
+      // 还要继续重试:把「失败了几次、上次什么码」写进可观测状态。Pod 的退避永不
+      // 耗尽,上面的 `failed` 分支不可达,不记在这里就只剩日志(status.json 看不到)。
+      // 状态只报事实,「几次算持续故障」的策略在 cloud-runtime/model-access.ts。
+      setStatusIfFresh(myEpoch, 'syncing', result.errorCode, consecutiveFailures);
+      await sleep(retryDelayMs);
       if (myEpoch !== epoch) return status;
     }
   }

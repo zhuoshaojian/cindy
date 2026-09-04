@@ -171,6 +171,8 @@ export interface DeviceInfo {
   memoryGb?: number;
   osVersion?: string;
   modelLabel?: string;
+  /** cloud provisioning marker; omitted for regular devices */
+  kind?: 'cloud';
 }
 
 /** presence-changed 广播 / REST 设备列表共用的设备快照 */

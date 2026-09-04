@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "platform": "linux-x64",
+  "assets": {
+    "claude": {
+      "format": "raw-gzip",
+      "version": "2.1.219",
+      "relativePath": "claude-code/2.1.219/linux-x64/claude.gz",
+      "binarySha256": "22cfd6f5b3061c0391ba84e9cf8c9deaa37783aac18b004d42ec061e98f00691",
+      "binarySize": 275004400
+    },
+    "codex": {
+      "format": "raw-gzip",
+      "version": "0.145.0",
+      "relativePath": "codex/0.145.0/linux-x64/codex.gz",
+      "binarySha256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "binarySize": 310730800
+    },
+    "ripgrep": {
+      "format": "raw-gzip",
+      "version": "15.1.0",
+      "relativePath": "ripgrep/15.1.0/linux-x64/rg.gz",
+      "binarySha256": "ebeaf56f8a25e102e9419933423738b3a2a613a444fd749d695e15eba53f71f2",
+      "binarySize": 5445512
+    },
+    "pi": {
+      "format": "directory-tar-gzip",
+      "version": "0.83.0",
+      "relativePath": "pi/0.83.0/linux-x64/pi-linux-x64.tar.gz",
+      "archiveSha256": "b0625eb623197b0afe20c870d21ef2f34481f1504e5777df3f698a66c7636f5f",
+      "archiveSize": 43612248,
+      "binaryName": "pi"
+    }
+  }
+}

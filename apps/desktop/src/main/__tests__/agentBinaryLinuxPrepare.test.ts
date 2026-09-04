@@ -146,6 +146,7 @@ describe('packaged Linux agent binary prepare', () => {
   });
 
   it('falls back to the runtime chain when the CDN chain reports asset_missing', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     prepareLinuxRuntimeFallback.mockResolvedValueOnce({
       ready: true,
       binaryPath: '/usr/local/bin/claude',
@@ -166,6 +167,10 @@ describe('packaged Linux agent binary prepare', () => {
       signal: undefined,
       onProgress: expect.any(Function),
     });
+    expect(info).toHaveBeenCalledWith(
+      '[agent-binaries/claude-code] packaged Linux fallback source=system: /usr/local/bin/claude',
+    );
+    info.mockRestore();
   });
 
   it('propagates signal and returns fallback install result when CDN misses', async () => {

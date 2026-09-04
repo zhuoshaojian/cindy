@@ -17,6 +17,8 @@ const compactBootstrapSource = bootstrapSource.replace(/\s+/g, ' ');
 describe('account provider readiness wiring', () => {
   it('arms provider discovery without keeping local-db ensure-ready behind it', () => {
     const workdirSweep = bootstrapSource.indexOf("logStartupPhase('dialogue-workdir-sweep')");
+    // 上游 2026-08 把常规路径的 readiness 入口写成 barrier.start(...);
+    // startAccountProviderReadiness 包装现在只服务 Pod 路径。
     const barrierStart = compactBootstrapSource.indexOf('accountProviderReadinessBarrier.start(');
     const readableDone = compactBootstrapSource.indexOf(
       "logStartupPhase('post-db-hooks-scheduled')",
@@ -29,6 +31,7 @@ describe('account provider readiness wiring', () => {
     expect(compactWorkdirSweep).toBeGreaterThanOrEqual(0);
     expect(barrierStart).toBeGreaterThan(compactWorkdirSweep);
     expect(readableDone).toBeGreaterThan(barrierStart);
+    expect(compactBootstrapSource).not.toContain('await startAccountProviderReadiness({');
     expect(compactBootstrapSource).not.toContain('await accountProviderReadinessBarrier.start(');
   });
 
@@ -189,16 +192,47 @@ describe('account provider readiness wiring', () => {
 
   it('starts autonomous route consumers only after provider readiness settles', () => {
     const settledContinuation = bootstrapSource.indexOf('void providerReadiness.then(() =>');
-    const integrations = bootstrapSource.indexOf(
-      'startAccountIntegrationsAfterOwnerDbReady',
+    const consumers = bootstrapSource.indexOf(
+      'startAccountReadinessConsumers(',
       settledContinuation,
     );
-    const scheduler = bootstrapSource.indexOf('attemptStartScheduler()', settledContinuation);
 
     expect(settledContinuation).toBeGreaterThanOrEqual(0);
-    expect(integrations).toBeGreaterThan(settledContinuation);
-    expect(scheduler).toBeGreaterThan(settledContinuation);
+    expect(consumers).toBeGreaterThan(settledContinuation);
     expect(bootstrapSource).not.toContain('await attemptStartScheduler()');
+  });
+
+  /**
+   * Desktop and the cloud must arm the *same* consumer list. They used to keep
+   * per-caller copies, and the cloud copy silently lacked the scheduler: remote
+   * automations answered SCHEDULER_NOT_READY, and the missing scheduler also made
+   * its activity counters unreadable, pinning the instance to `activity-unknown`
+   * so it never looked idle enough to auto-update.
+   */
+  it('arms the cloud bootstrap from the same consumer list as Desktop', () => {
+    const podReadiness = bootstrapSource.indexOf('startPodAccountProviderReadiness({');
+    const podConsumers = bootstrapSource.indexOf('startReadinessConsumers: () =>', podReadiness);
+    const sharedList = bootstrapSource.indexOf('startAccountReadinessConsumers(', podConsumers);
+
+    expect(podReadiness).toBeGreaterThanOrEqual(0);
+    expect(podConsumers).toBeGreaterThan(podReadiness);
+    expect(sharedList).toBeGreaterThan(podConsumers);
+  });
+
+  it('arms Pod provider readiness without delaying device-link startup', () => {
+    const providerStart = bootstrapSource.indexOf('startPodAccountProviderReadiness({');
+    const deviceLinkStart = bootstrapSource.indexOf(
+      'await initializePodDeviceLink(podProvisioningMode, {',
+      providerStart,
+    );
+
+    expect(providerStart).toBeGreaterThanOrEqual(0);
+    expect(deviceLinkStart).toBeGreaterThan(providerStart);
+    expect(bootstrapSource.slice(providerStart - 16, providerStart)).not.toContain('await');
+    // 常规路径与 Pod 路径都直接用 barrier.start(Pod 需要 handle 标记发现完成),
+    // 不再经 startAccountProviderReadiness 包装绕一层。
+    expect(bootstrapSource).not.toContain('startAccountProviderReadiness({');
+    expect(bootstrapSource).toContain('accountProviderReadinessBarrier.start(scopeKey, task, onError)');
   });
 
   it('clears owner-scoped custom routes before replacing account runtimes', () => {
