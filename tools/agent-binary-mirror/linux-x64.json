@@ -25,10 +25,10 @@
     },
     "pi": {
       "format": "directory-tar-gzip",
-      "version": "0.83.0",
-      "relativePath": "pi/0.83.0/linux-x64/pi-linux-x64.tar.gz",
-      "archiveSha256": "b0625eb623197b0afe20c870d21ef2f34481f1504e5777df3f698a66c7636f5f",
-      "archiveSize": 43612248,
+      "version": "0.84.4",
+      "relativePath": "pi/0.84.4/linux-x64/pi-linux-x64.tar.gz",
+      "archiveSha256": "c2f3c3e6a1850bd87654cc3ca8811013272397c3d042a4e2a64c43ee1b423972",
+      "archiveSize": 42464648,
       "binaryName": "pi"
     }
   }

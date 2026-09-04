@@ -571,3 +571,42 @@ test('workflow never grants registry or OIDC permissions and branch builds canno
   assert.doesNotMatch(workflow, /promotable digest|exact digest handoff/i);
   assert.match(workflow, /Promotion and signing are intentionally disabled in Build-1/);
 });
+
+// 回归:rebase 把上游新增的 apps/mobile/modules/xdt-ios-action-sheet 带进 lockfile,
+// 而 Dockerfile 的 COPY 清单与 build-context 白名单各自硬枚举了当时的 5 个模块,两处都
+// 没跟上。pnpm 即使 --filter desktop 也会校验每个 file: 快照的清单,于是构建在依赖安装
+// 阶段 ENOENT 挂掉 —— 而且没有任何单测覆盖这条,只有真去构建镜像才看得见。
+// 显式 COPY 清单是刻意保留的第二道边界(不改成动态推导),所以用这条测试守住三方一致。
+test('mobile module manifests stay in sync across lockfile, Dockerfile and build context', () => {
+  const lockfileModules = new Set(
+    [...read('pnpm-lock.yaml').matchAll(/apps\/mobile\/modules\/([A-Za-z0-9._-]+)/g)]
+      .map((match) => match[1]),
+  );
+  assert.ok(lockfileModules.size > 0, 'lockfile should reference at least one Mobile module');
+
+  const dockerfileModules = new Set(
+    [...read('deploy/cloud-instance/Dockerfile')
+      .matchAll(/^COPY apps\/mobile\/modules\/([A-Za-z0-9._-]+)\/package\.json /gm)]
+      .map((match) => match[1]),
+  );
+  assert.deepEqual(
+    [...dockerfileModules].sort(),
+    [...lockfileModules].sort(),
+    'Dockerfile COPY list must name exactly the Mobile modules the lockfile snapshots',
+  );
+
+  // 白名单必须放行每个模块的 package.json,且仍然只放行 package.json ——
+  // 不能因为补模块而把 Mobile 源码带进云端镜像上下文。
+  for (const moduleName of lockfileModules) {
+    assert.equal(
+      isCloudRuntimeBuildInput(`apps/mobile/modules/${moduleName}/package.json`),
+      true,
+      `build context must include apps/mobile/modules/${moduleName}/package.json`,
+    );
+    assert.equal(
+      isCloudRuntimeBuildInput(`apps/mobile/modules/${moduleName}/src/index.ts`),
+      false,
+      `build context must not include apps/mobile/modules/${moduleName} source`,
+    );
+  }
+});
