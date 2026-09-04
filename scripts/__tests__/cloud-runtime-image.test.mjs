@@ -610,3 +610,37 @@ test('mobile module manifests stay in sync across lockfile, Dockerfile and build
     );
   }
 });
+
+// 浏览器控制运行时只在 findChromeExecutableLinux 的固定路径清单里找可执行文件,
+// 装了个不在清单上的浏览器等于没装(而 Pod 里没有 xdg-settings,更高优先级的
+// detectDefaultChromiumExecutableLinux 永远返回 null,落不到别处)。这条把
+// Dockerfile 装的包与那份清单绑在一起,免得一方改了另一方静默失效。
+test('image installs a browser the control runtime can actually discover', () => {
+  const dockerfile = read('deploy/cloud-instance/Dockerfile');
+  const installed = new Set(
+    dockerfile
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => /^(chromium|google-chrome[a-z-]*|microsoft-edge[a-z-]*|brave-browser[a-z-]*)\s*\\?$/.test(line))
+      .map((line) => line.replace(/\s*\\$/, '')),
+  );
+  assert.ok(
+    installed.size > 0,
+    'Dockerfile must apt-install a browser for the browser-control runtime',
+  );
+
+  const detection = read(
+    'packages/browser-control-runtime/src/_generated/extension/src/browser/chrome.executables.ts',
+  );
+  const linuxBlock = detection.slice(
+    detection.indexOf('export function findChromeExecutableLinux'),
+    detection.indexOf('function findGoogleChromeExecutableLinux'),
+  );
+  assert.ok(linuxBlock.length > 0, 'findChromeExecutableLinux block not found');
+  for (const pkg of installed) {
+    assert.ok(
+      linuxBlock.includes(`/usr/bin/${pkg}`),
+      `installed browser ${pkg} is not on the Linux detection candidate list`,
+    );
+  }
+});

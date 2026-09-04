@@ -30,9 +30,17 @@ RUN if [ -n "${DEBIAN_MIRROR_BASE_URL}" ]; then \
         /etc/apt/sources.list.d/debian.sources; \
     fi
 
+# `chromium` is the browser-control runtime's browser, not Electron's. Electron
+# bundles its own Chromium for rendering, but browser automation launches a
+# separate executable and only finds it at one of the fixed paths in
+# `findChromeExecutableLinux` — `/usr/bin/chromium` is the one Debian provides.
+# Without it the browser panel and browser tools report "no browser detected".
+# The Chromium shared libraries below are already required by Electron, so this
+# adds the binary rather than a new dependency tree.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
+    chromium \
     curl \
     git \
     jq \
