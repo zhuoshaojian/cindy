@@ -20,6 +20,7 @@ import {
   supportsCdnFallback,
   tryReuseFromSiblingWorktree,
 } from '../ensure-agent-binaries.mjs';
+import { supportsAgentBinaryMirror } from '../agent-binary-mirror.mjs';
 import { verifyDirDistManifest, writeDirDistManifest } from '../../tools/shared/dir-dist-manifest.mjs';
 
 test('directory distributions never use the single-binary CDN fallback', () => {
@@ -29,6 +30,7 @@ test('directory distributions never use the single-binary CDN fallback', () => {
 
 test('dev startup prepares every supported runtime, including Pi', () => {
   assert.deepEqual(SUPPORTED_BINARY_KINDS, ['claude', 'codex', 'ripgrep', 'pi']);
+  assert.equal(SUPPORTED_BINARY_KINDS.every(supportsAgentBinaryMirror), true);
 
   const devGuard = fs.readFileSync(
     new URL('../ensure-dev-runtime-assets.mjs', import.meta.url),

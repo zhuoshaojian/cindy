@@ -15,6 +15,100 @@
 /** ensureReady 失败结果的稳定错误码集合。 */
 export type EnsureReadyErrorCode = 'DB_INIT_FAILED' | 'DB_CORRUPT_NO_BACKUP' | 'MIGRATE_FAILED';
 
+export interface LocalDbFatalPresentationInput {
+  code: EnsureReadyErrorCode;
+  title: string;
+  detail: string;
+  headlessPodRuntime: boolean;
+}
+
+export interface LocalDbFatalPresentationDeps {
+  logError: (message: string, error?: unknown) => void;
+  activateApp: () => void;
+  showNativeDialog: () => void;
+}
+
+export interface VisibleNativeStartupDialogInput {
+  event: string;
+  context?: Record<string, unknown>;
+}
+
+export interface VisibleNativeStartupDialogDeps<TResult> {
+  logBeforePresent: (message: string) => void;
+  activateApp: () => void;
+  showNativeDialog: () => TResult;
+}
+
+/**
+ * Native startup dialogs can run before the first BrowserWindow exists. Keep
+ * their observability and macOS activation ordering behind one boundary so a
+ * synchronous modal cannot leave the user with a silent, apparently hung app.
+ * Callers must activate without stealing focus: startup diagnostics must not
+ * interrupt unrelated foreground work in the regular desktop build.
+ */
+export function presentVisibleNativeStartupDialog<TResult>(
+  input: VisibleNativeStartupDialogInput,
+  deps: VisibleNativeStartupDialogDeps<TResult>,
+): TResult {
+  deps.logBeforePresent(
+    JSON.stringify({
+      event: input.event,
+      ...(input.context ?? {}),
+    }),
+  );
+  deps.activateApp();
+  return deps.showNativeDialog();
+}
+
+/**
+ * Single native-dialog boundary for fatal local DB startup failures.
+ * Strict headless Pods log the structured failure and leave process exit to
+ * the headless startup coordinator; renderer-owned migrations keep their GUI
+ * recovery screen, and ordinary Desktop failures retain the native dialog.
+ */
+export function presentLocalDbFatalError(
+  input: LocalDbFatalPresentationInput,
+  deps: LocalDbFatalPresentationDeps,
+): void {
+  if (input.headlessPodRuntime) {
+    deps.logError(
+      JSON.stringify({
+        event: 'localDb.fatal.headless',
+        code: input.code,
+        title: input.title,
+        detail: input.detail,
+      }),
+    );
+    return;
+  }
+  if (!shouldShowNativeFatalDialog(input.code)) {
+    deps.logError(
+      JSON.stringify({
+        event: 'localDb.fatal.rendererOwned',
+        code: input.code,
+        title: input.title,
+        detail: input.detail,
+      }),
+    );
+    return;
+  }
+  presentVisibleNativeStartupDialog(
+    {
+      event: 'localDb.fatal.native',
+      context: {
+        code: input.code,
+        title: input.title,
+        detail: input.detail,
+      },
+    },
+    {
+      logBeforePresent: deps.logError,
+      activateApp: deps.activateApp,
+      showNativeDialog: deps.showNativeDialog,
+    },
+  );
+}
+
 /** MIGRATE_FAILED 由 renderer 全屏恢复界面接管 UX；其余 code 维持原生对话框。 */
 export function shouldShowNativeFatalDialog(code: EnsureReadyErrorCode): boolean {
   return code !== 'MIGRATE_FAILED';

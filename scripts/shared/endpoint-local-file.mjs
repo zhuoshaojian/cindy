@@ -3,8 +3,9 @@
  *
  * 背景:dev 默认读仓内 Global 正本 config/endpoint.global.json(远程生产/测试值);
  * 「连本地 server」的 local 模式改由本文件生成的 endpoint.local.json 承载——
- * auth / device-link / oss / model-access / voice / github / skillhub / plugin 指向 localhost
- * 八件套(oss / model-access / voice / github / skillhub / plugin 必须跟 auth 同侧:都用
+ * auth / device-link / cloud-instance / oss / model-access / voice / github /
+ * skillhub / plugin 指向 localhost 九件套(oss / model-access / voice / github /
+ * skillhub / plugin 必须跟 auth 同侧:都用
  * AUTH_ISSUER 验签,本地 auth 签发的 token 过不了生产侧验签),
  * 其余字段(oauth broker / heartbeat / slack hook / website / 网关 / 更新链
  * CDN)照抄所选 region 正本(本地不起这些服务,沿用远程值,消费方各自的
@@ -20,6 +21,7 @@ import path from 'node:path';
 
 const LOCAL_AUTH_BASE_URL = 'http://localhost:3344';
 const LOCAL_DEVICE_LINK_BASE_URL = 'http://localhost:3335';
+const LOCAL_CLOUD_INSTANCE_BASE_URL = 'http://127.0.0.1:3343';
 const LOCAL_OSS_BASE_URL = 'http://localhost:3340';
 const LOCAL_MODEL_ACCESS_BASE_URL = 'http://localhost:3339';
 const LOCAL_VOICE_BASE_URL = 'http://localhost:3342';
@@ -67,10 +69,11 @@ export function generateEndpointLocalFile({ repoRoot, region = 'global' }) {
   const local = {
     _note:
       '由 scripts/shared/endpoint-local-file.mjs 生成(restart:desktop:local / dev:desktop),' +
-      `每次启动整文件重写,手改会丢;localhost 八件套之外的字段照抄 config/${fileName}。`,
+      `每次启动整文件重写,手改会丢;localhost 九件套之外的字段照抄 config/${fileName}。`,
     ...source,
     authApiBaseUrl: LOCAL_AUTH_BASE_URL,
     deviceLinkApiBaseUrl: LOCAL_DEVICE_LINK_BASE_URL,
+    cloudInstanceApiBaseUrl: LOCAL_CLOUD_INSTANCE_BASE_URL,
     ossApiBaseUrl: LOCAL_OSS_BASE_URL,
     modelAccessApiBaseUrl: LOCAL_MODEL_ACCESS_BASE_URL,
     voiceApiBaseUrl: LOCAL_VOICE_BASE_URL,

@@ -287,7 +287,10 @@ export class CindyAuthClient {
     });
   }
 
-  refresh(refreshToken: string): Promise<AuthTokenPair> {
+  refresh(
+    refreshToken: string,
+    options: { timeoutMs?: number } = {},
+  ): Promise<AuthTokenPair> {
     return this.request(
       "/api/auth/refresh",
       tokenPairSchema,
@@ -295,7 +298,7 @@ export class CindyAuthClient {
         refreshToken,
         deviceId: this.options.deviceId,
       },
-      { timeoutMs: 0 },
+      { timeoutMs: options.timeoutMs ?? 0 },
     );
   }
 
@@ -323,12 +326,17 @@ export class CindyAuthClient {
     );
   }
 
-  refreshAccount(accountRefreshToken: string): Promise<AccountTokenPair> {
+  refreshAccount(
+    accountRefreshToken: string,
+    options: { timeoutMs?: number } = {},
+  ): Promise<AccountTokenPair> {
     return this.request(
       "/api/auth/account/refresh",
       accountTokenPairSchema,
       { accountRefreshToken, deviceId: this.options.deviceId },
-      { timeoutMs: 0 },
+      // 省略 options 时保持上游的不限时行为；Pod 供给式登录必须能传一个有限
+      // 超时，否则冷启动会挂在一个永不返回的请求上而不是进入退避重试。
+      { timeoutMs: options.timeoutMs ?? 0 },
     );
   }
 

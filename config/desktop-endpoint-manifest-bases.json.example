@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "region": "cn",
+  "currentManifestBaseUrl": "https://manifests-cn.example.invalid/cindy",
+  "peerManifestBaseUrl": "https://manifests-global.example.invalid/cindy"
+}

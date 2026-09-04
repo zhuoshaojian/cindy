@@ -13,6 +13,7 @@ const VALID_MANIFEST = {
   authApiBaseUrl: 'https://auth.example.com',
   authDesktopCallbackUrl: 'https://auth.example.com/api/auth/desktop/callback',
   deviceLinkApiBaseUrl: 'https://device-link.example.com',
+  cloudInstanceApiBaseUrl: 'https://cloud-instance.example.com',
   oauthBrokerApiBaseUrl: 'https://oauth.example.com',
   ossApiBaseUrl: 'https://oss.example.com',
   heartbeatUrl: 'https://heartbeat.example.com',
@@ -139,6 +140,11 @@ describe('parseClientEndpointManifest(字段可按 region 缺省)', () => {
 
   it.each([
     ['https 字段给 http', { authApiBaseUrl: 'http://auth.example.com' }, 'invalid-protocol:authApiBaseUrl'],
+    [
+      'cloud-instance 字段给 http',
+      { cloudInstanceApiBaseUrl: 'http://127.0.0.1:3343' },
+      'invalid-protocol:cloudInstanceApiBaseUrl',
+    ],
     ['wss 字段给 ws', { slackHookWsUrl: 'ws://hook.example.com' }, 'invalid-protocol:slackHookWsUrl'],
     ['cdnBaseUrl 给 http', { cdnBaseUrl: 'http://cdn.example.com' }, 'invalid-protocol:cdnBaseUrl'],
     ['非 URL', { websiteUrl: 'not a url' }, 'invalid-field:websiteUrl'],
@@ -210,6 +216,7 @@ describe('allowHttp 宽松模式(仅 dev 本地文件路径)', () => {
     authApiBaseUrl: 'http://localhost:3344',
     deviceLinkApiBaseUrl: 'http://localhost:3335',
     telegramHookWsUrl: 'ws://localhost:3347',
+    cloudInstanceApiBaseUrl: 'http://127.0.0.1:3343',
     slackHookWsUrl: 'ws://localhost:3346',
   };
 
@@ -227,6 +234,7 @@ describe('allowHttp 宽松模式(仅 dev 本地文件路径)', () => {
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) throw new Error('unreachable');
     expect(result.endpoints.authApiBaseUrl).toBe('http://localhost:3344');
+    expect(result.endpoints.cloudInstanceApiBaseUrl).toBe('http://127.0.0.1:3343');
     expect(result.endpoints.slackHookWsUrl).toBe('ws://localhost:3346');
   });
 

@@ -6,6 +6,7 @@ export * from './brandIdentity.js';
 export * from './commandIntent.js';
 export * from './commandDisplay.js';
 export * from './composerPalette.js';
+export * from './cloudInstance.js';
 export * from './deviceList.js';
 export * from './fileBrowser.js';
 export * from './fileBrowserGrid.js';

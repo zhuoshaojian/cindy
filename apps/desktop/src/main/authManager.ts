@@ -188,6 +188,9 @@ const AUTH_ACCOUNT_VAULT_KEY = 'cindy_auth_accounts_v1';
 const AUTH_ACCOUNT_VAULT_LOCK_FILE = '.cindy-auth-accounts-v1.lock';
 const LEGACY_RESOURCE_REFRESH_TOKEN_KEY = 'cindy_auth_refresh_token';
 const ACCOUNT_DELETION_RECEIPT_KEY = 'cindy_auth_account_deletion_receipt';
+const POD_RESOURCE_REFRESH_TOKEN_KEY = 'cindy_pod_resource_refresh_token';
+const LEGACY_POD_ACCOUNT_REFRESH_TOKEN_KEY = 'cindy_pod_account_refresh_token';
+const POD_MEMBERSHIP_ID_KEY = 'cindy_pod_membership_id';
 const LEGACY_ACCOUNT_REFRESH_TOKEN_KEY = 'cindy_auth_account_refresh_token';
 const LEGACY_REFRESH_TOKEN_KEY = 'refresh_token';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
@@ -341,6 +344,24 @@ async function ensureStableOwnerPostCommit(reason: string): Promise<void> {
   if (isPassiveSharedUserDataInstance()) return;
   await stableOwnerPostCommitCoordinator.ensure(reason);
 }
+/** Rebuilds a headless Pod resource session from its retained resource credential. */
+type ProvisionedSessionRecovery = () => void | Promise<void>;
+
+export type ProvisionedResourceCredentialState =
+  | { kind: 'present'; resourceRefreshToken: string }
+  | { kind: 'definitely-absent' }
+  | { kind: 'temporarily-unreadable' };
+
+export class ProvisionedResourceCredentialTemporarilyUnreadableError extends Error {
+  constructor() {
+    super('Pod resource credential is temporarily unreadable');
+    this.name = 'ProvisionedResourceCredentialTemporarilyUnreadableError';
+  }
+}
+
+let provisionedSessionRecovery: ProvisionedSessionRecovery | null = null;
+let provisionedSessionRecoveryPending = false;
+let provisionedResourceInvalidationPromise: Promise<void> | null = null;
 
 // ── Module-level state ──────────────────────────────────────────────────────
 
@@ -1559,7 +1580,10 @@ function readPersistedRefreshToken(realm = activeAuthRealm): string | null {
 function writePersistedAuthSession(refreshToken: string, realm = activeAuthRealm): boolean {
   const written = writeSafe(AUTH_SESSION_KEY, serializeAuthSessionRecord(realm, refreshToken));
   // v1 记录是唯一权威;legacy 只是给尚未升级的实例看的从属副本,写成功才镜像。
-  if (written) mirrorLegacyResourceRefreshToken(refreshToken, realm);
+  if (written) {
+    mirrorLegacyResourceRefreshToken(refreshToken, realm);
+    mirrorProvisionedResourceRefreshToken(refreshToken);
+  }
   return written;
 }
 
@@ -1588,6 +1612,25 @@ function restorePersistedAuthSessionIfCurrent(
   const removed = removeSafeIfUnchanged(AUTH_SESSION_KEY, expected);
   if (removed === 'deleted' && expectedRealm === AUTH_REGION) {
     removeSafeIfUnchanged(LEGACY_RESOURCE_REFRESH_TOKEN_KEY, expectedRefreshToken);
+  }
+}
+
+/**
+ * A provisioned Pod resource refresh token rotates on the same endpoint as the
+ * ordinary app session. Once the Pod-only recovery key exists, every accepted
+ * runtime rotation must keep that key current so a later cold start never falls
+ * back to a stale predecessor. Ordinary desktop sessions never create it here.
+ */
+function mirrorProvisionedResourceRefreshToken(refreshToken: string): void {
+  if (
+    provisionedSessionRecovery === null &&
+    !provisionedSessionRecoveryPending &&
+    isPersistedSecretAbsent(POD_RESOURCE_REFRESH_TOKEN_KEY)
+  ) {
+    return;
+  }
+  if (!writeSafe(POD_RESOURCE_REFRESH_TOKEN_KEY, refreshToken)) {
+    log.warn('failed to mirror provisioned Pod resource refresh token after rotation');
   }
 }
 
@@ -2470,6 +2513,23 @@ export async function ensureStableOwnerPostCommitTasks(reason: string): Promise<
   await ensureStableOwnerPostCommit(reason);
 }
 
+/** Register the Pod-session rebuild hook; a pending trigger fires as soon as it lands. */
+export function setProvisionedSessionRecovery(
+  recovery: ProvisionedSessionRecovery | null,
+): void {
+  provisionedSessionRecovery = recovery;
+  if (!recovery || !provisionedSessionRecoveryPending) return;
+  provisionedSessionRecoveryPending = false;
+  void Promise.resolve()
+    .then(recovery)
+    .catch((error) => {
+      provisionedSessionRecoveryPending = true;
+      log.error('deferred provisioned resource session recovery trigger failed', {
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+    });
+}
+
 // ── User-level API key sync ─────────────────────────────────────────────────
 //
 // 已移除。XD 网关 key / Mivo key 均为 **本地 only**(Electron safeStorage),
@@ -3206,6 +3266,61 @@ function resetActiveAuthRealmToBuild(): void {
   resetClientEndpointRealm();
 }
 
+/**
+ * Commit the shared authenticated-session state for interactive and
+ * provisioned login paths. Callers retain ownership of any surrounding
+ * account-switch boundary and path-specific login-flow state.
+ */
+function applyAuthenticatedSession(
+  pair: AuthTokenPair,
+  options: {
+    authEpoch?: number;
+    realm?: AuthRegion;
+    refreshTokenAlreadyPersisted?: boolean;
+    user?: CurrentUser;
+    beforeNotify?: () => void;
+    notify?: boolean;
+  } = {},
+): void {
+  const loginEpoch = options.authEpoch ?? ++authStateEpoch;
+  const realm = options.realm ?? activeAuthRealm;
+  accessToken = pair.accessToken;
+  persistedRefreshTokenNeedsIdentityCheck = false;
+  clearReplacementIntegrationReloadTimers();
+  activeAuthRealm = realm;
+  if (!options.refreshTokenAlreadyPersisted) {
+    writePersistedAuthSession(pair.refreshToken, realm);
+  }
+  // passive 的共享用户数据实例不拥有这些键:它只是跟随主实例的会话,不得代替
+  // 主实例清理 legacy token / 删除回执 / relogin 标记(与交互式登录路径同口径)。
+  if (!isPassiveSharedUserDataInstance()) {
+    removeSafe(LEGACY_REFRESH_TOKEN_KEY);
+  }
+  lastAcceptedRefreshToken = pair.refreshToken;
+  if (!isPassiveSharedUserDataInstance()) {
+    removeSafe(ACCOUNT_DELETION_RECEIPT_KEY);
+    clearReloginFlag();
+  }
+  // 显式登录解除本进程登出墓碑(passive / foreign-device)。
+  passiveLocalSignOut = false;
+  foreignDeviceLocalSignOut = false;
+  const nextUser = options.user ?? mapMembershipToAuthUser(pair.membership);
+  currentUser = nextUser;
+  commitCloudAppSession(nextUser.id);
+  scheduleCanaryFlagSync({
+    token: pair.accessToken,
+    expectedAuthEpoch: loginEpoch,
+    expectedUserId: nextUser.id,
+  });
+  scheduleRefresh(pair.accessToken);
+  getProviderSecretStore().reconcileOwner(pair.membership.id);
+  options.beforeNotify?.();
+  if (options.notify !== false) {
+    notifyRenderer();
+    notifyAuthListeners();
+  }
+}
+
 async function reloadPerAccountIntegrationsFromDisk(_accessToken: string | null): Promise<void> {
   void _accessToken;
   // 登录账号级集成清单当前为空(见 clearPerAccountIntegrations 顶注)。
@@ -3247,6 +3362,8 @@ function clearAuth(
      * removeSafe 会把别人的新 token 删掉,把对方也踢成半死。
      */
     preservePersistedRefreshToken?: boolean;
+    /** Keep the durable Pod resource bootstrap credential while replacing only a Pod resource session. */
+    preserveProvisionedResourceCredentials?: boolean;
     /**
      * Clear auth fields immediately, but defer publishing the signed-out
      * owner until the enclosing teardown completes. Owner-bound consumers are
@@ -3289,6 +3406,12 @@ function clearAuth(
     } else {
       removeSafe(AUTH_SESSION_KEY);
       removeSafe(LEGACY_RESOURCE_REFRESH_TOKEN_KEY);
+      if (!opts.preserveProvisionedResourceCredentials) {
+        provisionedSessionRecoveryPending = false;
+        removeSafe(POD_RESOURCE_REFRESH_TOKEN_KEY);
+        removeSafe(LEGACY_POD_ACCOUNT_REFRESH_TOKEN_KEY);
+        removeSafe(POD_MEMBERSHIP_ID_KEY);
+      }
       removeSafe(LEGACY_ACCOUNT_REFRESH_TOKEN_KEY);
       removeSafe(LEGACY_REFRESH_TOKEN_KEY);
     }
@@ -3345,11 +3468,17 @@ async function expireRuntimeAuth(
   // PRRT_kwDOTgdRUs6YaakC).  beginAppSessionBoundary is ref-counted;
   // withAccountFreeOwnerCommit will extend it, and the finally block
   // releases the outer reference after teardown completes.
+  const recoverProvisionedSession = provisionedSessionRecovery;
+  const provisionedResourceCredential = readProvisionedResourceCredentialState();
+  const mayHaveProvisionedResourceCredential =
+    provisionedResourceCredential.kind !== 'definitely-absent';
   const releaseBoundary = beginAppSessionBoundary();
   clearAuth({
     notify: false,
     nextMode: 'signed-out',
     preservePersistedRefreshToken: opts.preservePersistedRefreshToken,
+    preserveProvisionedResourceCredentials:
+      recoverProvisionedSession !== null || mayHaveProvisionedResourceCredential,
     deferSessionCommit: true,
   });
   try {
@@ -3372,6 +3501,46 @@ async function expireRuntimeAuth(
     notifyAuthListeners();
     notifySessionExpired(reason);
   }
+  // A concurrent terminal resource rejection clears the durable credential and
+  // must win over this resource-only recovery path.
+  if (readProvisionedResourceCredentialState().kind === 'definitely-absent') return;
+  if (recoverProvisionedSession) {
+    try {
+      await recoverProvisionedSession();
+    } catch (error) {
+      log.error('provisioned resource session recovery trigger failed', {
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+    }
+  } else if (mayHaveProvisionedResourceCredential) {
+    provisionedSessionRecoveryPending = true;
+  }
+}
+
+/**
+ * Recover a rejected Pod resource session without discarding its durable
+ * resource credential. Normal desktop sessions retain the existing terminal
+ * invalidation behavior because they have no provisioning recovery boundary.
+ */
+export function invalidateResourceSession(reason: string): Promise<void> {
+  if (
+    !provisionedSessionRecovery
+    && readProvisionedResourceCredentialState().kind === 'definitely-absent'
+  ) {
+    return invalidateSession(reason);
+  }
+  if (provisionedResourceInvalidationPromise) return provisionedResourceInvalidationPromise;
+
+  const previousUserId = currentUser?.id ?? getActiveAppSession().dataOwnerId ?? 'signed-out';
+  const run = expireRuntimeAuth(previousUserId, 'unknown');
+  provisionedResourceInvalidationPromise = run;
+  const clearIfCurrent = (): void => {
+    if (provisionedResourceInvalidationPromise === run) {
+      provisionedResourceInvalidationPromise = null;
+    }
+  };
+  void run.then(clearIfCurrent, clearIfCurrent);
+  return run;
 }
 
 /**
@@ -3671,6 +3840,107 @@ export function cancelAddAccountLogin(): void {
   loginFlowEpoch += 1;
   browserAuthorizationSlot.cancelActive();
   resetLoginFlowState();
+}
+
+/**
+ * Classify the durable Pod resource credential without treating a transient
+ * safeStorage/filesystem failure as absence.
+ */
+export function readProvisionedResourceCredentialState(): ProvisionedResourceCredentialState {
+  const resourceRefreshToken = readSafe(POD_RESOURCE_REFRESH_TOKEN_KEY);
+  if (resourceRefreshToken?.trim()) {
+    return { kind: 'present', resourceRefreshToken };
+  }
+  return isPersistedSecretAbsent(POD_RESOURCE_REFRESH_TOKEN_KEY)
+    ? { kind: 'definitely-absent' }
+    : { kind: 'temporarily-unreadable' };
+}
+
+/** Read the latest rotated resource refresh token for non-destructive display/compatibility paths. */
+export function readProvisionedResourceRefreshToken(): string | null {
+  const state = readProvisionedResourceCredentialState();
+  return state.kind === 'present' ? state.resourceRefreshToken : null;
+}
+
+/**
+ * Strict provisioning read: an unreadable persisted credential must not fall
+ * back to the already-rotated one-shot mount token.
+ */
+export function readProvisionedResourceRefreshTokenForProvisioning(): string | null {
+  const state = readProvisionedResourceCredentialState();
+  if (state.kind === 'present') return state.resourceRefreshToken;
+  if (state.kind === 'definitely-absent') return null;
+  throw new ProvisionedResourceCredentialTemporarilyUnreadableError();
+}
+
+/**
+ * Persist a resource refresh rotation before provisioning continues. Losing
+ * this write would make the injected predecessor unusable on the next start.
+ */
+export function persistProvisionedResourceRefreshToken(resourceRefreshToken: string): void {
+  if (!resourceRefreshToken || !writeSafe(POD_RESOURCE_REFRESH_TOKEN_KEY, resourceRefreshToken)) {
+    throw new Error('failed to persist Pod resource refresh token');
+  }
+}
+
+/** Forget Pod resource credentials only after the resource refresh endpoint rejects them. */
+export function clearProvisionedResourceCredentials(): void {
+  provisionedSessionRecoveryPending = false;
+  removeSafe(POD_RESOURCE_REFRESH_TOKEN_KEY);
+  removeSafe(LEGACY_POD_ACCOUNT_REFRESH_TOKEN_KEY);
+  removeSafe(POD_MEMBERSHIP_ID_KEY);
+}
+
+/**
+ * Confirm that all durable Pod resource credential files are physically gone.
+ * A read returning null is insufficient because safeStorage or filesystem
+ * failures are also represented as null by the ordinary read path.
+ */
+export function areProvisionedResourceCredentialsAbsent(): boolean {
+  return (
+    isPersistedSecretAbsent(POD_RESOURCE_REFRESH_TOKEN_KEY)
+    && isPersistedSecretAbsent(LEGACY_POD_ACCOUNT_REFRESH_TOKEN_KEY)
+    && isPersistedSecretAbsent(POD_MEMBERSHIP_ID_KEY)
+  );
+}
+
+/** Read the last validated Pod membership selection from encrypted storage. */
+export function readProvisionedMembershipId(): string | null {
+  return readSafe(POD_MEMBERSHIP_ID_KEY);
+}
+
+/** Persist only a membership id returned by the authenticated resource refresh. */
+export function persistProvisionedMembershipId(membershipId: string): void {
+  if (!membershipId || !writeSafe(POD_MEMBERSHIP_ID_KEY, membershipId)) {
+    throw new Error('failed to persist Pod membership id');
+  }
+}
+
+/**
+ * Install a provisioned resource session through the same auth persistence
+ * and notification boundary as an interactive login.
+ */
+export function installProvisionedSession(
+  input: AuthTokenPair & { deviceId: string },
+): AuthState {
+  if (input.deviceId !== deviceId) {
+    throw new Error('provisioned session deviceId does not match this desktop instance');
+  }
+  if (!input.accessToken || !input.refreshToken) {
+    throw new Error('provisioned resource session is incomplete');
+  }
+  persistProvisionedResourceRefreshToken(input.refreshToken);
+  if (!writePersistedAuthSession(input.refreshToken, AUTH_REGION)) {
+    throw new Error('failed to persist provisioned resource refresh token');
+  }
+
+  resetLoginFlowState();
+  removeSafe(LEGACY_ACCOUNT_REFRESH_TOKEN_KEY);
+  applyAuthenticatedSession(input, {
+    realm: AUTH_REGION,
+    refreshTokenAlreadyPersisted: true,
+  });
+  return snapshotAuthState();
 }
 
 export function getCurrentDataOwnerId(): string | null {

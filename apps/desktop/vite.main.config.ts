@@ -17,9 +17,24 @@ export default defineConfig(({ mode }) => {
   // production service endpoints from the shared config at bundle time. An
   // explicit .env/process override still wins, while API/Auth keep their
   // localhost defaults below.
-  const configuredClientEnv = desktopClientBuildEnv({ allowEnvOverride: false });
-  const readViteEnv = (key: keyof typeof configuredClientEnv): string =>
-    env[key] || process.env[key] || configuredClientEnv[key];
+  type ClientBuildEnvKey =
+    | 'VITE_CINDY_AUTH_REGION'
+    | 'VITE_ENDPOINT_MANIFEST_BASE_URL'
+    | 'VITE_ENDPOINT_MANIFEST_PEER_BASE_URL';
+  let configuredClientEnv: Record<ClientBuildEnvKey, string> | undefined;
+  const readViteEnv = (key: ClientBuildEnvKey): string => {
+    const injected = env[key] || process.env[key];
+    if (injected) return injected;
+    // package-desktop validates --endpoint-manifest-bases-file before Forge and
+    // injects all three VITE values into this process. Only consult the checked-in
+    // region manifests when no explicit packaged-build value was injected; eager
+    // loading here would reject a self-hosted dev build before its injection wins.
+    configuredClientEnv ??= desktopClientBuildEnv({ allowEnvOverride: false }) as Record<
+      ClientBuildEnvKey,
+      string
+    >;
+    return configuredClientEnv[key];
+  };
   // 非 VITE_* 的 main-only 变量（不暴露到 renderer/preload；编译期注入）
   const allEnv = loadEnv(mode, process.cwd(), '');
   const readMainEnv = (key: string): string => allEnv[key] || process.env[key] || '';
