@@ -24,7 +24,6 @@ export interface LocalDbFatalPresentationInput {
 
 export interface LocalDbFatalPresentationDeps {
   logError: (message: string, error?: unknown) => void;
-  activateApp: () => void;
   showNativeDialog: () => void;
 }
 
@@ -35,16 +34,18 @@ export interface VisibleNativeStartupDialogInput {
 
 export interface VisibleNativeStartupDialogDeps<TResult> {
   logBeforePresent: (message: string) => void;
-  activateApp: () => void;
   showNativeDialog: () => TResult;
 }
 
 /**
- * Native startup dialogs can run before the first BrowserWindow exists. Keep
- * their observability and macOS activation ordering behind one boundary so a
- * synchronous modal cannot leave the user with a silent, apparently hung app.
- * Callers must activate without stealing focus: startup diagnostics must not
- * interrupt unrelated foreground work in the regular desktop build.
+ * Native startup dialogs can run before the first BrowserWindow exists, where a
+ * synchronous modal can leave the user with an app that looks hung. Route them
+ * through one boundary so every such dialog is logged *before* it blocks the
+ * main process — otherwise the hang has no trace at all.
+ *
+ * Deliberately does not touch window activation: whether these dialogs should
+ * foreground the app is a desktop UX question, unchanged by headless support,
+ * and this branch leaves it exactly as upstream has it.
  */
 export function presentVisibleNativeStartupDialog<TResult>(
   input: VisibleNativeStartupDialogInput,
@@ -56,7 +57,6 @@ export function presentVisibleNativeStartupDialog<TResult>(
       ...(input.context ?? {}),
     }),
   );
-  deps.activateApp();
   return deps.showNativeDialog();
 }
 
@@ -103,7 +103,6 @@ export function presentLocalDbFatalError(
     },
     {
       logBeforePresent: deps.logError,
-      activateApp: deps.activateApp,
       showNativeDialog: deps.showNativeDialog,
     },
   );

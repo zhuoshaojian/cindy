@@ -8177,9 +8177,6 @@ app.on('ready', async () => {
       { event: 'startup.dialog.moveToApplications' },
       {
         logBeforePresent: (message) => startupDialogLog.info(message),
-        // Finder normally foregrounds this prompt already; avoid steal so a
-        // background launch cannot interrupt unrelated foreground work.
-        activateApp: () => app.focus(),
         showNativeDialog: () =>
           dialog.showMessageBoxSync({
             type: 'info',

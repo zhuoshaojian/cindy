@@ -803,11 +803,6 @@ function showFatalDialog(title: string, detail: string, code: EnsureReadyErrorCo
         if (error === undefined) log.error(message);
         else log.error(message, error);
       },
-      activateApp: () => {
-        // Fatal startup diagnostics should become visible without stealing
-        // focus from unrelated foreground work in the regular desktop build.
-        if (process.platform === 'darwin') app.focus();
-      },
       showNativeDialog: () => {
         try {
           dialog.showMessageBoxSync({
