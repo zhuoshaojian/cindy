@@ -37,7 +37,7 @@ const ipcOn = vi.hoisted(() => vi.fn());
 const netRequest = vi.hoisted(() => vi.fn());
 const showMessageBoxSync = vi.hoisted(() => vi.fn());
 const clipboardWriteText = vi.hoisted(() => vi.fn());
-const appFocus = vi.hoisted(() => vi.fn());
+const logErrorSpy = vi.hoisted(() => vi.fn());
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(),
@@ -45,7 +45,6 @@ vi.mock('electron', () => ({
     getPreferredSystemLanguages: vi.fn(() => ['en-US']),
     isPackaged: false,
     exit: vi.fn(),
-    focus: appFocus,
   },
   dialog: { showMessageBoxSync },
   clipboard: { writeText: clipboardWriteText },
@@ -58,7 +57,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: logErrorSpy, debug: vi.fn() }),
   getLogDir: () => '/tmp/cindy-test-logs',
 }));
 
@@ -92,7 +91,7 @@ afterEach(() => {
   netRequest.mockReset();
   showMessageBoxSync.mockReset();
   clipboardWriteText.mockReset();
-  appFocus.mockReset();
+  logErrorSpy.mockReset();
 });
 
 const FULL_MANIFEST = JSON.stringify({
@@ -165,13 +164,12 @@ describe('启动失败系统提示框', () => {
     );
 
     expect(choice).toBe('retry');
-    if (process.platform === 'darwin') {
-      expect(appFocus).toHaveBeenCalledWith();
-      expect(appFocus).not.toHaveBeenCalledWith({ steal: true });
-      expect(appFocus.mock.invocationCallOrder[0]).toBeLessThan(
-        showMessageBoxSync.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-      );
-    }
+    // 窗口激活是上游的桌面 UX 决定,本分支不动它 —— 这里只锁 headless 支持真正需要的
+    // 那条不变量:同步模态会阻塞主进程,必须在它之前落日志,否则卡住时日志里毫无痕迹。
+    expect(logErrorSpy).toHaveBeenCalled();
+    expect(logErrorSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      showMessageBoxSync.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(showMessageBoxSync).toHaveBeenCalledTimes(1);
     const options = showMessageBoxSync.mock.calls[0]?.[0] as {
       type: string;

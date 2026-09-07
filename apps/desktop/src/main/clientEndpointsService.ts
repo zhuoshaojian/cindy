@@ -591,8 +591,8 @@ export function promptRetryDialog(
       copyStatus,
       offlineSavedAt: context.offlineSavedAt,
     });
-    // createWindow 之前无父窗口。先记录并激活 app，再进入同步系统模态；普通桌面
-    // 启动错误不使用 steal，避免诊断弹框强行打断用户当前的前台工作。
+    // createWindow 之前无父窗口,showMessageBoxSync 直接系统模态。先记录再进入模态,
+    // 否则它阻塞主进程期间日志里没有任何痕迹。
     const clicked = presentVisibleNativeStartupDialog(
       {
         event: 'clientEndpoints.dialog.prompt',
@@ -604,9 +604,6 @@ export function promptRetryDialog(
       },
       {
         logBeforePresent: (message) => log.error(message),
-        activateApp: () => {
-          if (process.platform === 'darwin') app.focus();
-        },
         showNativeDialog: () =>
           dialog.showMessageBoxSync({
             type: 'warning',
