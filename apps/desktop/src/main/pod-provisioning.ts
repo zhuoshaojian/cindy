@@ -16,9 +16,9 @@ import {
 } from './headless-startup.js';
 import { DEFINITIVE_REFRESH_FAILURE_CODES } from './authRefreshFailure.js';
 
-export const POD_RESOURCE_REFRESH_TOKEN_ENV = 'XDT_POD_RESOURCE_REFRESH_TOKEN';
-export const POD_DEVICE_NAME_ENV = 'XDT_POD_DEVICE_NAME';
-export const POD_MEMBERSHIP_ID_ENV = 'XDT_POD_MEMBERSHIP_ID';
+export const POD_RESOURCE_REFRESH_TOKEN_ENV = 'CINDY_POD_RESOURCE_REFRESH_TOKEN';
+export const POD_DEVICE_NAME_ENV = 'CINDY_POD_DEVICE_NAME';
+export const POD_MEMBERSHIP_ID_ENV = 'CINDY_POD_MEMBERSHIP_ID';
 export const POD_PROVISIONING_TIMEOUT_MS = 15_000;
 export {
   hasHeadlessPodRuntimeInput,
@@ -70,7 +70,7 @@ export function createNodeFetchAdapter(
 /**
  * Pod mode for provisioning, device-link self-name and the `cloud` device kind.
  * Gated on the same internal flag as `resolvePodDeviceIdOverride`: `index.ts`
- * writes it unconditionally from the strict gate, so ambient `XDT_POD_*` env
+ * writes it unconditionally from the strict gate, so ambient `CINDY_POD_*` env
  * cannot opt an ordinary GUI launch into Pod behaviour.
  */
 export function hasPodProvisioningInput(env: NodeJS.ProcessEnv): boolean {

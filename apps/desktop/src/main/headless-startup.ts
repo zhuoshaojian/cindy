@@ -2,10 +2,10 @@ import type { AgentBinaryReadiness } from './agent-binaries/ensure-ready.js';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-export const POD_RESOURCE_REFRESH_TOKEN_FILE_ENV = 'XDT_POD_RESOURCE_REFRESH_TOKEN_FILE';
-export const POD_DEVICE_ID_ENV = 'XDT_POD_DEVICE_ID';
+export const POD_RESOURCE_REFRESH_TOKEN_FILE_ENV = 'CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE';
+export const POD_DEVICE_ID_ENV = 'CINDY_POD_DEVICE_ID';
 export const POD_USER_DATA_DIR_ENV = 'XDT_USER_DATA_DIR';
-export const POD_WORKSPACES_DIR_ENV = 'XDT_POD_WORKSPACES_DIR';
+export const POD_WORKSPACES_DIR_ENV = 'CINDY_POD_WORKSPACES_DIR';
 export const DEFAULT_POD_WORKSPACES_DIR = '/var/lib/cindy/workspaces';
 export const HEADLESS_POD_RUNTIME_ENV = 'CINDY_INTERNAL_HEADLESS_POD_RUNTIME';
 
@@ -83,7 +83,7 @@ export function ensurePodWorkspacesDir(
  * Pod-only device identity. The gate is read from the internal flag that
  * `index.ts` writes unconditionally ('1' or '0') from
  * `hasHeadlessPodRuntimeInput` before anything else runs, so ambient
- * `XDT_POD_*` env cannot give a normal GUI launch a container identity, and
+ * `CINDY_POD_*` env cannot give a normal GUI launch a container identity, and
  * injecting the flag itself cannot forge one either.
  */
 export function resolvePodDeviceIdOverride(env: NodeJS.ProcessEnv): string | null {

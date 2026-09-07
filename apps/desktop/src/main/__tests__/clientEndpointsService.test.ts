@@ -263,8 +263,8 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
         headlessPodRuntime: true,
         env: {
           XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
-          XDT_POD_DEVICE_ID: 'pod-endpoints',
-          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
+          CINDY_POD_DEVICE_ID: 'pod-endpoints',
+          CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
         },
       },
       { kind: 'file', filePath: path.resolve(REPO_ROOT, '/run/config/endpoint.json') },
@@ -276,8 +276,8 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
         headlessPodRuntime: false,
         env: {
           XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
-          XDT_POD_DEVICE_ID: 'pod-endpoints',
-          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
+          CINDY_POD_DEVICE_ID: 'pod-endpoints',
+          CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
         },
       },
       { kind: 'cdn' },
@@ -289,7 +289,7 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
         headlessPodRuntime: false,
         env: {
           XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
-          XDT_POD_DEVICE_ID: 'pod-endpoints',
+          CINDY_POD_DEVICE_ID: 'pod-endpoints',
         },
       },
       { kind: 'cdn' },
@@ -301,7 +301,7 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
         headlessPodRuntime: false,
         env: {
           XDT_ENDPOINT_MANIFEST_FILE: '/run/config/endpoint.json',
-          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
+          CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
         },
       },
       { kind: 'cdn' },
@@ -313,8 +313,8 @@ describe('resolveEndpointSource(清单来源三选一)', () => {
         headlessPodRuntime: true,
         env: {
           XDT_ENDPOINT_MANIFEST_FILE: 'config/endpoint.json',
-          XDT_POD_DEVICE_ID: 'pod-endpoints',
-          XDT_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
+          CINDY_POD_DEVICE_ID: 'pod-endpoints',
+          CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE: '/run/secrets/resource-refresh-token',
         },
       },
       { kind: 'cdn' },

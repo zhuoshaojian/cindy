@@ -32,21 +32,21 @@ NetworkPolicy、RBAC、API/orchestrator 分层和部署 BOM 只在服务端仓�
 ## 2. Pod 启动输入
 
 客户端的 strict Pod trust gate 只由 `--headless`、非空
-`XDT_POD_DEVICE_ID` 和非空 `XDT_POD_RESOURCE_REFRESH_TOKEN_FILE` 共同成立。缺少任一条件时，
+`CINDY_POD_DEVICE_ID` 和非空 `CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE` 共同成立。缺少任一条件时，
 普通 Desktop 不得接受 Pod 专用的 endpoint 或存储覆盖。正式云 Provider 还必须显式提供下表
 标出的路径输入；它们是部署契约，但不额外参与客户端 strict gate 判定。
 
 | 输入 | 云端约定 | 语义 |
 | --- | --- | --- |
 | `--headless` | 必需 | 不创建 BrowserWindow，进入 headless bootstrap |
-| `XDT_POD_DEVICE_ID` | 必需、稳定、最长 128 字符 | relay、auth 和控制面共同识别的设备身份；重启/唤醒不得变化 |
-| `XDT_POD_RESOURCE_REFRESH_TOKEN_FILE` | 必需；默认挂载 `/run/secrets/resource-refresh-token` | 只读 bootstrap resource refresh token 文件；内容不得进入 image、env、日志或 status |
+| `CINDY_POD_DEVICE_ID` | 必需、稳定、最长 128 字符 | relay、auth 和控制面共同识别的设备身份；重启/唤醒不得变化 |
+| `CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE` | 必需；默认挂载 `/run/secrets/resource-refresh-token` | 只读 bootstrap resource refresh token 文件；内容不得进入 image、env、日志或 status |
 | `XDT_ENDPOINT_MANIFEST_FILE` | 正式 Provider 必配绝对路径；约定 `/run/config/endpoint.json` | 不参与 strict gate；packaged Pod 仅在 gate 已成立且路径绝对时采用 override，缺失或相对路径会回退 CDN，正式 Pod spec 应 fail-fast/能力探针阻断 |
 | `XDT_USER_DATA_DIR` | 正式 Provider 必配绝对路径；约定 `/var/lib/cindy/user-data` | 不参与 strict gate；客户端仅在 gate 已成立且路径绝对时采用 override，缺失或相对路径不会采用 override，正式 Pod spec 应 fail-fast/能力探针阻断 |
-| `XDT_POD_WORKSPACES_DIR` | 可省略；默认 `/var/lib/cindy/workspaces` | 远程项目与任务工作区根；启动前创建并规范化 |
+| `CINDY_POD_WORKSPACES_DIR` | 可省略；默认 `/var/lib/cindy/workspaces` | 远程项目与任务工作区根；启动前创建并规范化 |
 | `CINDY_CLOUD_STATUS_FILE` | 可省略；云镜像固定 `/var/lib/cindy/status/status.json` | 控制面/探针读取的原子状态快照 |
-| `XDT_POD_MEMBERSHIP_ID` | 控制面注入 | runtime status 的账号隔离标识，不替代 token 验证 |
-| `XDT_POD_DEVICE_NAME` | 控制面注入 | relay 使用的稳定云端设备名标记 |
+| `CINDY_POD_MEMBERSHIP_ID` | 控制面注入 | runtime status 的账号隔离标识，不替代 token 验证 |
+| `CINDY_POD_DEVICE_NAME` | 控制面注入 | relay 使用的稳定云端设备名标记 |
 
 因此 `XDT_ENDPOINT_MANIFEST_FILE` 与 `XDT_USER_DATA_DIR` 的“必配”是 Provider/正式 runtime
 contract，不代表 `hasHeadlessPodRuntimeInput` 会校验它们。Secret 与 ConfigMap/配置文件必须以
@@ -157,6 +157,15 @@ server 的 revoke、desired-state、Provider 物理删除、H7 兜底和记录�
 替代 server 侧语义。修改固定路径、环境变量、status schema 或 delete-control 字面量时，必须
 同步修改两仓契约测试。
 
+⚠️ **启动环境变量是硬 wire contract，没有兼容回落**：客户端只读表 2 里的名字，控制面注入的
+名字必须逐字相同。任何一侧单独改名，Pod 就会因为读不到 device id 而判不出 strict gate，
+退回普通启动路径 —— 表现不是显式报错，而是实例起来了却不是云端身份。因此改名必须两仓同批
+落地，并且**新镜像发布与控制面更新同时进行**。
+
+本分支把自己新增的 Pod 启动 env 统一到当前品牌前缀 `CINDY_POD_*` / `CINDY_AGENT_*`。
+`XDT_ENDPOINT_MANIFEST_FILE`、`XDT_USER_DATA_DIR`、`XDT_ENDPOINTS_CDN` 是上游既有名，
+保持不动（历史兼容锚点只增不减，见 `packages/maker-shared/src/brandIdentity.ts`）。
+
 | 契约 | `cindy-moved` | `cindy-server` 对应路径 |
 | --- | --- | --- |
 | Pod 启动环境与默认目录 | `apps/desktop/src/main/headless-startup.ts` | `cloud-instance-server/src/provider-shared.ts` 的 `buildRuntimeEnvironment` 与 `CLOUD_RUNTIME_*_TARGET` |
@@ -166,3 +175,30 @@ server 的 revoke、desired-state、Provider 物理删除、H7 兜底和记录�
 
 表中 server 路径只用于导航；对侧行为与编排语义以 server 文档和代码为准。服务端仓库路径以
 checkout 中的实际仓名为准；本仓不创建跨仓相对链接，避免在单仓浏览时产生坏链接。
+
+## 8. 对普通桌面端的行为影响
+
+headless 支持按「显式契约之外零影响」设计：`--headless` 未出现在 argv 时，
+`hasHeadlessPodRuntimeInput` 恒为 false，`index.ts` 随即把内部标记覆写为 `'0'`，
+所有 Pod 分支都读不到。**环境变量单独存在不足以打开任何 Pod 行为** —— 普通 GUI 启动
+不会被外部 env 劫持进容器凭据、容器存储或挂载清单。
+
+在此之上，只有一处改动会改变普通桌面端的可观察行为，reviewer 请重点看：
+
+**账号就绪消费者清单合并**（`accountIntegrationStartup.ts`）
+
+原先桌面在 owner DB ready 回调里先调
+`startAccountIntegrationsAfterOwnerDbReady(...)`，再**裸调**
+`attemptStartScheduler()` 与 `attemptStartEmbeddingHost()`；云端另有一份自己的副本。
+两份副本已经漂移，且云端那份从来没有 scheduler —— 于是自动化、goal controller 和
+learn host 在云端永久未启动；又因为缺少 scheduler 会让它的活动计数读不出来，实例被
+钉在 `activity-unknown`，永远达不到「足够空闲可以自动更新」。
+
+现在两侧共用同一份清单（`startAccountReadinessConsumers`），scheduler 与 embedding host
+成为其中两项。对桌面端的净变化有两点，都属于收紧：
+
+1. 这两项现在也受 `isOwnerCurrent` 陈旧归属检查保护。原先它们裸调，登出或换账号与
+   异步初始化竞态时，可能把上一个 owner 的 scheduler 重新拉起来。
+2. 这两项现在各自被隔离。原先其中一个抛错会中断该回调的后续步骤。
+
+启动顺序与启动集合本身不变；变化只在「谁来判定归属」和「失败如何收敛」。

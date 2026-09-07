@@ -14,7 +14,7 @@ import { extractArchive, flattenExtractedDir } from '../tools/pi/update.mjs';
 const { normalizeManifestBaseUrl } = manifestBaseUrl;
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
-export const AGENT_BINARY_MIRROR_ENV = 'XDT_AGENT_BINARY_MIRROR_BASE_URL';
+export const AGENT_BINARY_MIRROR_ENV = 'CINDY_AGENT_BINARY_MIRROR_BASE_URL';
 // 'codex-cli' 是 tools/codex/ 那个单文件 pin，与 'codex'（tools/codex-package/ 的目录
 // 分发）并存且版本不同。上游 v0.1.73 起把构建期的 codex 迁到了 codex-package，但
 // apps/desktop 的 Linux runtime fallback 仍要求 codex 精确等于 tools/codex 的 pin

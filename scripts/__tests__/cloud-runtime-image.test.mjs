@@ -59,10 +59,10 @@ test('formal Dockerfile is the single runtime-stage source used by local compose
   assert.match(dockerfile, /FROM source AS packager/);
   assert.match(dockerfile, /ENV NODE_ENV=development/);
   assert.match(dockerfile, /pnpm install --filter desktop\.\.\. --prod=false --frozen-lockfile/);
-  assert.match(dockerfile, /ARG XDT_AGENT_BINARY_MIRROR_BASE_URL=""/);
-  assert.doesNotMatch(dockerfile, /ENV XDT_AGENT_BINARY_MIRROR_BASE_URL/);
+  assert.match(dockerfile, /ARG CINDY_AGENT_BINARY_MIRROR_BASE_URL=""/);
+  assert.doesNotMatch(dockerfile, /ENV CINDY_AGENT_BINARY_MIRROR_BASE_URL/);
   assert.ok(
-    dockerfile.indexOf('ARG XDT_AGENT_BINARY_MIRROR_BASE_URL=""')
+    dockerfile.indexOf('ARG CINDY_AGENT_BINARY_MIRROR_BASE_URL=""')
       < dockerfile.indexOf('pnpm install --filter desktop... --prod=false --frozen-lockfile'),
   );
   assert.doesNotMatch(dockerfile, /COPY \. \./);

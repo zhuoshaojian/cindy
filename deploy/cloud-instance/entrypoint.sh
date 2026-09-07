@@ -1,12 +1,12 @@
 #!/bin/sh
 set -eu
 
-: "${XDT_POD_WORKSPACES_DIR:=/var/lib/cindy/workspaces}"
-export XDT_POD_WORKSPACES_DIR
-case "$XDT_POD_WORKSPACES_DIR" in
+: "${CINDY_POD_WORKSPACES_DIR:=/var/lib/cindy/workspaces}"
+export CINDY_POD_WORKSPACES_DIR
+case "$CINDY_POD_WORKSPACES_DIR" in
   /*) ;;
   *)
-    echo "[cindy-cloud] XDT_POD_WORKSPACES_DIR must be an absolute path" >&2
+    echo "[cindy-cloud] CINDY_POD_WORKSPACES_DIR must be an absolute path" >&2
     exit 78
     ;;
 esac
@@ -15,7 +15,7 @@ home_dir=/home/cindy
 mkdir -p \
   "$(dirname "$status_file")" \
   "${XDT_USER_DATA_DIR:-/var/lib/cindy/user-data}" \
-  "$XDT_POD_WORKSPACES_DIR" \
+  "$CINDY_POD_WORKSPACES_DIR" \
   "$home_dir"
 
 # A mounted home subPath starts empty and hides the skeleton copied by useradd.

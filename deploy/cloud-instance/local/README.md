@@ -31,13 +31,13 @@ endpoint manifest 必须与它匹配。
 开发路径也不能当作发布验证，正式 artifact 由 CI 原生 x64 runner 产出。新增或调整
 apt/工具层时，可在 arm64 宿主原生构建 `--target base` 验证，无需 QEMU。
 
-客户端 strict Pod gate 只要求 `--headless`、`XDT_POD_DEVICE_ID` 和
-`XDT_POD_RESOURCE_REFRESH_TOKEN_FILE`。gate 成立后，packaged 形态才可能接受挂载的
+客户端 strict Pod gate 只要求 `--headless`、`CINDY_POD_DEVICE_ID` 和
+`CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE`。gate 成立后，packaged 形态才可能接受挂载的
 `XDT_ENDPOINT_MANIFEST_FILE` 与 `XDT_USER_DATA_DIR` override，且两者只有在路径为绝对路径时
 才会采用；缺失或相对路径分别回退 CDN 清单或 Electron 默认 userData。本地 compose 会显式
 提供这两个绝对路径；正式 Provider 也必须提供，并由正式 Pod spec fail-fast/能力探针防止静默
 回退。普通 packaged GUI 即使继承这些环境变量也继续使用 CDN 清单与 Electron 默认 userData。
-Pod 工作区根由 `XDT_POD_WORKSPACES_DIR` 指定；entrypoint 未收到该变量时默认
+Pod 工作区根由 `CINDY_POD_WORKSPACES_DIR` 指定；entrypoint 未收到该变量时默认
 `/var/lib/cindy/workspaces`。远程项目选择器在 Pod 模式下把这个目录作为 `~` 的浏览根，
 普通 Desktop 仍按系统 HOME 解析。
 
@@ -54,7 +54,7 @@ Pod 工作区根由 `XDT_POD_WORKSPACES_DIR` 指定；entrypoint 未收到该变
 ```bash
 cd /Users/sirius/Public/cindy-moved
 export CINDY_POD_REFRESH_TOKEN_FILE=/path/to/gitignored/pod-refresh-token
-export XDT_POD_DEVICE_ID=pod-local-docker-1
+export CINDY_POD_DEVICE_ID=pod-local-docker-1
 export CINDY_ENDPOINT_MANIFEST_FILE=/path/to/endpoint.local.docker.json
 docker compose -f deploy/cloud-instance/local/compose.yaml up --build
 ```
