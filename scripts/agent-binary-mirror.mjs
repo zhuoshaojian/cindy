@@ -14,7 +14,7 @@ import { extractArchive, flattenExtractedDir } from '../tools/pi/update.mjs';
 const { normalizeManifestBaseUrl } = manifestBaseUrl;
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
-export const AGENT_BINARY_MIRROR_ENV = 'XDT_AGENT_BINARY_MIRROR_BASE_URL';
+export const AGENT_BINARY_MIRROR_ENV = 'CINDY_AGENT_BINARY_MIRROR_BASE_URL';
 const MIRRORED_KINDS = new Set(['claude', 'codex', 'ripgrep', 'pi']);
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 

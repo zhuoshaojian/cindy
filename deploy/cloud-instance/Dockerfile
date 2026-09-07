@@ -15,7 +15,7 @@ ENV CI=1 \
     ELECTRON_DISABLE_SANDBOX=1 \
     XDT_DEV_SAFE_STORAGE_BASIC=1
 
-# Optional Debian package mirror, same shape as XDT_AGENT_BINARY_MIRROR_BASE_URL:
+# Optional Debian package mirror, same shape as CINDY_AGENT_BINARY_MIRROR_BASE_URL:
 # empty keeps the upstream default (deb.debian.org) so CI behaviour is unchanged.
 # Builders inside a region where the default mirror is throttled can point this at
 # a local mirror — fetching the package index alone took ~17 minutes from the
@@ -132,7 +132,7 @@ COPY docs/legal/notices/ ./docs/legal/notices/
 COPY config/endpoint.json config/endpoint.global.json ./config/
 # Optional deterministic source for repository-pinned agent runtime assets.
 # Empty preserves the existing upstream/CDN behavior; configured mode is fail-closed.
-ARG XDT_AGENT_BINARY_MIRROR_BASE_URL=""
+ARG CINDY_AGENT_BINARY_MIRROR_BASE_URL=""
 # Optional Electron release mirror, same shape as DEBIAN_MIRROR_BASE_URL: empty
 # keeps @electron/get on its GitHub default. The archive is normally fetched once
 # into the shared cache mount below, so this only matters when that cache is cold
