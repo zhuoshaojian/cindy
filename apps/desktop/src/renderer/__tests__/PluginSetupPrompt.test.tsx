@@ -250,6 +250,24 @@ describe('PluginSetupPrompt', () => {
     );
   });
 
+  it('enables only OAuth actions advertised by the cloud Host', () => {
+    const onCommand = vi.fn();
+    render(<PluginSetupPrompt pending={{ ...pending, remoteOauth: true }} viewerState="expanded"
+      commandInFlight={null} remote onViewerStateChange={vi.fn()} onCommand={onCommand} />);
+    const authorize = screen.getByRole('button', { name: 'Authorize' }) as HTMLButtonElement;
+    expect(authorize.disabled).toBe(false);
+    fireEvent.click(authorize);
+    expect(onCommand).toHaveBeenCalledWith(pending.requestId, 'run_action', pending.steps[0].action!.id);
+    expect(screen.getByText(/this computer’s browser/)).toBeTruthy();
+    expect(parsePendingPluginSetup({ ...pending, remoteOauth: true })?.remoteOauth).toBe(true);
+  });
+
+  it('keeps inline secrets blocked even when remote OAuth is supported', () => {
+    render(<PluginSetupPrompt pending={{ ...inlinePending, remoteOauth: true }} viewerState="expanded"
+      commandInFlight={null} remote onViewerStateChange={vi.fn()} onCommand={vi.fn()} />);
+    expect((screen.getByPlaceholderText('Enter API Key') as HTMLInputElement).disabled).toBe(true);
+  });
+
   it('disables duplicate commands while Main owns an in-flight action', () => {
     render(
       <PluginSetupPrompt
@@ -591,6 +609,14 @@ describe('PluginSetupPrompt', () => {
 });
 
 describe('teammate authorization card presentation', () => {
+  it('allows cancellation while the local Host is awaiting a remote OAuth callback', () => {
+    const command = vi.fn();
+    render(<PluginSetupPrompt pending={{ ...pending, remoteOauth: true }} viewerState="expanded"
+      commandInFlight={{ requestId: pending.requestId, action: 'run_action', actionId: pending.steps[0].action!.id }}
+      remote onViewerStateChange={() => {}} onCommand={command} />);
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('newChat.pluginSetup.cancel') }));
+    expect(command).toHaveBeenCalledWith('setup-1', 'cancel');
+  });
   it('omits a missing brand icon and uses the service name directly', () => {
     const { container } = render(<PluginSetupPrompt compact pending={pending} viewerState="expanded"
       commandInFlight={null} remote={false} onViewerStateChange={() => {}} onCommand={() => {}} />);

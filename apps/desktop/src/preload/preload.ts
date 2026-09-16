@@ -2437,6 +2437,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncNewMakerDraft: (snapshot: {
     ownerStamp: import('../shared/dataOwnerPush').DataOwnerPushStamp;
     selectedRoute?: import('../shared/botModelChain').BotModelRoute;
+    vendor?: 'cc' | 'codex' | 'pi';
+    defaultTupleCustomized?: boolean;
     lastByVendor: Partial<
       Record<
         'cc' | 'codex' | 'pi',
@@ -6423,6 +6425,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       decision: Record<string, unknown>,
     ): Promise<{ accepted: boolean }> =>
       ipcRenderer.invoke('maker:resolve-interaction', requestId, decision),
+
+    /** Opens a remote Host's registered OAuth transaction. Returns no authorization material. */
+    assistPluginOauth: (request: { ghostId: string; deviceId: string; requestId: string; actionId: string; expectedRevision: number }): Promise<{ accepted: boolean }> =>
+      ipcRenderer.invoke('plugin-oauth:assist', request),
+
+    /** Ephemeral user-entered device code for this frame's active card; no callback code or token. */
+    pluginOauthDeviceCode: (request: import('../shared/pluginOauthDeviceCode').PluginOauthDeviceCodeRequest): Promise<import('../shared/pluginOauthDeviceCode').PluginOauthDeviceCodeView | null> =>
+      ipcRenderer.invoke('plugin-oauth:device-code', request),
 
     /** Local-only Secret handoff; Main verifies this is Cindy's trusted top-level frame. */
     submitPluginSetupInline: (request: {

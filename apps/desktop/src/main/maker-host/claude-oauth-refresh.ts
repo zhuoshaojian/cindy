@@ -1,3 +1,4 @@
+import { cindyManagedHomeDir } from '../cloudPilotDistribution.js';
 /**
  * claude-oauth-refresh —— Claude.ai 订阅 OAuth access token 的 host 侧到期刷新。
  *
@@ -43,7 +44,6 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 import {
@@ -692,7 +692,7 @@ export function createClaudeOAuthRefresher(deps: ClaudeOAuthRefresherDeps): {
 
 /** 默认 config dir(prod、无 CLAUDE_CONFIG_DIR override)= ~/.claude,与凭证库同根。 */
 function defaultLockDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  return process.env.CLAUDE_CONFIG_DIR || path.join(cindyManagedHomeDir(), '.claude');
 }
 
 let defaultRefresher: ReturnType<typeof createClaudeOAuthRefresher> | null = null;

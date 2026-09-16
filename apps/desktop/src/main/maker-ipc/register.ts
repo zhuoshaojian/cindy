@@ -93,6 +93,10 @@ import {
   isAppSessionBoundaryPending,
 } from '../appSessionState.js';
 import { upsertRecentWorkdir } from '../localDb/ipc/recentWorkdirs.js';
+import { initializePluginOauthCards } from '../plugin-oauth/cards.js';
+import { getInstanceConfig } from '../instance-runtime/config.js';
+import { readDeviceLinkSettings } from '../device-link/settings-store.js';
+import { getDeviceLinkStatus } from '../device-link/index.js';
 import type { AgentMeta, Session as RendererSession } from '../../renderer/lib/ccAgent.types';
 import {
   deriveAutoTitleSeed,
@@ -148,6 +152,7 @@ import {
   executeGhostSetupAction,
   executeGhostSetupInlineAction,
   getGhostManager,
+  getGhostPipeDispatcher,
   getGhostSetupAssessment,
   getIOSSimulatorPluginAccessDecision,
   isGhostAvailableForActiveSession,
@@ -2425,6 +2430,22 @@ initGhostSetupCoordinator({
     executeGhostSetupInlineAction({ sessionId, ghostId, action, value }),
   timeoutMessage: () => t('newChat.pluginSetup.timeout'),
   logger: log,
+});
+
+initializePluginOauthCards({
+  identity: getInstanceConfig,
+  bridge: ghostSetupInteractionBridge,
+  bots: getBotAuthorizationService,
+  owner: () => {
+    const config = getInstanceConfig();
+    const current = getActiveAppSession();
+    return config && current.mode === 'cloud' && current.dataOwnerId === config.membershipId &&
+      !isAppSessionBoundaryPending() ? activeOwnerScopeKey() : null;
+  },
+  available: peer => {
+    const settings = readDeviceLinkSettings();
+    return getDeviceLinkStatus() === 'online' && settings.remoteControlEnabled && !settings.revokedControllers.includes(peer);
+  },
 });
 
 function clearPendingInteraction(requestId: string): PendingInteractionEntry | null {
@@ -5306,7 +5327,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       providerId: p.providerId ?? '',
       modelId: p.modelId,
       active: p.active === true,
-      ...(p.markModelChoice === false ? { markModelChoice: false } : {}),
+      ...(typeof p.markModelChoice === 'boolean' ? { markModelChoice: p.markModelChoice } : {}),
       ...(p.effort !== undefined ? { effort: p.effort } : {}),
       ...(p.fast !== undefined ? { fast: p.fast } : {}),
       ...(p.thinking !== undefined ? { thinking: p.thinking } : {}),
@@ -15017,6 +15038,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     // Main 是本机窗口与 Device Link 控制端的 Stop 汇合点；先记账再触发 abort，
     // 任何 renderer 后续请求推荐都会从同一 ledger fail-closed。
     notePromptPredictionSessionStopped(sid);
+    getGhostPipeDispatcher().cancelSessionCalls(sid);
     // 这三类续跑撤销都是同步操作，必须早于 goal/DB await；
     // 否则退避 timer 能在用户已点 Stop 后抢先发出下一轮。
     resetAutomaticRecoveryForExplicitStop(sid);

@@ -1,3 +1,5 @@
+import { initializeCloudDeviceLinkDefaults } from './instance-runtime/device-link-defaults.js';
+import { cindyManagedHomeDir } from './cloudPilotDistribution.js';
 import { retainProviderPresentationAfterAuthChange } from './maker-host/provider-presentation-store.js';
 import { codexAccountState } from './maker-host/codex-account-auth.js';
 import { syncSubscriptionAccountUsage } from './usage/subscriptionAccountUsage.js';
@@ -503,6 +505,13 @@ import { sanitizeGhostNoticeText } from './cindy-brain/notifySlot.js';
 import { isIpcError } from '../shared/ipc-errors';
 import { readFileBytesForPreview } from './fileReadBytes.js';
 import { initHeartbeatService } from './heartbeatService';
+import { getInstanceConfig } from './instance-runtime/config.js';
+import { startProfileTelemetry } from './instance-runtime/profile-telemetry.js';
+import { instanceAuthReady, instanceDurableObservation, instanceAuthRealm } from './instance-runtime/host.js';
+import { startInstanceStatus } from './instance-runtime/status.js';
+import { publishedPluginOauthIdentity } from './plugin-oauth/runtime.js';
+
+let instanceBinariesReady = false;
 import { registerRemoteDesktopIpc } from './remote-desktop';
 import { initAnalyticsSettingsService, noteAuthColdStartState } from './analyticsSettingsService';
 import { initLogUploadService, scheduleStartupBackfill } from './log-upload';
@@ -511,6 +520,7 @@ import { issueWritableDirectoryPickerGrant } from './maker-ipc/writableDirectory
 // 设备互联(跨设备远程控制): relay 连接 host + 开关/设备列表 IPC
 import {
   initDeviceLinkService,
+  getDeviceLinkStatus,
   releaseDeviceLinkOwnershipBeforeLogout,
   handleDeviceLinkSystemResume,
 } from './device-link';
@@ -6282,6 +6292,8 @@ const registerIpcHandlers = () => {
     // 必装 binary 都 ready,现在才能安全构造 Maker 单例并挂 maker:* / 相关 IPC。
     await registerMakerIpcsAfterSplash();
 
+    instanceBinariesReady = true;
+
     return {
       claudeCode: { status: 'passed' as const, path: claudeRes.path },
       codex: { status: 'passed' as const, path: codexRes.path },
@@ -6632,7 +6644,7 @@ const registerIpcHandlers = () => {
         // Scan global (~/.claude/) first, then project (overrides on name
         // collision) — matches Claude Code's own discovery precedence and
         // covers Market-installed skills which always land in ~/.claude/skills/.
-        const home = os.homedir();
+        const home = cindyManagedHomeDir();
         const merged = new Map<
           string,
           { name: string; description?: string; source: 'user' | 'skill' }
@@ -9156,6 +9168,7 @@ app.on('ready', async () => {
   initHeartbeatService();
   // 设备互联(跨设备远程控制):登录后连 relay,登出即断;开关与设备列表 IPC 一并注册
   let updateRelaunchRemoteBusy = false;
+  if (getInstanceConfig()) initializeCloudDeviceLinkDefaults(app.getPath('userData'));
   initDeviceLinkService({
     onUpdateRelaunchBusyChanged: (busy) => {
       const transition = decideUpdateRelaunchBusyTransition(updateRelaunchRemoteBusy, busy);
@@ -9163,6 +9176,20 @@ app.on('ready', async () => {
       if (transition.shouldNotify) notifyUpdateAutoRelaunchBusyStateChanged();
     },
   });
+  const instance = getInstanceConfig();
+  if (instance) {
+    const readInstanceReadiness = () => ({
+      auth: authManager.getCurrentUserId() === instance.membershipId && instanceAuthReady(authManager.getAccessToken()),
+      database: getCurrentDbClientUserId() === instance.membershipId && tryGetDbClient() !== null,
+      binaries: instanceBinariesReady,
+      maker: getMakerIfReady() !== null,
+      deviceLink: getDeviceLinkStatus() === 'online',
+    });
+    const stopStatus = startInstanceStatus(instance, readInstanceReadiness, () => createLogger('instance-runtime').warn('runtime status unavailable'), publishedPluginOauthIdentity);
+    const stopProfileTelemetry = startProfileTelemetry({ deviceId: instance.deviceId, membershipId: instance.membershipId, realm: instanceAuthRealm, read: readInstanceReadiness, readAuth: instanceDurableObservation, onFailure: () => createLogger('instance-runtime').warn('profile observation unavailable') });
+    app.once('will-quit', stopProfileTelemetry);
+    app.once('will-quit', stopStatus);
+  }
   // 上次登出时没删干净的远程会话镜像缓存(文件锁 / 权限占用),开机再清一次。
   // 不阻塞启动关键路径,失败留在队列里等下一次(见 mirrorCachePurgeQueue)。
   // 但**缓存读**要等它落定:否则 renderer 的 hydrate 可能读到正在被删的那份明文,

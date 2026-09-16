@@ -161,3 +161,13 @@
 | server 中继(presence / 路由 / pub-sub) | `apps/server/src/device-link/*` |
 | 被控端 dispatch(双层校验 + 合成 event) | `apps/desktop/src/main/device-link/dispatch.ts` |
 | 桌面控制端传输路由(本地/远程按 session 切换) | `apps/desktop/src/renderer/lib/makerTransport.ts` |
+
+## Cloud plugin OAuth transport v2
+
+The experimental cloud distribution uses `device-link:plugin-oauth:v2`; v1 is not accepted or retried. Local Renderer passes only device/plugin/card/action IDs and the current revision to Main. Before opening any provider page, Main resolves the exact device's fresh public signing identity from its distribution-pinned CIS HTTPS authority using the current membership's bearer. Authority URLs never come from cards, IPC or the relay.
+
+The Host signs the membership, target device, controller device, process boot ID, both ephemeral X25519 keys, nonce, expiry, card action and plugin ID. Main verifies that signature, then wraps every inner OAuth operation/reply in an authenticated encrypted envelope with a request nonce. Existing PKCE/state, one-use callbacks, peer/owner/window invalidation, cancellation and cloud-only vault commit remain in force. Tokens, authorization URLs and callback codes never enter the conversation. A device-flow user code may be shown temporarily to the initiating local card through a separate owner/window/frame-bound Main IPC; it is not mirrored, persisted or sent to the model. Copy/reopen rechecks the original transaction and never revives an expired code.
+
+Device authorization URLs are bound to the current plugin manifest and declared network/OAuth targets. The existing GitHub and TapTap CLI adapters have exact provider endpoint checks. Other undeclared targets are rejected. Identity, card/plugin and target checks run in trusted Host code; the existing conversation card is the user action, with no additional native confirmation window. Opening a browser or copying a private device code is not authorization completion.
+
+The cloud Host, local Main/OS, CIS control plane and its authenticated Kubernetes status reader remain trusted. Relay membership/device admission and other remote control channels retain their existing trust model; this is not mutual device attestation or isolation from same-UID plugin/Agent processes. Local runtime support alone is not proof of an actual production provider consent.

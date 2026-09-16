@@ -2404,6 +2404,8 @@ interface ElectronAPI {
     appDefaultModelRequestId?: string;
     ownerStamp: import('../shared/dataOwnerPush').DataOwnerPushStamp;
     selectedRoute?: import('../shared/botModelChain').BotModelRoute;
+    vendor?: 'cc' | 'codex' | 'pi';
+    defaultTupleCustomized?: boolean;
     lastByVendor: Partial<
       Record<
         'cc' | 'codex' | 'pi',
@@ -5865,6 +5867,9 @@ interface ElectronAPI {
       requestId: string,
       decision: Record<string, unknown>,
     ) => Promise<{ accepted: boolean }>;
+
+    assistPluginOauth: (request: { ghostId: string; deviceId: string; requestId: string; actionId: string; expectedRevision: number }) => Promise<{ accepted: boolean }>;
+    pluginOauthDeviceCode: (request: import('../shared/pluginOauthDeviceCode').PluginOauthDeviceCodeRequest) => Promise<import('../shared/pluginOauthDeviceCode').PluginOauthDeviceCodeView | null>;
 
     /** Submit one inline plugin Secret through the local trusted-frame-only IPC. */
     submitPluginSetupInline: (request: {

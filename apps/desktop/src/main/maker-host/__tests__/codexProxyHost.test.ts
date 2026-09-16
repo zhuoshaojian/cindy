@@ -2745,6 +2745,7 @@ describe('codex proxy host', () => {
           expect.objectContaining({ id: 'encrypted_content' }),
           expect.objectContaining({ id: 'image_generation_id' }),
           expect.objectContaining({ id: 'xai_model_input' }),
+          expect.objectContaining({ id: 'bedrock_unsupported_web_search' }),
         ]),
       }),
     );
@@ -2849,14 +2850,21 @@ describe('codex proxy host', () => {
       threadId: 'thread-image',
       message: 'Image generation items without `id` are not supported for this request.',
     })).toBe('image_generation_id');
+    expect(host.armCodexHttpRecovery({
+      sessionId: 'session-search',
+      threadId: 'thread-search',
+      message: "litellm.BadRequestError: BedrockException - tool type 'web_search_20250305' is not supported for this model",
+    })).toBe('bedrock_unsupported_web_search');
 
     expect(proxyOpts.resolveWebSocketUpstream(ctxForThread('thread-encrypted'))).toBeNull();
     expect(proxyOpts.resolveWebSocketUpstream(ctxForThread('thread-image'))).toBeNull();
+    expect(proxyOpts.resolveWebSocketUpstream(ctxForThread('thread-search'))).toBeNull();
     expect(proxyOpts.resolveWebSocketUpstream(ctxForThread('thread-safe'))).toBe(
       'https://chatgpt.com/backend-api/codex',
     );
     expect(disconnectWebSocketsForThread).toHaveBeenCalledWith('thread-encrypted');
     expect(disconnectWebSocketsForThread).toHaveBeenCalledWith('thread-image');
+    expect(disconnectWebSocketsForThread).toHaveBeenCalledWith('thread-search');
   });
 
   it.each(['shared', 'custom-context', 'control-plane'] as const)(

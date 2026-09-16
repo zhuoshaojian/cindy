@@ -1109,11 +1109,13 @@ export class PluginMarketService {
     options: PluginMarketInstallOptions,
     /** Main-only caller authority, rechecked immediately before package placement. */
     assertCurrent?: () => void,
+    /** Agent discovery must not undo an earlier explicit removal. UI reinstalls remain explicit. */
+    callerPolicy?: { preserveRemovalPreferences: true },
   ): Promise<PluginMarketInstallResult> {
     assertCurrent?.();
     const customRef = parseCustomMarketPluginId(pluginId);
     if (customRef) {
-      return this.customInstall(customRef, options, false, captureMarketOwner(), assertCurrent);
+      return this.customInstall(customRef, options, false, captureMarketOwner(), assertCurrent, callerPolicy);
     }
     if (!isValidPluginResourceId(pluginId)) {
       throwIpcError('INVALID_PARAMS', 'Invalid Plugin ID');
@@ -1149,10 +1151,20 @@ export class PluginMarketService {
       const existing = getGhostManager()
         .list()
         .find((ghost) => ghost.manifest.id === plugin.ghostId);
+      const assertInstallAllowed = () => {
+        requireSameMarketOwner(owner);
+        assertCurrent?.();
+        if (callerPolicy?.preserveRemovalPreferences &&
+          (ledger.read().defaultInstallOptOuts[defaultInstallSubject(owner)]?.includes(pluginId)
+            || isBuiltinGhostRemovedByUser(plugin.ghostId))) {
+          throwIpcError('PERMISSION_DENIED', 'Plugin was removed by the user; reconnect it explicitly in Plugins');
+        }
+      };
+      assertInstallAllowed();
       return this.installDetail(
         plugin,
         {
-          beforeCommitInLock: assertCurrent,
+          beforeCommitInLock: callerPolicy ? assertInstallAllowed : assertCurrent,
           expectedInstalled: Boolean(existing),
           ...(options.expectedInstalledApproval !== undefined
             ? { expectedInstalledApproval: options.expectedInstalledApproval }
@@ -1350,6 +1362,7 @@ export class PluginMarketService {
     automatic = false,
     owner = captureMarketOwner(),
     assertCurrent?: () => void,
+    callerPolicy?: { preserveRemovalPreferences: true },
   ): Promise<PluginMarketInstallResult> {
     if (options.expectedManifest === undefined) {
       throwIpcError(
@@ -1373,6 +1386,16 @@ export class PluginMarketService {
           throwIpcError('NOT_FOUND', 'The Plugin is no longer listed by this marketplace');
         }
         const pluginId = customMarketPluginId(ref.marketName, plugin.ghostId);
+        const assertInstallAllowed = () => {
+          requireSameMarketOwner(owner);
+          assertCurrent?.();
+          if (callerPolicy?.preserveRemovalPreferences &&
+            (ledger.read().defaultInstallOptOuts[defaultInstallSubject(owner)]?.includes(pluginId)
+              || isBuiltinGhostRemovedByUser(plugin.ghostId))) {
+            throwIpcError('PERMISSION_DENIED', 'Plugin was removed by the user; reconnect it explicitly in Plugins');
+          }
+        };
+        assertInstallAllowed();
         const releaseId = customMarketReleaseId(ref.marketName, plugin.ghostId, plugin.version);
         if (releaseId !== options.expectedReleaseId) {
           throwIpcError('PRECONDITION_FAILED', 'Plugin release changed after selection');
@@ -1426,7 +1449,7 @@ export class PluginMarketService {
           expectedVersion: plugin.version,
           beforeCommit: async () => {
             requireSameMarketOwner(owner);
-            assertCurrent?.();
+            assertInstallAllowed();
             if (automatic && isGhostBusy(plugin.ghostId)) {
               throw new SilentUpgradeBusyError('Plugin is busy');
             }

@@ -339,13 +339,15 @@ export const GHOST_NODE_CHILD_MODE_FLAG = '__cindy-node-child__';
 
 /** worker → 主机:代启/喂 stdin/收 stdin/杀进程。 */
 export type GhostNodeChildToHostMessage =
-  | { type: 'spawn-child'; reqId: string; entry: string; args?: string[] }
+  | { type: 'device-authorize'; reqId: string; rpcId: string; url: string }
+  | { type: 'spawn-child'; reqId: string; entry: string; args?: string[]; rpcId?: string }
   | { type: 'child-stdin'; childId: string; b64: string }
   | { type: 'child-stdin-end'; childId: string }
   | { type: 'child-kill'; childId: string };
 
 /** 主机 → worker:代启结果/子进程输出/退出。 */
 export type GhostNodeChildToWorkerMessage =
+  | { type: 'device-authorize-result'; reqId: string; ok: boolean }
   | { type: 'spawn-child-result'; reqId: string; ok: true; childId: string; pid?: number }
   | { type: 'spawn-child-result'; reqId: string; ok: false; message: string }
   | { type: 'child-stdout'; childId: string; b64: string }
@@ -360,8 +362,21 @@ function isChildId(v: unknown): v is string {
 export function parseGhostNodeChildToHostMessage(raw: unknown): GhostNodeChildToHostMessage | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const m = raw as Record<string, unknown>;
+  if (m.type === 'device-authorize') {
+    if (
+      Object.keys(m).sort().join(',') !== 'reqId,rpcId,type,url' ||
+      !isChildId(m.reqId) ||
+      typeof m.rpcId !== 'string' ||
+      !/^\d{1,16}$/.test(m.rpcId) ||
+      typeof m.url !== 'string' ||
+      m.url.length > 8192
+    )
+      return null;
+    return { type: 'device-authorize', reqId: m.reqId, rpcId: m.rpcId, url: m.url };
+  }
   if (m.type === 'spawn-child') {
     if (!isChildId(m.reqId) || typeof m.entry !== 'string') return null;
+    if (m.rpcId !== undefined && (typeof m.rpcId !== 'string' || !/^\d{1,16}$/.test(m.rpcId))) return null;
     if (m.args !== undefined) {
       if (!Array.isArray(m.args) || m.args.length > GHOST_NODE_CHILD_MAX_ARGS) return null;
       for (const arg of m.args) {
@@ -372,6 +387,7 @@ export function parseGhostNodeChildToHostMessage(raw: unknown): GhostNodeChildTo
       type: 'spawn-child',
       reqId: m.reqId,
       entry: m.entry,
+      ...(typeof m.rpcId === 'string' ? { rpcId: m.rpcId } : {}),
       ...(m.args !== undefined ? { args: m.args as string[] } : {}),
     };
   }
@@ -6436,6 +6452,8 @@ export interface GhostPipeNodeRequest {
   type: 'node-request';
   /** OAuth 注入的本插件账号 id；缺省使用对应 OAuth 槽的默认账号。 */
   authAccount?: string;
+  /** Optional live tool-call binding: cancellation/completion stops its Node work. */
+  callId?: string;
   /** JSON-RPC 方法名；mcp-stdio 时使用 tools/list、tools/call 等 MCP 方法。 */
   method: string;
   params?: unknown;
@@ -6463,6 +6481,7 @@ export type GhostPipeNodeResult =
   | {
       ok: false;
       errorCode:
+        | 'CANCELLED'
         | 'INVALID_REQUEST'
         | 'PERMISSION_DENIED'
         | 'PROCESS_START_FAILED'

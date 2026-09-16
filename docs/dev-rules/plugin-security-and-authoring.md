@@ -120,6 +120,8 @@
   调用 `ghost_market_install` 安装选定的缺失插件，或服务端为当前 owner 下发
   `defaultInstall`。安装成功默认启用；插件声明哪些能力不改变
   安装动作是否需要确认，因为安装不设能力确认弹窗。
+  Agent 市场安装同时遵守当前 owner 的显式卸载／退订记录，在开始和提交锁内复验；
+  不自动复活用户移除的插件。用户在插件页明确重装仍走原手动安装路径。
 - 市场安装账本是后续更新来源的唯一事实：服务端市场按 `pluginId + releaseId` 路由，
   自定义市场还必须匹配 `sourceKey`；已装目录的原始 `ghost.json` 字节 SHA-256 必须与账本
   一致。旧记录缺少 raw 字段时，Host 只能按已发布的 legacy digest 编码核对同一份受限读取
@@ -268,6 +270,16 @@
   只允许短暂存在于本地 Desktop 输入组件和一次性的 trusted Renderer → Main 专用 IPC；
   不得走通用 interaction response、device-link 或其它远程通道，也不得写入 Renderer
   store。提交成功、取消、request / revision 替换和组件卸载时必须清空。
+- 云实例插件 OAuth 的 [Desktop 回调桥](../remote-plugin-oauth.md) 是独立的 Host 对 Host
+  授权事务，只承接当前卡片的已声明 OAuth action。URL/code 必须在两个 Main 间加密，
+  不能暴露给 Renderer、Agent、插件或通用 invoke；token 仍由云端现有账号管理器交换保存。
+  该能力不放开上一条内联 Secret、账号 vault 或任意端口/URL 转发限制。
+  用户要求的设备码卡片展示是窄例外：加密 device offer 中供用户手工输入的短时
+  `userCode` 可通过本机专用 `plugin-oauth:device-code` 接口投影到发起授权的自有顶层
+  Renderer。只在当前卡片组件内存显示；按 owner、窗口/frame、设备、插件、request/action
+  绑定，支持再次复制与重新打开 Main 保管的同一授权页。过期、终态或身份失效后清除。
+  它不包含 OAuth callback code、device_code、Token、完整 URL 或 state，不进入聊天
+  snapshot、模型、持久化或通用远控；不改变原授权卡片或新增确认窗口。
 - Host 必须把每个未满足 `any_of` 组的全部可执行 item 投影到卡片，Agent plan
   不能隐藏合法配置路径。Renderer 统一按组展示选项并复用 Ask 卡片的正文限高与纵向
   滚动，不得为 Brave、Tavily、Gmail 等具体插件增加分支。

@@ -1,3 +1,5 @@
+import { openDeviceAuthorizationCard } from '../plugin-oauth/deviceCard.js';
+import { t as authorizationText } from '../i18n.js';
 import { getBotAuthorizationService } from '../maker-ipc/botAuthorizationService.js';
 import { isResidentBrowserGhost, spawnResidentGhost } from './residentGhost.js';
 import { handleRoutineRequest } from './routineSlot.js';
@@ -74,6 +76,7 @@ import {
   type GhostLibraryOverview,
 } from '../../shared/ghost.js';
 import { getAppCapabilities } from '../appCapabilities.js';
+import { getRemoteOauthContext } from '../plugin-oauth/context.js';
 import { withGhostSkillProjectionReconcile } from '../authBoundaryQuarantine.js';
 import {
   activeOwnerScopeKey,
@@ -390,7 +393,9 @@ import { readModelDisableOverrides } from '../maker-host/model-disable-store.js'
 import { isCatalogMediaModelVisible } from './mediaDisplayVisibility.js';
 import { readProviderOrder } from '../maker-host/provider-order-store.js';
 import { guardedOutboundFetch, outboundFetch } from '../maker-host/outbound-fetch.js';
-import { getSharedGhCliTokenSource } from '../git-context/ghCliTokenSource.js';
+import { getSharedGhCliTokenSource, invalidateSharedGhCliTokenSource } from '../git-context/ghCliTokenSource.js';
+import { connectGithubDevice, githubDeviceLoginAvailable, startGithubDeviceLogin } from '../git-context/githubDeviceLogin.js';
+import { copyPrivateDeviceCode } from '../plugin-oauth/deviceCodeClipboard.js';
 import { hasCodexOAuthLoginReadOnly } from '../maker-host/codex-oauth-readiness.js';
 import {
   formatAuxiliaryModelRefLabel,
@@ -636,6 +641,39 @@ export function captureGhostMutationOwnerForMcp(): ActiveAppSession {
 
 export function acquireGhostMutationLeaseForMcp(expectedOwner: ActiveAppSession): () => void {
   return beginGhostMutation(expectedOwner);
+}
+
+/** Reuses the existing official gh-cli credential source; no plugin changes or token IPC. */
+export async function connectGhostGithubAccount(input: {
+  sessionId: string; reauthorize?: boolean; signal?: AbortSignal; assertCurrent(): void;
+}): Promise<Record<string, unknown> | null> {
+  const ghost = findAvailableGhost('cindy-github');
+  if (!ghost || !isCindyOfficialTrustInfo(ghost.trust)
+    || !ghost.manifest.network?.secrets?.some(secret => secret.source === 'gh-cli')) return null;
+  const owner = captureGhostMutationOwner();
+  return connectGithubDevice({ ...input, ghost: { id: ghost.manifest.id, name: ghost.manifest.name },
+    assertCurrent: () => {
+      input.assertCurrent();
+      const current = findAvailableGhost('cindy-github');
+      if (!ghostOwnerScope.isStable?.(owner) || !current || current.dir !== ghost.dir
+        || !isCindyOfficialTrustInfo(current.trust) || JSON.stringify(current.approval) !== JSON.stringify(ghost.approval))
+        throw new Error('AUTH_FAILED');
+    } }, {
+    available: githubDeviceLoginAvailable,
+    probe: () => getSharedGhCliTokenSource().probeAvailability(),
+    start: startGithubDeviceLogin,
+    acquireCommitLease: () => beginGhostMutation(owner),
+    invalidateTokenCache: invalidateSharedGhCliTokenSource,
+    openCard: cardInput => {
+      const bridge = getGhostSetupInteractionBridge();
+      if (!bridge) throw new Error('AUTH_FAILED');
+      return openDeviceAuthorizationCard(cardInput, { bridge,
+        openExternal: url => shell.openExternal(url),
+        copyDeviceCode: code => copyPrivateDeviceCode(clipboard, code),
+        copy: { title: authorizationText('pluginDeviceAuthorization.githubTitle'),
+          description: authorizationText('pluginDeviceAuthorization.githubDescription') } });
+    },
+  });
 }
 
 function isSameAppSession(a: ActiveAppSession, b: ActiveAppSession): boolean {
@@ -1747,6 +1785,21 @@ export function getGhostNodeRuntimeBroker(): GhostNodeRuntimeBroker {
   if (!nodeRuntimeBrokerSingleton) {
     nodeRuntimeBrokerSingleton = new GhostNodeRuntimeBroker({
       getGhost: findAvailableGhost,
+      getCallSignal: (ghostId, callId) => getGhostPipeDispatcher().getPendingCallSignal(ghostId, callId),
+      getCallSessionId: (ghostId, callId) =>
+        getGhostPipeDispatcher().getPendingCallSessionId(ghostId, callId),
+      openDeviceAuthorization: (input) => {
+        const bridge = getGhostSetupInteractionBridge();
+        if (!bridge) throw new Error('DEVICE_AUTHORIZATION_UNAVAILABLE');
+        return openDeviceAuthorizationCard(input, {
+          bridge,
+          openExternal: (url) => shell.openExternal(url),
+          copy: {
+            title: authorizationText('pluginDeviceAuthorization.title'),
+            description: authorizationText('pluginDeviceAuthorization.description'),
+          },
+        });
+      },
       ownerScope: ghostOwnerScope,
       readSecret: (ghostId, secretKey) => readGhostSecret(ghostId, secretKey),
       resolveOauthSecret: async (ghostId, secretKey, accountId) => {
@@ -5055,21 +5108,30 @@ export async function executeGhostSetupAction(args: {
         message: '当前安装来源或组织身份无权使用授权 broker',
       };
     }
-    const connected = await getGhostOauthAccountManager().connectAccount(
-      args.ghostId,
-      secretKey,
-      decl,
-      { deliveryHosts: runtimeManifest.network?.hosts, onAuthorizationUrl: args.onAuthorizationUrl, assertCurrent: args.assertCurrent, beforeCommit: args.beforeCommit },
-    );
-    return connected.ok
-      ? { ok: true }
-      : {
-          ok: false,
-          errorCode: mapGhostOauthConnectError(connected.error),
-          // interaction snapshot 只传稳定 errorCode；detail 可能含服务路径或
-          // 上游诊断，留在 Main，不下放 Renderer。
-          message: connected.detail ?? connected.error,
-        };
+    const remote = getRemoteOauthContext();
+    try {
+      remote?.assertCurrent();
+      const connected = await getGhostOauthAccountManager().connectAccount(
+        args.ghostId,
+        secretKey,
+        decl,
+        { deliveryHosts: runtimeManifest.network?.hosts, remote, onAuthorizationUrl: remote ? undefined : args.onAuthorizationUrl, assertCurrent: args.assertCurrent, beforeCommit: args.beforeCommit },
+      );
+      remote?.finish(connected.ok);
+      return connected.ok
+        ? { ok: true }
+        : {
+            ok: false,
+            errorCode: mapGhostOauthConnectError(connected.error),
+            // interaction snapshot 只传稳定 errorCode；detail 可能含服务路径或
+            // 上游诊断，留在 Main，不下放 Renderer。
+            message: connected.detail ?? connected.error,
+          };
+    } catch (error) {
+      remote?.finish(false);
+      if (remote) return { ok: false, errorCode: 'AUTH_FAILED', message: 'Remote authorization unavailable' };
+      throw error;
+    }
   }
 
   const navigation = ghostSetupNavigationForAction(args.ghostId, args.action);

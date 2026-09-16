@@ -10,6 +10,8 @@ import type {
   RemoteDesktopDisplayMode,
 } from '@cindy/device-link';
 import { acquireHumanDesktopInput } from './inputOwnership';
+import { openLinuxDesktopInput } from './linuxInputHost';
+import type { LinuxDesktopInput } from './linuxInput';
 import {
   openWindowsDesktopConnection,
   readWindowsDesktopSupport,
@@ -183,6 +185,7 @@ export async function requestDesktopInputPermission(
 }
 
 export class DesktopInputHost {
+  private linux: LinuxDesktopInput | null = null;
   private windows: WindowsDesktopConnection | null = null;
   private queuedBytes = 0;
   private writing = Promise.resolve();
@@ -196,6 +199,7 @@ export class DesktopInputHost {
     private readonly onFailure: () => void,
     private readonly runtime: {
       platform?: NodeJS.Platform;
+      openLinuxInput?: typeof openLinuxDesktopInput;
       resolveBinary(): Promise<string>;
       spawn(binary: string): ChildProcessWithoutNullStreams;
     } = {
@@ -206,13 +210,26 @@ export class DesktopInputHost {
   async start(displayId: string): Promise<void> {
     this.stop();
     const platform = this.runtime.platform ?? process.platform;
-    if (platform !== 'darwin' && platform !== 'win32') throw new Error('DESKTOP_INPUT_UNSUPPORTED');
+    if (platform !== 'darwin' && platform !== 'win32' && platform !== 'linux') throw new Error('DESKTOP_INPUT_UNSUPPORTED');
     const generation = this.generation;
     await this.stopping;
     if (generation !== this.generation) throw new Error('DESKTOP_LEASE_EXPIRED');
     const release = acquireHumanDesktopInput();
     this.releaseOwnership = release;
     try {
+      if (platform === 'linux') {
+        const connection = await (this.runtime.openLinuxInput ?? openLinuxDesktopInput)(displayId, () => {
+          if (generation === this.generation) this.onFailure();
+        });
+        if (generation !== this.generation) {
+          await connection.stop();
+          throw new Error('DESKTOP_LEASE_EXPIRED');
+        }
+        this.linux = connection;
+        this.displayId = displayId;
+        this.heartbeat = setInterval(() => this.write([]), 2000);
+        return;
+      }
       if (
         platform === 'win32' &&
         !this.runtime.platform &&
@@ -272,7 +289,7 @@ export class DesktopInputHost {
   }
   input(events: DesktopInput[]): void {
     const display = screen.getAllDisplays().find((item) => String(item.id) === this.displayId);
-    if (!display || (!this.child && !this.windows)) throw new Error('DESKTOP_INPUT_UNAVAILABLE');
+    if (!display || (!this.child && !this.windows && !this.linux)) throw new Error('DESKTOP_INPUT_UNAVAILABLE');
     this.write(
       events.map((event) => {
         if (event.kind !== 'move' && event.kind !== 'button') return event;
@@ -285,7 +302,11 @@ export class DesktopInputHost {
       }),
     );
   }
-  private write(events: unknown[]): void {
+  private write(events: DesktopInput[]): void {
+    if (this.linux) {
+      this.linux.input(events);
+      return;
+    }
     const child = this.child;
     const line = `${JSON.stringify(events)}\n`;
     const connection = this.windows;
@@ -327,6 +348,8 @@ export class DesktopInputHost {
   }
   stop(): void {
     this.generation++;
+    const linux = this.linux;
+    this.linux = null;
     const windows = this.windows;
     windows?.close();
     this.windows = null;
@@ -354,6 +377,8 @@ export class DesktopInputHost {
       const timer = setTimeout(() => child.kill(), 1500);
       timer.unref();
       child.once('exit', () => clearTimeout(timer));
+    } else if (linux) {
+      this.stopping = linux.stop().finally(() => release?.());
     } else if (windows) {
       // The service closes its worker gracefully before the job-kill deadline.
       this.stopping = new Promise<void>((resolve) =>
@@ -451,6 +476,8 @@ export async function readDesktopClipboardVersion(portable = false): Promise<str
 }
 
 export async function readDesktopSelection(portable = false): Promise<string> {
+  if (process.platform !== 'darwin' && process.platform !== 'win32')
+    throw new Error('DESKTOP_CLIPBOARD_UNAVAILABLE');
   try {
     const { stdout } = await exec(
       await resolveBinary(),

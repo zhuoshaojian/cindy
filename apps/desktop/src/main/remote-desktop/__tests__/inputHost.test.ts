@@ -3,6 +3,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { describe, expect, it, vi } from 'vitest';
 import { DesktopInputHost } from '../inputHost';
 import { withAgentDesktopInput } from '../inputOwnership';
+import { LinuxDesktopInput } from '../linuxInput';
 
 vi.mock('electron', () => ({
   app: {},
@@ -34,6 +35,48 @@ function childProcess() {
   };
 }
 describe('native input lifecycle', () => {
+  it('keeps Linux input ownership until X11 cleanup and its guard have exited', async () => {
+    let finish!: () => void;
+    const linux = new LinuxDesktopInput({
+      current: async () => true,
+      command: async () => '',
+      insertText: async () => {},
+      close: () => new Promise<void>((resolve) => { finish = resolve; }),
+    }, vi.fn());
+    const native = vi.spyOn(linux, 'input');
+    const host = new DesktopInputHost(vi.fn(), {
+      platform: 'linux', openLinuxInput: async () => linux,
+      resolveBinary: vi.fn(), spawn: vi.fn(),
+    });
+    await host.start('1');
+    host.input([{ kind: 'move', x: 0.5, y: 1 }]);
+    expect(native).toHaveBeenCalledWith([{ kind: 'move', x: 50, y: 99 }]);
+    await linux.settled();
+    host.stop();
+    await expect(withAgentDesktopInput(async () => {})).rejects.toThrow('person');
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    finish();
+    await vi.waitFor(async () => {
+      await expect(withAgentDesktopInput(async () => {})).resolves.toBeUndefined();
+    });
+  });
+
+  it('closes a Linux connection that becomes ready after its lease is stopped', async () => {
+    const linux = new LinuxDesktopInput({ current: async () => true, command: async () => '', insertText: async () => {} }, vi.fn());
+    const stop = vi.spyOn(linux, 'stop');
+    let ready!: (input: LinuxDesktopInput) => void;
+    const host = new DesktopInputHost(vi.fn(), {
+      platform: 'linux', openLinuxInput: () => new Promise((resolve) => { ready = resolve; }),
+      resolveBinary: vi.fn(), spawn: vi.fn(),
+    });
+    const starting = host.start('1');
+    await Promise.resolve();
+    host.stop();
+    ready(linux);
+    await expect(starting).rejects.toThrow('EXPIRED');
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   it('keeps Agent input excluded until the old helper has actually exited', async () => {
     const c = childProcess();
     const host = new DesktopInputHost(vi.fn(), {

@@ -1,3 +1,4 @@
+import { cindyManagedHomeDir } from '../cloudPilotDistribution.js';
 /**
  * skillhub/autoSyncService.ts — product-curated SkillHub auto install/update.
  *
@@ -5,7 +6,6 @@
  * product-owned whitelist against SkillHub, reusing the existing installer so
  * zip verification, registry writes, and global skill links stay centralized.
  */
-import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { app, net } from 'electron';
@@ -260,7 +260,7 @@ export class SkillhubAutoSyncService {
         continue;
       }
 
-      const expectedSharedInstallPath = local?.installPath ?? path.join(os.homedir(), '.agents', 'skills', slug);
+      const expectedSharedInstallPath = local?.installPath ?? path.join(cindyManagedHomeDir(), '.agents', 'skills', slug);
       const claudeConflict = await this.deps.detectClaudeSkillConflict(slug, expectedSharedInstallPath);
       if (claudeConflict) {
         log.warn('auto sync skipped user-owned claude skill', {
@@ -699,7 +699,7 @@ function buildRelevantInstallMap(
   autoSyncSlugs: Set<string>,
 ): Map<string, ListedInstall> {
   const result = new Map<string, ListedInstall>();
-  const globalRoot = path.join(os.homedir(), '.agents', 'skills');
+  const globalRoot = path.join(cindyManagedHomeDir(), '.agents', 'skills');
   const configuredKeys = new Set(refs.map(({ slug, catalogScope }) => skillhubCatalogKey(slug, catalogScope)));
 
   for (const install of installs) {
@@ -714,7 +714,7 @@ function buildRelevantInstallMap(
 
 function buildBlockedGlobalInstallMap(installs: ListedInstall[], autoSyncSlugs: Set<string>): Map<string, ListedInstall> {
   const result = new Map<string, ListedInstall>();
-  const globalRoot = path.join(os.homedir(), '.agents', 'skills');
+  const globalRoot = path.join(cindyManagedHomeDir(), '.agents', 'skills');
 
   for (const install of installs) {
     if (isAutoSyncedGlobalInstall(install, autoSyncSlugs)) continue;
@@ -744,7 +744,7 @@ async function detectClaudeGlobalSkillConflict(
   slug: string,
   expectedSharedPath: string,
 ): Promise<ClaudeSkillConflict | null> {
-  const claudePath = path.join(os.homedir(), '.claude', 'skills', slug);
+  const claudePath = path.join(cindyManagedHomeDir(), '.claude', 'skills', slug);
   let stat: fs.Stats;
   try {
     stat = await fs.promises.lstat(claudePath);
@@ -804,7 +804,7 @@ async function cleanupAutoSyncedGlobalInstallUnderLease({
   previousInstall,
   replacedBackupPath,
 }: CancelledInstallCleanup): Promise<void> {
-  const globalRoot = path.join(os.homedir(), '.agents', 'skills');
+  const globalRoot = path.join(cindyManagedHomeDir(), '.agents', 'skills');
   if (!isGlobalSkillPath(globalRoot, slug, absolutePath)) {
     log.warn('auto sync cleanup skipped non-global install path', {
       slug,
@@ -856,8 +856,8 @@ async function moveDirectory(from: string, to: string): Promise<void> {
 async function cleanupBrokenSkillLinks(slug: string, removedPath: string): Promise<void> {
   const normalizedRemovedPath = path.normalize(removedPath);
   const candidates = [
-    path.join(os.homedir(), '.claude', 'skills', slug),
-    path.join(os.homedir(), '.codex', 'skills', slug),
+    path.join(cindyManagedHomeDir(), '.claude', 'skills', slug),
+    path.join(cindyManagedHomeDir(), '.codex', 'skills', slug),
   ];
 
   for (const candidate of candidates) {

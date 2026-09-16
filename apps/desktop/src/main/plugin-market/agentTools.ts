@@ -81,7 +81,7 @@ export function createPluginMarketAgentTools(deps: PluginMarketAgentDeps) {
           expectedReleaseId: request.releaseId,
           expectedManifest: detail.manifest,
           allowSourceReplacement: false,
-        }, assertCurrent);
+        }, assertCurrent, { preserveRemovalPreferences: true });
         // Once committed, cancellation cannot turn the durable installation
         // into a failure. The live check runs at package placement instead.
         return {

@@ -7733,6 +7733,7 @@
       "chooseOne": "選擇一種配置方式",
       "restoreAria": "展開 {{name}} 設定",
       "minimizeAria": "收起 {{name}} 設定",
+      "remoteOauthHint": "在這台電腦的瀏覽器中授權，帳號將連接到目前的遠端裝置。其他設定仍需在遠端裝置上完成。",
       "completeOnDesktop": "請在遠端電腦完成設定，本卡片會自動更新狀態。",
       "cancel": "取消",
       "cancelling": "正在取消…",
@@ -7793,7 +7794,20 @@
       "inlineSecretStoreFailed": "憑證儲存失敗",
       "targetNotFound": "目標插件已解除安裝或當前不可用",
       "targetDisabled": "目標插件已被停用",
-      "targetDisabledInWorkdir": "使用者已在當前工作目錄停用該插件；不要重試。"
+      "targetDisabledInWorkdir": "使用者已在當前工作目錄停用該插件；不要重試。",
+      "deviceCode": {
+        "label": "裝置驗證碼",
+        "copied": "驗證碼已複製",
+        "copiedHint": "驗證碼已自動複製，也可在這裡再次複製",
+        "instructions": "在 {{host}} 選擇帳號後，將此 8 位驗證碼貼到輸入框，再繼續授權。",
+        "copyAgain": "再次複製驗證碼",
+        "reopen": "重新開啟授權頁",
+        "remaining": "等待授權，本次操作剩餘 {{time}}",
+        "completed": "帳號已連接，驗證碼已清除",
+        "expired": "本次授權已過期，請在任務中重新發起連接以取得新碼",
+        "ended": "本次授權已結束，請在任務中重新發起連接",
+        "actionFailed": "操作未完成，請重試；若授權已結束，請重新發起連接"
+      }
     },
     "createAgent": {
       "quickStart": "快速開始",
@@ -12655,5 +12669,11 @@
       "commit": "基於 {{commit}}",
       "branch": "已提交到 {{branch}}"
     }
+  },
+  "pluginDeviceAuthorization": {
+    "githubTitle": "連線 GitHub",
+    "githubDescription": "點擊後會複製一次性驗證碼，並在本機開啟 github.com。請在網頁中貼上驗證碼，為執行此任務的裝置授權 GitHub。",
+    "title": "授權插件登入",
+    "description": "在這台裝置開啟 {{host}}，為執行此任務的插件授權。憑證保存在發起授權的裝置上。"
   }
 }

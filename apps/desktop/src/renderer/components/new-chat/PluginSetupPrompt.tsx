@@ -12,8 +12,10 @@ import type {
   PluginSetupViewerState,
 } from '@/lib/makerChatStore';
 import type { GhostSetupStepPhase } from '../../../shared/ghost';
+import { PluginOauthDeviceCode } from './PluginOauthDeviceCode';
 
 interface PluginSetupPromptProps {
+  remoteDeviceId?: string;
   compact?: boolean;
   pending: PendingPluginSetup;
   viewerState: PluginSetupViewerState;
@@ -57,6 +59,7 @@ function PluginSetupPromptStateful({
   viewerState,
   commandInFlight,
   remote,
+  remoteDeviceId,
   onViewerStateChange,
   onCommand,
 }: PluginSetupPromptProps) {
@@ -94,6 +97,11 @@ function PluginSetupPromptStateful({
     pending.steps.every((step) => isTerminalPhase(step.phase));
   const terminal = pending.terminal === true || allSatisfied || cancelledTerminal;
   const busy = !!commandInFlight || (!compact && !!currentStep && RUNNING_PHASES.has(currentStep.phase));
+  const blockedRemoteAction = (step = currentStep): boolean =>
+    remote && !(pending.remoteOauth && step?.action?.kind === 'oauth_connect');
+  const cancelBlocked = !!commandInFlight && !(remote && pending.remoteOauth &&
+    commandInFlight.action === 'run_action' && pending.steps.some(
+      step => step.action?.id === commandInFlight.actionId && step.action?.kind === 'oauth_connect'));
   const title = compact ? pending.ghost.name : t('newChat.pluginSetup.title', { name: pending.ghost.name });
   const inlineFormAction = currentStep?.action?.kind === 'inline_form' ? currentStep.action : null;
   const inlineFormField = inlineFormAction?.form.fields[0];
@@ -213,7 +221,7 @@ function PluginSetupPromptStateful({
   };
 
   const submitStepAction = (step: PendingPluginSetup['steps'][number]) => {
-    if (!step.action || remote || busy || terminal) return;
+    if (!step.action || blockedRemoteAction(step) || busy || terminal) return;
     if (step.action.kind !== 'inline_form') {
       onCommand(pending.requestId, 'run_action', step.action.id);
       return;
@@ -404,12 +412,12 @@ function PluginSetupPromptStateful({
         <button
           type="button"
           disabled={
-            remote || busy || (!!inlineFormAction && (formValueMissing || formValueTooLong))
+            blockedRemoteAction() || busy || (!!inlineFormAction && (formValueMissing || formValueTooLong))
           }
           onClick={submitCurrentAction}
           className={cn(
             'h-9 rounded-[9999px] px-[18px] text-13 font-medium transition-colors',
-            remote || busy || (!!inlineFormAction && (formValueMissing || formValueTooLong))
+            blockedRemoteAction() || busy || (!!inlineFormAction && (formValueMissing || formValueTooLong))
               ? 'cursor-not-allowed border border-[var(--border-default)] bg-transparent text-[var(--text-disabled-tertiary)] opacity-60'
               : 'border border-transparent bg-[var(--confirm-btn-primary-bg)] text-[var(--confirm-btn-primary-text)] hover:bg-[var(--confirm-btn-primary-hover)]',
           )}
@@ -427,11 +435,11 @@ function PluginSetupPromptStateful({
       {!terminal ? (
         <button
           type="button"
-          disabled={!!commandInFlight}
+          disabled={cancelBlocked}
           onClick={cancelSetup}
           className={cn(
             'h-9 rounded-[9999px] border border-[var(--confirm-btn-secondary-border)] bg-transparent px-[18px] text-13 font-medium text-[var(--confirm-btn-secondary-text)] transition-colors',
-            commandInFlight
+            cancelBlocked
               ? 'cursor-not-allowed opacity-50'
               : 'hover:bg-[var(--confirm-btn-secondary-hover)]',
           )}
@@ -477,8 +485,19 @@ function PluginSetupPromptStateful({
 
         {remote && !terminal ? (
           <div className="rounded-[12px] border border-[var(--ask-option-border)] bg-[var(--ask-option-list-bg)] px-3 py-2.5 text-13 text-[var(--ask-option-desc)]">
-            {t('newChat.pluginSetup.completeOnDesktop')}
+            {t(pending.remoteOauth && pending.steps.some(s => s.action?.kind === 'oauth_connect')
+              ? 'newChat.pluginSetup.remoteOauthHint' : 'newChat.pluginSetup.completeOnDesktop')}
           </div>
+        ) : null}
+
+        {remote && remoteDeviceId && pending.remoteOauth && !terminal &&
+          currentStep?.action?.kind === 'oauth_connect' ? (
+          <PluginOauthDeviceCode
+            key={`${remoteDeviceId}:${pending.requestId}:${currentStep.action.id}`}
+            target={{ deviceId: remoteDeviceId, ghostId: pending.ghost.id, requestId: pending.requestId, actionId: currentStep.action.id }}
+            active={commandInFlight?.action !== 'cancel' && (commandInFlight?.action === 'run_action' ||
+              ['action_running', 'waiting_external', 'verifying'].includes(currentStep.phase))}
+          />
         ) : null}
 
         {compact && terminal ? null : compactInlineForm && currentStep && inlineFormField ? (
@@ -590,11 +609,11 @@ function PluginSetupPromptStateful({
                       {directActionOption ? (
                         <button
                           type="button"
-                          disabled={remote || busy || terminal}
+                          disabled={blockedRemoteAction(step) || busy || terminal}
                           onClick={() => submitStepAction(step)}
                           className={cn(
                             'mt-2 h-9 rounded-[9999px] px-4 text-13 font-medium transition-colors',
-                            remote || busy || terminal
+                            blockedRemoteAction(step) || busy || terminal
                               ? 'cursor-not-allowed border border-[var(--border-default)] bg-transparent text-[var(--text-disabled-tertiary)] opacity-60'
                               : 'border border-transparent bg-[var(--confirm-btn-primary-bg)] text-[var(--confirm-btn-primary-text)] hover:bg-[var(--confirm-btn-primary-hover)]',
                           )}

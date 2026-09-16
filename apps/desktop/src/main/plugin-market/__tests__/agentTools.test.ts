@@ -44,7 +44,7 @@ describe('Agent plugin discovery and installation', () => {
       expect(h.market.snapshot).toHaveBeenCalledWith({ discoveryOnly: true });
       expect(h.market.install).not.toHaveBeenCalled();
       expect(await h.tools.install({ pluginId: 'catalog-id', releaseId: 'release-1' })).toMatchObject({ ok: true, status: 'installed', ghost_id: id });
-      expect(h.market.install).toHaveBeenCalledWith('catalog-id', { expectedReleaseId: 'release-1', expectedManifest: h.detail.manifest, allowSourceReplacement: false }, expect.any(Function));
+      expect(h.market.install).toHaveBeenCalledWith('catalog-id', { expectedReleaseId: 'release-1', expectedManifest: h.detail.manifest, allowSourceReplacement: false }, expect.any(Function), { preserveRemovalPreferences: true });
       expect(h.release).toHaveBeenCalledOnce();
     },
   );

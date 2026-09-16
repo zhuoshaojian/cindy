@@ -41,6 +41,7 @@ import { encodeDesktopFrame, encodeNativeRelayFrame } from './frame';
 import { transferDesktopClipboard, transferDesktopClipboardContent } from './clipboard';
 import { NativeDesktopCapture } from './nativeCapture';
 import { readWindowsDesktopSupport, configureWindowsDesktopSupport } from './windowsHost';
+import { readLinuxInputSupport } from './linuxInputHost';
 import {
   DesktopInputHost,
   readDesktopDisplayModes,
@@ -354,7 +355,8 @@ export const remoteDesktop = new RemoteDesktopController({
       viewerDisplay,
       viewerDisplayRestore: viewerDisplay,
       enabled,
-      canControl: process.platform === 'darwin' || process.platform === 'win32',
+      canControl: process.platform === 'darwin' || process.platform === 'win32'
+        || (enabled && await readLinuxInputSupport()),
       platform: process.platform,
       ...(enabled ? { permissions: await permissions.read() } : {}),
       displays: enabled

@@ -8,6 +8,7 @@
 
 import { randomUUID } from 'node:crypto';
 
+import { getRemoteOauthContext } from '../plugin-oauth/context.js';
 import type {
   GhostSetupAllowedAction,
   GhostSetupAssessment,
@@ -106,6 +107,10 @@ export interface GhostSetupEnsureRequest {
   /** Captured call scope; revalidated after every setup/policy change. */
   workingDir?: string | null;
   plan?: GhostSetupPlan;
+  /** Explicit connection-only reconnect; never removes the existing account. */
+  reauthorize?: boolean;
+  /** The original MCP call owns this waiter, including while its card is open. */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_SETUP_TIMEOUT_MS = 10 * 60 * 1000;
@@ -131,6 +136,10 @@ export class GhostSetupCoordinator {
   }
 
   async ensureReady(request: GhostSetupEnsureRequest): Promise<GhostSetupEnsureResult> {
+    const cancelled = (): GhostSetupEnsureResult => ({
+      ok: false, errorCode: 'SETUP_CANCELLED', message: 'Plugin setup was cancelled; no plugin operation was executed.',
+    });
+    if (request.signal?.aborted) return cancelled();
     let assessment: GhostSetupAssessment;
     let unsubscribe = () => {};
     let wakeVerify: (() => void) | null = null;
@@ -177,8 +186,16 @@ export class GhostSetupCoordinator {
     // ready 态的重连建议是非阻塞的:仅 Agent 主动带 plan 且本回合有交互面时才进
     // 卡流程;无 sessionId 的回合(IM/定时任务)丢弃 plan 直接放行,绝不把 ready
     // 插件拦成 SETUP_REQUIRED。
+    if (request.signal?.aborted) {
+      unsubscribe();
+      return cancelled();
+    }
+    let reconnected = false;
+    const requestedReauth = (next: GhostSetupAssessment): GhostSetupAssessment | null =>
+      toReauthInteractionAssessment(next) ??
+      (request.reauthorize && !reconnected ? toExplicitReauthInteractionAssessment(next) : null);
     const reauthAssessment =
-      request.plan && request.sessionId ? toReauthInteractionAssessment(assessment) : null;
+      (request.plan || request.reauthorize) && request.sessionId ? requestedReauth(assessment) : null;
     const reauthMode = reauthAssessment !== null;
     if (assessment.state === 'ready' && !reauthMode) {
       unsubscribe();
@@ -226,6 +243,7 @@ export class GhostSetupCoordinator {
       ): void => {
         if (settled) return;
         settled = true;
+        request.signal?.removeEventListener('abort', onAbort);
         unsubscribe();
         if (timeoutId) clearTimeout(timeoutId);
         // The terminal card may remain visible for a short grace period, but
@@ -321,7 +339,7 @@ export class GhostSetupCoordinator {
             return;
           }
           const next = current.assessment;
-          const nextReauthAssessment = reauthMode ? toReauthInteractionAssessment(next) : null;
+          const nextReauthAssessment = reauthMode ? requestedReauth(next) : null;
           if (next.state === 'ready' && !nextReauthAssessment) {
             publishSatisfied(next);
             settle({ ok: true, assessment: next }, 'ready');
@@ -344,64 +362,75 @@ export class GhostSetupCoordinator {
         expectedRevision: number,
         responseTarget?: GhostSetupInteractionResponseTarget,
       ): Promise<void> => {
-        if (settled) return;
-        if (expectedRevision !== snapshot.revision) {
-          await verify();
-          return;
-        }
-        const target = this.deps.validateTarget(request.ghostId, request.tool, request.workingDir);
-        if (!target.ok) {
-          settleTargetFailure(target);
-          return;
-        }
-        const action = findAllowedAction(assessment, actionId);
-        if (!action) {
-          await verify();
-          return;
-        }
-        activeActionId = action.id;
-        publish(assessment, 'action_running');
-        // OAuth is a Host-global flow and remains shared. Navigation actions
-        // belong to a session + responding window: two sessions displayed in
-        // one window must each receive a route carrying its own sessionId.
-        const flightScope =
-          action.kind === 'oauth_connect'
-            ? 'shared'
-            : responseTarget
-              ? `session:${sessionId}:target:${responseTarget.id}`
-              : `session:${sessionId}`;
-        const flightKey = `${request.ghostId}\u0000${action.id}\u0000${flightScope}`;
-        let flight = this.actionFlights.get(flightKey);
-        if (!flight) {
-          flight = this.trackAction(
-            this.deps
-              .executeAction({
-                sessionId,
-                ghostId: request.ghostId,
-                action,
-                ...(responseTarget ? { responseTarget } : {}),
-              })
-              .finally(() => this.actionFlights.delete(flightKey)),
-          );
-          this.actionFlights.set(flightKey, flight);
-        }
-        let result: GhostSetupActionResult;
+        const remoteOauth = getRemoteOauthContext();
         try {
-          result = await flight;
-        } catch (error) {
-          result = {
-            ok: false,
-            errorCode: 'ACTION_FAILED',
-            message: error instanceof Error ? error.message : '插件设置操作失败',
-          };
+          if (settled) return;
+          if (expectedRevision !== snapshot.revision) {
+            await verify();
+            return;
+          }
+          const target = this.deps.validateTarget(request.ghostId, request.tool, request.workingDir);
+          if (!target.ok) {
+            settleTargetFailure(target);
+            return;
+          }
+          const action = findAllowedAction(assessment, actionId);
+          if (!action) {
+            await verify();
+            return;
+          }
+          activeActionId = action.id;
+          publish(assessment, 'action_running');
+          // Local OAuth actions remain shared; remote ones belong to their transaction. Navigation actions
+          // belong to a session + responding window: two sessions displayed in
+          // one window must each receive a route carrying its own sessionId.
+          const flightScope =
+            action.kind === 'oauth_connect'
+              ? (getRemoteOauthContext()?.scope ?? 'shared')
+              : responseTarget
+                ? `session:${sessionId}:target:${responseTarget.id}`
+                : `session:${sessionId}`;
+          const flightKey = `${request.ghostId}\u0000${action.id}\u0000${flightScope}`;
+          let flight = this.actionFlights.get(flightKey);
+          if (!flight) {
+            flight = this.trackAction(
+              this.deps
+                .executeAction({
+                  sessionId,
+                  ghostId: request.ghostId,
+                  action,
+                  ...(responseTarget ? { responseTarget } : {}),
+                })
+                .finally(() => this.actionFlights.delete(flightKey)),
+            );
+            this.actionFlights.set(flightKey, flight);
+          }
+          let result: GhostSetupActionResult;
+          try {
+            result = await flight;
+          } catch (error) {
+            result = {
+              ok: false,
+              errorCode: 'ACTION_FAILED',
+              message: error instanceof Error ? error.message : '插件设置操作失败',
+            };
+          }
+          if (settled) return;
+          if (!result.ok) {
+            publish(assessment, 'failed', result.errorCode ?? 'ACTION_FAILED');
+            return;
+          }
+          if (action.kind === 'oauth_connect') {
+            reconnected = true;
+            assessmentDirty = true;
+          }
+          if (result.waitingExternal) publish(assessment, 'waiting_external');
+          await verify(result.waitingExternal ? 'waiting_external' : undefined);
+        } finally {
+          // Success is sealed at credential commit, before readiness broadcasts.
+          // Early validation/action failures must also settle the remote request.
+          remoteOauth?.finish(false);
         }
-        if (settled) return;
-        if (!result.ok) {
-          publish(assessment, 'failed', result.errorCode ?? 'ACTION_FAILED');
-          return;
-        }
-        if (result.waitingExternal) publish(assessment, 'waiting_external');
-        await verify(result.waitingExternal ? 'waiting_external' : undefined);
       };
 
       const onCommand = async (
@@ -490,10 +519,19 @@ export class GhostSetupCoordinator {
         await verify();
       };
 
+      const onAbort = (): void => {
+        publish(assessment, 'cancelled', undefined, true);
+        settle(cancelled(), 'cancelled', 0);
+      };
       try {
         this.deps.bridge.open(sessionId, snapshot, onCommand, submitInline);
       } catch (error) {
         settle(this.internalFailure('插件设置卡片打开失败', error), 'open-failed', 0);
+        return;
+      }
+      request.signal?.addEventListener('abort', onAbort, { once: true });
+      if (request.signal?.aborted) {
+        onAbort();
         return;
       }
       timeoutId = setTimeout(() => {
@@ -635,6 +673,21 @@ export function toReauthInteractionAssessment(
       },
     ],
   };
+}
+
+/** A user-requested reconnect exposes only real, currently declared OAuth actions. */
+function toExplicitReauthInteractionAssessment(
+  assessment: GhostSetupAssessment,
+): GhostSetupAssessment | null {
+  if (assessment.state !== 'ready') return null;
+  const groups = assessment.groups.flatMap((group) => {
+    const items = group.items.filter(item => item.kind === 'oauth' &&
+      item.actions.some(action => action.kind === 'oauth_connect'))
+      .map(item => ({ ...item, state: 'expired' as const,
+        actions: item.actions.filter(action => action.kind === 'oauth_connect') }));
+    return items.length ? [{ ...group, items }] : [];
+  });
+  return groups.length ? { ...assessment, state: 'required', groups } : null;
 }
 
 export function defaultPlan(assessment: GhostSetupAssessment): GhostSetupPlan {

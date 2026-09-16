@@ -70,6 +70,12 @@ frontmatter `name + description` 的召回作用；`manual.items` 只是插件�
 
 ## 3. 花名册（roster）
 
+普通任务可调用 `connect_account({kind:"plugin", id:ghost_id})`，由 Host 复用配置卡等待连接，
+不必先触发插件业务调用。等待受当前任务取消、插件可见性及原配置卡版本校验约束。
+伙伴继续使用原持久授权卡与配置策略；Host 账号入口仍只用于伙伴。显式 `reauthorize`
+只呈现已声明的 OAuth 动作，不删除现存账号。没有 Host OAuth 配置动作的插件应使用其
+设置页或手册中的登录工具；空的配置就绪状态不能作为平台账号已登录的证据。
+
 ### 3.1 内容与口径
 
 - 每条 = `{id, name, command, recall}`；`recall = whenToUse ?? description`。
@@ -228,3 +234,15 @@ frontmatter `name + description` 的召回作用；`manual.items` 只是插件�
   `--append-system-prompt`）；Pi 的 host 侧装配在
   `apps/desktop/src/main/maker-host/pi-host.ts`（buildPiAgent /
   composePiSystemPrompt）
+
+### 云实例缺失插件的发现与安装
+
+云 Host 复用统一的 `ghost_market_search` 和 `ghost_market_install`，不另外维护一套安装工具。
+先查询已有插件；缺少本次请求所需的插件才搜索当前账号市场、以返回的 plugin_id/release_id 安装。
+搜索不触发默认安装／更新、不向市场发送用户任务文本；返回的插件描述是作者数据，不是指令。
+Host 按账号、任务、取消状态及安装提交锁校验，保留显式停用、卸载和来源冲突；不新增授权弹窗。
+装好后同一任务重新 `ghost_info`，通过 Host setup / `connect_account` 呈现云端授权卡片，
+收到真实完成状态再继续业务请求。安装、打开浏览器、授权完成是三个不同状态。
+
+提示词为静态云端追加段，三种 harness 复用；没有动态时间戳、工具排序变化或调用热路径网络请求。
+市场网络只在明确工具调用时发生，现有默认插件和后台更新链路继续复用同一服务实例／安装锁。

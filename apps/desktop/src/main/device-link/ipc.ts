@@ -6,7 +6,17 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
-import { ipcMain } from 'electron';
+import { ipcMain, shell, clipboard, app, net } from 'electron';
+import { readOauthAuthority, fetchOauthIdentity } from '../plugin-oauth/authority.js';
+import { isCloudPilotDistribution } from '../cloudPilotDistribution.js';
+import { getAccessToken, getCurrentUserId, getDeviceId, getActiveAuthRealm } from '../authManager.js';
+import { getClientEndpoint } from '../clientEndpointsService.js';
+import { copyPrivateDeviceCode } from '../plugin-oauth/deviceCodeClipboard.js';
+import { PLUGIN_OAUTH_CHANNEL, PLUGIN_OAUTH_LOCAL_CHANNEL } from '@cindy/device-link';
+import { handleAssistPluginOauth } from '../plugin-oauth/localIpc.js';
+import { LocalDeviceCodeSessions } from '../plugin-oauth/deviceCodeSessions.js';
+import { PLUGIN_OAUTH_DEVICE_CODE_CHANNEL } from '../../shared/pluginOauthDeviceCode.js';
+import { getActiveAppSession, isAppSessionBoundaryPending } from '../appSessionState.js';
 import {
   DL_SESSION_REFERENCE_CAPABILITY_CHANNEL,
   DeviceLinkError,
@@ -573,6 +583,7 @@ export async function handleInvoke(
   if (typeof channel !== 'string' || !channel.trim()) {
     throwIpcError('INVALID_PARAMS', 'channel is required');
   }
+  if (channel === PLUGIN_OAUTH_CHANNEL) throwIpcError('PERMISSION_DENIED', 'OAuth transport is Host-only');
   let callArgs = Array.isArray(args) ? args : [];
 
   // Resolve controller-relative references first. If the source session is
@@ -1242,6 +1253,53 @@ export async function retryUnsubscribeAfterWindowGone(
 // ─── 注册(Electron adapter)──────────────────────────────────────────────────
 
 export function registerDeviceLinkIpc(deps: DeviceLinkIpcDeps = defaultDeps()): void {
+  const deviceCodes = new LocalDeviceCodeSessions();
+  const deviceCodeScope = (event: import('electron').IpcMainInvokeEvent): string => {
+    assertTrustedAppRendererEvent(event);
+    requireDeviceLinkCapability();
+    if (isAppSessionBoundaryPending() || getActiveAppSession().mode !== 'cloud' || event.sender.isDestroyed())
+      throwIpcError('PRECONDITION_FAILED', 'Remote authorization unavailable');
+    const frame = event.senderFrame!;
+    return JSON.stringify([activeOwnerScopeKey(), event.sender.id, frame.processId, frame.routingId]);
+  };
+  // Local-only reads from the initiating frame; never a broadcast, mirror or remote invoke.
+  ipcMain.handle(PLUGIN_OAUTH_DEVICE_CODE_CHANNEL, async (event, raw: unknown) => {
+    const scope = deviceCodeScope(event);
+    try { return await deviceCodes.handle(scope, raw); }
+    catch { throwIpcError('PRECONDITION_FAILED', 'Authorization code unavailable; retry from the current card'); }
+  });
+  ipcMain.handle(PLUGIN_OAUTH_LOCAL_CHANNEL, async (event, raw: unknown) => {
+    assertTrustedAppRendererEvent(event);
+    requireDeviceLinkCapability();
+    try {
+      return await handleAssistPluginOauth({
+        owner: () => !isAppSessionBoundaryPending() && getActiveAppSession().mode === 'cloud' ? activeOwnerScopeKey() : null,
+        assertTarget: deviceId => {
+          if (event.sender.isDestroyed()) throw new Error('OAUTH_BRIDGE_UNAVAILABLE');
+          assertTrustedAppRendererEvent(event);
+          assertControlTargetEnabled(deps, deviceId);
+        },
+        invoke: deps.invoke,
+        localDeviceId: getDeviceId,
+        identity: async (deviceId, assertCurrent) => {
+          if (!app.isPackaged || !isCloudPilotDistribution()) throw new Error('OAUTH_BRIDGE_UNAVAILABLE');
+          const membershipId = getCurrentUserId(), accessToken = getAccessToken(), realm = getActiveAuthRealm();
+          if (!membershipId || !accessToken) throw new Error('OAUTH_BRIDGE_UNAVAILABLE');
+          const origin = readOauthAuthority(process.resourcesPath, realm, getClientEndpoint('authApiBaseUrl'));
+          return fetchOauthIdentity({origin, deviceId, membershipId, accessToken, assertCurrent,
+            fetch: (url, init) => net.fetch(url, init)});
+        },
+        openExternal: url => shell.openExternal(url),
+        copyDeviceCode: code => copyPrivateDeviceCode(clipboard, code),
+        presentDeviceCode: (target, prompt, assertCurrent, clearClipboard) => deviceCodes.present(deviceCodeScope(event), target, prompt, {
+          assertCurrent,
+          clearClipboard,
+          copy: code => { copyPrivateDeviceCode(clipboard, code); },
+          openExternal: url => shell.openExternal(url),
+        }),
+      }, raw);
+    } catch { throwIpcError('PRECONDITION_FAILED', 'Remote authorization unavailable; retry from the current card'); }
+  });
   const gated =
     <T extends unknown[]>(handler: (...args: T) => unknown) =>
     (...args: T) => {

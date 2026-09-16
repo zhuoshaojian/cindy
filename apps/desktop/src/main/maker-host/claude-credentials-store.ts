@@ -1,3 +1,4 @@
+import { cindyManagedHomeDir, cloudPilotKeychainService } from '../cloudPilotDistribution.js';
 /**
  * claude-credentials-store —— 读/写系统 Claude Code 的 OAuth 凭证(claudeAiOauth)。
  *
@@ -35,11 +36,13 @@ const log = desktopMakerLogger.child('claude-credentials-store');
 
 /** 默认 config dir(prod、无 CLAUDE_CONFIG_DIR override 时)= ~/.claude。 */
 function claudeConfigDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  return process.env.CLAUDE_CONFIG_DIR || path.join(cindyManagedHomeDir(), '.claude');
 }
 
 /** macOS Keychain service 名 —— 对齐 cc getMacOsKeychainStorageServiceName(prod 默认目录无后缀)。 */
-const KEYCHAIN_SERVICE = 'Claude Code-credentials';
+function keychainService(): string {
+  return cloudPilotKeychainService('Claude Code-credentials');
+}
 
 function keychainAccount(): string {
   try {
@@ -71,7 +74,7 @@ function readBlobRawMac(): string | null {
   try {
     const out = execFileSync(
       'security',
-      ['find-generic-password', '-a', keychainAccount(), '-w', '-s', KEYCHAIN_SERVICE],
+      ['find-generic-password', '-a', keychainAccount(), '-w', '-s', keychainService()],
       { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
     );
     const text = out.trim();
@@ -95,13 +98,13 @@ function readBlobRawMac(): string | null {
 function writeBlobMac(blob: Record<string, unknown>): void {
   const json = JSON.stringify(blob);
   const hex = Buffer.from(json, 'utf-8').toString('hex');
-  const interactiveCmd = `add-generic-password -U -a "${keychainAccount()}" -s "${KEYCHAIN_SERVICE}" -X "${hex}"\n`;
+  const interactiveCmd = `add-generic-password -U -a "${keychainAccount()}" -s "${keychainService()}" -X "${hex}"\n`;
   if (decideKeychainWriteMode(interactiveCmd.length) === 'stdin') {
     execFileSync('security', ['-i'], { input: interactiveCmd, stdio: ['pipe', 'ignore', 'ignore'] });
   } else {
     execFileSync(
       'security',
-      ['add-generic-password', '-U', '-a', keychainAccount(), '-s', KEYCHAIN_SERVICE, '-X', hex],
+      ['add-generic-password', '-U', '-a', keychainAccount(), '-s', keychainService(), '-X', hex],
       { stdio: ['ignore', 'ignore', 'ignore'] },
     );
   }
@@ -111,7 +114,7 @@ function deleteItemMac(): void {
   try {
     execFileSync(
       'security',
-      ['delete-generic-password', '-a', keychainAccount(), '-s', KEYCHAIN_SERVICE],
+      ['delete-generic-password', '-a', keychainAccount(), '-s', keychainService()],
       { stdio: ['ignore', 'ignore', 'ignore'] },
     );
   } catch {

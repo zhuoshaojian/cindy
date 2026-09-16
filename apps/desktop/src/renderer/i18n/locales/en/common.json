@@ -7739,6 +7739,7 @@
       "chooseOne": "Choose one setup method",
       "restoreAria": "Restore {{name}} settings",
       "minimizeAria": "Minimize {{name}} settings",
+      "remoteOauthHint": "Authorize in this computer’s browser to connect the account on the current remote device. Complete other settings on the remote device.",
       "completeOnDesktop": "Complete this setup on the controlled desktop. This card will update automatically.",
       "cancel": "Cancel",
       "cancelling": "Cancelling…",
@@ -7799,7 +7800,20 @@
       "inlineSecretStoreFailed": "Failed to save credential",
       "targetNotFound": "The target plugin was uninstalled or is currently unavailable",
       "targetDisabled": "The target plugin has been disabled",
-      "targetDisabledInWorkdir": "The user has disabled this plugin in the current working directory; do not retry."
+      "targetDisabledInWorkdir": "The user has disabled this plugin in the current working directory; do not retry.",
+      "deviceCode": {
+        "label": "Device Code",
+        "copied": "Device code copied",
+        "copiedHint": "Device code copied automatically. You can copy it again here.",
+        "instructions": "After choosing your account on {{host}}, paste this 8-character code into the code field and continue authorizing.",
+        "copyAgain": "Copy Code Again",
+        "reopen": "Reopen Authorization Page",
+        "remaining": "Waiting for authorization · {{time}} remaining for this attempt",
+        "completed": "Account connected. Device code cleared.",
+        "expired": "This authorization attempt expired. Start a new connection in the task to get a new code.",
+        "ended": "This authorization attempt ended. Start a new connection in the task.",
+        "actionFailed": "The action did not complete. Retry, or start a new connection if authorization has ended."
+      }
     },
     "createAgent": {
       "quickStart": "Quick start",
@@ -12676,5 +12690,11 @@
       "commit": "Based on {{commit}}",
       "branch": "Committed to {{branch}}"
     }
+  },
+  "pluginDeviceAuthorization": {
+    "githubTitle": "Connect GitHub",
+    "githubDescription": "Click to copy a one-time code and open github.com on this device. Paste the code there to authorize GitHub for the device running this task.",
+    "title": "Authorize Plugin Login",
+    "description": "Open {{host}} on this device to authorize the plugin running this task. Its credentials stay on the originating device."
   }
 }

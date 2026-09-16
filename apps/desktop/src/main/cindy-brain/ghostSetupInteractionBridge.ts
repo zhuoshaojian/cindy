@@ -1,4 +1,6 @@
 import { readBotAuthorizationCard } from '../../shared/botAuthorization.js';
+import { notifyOauthCardClosed } from '../plugin-oauth/context.js';
+import { supportsRemotePluginOauth } from '../plugin-oauth/runtime.js';
 /**
  * Desktop interaction bridge for Host-owned plugin setup cards.
  *
@@ -36,6 +38,8 @@ export interface GhostSetupInteractionStep {
 }
 
 export interface GhostSetupInteractionSnapshot {
+  /** Presentation hint; only the dedicated Main bridge may execute OAuth remotely. */
+  remoteOauth?: true;
   kind: 'plugin_setup';
   requestId: string;
   revision: number;
@@ -200,6 +204,7 @@ export class GhostSetupInteractionBridge {
     const entry = this.pending.get(requestId);
     if (!entry || entry.completed) return false;
     entry.completed = true;
+    notifyOauthCardClosed(requestId);
     return true;
   }
 
@@ -207,6 +212,7 @@ export class GhostSetupInteractionBridge {
     const entry = this.pending.get(requestId);
     if (!entry) return false;
     this.pending.delete(requestId);
+    notifyOauthCardClosed(requestId);
     try {
       this.deps.broadcast(MAKER_PUSH.INTERACTION_DISMISSED, {
         sessionId: entry.sessionId,
@@ -326,6 +332,7 @@ export function sanitizeGhostSetupSnapshotForRemote(
 ): GhostSetupInteractionSnapshot {
   return {
     kind: snapshot.kind,
+    ...(supportsRemotePluginOauth() ? { remoteOauth: true as const } : {}),
     requestId: snapshot.requestId,
     revision: snapshot.revision,
     ...(snapshot.terminal ? { terminal: true as const } : {}),

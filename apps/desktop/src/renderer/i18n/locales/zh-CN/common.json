@@ -7733,6 +7733,7 @@
       "chooseOne": "选择一种配置方式",
       "restoreAria": "展开 {{name}} 设置",
       "minimizeAria": "收起 {{name}} 设置",
+      "remoteOauthHint": "在这台电脑的浏览器中授权，账号将连接到当前远程设备。其他设置仍需在远程设备上完成。",
       "completeOnDesktop": "请在远程电脑完成设置，本卡片会自动更新状态。",
       "cancel": "取消",
       "cancelling": "正在取消…",
@@ -7793,7 +7794,20 @@
       "inlineSecretStoreFailed": "凭证保存失败",
       "targetNotFound": "目标插件已卸载或当前不可用",
       "targetDisabled": "目标插件已被停用",
-      "targetDisabledInWorkdir": "用户已在当前工作目录停用该插件；不要重试。"
+      "targetDisabledInWorkdir": "用户已在当前工作目录停用该插件；不要重试。",
+      "deviceCode": {
+        "label": "设备验证码",
+        "copied": "验证码已复制",
+        "copiedHint": "验证码已自动复制，也可在这里再次复制",
+        "instructions": "在 {{host}} 选择账号后，将此 8 位验证码粘贴到输入框，再继续授权。",
+        "copyAgain": "再次复制验证码",
+        "reopen": "重新打开授权页",
+        "remaining": "等待授权，本次操作剩余 {{time}}",
+        "completed": "账号已连接，验证码已清除",
+        "expired": "本次授权已过期，请在任务中重新发起连接获取新码",
+        "ended": "本次授权已结束，请在任务中重新发起连接",
+        "actionFailed": "操作未完成，请重试；若授权已结束，请重新发起连接"
+      }
     },
     "createAgent": {
       "quickStart": "快速开始",
@@ -12655,5 +12669,11 @@
       "commit": "基于 {{commit}}",
       "branch": "已提交到 {{branch}}"
     }
+  },
+  "pluginDeviceAuthorization": {
+    "githubTitle": "连接 GitHub",
+    "githubDescription": "点击后会复制一次性验证码，并在本机打开 github.com。请在网页中粘贴验证码，为运行此任务的设备授权 GitHub。",
+    "title": "授权插件登录",
+    "description": "在这台设备打开 {{host}}，为执行此任务的插件授权。凭据保存在发起授权的设备上。"
   }
 }

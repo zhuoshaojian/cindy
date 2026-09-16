@@ -24,7 +24,7 @@ import type {
 } from '../../cindy-brain/ghostSetupCoordinator';
 import { t } from '../../i18n';
 import type { CindyGhostsHostDeps } from '../ghost';
-import type { InstalledGhost } from '../../../shared/ghost';
+import type { InstalledGhost, GhostSetupAssessment } from '../../../shared/ghost';
 
 const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-workdir-gate-'));
 const prefsFile = () => path.join(tmpUserData, 'ghost-workdir-prefs.json');
@@ -104,6 +104,7 @@ const ledgerAddRefMock = vi.fn(async (params: TestLedgerRef) => {
   ledgerRefs.push({ ...params });
   return `ref-${ledgerRefs.length}`;
 });
+const githubConnectMock = vi.fn();
 const callCindyMediaMock = vi.fn();
 const dirDepositMock = vi.fn(() => ({ ok: true, receipt: { token: 'dir-ticket' } }));
 const saveDepositMock = vi.fn(() => ({ ok: true, receipt: { token: 'save-ticket' } }));
@@ -147,7 +148,7 @@ const WORKDIR = '/proj/alpha';
 const listMock = vi.fn<() => unknown[]>(() => []);
 const activeSessionAvailableMock = vi.fn<(ghostId: string) => boolean>(() => true);
 const dispatchMock = vi.fn(async () => ({ ok: true as const, result: 'done' }));
-const setupAssessmentMock = vi.fn((_ghostId: string) => {
+const setupAssessmentMock = vi.fn((_ghostId: string): GhostSetupAssessment => {
   void _ghostId;
   return {
     state: 'ready' as const,
@@ -176,6 +177,7 @@ const sessionSnapshotMock = vi.fn(async (): Promise<{
   remoteHostId: null,
 }));
 vi.mock('../../cindy-brain/index.js', () => ({
+  connectGhostGithubAccount: githubConnectMock,
   getGhostManager: () => ({ list: listMock, managedRootDirs: () => [] }),
   ghostForgeForbiddenRootDirs: () => [],
   listAvailableGhostsForAuthorization: () => listMock(),
@@ -336,6 +338,8 @@ beforeEach(() => {
   authorizationRequestMock.mockClear();
   isAuthorizationSessionMock.mockResolvedValue(false);
   fs.mkdirSync(outsideDir, { recursive: true });
+  githubConnectMock.mockReset();
+  githubConnectMock.mockResolvedValue(null);
   listMock.mockReset();
   listMock.mockReturnValue([chipGhost('art'), chipGhost('other')]);
   activeSessionAvailableMock.mockReset();
@@ -785,6 +789,7 @@ describe('写路径 roundtrip(真实存储,tmp userData)', () => {
 
 describe('connect_account shares Host live plugin policy', () => {
   it('passes dynamically discovered plugins to Host without treating builtin toolsets as plugin grants', async () => {
+    isAuthorizationSessionMock.mockResolvedValueOnce(true);
     const deps = makeDeps('claude-code', 'bot-session', 'bot-instance', {
       __cindyAllowedBuiltinPluginIds: ['memory', 'xdt_helper'],
     });
@@ -792,6 +797,91 @@ describe('connect_account shares Host live plugin policy', () => {
     expect(authorizationRequestMock).toHaveBeenCalledWith('bot-session', { kind: 'plugin', id: 'art' });
     await deps.connectAccount!({ kind: 'host', id: 'grok' });
     expect(authorizationRequestMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('connect_account ordinary task entry', () => {
+  it('routes official GitHub login through the Host adapter from an ordinary task', async () => {
+    listMock.mockReturnValue([chipGhost('cindy-github')]);
+    githubConnectMock.mockResolvedValueOnce({ ok: true, status: 'ready', ghostId: 'cindy-github' });
+    const signal = new AbortController().signal;
+    expect(await makeDeps().connectAccount!({ kind: 'plugin', id: 'cindy-github', reauthorize: true }, signal))
+      .toMatchObject({ ok: true, status: 'ready' });
+    expect(githubConnectMock).toHaveBeenCalledWith(expect.objectContaining({ signal, reauthorize: true, assertCurrent: expect.any(Function) }));
+    expect(ensureReadyMock).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(grantAttachmentsMock).not.toHaveBeenCalled();
+  });
+  it('blocks disabled GitHub before the login helper and does not bypass trust rejection', async () => {
+    listMock.mockReturnValue([chipGhost('cindy-github')]);
+    setGhostDisabledForWorkdir(WORKDIR, 'cindy-github', true);
+    expect(await makeDeps().connectAccount!({ kind: 'plugin', id: 'cindy-github' }))
+      .toMatchObject({ ok: false });
+    expect(githubConnectMock).not.toHaveBeenCalled();
+    setGhostDisabledForWorkdir(WORKDIR, 'cindy-github', false);
+    expect(await makeDeps().connectAccount!({ kind: 'plugin', id: 'cindy-github' }))
+      .toMatchObject({ ok: false, errorCode: 'PLUGIN_CONNECTION_METHOD_REQUIRED' });
+    expect(dispatchMock).not.toHaveBeenCalled();
+  });
+
+  const configured = {
+    state: 'ready' as const, revision: 1,
+    groups: [{ id: 'account', mode: 'any_of' as const, items: [{
+      ref: 'secret:account', kind: 'oauth' as const, label: 'Account', state: 'satisfied' as const,
+      actions: [{ id: 'oauth_connect:secret:account', kind: 'oauth_connect' as const }],
+    }] }],
+  };
+
+  it('uses the normal setup card without a teammate, business call, or attachment grant', async () => {
+    setupAssessmentMock.mockReturnValue(configured);
+    const signal = new AbortController().signal;
+    await expect(makeDeps().connectAccount!({ kind: 'plugin', id: 'art' }, signal))
+      .resolves.toMatchObject({ ok: true, status: 'ready', ghostId: 'art' });
+    expect(ensureReadyMock).toHaveBeenCalledWith(expect.objectContaining({
+      ghostId: 'art', workingDir: WORKDIR, signal,
+    }));
+    expect(ensureReadyMock.mock.calls[0][0].tool).toBeUndefined();
+    expect(authorizationRequestMock).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(grantAttachmentsMock).not.toHaveBeenCalled();
+  });
+
+  it('passes explicit reconnect and cancellation through the normal waiter', async () => {
+    setupAssessmentMock.mockReturnValue(configured);
+    ensureReadyMock.mockResolvedValueOnce({ ok: false, errorCode: 'SETUP_CANCELLED', message: 'Cancelled' });
+    await expect(makeDeps().connectAccount!({ kind: 'plugin', id: 'art', reauthorize: true }))
+      .resolves.toMatchObject({ ok: false, errorCode: 'SETUP_CANCELLED' });
+    expect(ensureReadyMock.mock.calls[0][0].reauthorize).toBe(true);
+  });
+
+  it('rejects an already aborted request before opening a card', async () => {
+    const controller = new AbortController(); controller.abort();
+    await expect(makeDeps().connectAccount!({ kind: 'plugin', id: 'art' }, controller.signal))
+      .resolves.toMatchObject({ ok: false, errorCode: 'SETUP_CANCELLED' });
+    expect(ensureReadyMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps unavailable plugins outside the connection entry', async () => {
+    setGhostDisabledForWorkdir(WORKDIR, 'art', true);
+    await expect(makeDeps().connectAccount!({ kind: 'plugin', id: 'art' }))
+      .resolves.toMatchObject({ ok: false, errorCode: 'GHOST_DISABLED_IN_WORKDIR' });
+    expect(ensureReadyMock).not.toHaveBeenCalled();
+  });
+
+  it('rechecks visibility after the user completes setup', async () => {
+    setupAssessmentMock.mockReturnValue(configured);
+    ensureReadyMock.mockImplementationOnce(async () => {
+      setGhostDisabledForWorkdir(WORKDIR, 'art', true);
+      return { ok: true, assessment: configured };
+    });
+    await expect(makeDeps().connectAccount!({ kind: 'plugin', id: 'art' }))
+      .resolves.toMatchObject({ ok: false, errorCode: 'GHOST_DISABLED_IN_WORKDIR' });
+  });
+
+  it('does not claim Host-managed platform login from an empty ready assessment', async () => {
+    await expect(makeDeps().connectAccount!({ kind: 'plugin', id: 'art' }))
+      .resolves.toMatchObject({ ok: false, errorCode: 'PLUGIN_CONNECTION_METHOD_REQUIRED' });
+    expect(ensureReadyMock).not.toHaveBeenCalled();
   });
 });
 

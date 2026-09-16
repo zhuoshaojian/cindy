@@ -1061,6 +1061,12 @@ function buildSwiftHelperForForgeArch(
 function buildRemoteDesktopInput(platform: ForgePlatform, arch: ForgeArch): void {
   const destDir = path.join(__dirname, 'resources', 'tools', 'remote-desktop');
   fs.mkdirSync(destDir, { recursive: true });
+  if (platform === 'linux') {
+    fs.copyFileSync(
+      path.join(__dirname, 'native', 'remote-desktop', 'linux-input-guard.py'),
+      path.join(destDir, 'linux-input-guard.py'),
+    );
+  }
   if (process.platform === 'darwin' && isMacForgePlatform(platform)) {
     const dest = path.join(destDir, 'cindy-macos-desktop-input');
     const inputBuild = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-input-build-'));

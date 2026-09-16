@@ -243,6 +243,45 @@ function harness(initial: GhostSetupAssessment) {
 }
 
 describe('GhostSetupCoordinator', () => {
+  it('cancels a connection waiter and rejects a replay of its card', async () => {
+    const h = harness(required());
+    const controller = new AbortController();
+    const waiting = h.coordinator.ensureReady({ sessionId: 'task', ghostId: 'gmail', signal: controller.signal });
+    await vi.waitFor(() => expect(h.bridge.pendingSnapshots()).toHaveLength(1));
+    const card = h.bridge.pendingSnapshots()[0].request;
+    controller.abort();
+    await expect(waiting).resolves.toMatchObject({ ok: false, errorCode: 'SETUP_CANCELLED' });
+    expect(h.bridge.pendingSnapshots()).toHaveLength(0);
+    expect(h.bridge.resolve(card.requestId, {
+      kind: 'plugin_setup', action: 'run_action', expectedRevision: card.revision,
+      actionId: 'oauth_connect:secret:google',
+    })).toBe(false);
+    expect(h.executeAction).not.toHaveBeenCalled();
+  });
+
+  it('does not open a card after its MCP request was already cancelled', async () => {
+    const h = harness(required());
+    const controller = new AbortController(); controller.abort();
+    await expect(h.coordinator.ensureReady({ sessionId: 'task', ghostId: 'gmail', signal: controller.signal }))
+      .resolves.toMatchObject({ ok: false, errorCode: 'SETUP_CANCELLED' });
+    expect(h.bridge.pendingSnapshots()).toHaveLength(0);
+  });
+
+  it('explicit reconnect waits for its actual OAuth action, not an unrelated settings event', async () => {
+    const configured = ready();
+    configured.groups[0].items[0].actions = required().groups[0].items[0].actions;
+    const h = harness(configured);
+    const waiting = h.coordinator.ensureReady({ sessionId: 'task', ghostId: 'gmail', reauthorize: true });
+    await vi.waitFor(() => expect(h.bridge.pendingSnapshots()).toHaveLength(1));
+    h.changeBus.emit('gmail', { source: 'secret' });
+    await vi.waitFor(() => expect(h.bridge.pendingSnapshots()[0].request.steps[0].phase).toBe('pending'));
+    const card = h.bridge.pendingSnapshots()[0].request;
+    await h.bridge.resolve(card.requestId, { kind: 'plugin_setup', action: 'run_action',
+      expectedRevision: card.revision, actionId: 'oauth_connect:secret:google' });
+    await expect(waiting).resolves.toMatchObject({ ok: true });
+    expect(h.executeAction).toHaveBeenCalledTimes(1);
+  });
+
   it('ready path does not create an interaction', async () => {
     const h = harness(ready());
     await expect(

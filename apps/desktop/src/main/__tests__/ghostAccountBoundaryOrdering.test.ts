@@ -20,9 +20,10 @@ describe('Ghost account-boundary teardown ordering', () => {
     const end = bootstrap.indexOf('\n}\n', start);
     const body = bootstrap.slice(start, end);
 
-    const interrupt = body.indexOf('interruptGhostCallsForAccountBoundary));');
-    const wait = body.indexOf('waitForGhostMutations));');
-    const suspend = body.indexOf('suspendAllGhosts);');
+    // Assert the timeout-wrapped calls and their order, independent of formatter line breaks.
+    const interrupt = body.search(/await run\(\s*'interruptGhostCallsForAccountBoundary',\s*\(\) =>\s*withAuthBoundaryTimeout\(\s*'interrupt Ghost calls',\s*interruptGhostCallsForAccountBoundary,?\s*\),?\s*\);/);
+    const wait = body.search(/await run\(\s*'waitForGhostMutations',\s*\(\) =>\s*withAuthBoundaryTimeout\(\s*'wait for Ghost mutations',\s*waitForGhostMutations,?\s*\),?\s*\);/);
+    const suspend = body.search(/await run\(\s*'suspendAllGhosts',\s*suspendAllGhosts,?\s*\);/);
 
     expect(interrupt).toBeGreaterThan(-1);
     expect(interrupt).toBeLessThan(wait);

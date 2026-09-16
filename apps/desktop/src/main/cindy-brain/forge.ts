@@ -3843,12 +3843,18 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
 \`\`\`js
 const response = await cindy.node.request({
   method: 'taptap/connect',
+  callId: msg.callId, // tool-call 内透传；取消或交卷时结束本请求与其子进程
   params: { projectId: 'demo' },
   timeoutMs: 30000 // 可选 1000–120000，缺省 30000
 });
 if (!response.ok) throw new Error(response.message);
 const result = response.result;
 \`\`\`
+
+当前工具触发的登录等前台请求应透传主机下发的 \`callId\`。主机只接受当前插件的
+在途调用；取消、超时或交卷后，该 Node 请求及由它启动的子进程一并结束，晚到的
+子进程启动会被拒绝。不传 \`callId\` 保持既有独立后台生命周期；设置页等无
+tool-call 的入口不能伪造或复用调用编号。
 
 #### Node Worker 的持久化凭证绑定
 
@@ -4028,6 +4034,21 @@ const maker = require('@taptap/maker'); // 之后它的自启动全部走了正�
 - stdio 由宿主纯字节中继(base64 帧,不参与 JSON-RPC 协议、不受逐行检查),
   但**只适合文本/协议流**,别拿它传大文件;
 - 级联生死:worker 退出/被停/插件停用,子进程一并收掉,不留孤儿。
+
+### 4.12.5 随包 CLI 的登录授权卡片
+
+当第三方 CLI 使用「浏览器授权、发起端轮询」时，Node worker 可在**当前请求处理函数内**
+捕获 \`globalThis.__CINDY_NODE__.bindDeviceAuthorization()\` 返回的函数，再在 CLI 输出回调
+里调用 \`await authorize(httpsUrl)\`。同一请求只接受一个链接。Node 请求必须带来自当前
+\`tool-call\` 的 \`callId\`；宿主反查插件、任务和 owner，插件不能自选任务。无绑定时返回
+undefined；不支持时明确报错，远程流程不能回退到在云端开浏览器或把链接交给模型。
+
+宿主创建含真实授权域名的卡片，用户点击后由当前设备的可信 Host 打开链接。远程链接只走既有
+加密授权事务；这个 Promise 只代表浏览器已打开，**不代表登录完成**。CLI 仍在原设备轮询，
+凭据由原 CLI 保存；Node RPC 只有在真实领取/保存和检查完成后才返回成功。取消卡片/任务、
+断开控制端或事务到期会取消该 Node RPC 及其绑定子进程。不要把 URL、轮询码或 token 放进
+stdout 的 RPC 结果、通知、模型回复或错误；业务状态返回固定摘要。此卡片不改变 Host 的
+network setup/readiness，不能拿 CLI 的登录结果冒充宿主凭据配置已完成。
 
 ## 4.13 会话上下文(sessionContext 能力)
 
