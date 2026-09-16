@@ -1,12 +1,35 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import {
   IOS_SIMULATOR_HELPER_UNSUPPORTED_REASON,
   decideNativeSidecarBuild,
   parseMachOArchitectures,
+  resolveSimulatorKitFrameworks,
 } from "./native-sidecar-build-policy.mjs";
 
 describe("native sidecar build policy", () => {
+  it("finds the selected Xcode's real binary in either layout and fails for an incomplete install", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cindy-xcode-layout-"));
+    try {
+      const developer = path.join(root, "Contents", "Developer");
+      const oldDir = path.join(developer, "Library", "PrivateFrameworks");
+      const newDir = path.join(root, "Contents", "SharedFrameworks");
+      fs.mkdirSync(path.join(newDir, "SimulatorKit.framework"), { recursive: true });
+      expect(() => resolveSimulatorKitFrameworks(developer)).toThrow("binary not found");
+      fs.writeFileSync(path.join(newDir, "SimulatorKit.framework", "SimulatorKit"), "fixture");
+      expect(resolveSimulatorKitFrameworks(developer)).toBe(newDir);
+      fs.mkdirSync(path.join(oldDir, "SimulatorKit.framework"), { recursive: true });
+      fs.writeFileSync(path.join(oldDir, "SimulatorKit.framework", "SimulatorKit"), "fixture");
+      expect(resolveSimulatorKitFrameworks(developer)).toBe(oldDir);
+      expect(() => resolveSimulatorKitFrameworks(path.join(root, "Other", "Contents", "Developer")))
+        .toThrow("binary not found");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("parses unique architectures from lipo output", () => {
     expect(parseMachOArchitectures("x86_64 arm64e x86_64\n")).toEqual([
       "x86_64",

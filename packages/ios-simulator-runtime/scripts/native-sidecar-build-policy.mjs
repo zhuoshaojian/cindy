@@ -1,6 +1,26 @@
+import fs from "node:fs";
+import path from "node:path";
+
 export const IOS_SIMULATOR_HELPER_BUILD_RESULT_FILENAME = "build-result.json";
 export const IOS_SIMULATOR_HELPER_UNSUPPORTED_REASON =
   "simulator-kit-architecture-unavailable";
+
+export function resolveSimulatorKitFrameworks(developerDir) {
+  const candidates = [
+    path.join(developerDir, "Library", "PrivateFrameworks"),
+    path.resolve(developerDir, "..", "SharedFrameworks"),
+  ];
+  for (const directory of candidates) {
+    try {
+      if (fs.statSync(path.join(directory, "SimulatorKit.framework", "SimulatorKit")).isFile()) {
+        return directory;
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+    }
+  }
+  throw new Error("SimulatorKit binary not found in the selected Xcode");
+}
 
 export function parseMachOArchitectures(value) {
   return [
