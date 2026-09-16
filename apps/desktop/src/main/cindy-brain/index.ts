@@ -1,4 +1,5 @@
-import { openDeviceAuthorizationCard } from '../plugin-oauth/deviceCard.js';
+import { openDeviceAuthorizationCard, openPluginAuthorizationCard } from '../plugin-oauth/deviceCard.js';
+import { HostLoginAdapters, type HostLoginInput } from '../plugin-oauth/hostLoginAdapters.js';
 import { t as authorizationText } from '../i18n.js';
 import { getBotAuthorizationService } from '../maker-ipc/botAuthorizationService.js';
 import { isResidentBrowserGhost, spawnResidentGhost } from './residentGhost.js';
@@ -643,18 +644,26 @@ export function acquireGhostMutationLeaseForMcp(expectedOwner: ActiveAppSession)
   return beginGhostMutation(expectedOwner);
 }
 
+const hostLoginAdapters = new HostLoginAdapters([{
+  id: 'github-cli',
+  supports: ghost => ghost.manifest.id === 'cindy-github' && isCindyOfficialTrustInfo(ghost.trust)
+    && !!ghost.manifest.network?.secrets?.some(secret => secret.source === 'gh-cli'),
+  connect: connectGithubHostAccount,
+}]);
+
+/** Native credential-source adapters precede the existing declarative setup engine. */
+export async function connectGhostAccount(input: HostLoginInput & { ghostId: string }): Promise<Record<string, unknown> | null> {
+  const ghost = findAvailableGhost(input.ghostId);
+  return ghost ? hostLoginAdapters.connect(ghost, input) : null;
+}
+
 /** Reuses the existing official gh-cli credential source; no plugin changes or token IPC. */
-export async function connectGhostGithubAccount(input: {
-  sessionId: string; reauthorize?: boolean; signal?: AbortSignal; assertCurrent(): void;
-}): Promise<Record<string, unknown> | null> {
-  const ghost = findAvailableGhost('cindy-github');
-  if (!ghost || !isCindyOfficialTrustInfo(ghost.trust)
-    || !ghost.manifest.network?.secrets?.some(secret => secret.source === 'gh-cli')) return null;
+async function connectGithubHostAccount(ghost: InstalledGhost, input: HostLoginInput): Promise<Record<string, unknown>> {
   const owner = captureGhostMutationOwner();
   return connectGithubDevice({ ...input, ghost: { id: ghost.manifest.id, name: ghost.manifest.name },
     assertCurrent: () => {
       input.assertCurrent();
-      const current = findAvailableGhost('cindy-github');
+      const current = findAvailableGhost(ghost.manifest.id);
       if (!ghostOwnerScope.isStable?.(owner) || !current || current.dir !== ghost.dir
         || !isCindyOfficialTrustInfo(current.trust) || JSON.stringify(current.approval) !== JSON.stringify(ghost.approval))
         throw new Error('AUTH_FAILED');
@@ -1798,6 +1807,16 @@ export function getGhostNodeRuntimeBroker(): GhostNodeRuntimeBroker {
             title: authorizationText('pluginDeviceAuthorization.title'),
             description: authorizationText('pluginDeviceAuthorization.description'),
           },
+        });
+      },
+      openAuthorization: input => {
+        const bridge = getGhostSetupInteractionBridge();
+        if (!bridge) throw new Error('PLUGIN_AUTHORIZATION_UNAVAILABLE');
+        return openPluginAuthorizationCard(input, {
+          bridge, openExternal: url => shell.openExternal(url),
+          copyDeviceCode: code => copyPrivateDeviceCode(clipboard, code),
+          copy: { title: authorizationText('pluginDeviceAuthorization.title'),
+            description: authorizationText('pluginDeviceAuthorization.description') },
         });
       },
       ownerScope: ghostOwnerScope,

@@ -1,4 +1,7 @@
 import type { PluginOauthAction } from '@cindy/device-link';
+import { randomBytes } from 'node:crypto';
+import { createPluginSecretPresentation } from '../../shared/pluginOauth.js';
+import { getRemoteOauthContext } from './context.js';
 import type { GhostSetupInteractionBridge } from '../cindy-brain/ghostSetupInteractionBridge.js';
 import type { BotAuthorizationService } from '../maker-ipc/botAuthorizationService.js';
 import { initializePluginOauthHost } from './runtime.js';
@@ -10,45 +13,81 @@ export function initializePluginOauthCards(deps: {
   bots(): BotAuthorizationService | null;
   owner(): string | null;
   available(peer: string): boolean;
-  identity?: () => {deviceId: string; membershipId: string} | null;
+  identity?: () => { deviceId: string; membershipId: string } | null;
 }): void {
-  const normal = (action: PluginOauthAction): OauthCardBinding | null => {
+  const findCardAction = (action: PluginOauthAction) => {
     const found = deps.bridge
       .pendingSnapshots()
       .find((e) => e.request.requestId === action.requestId);
-    if (
-      !found ||
-      found.request.terminal ||
-      found.request.revision !== action.expectedRevision ||
-      !found.request.steps.some(
-        (s) =>
-          s.action?.id === action.actionId &&
-          s.action.kind === 'oauth_connect' &&
-          (s.phase === 'pending' || s.phase === 'failed'),
-      )
-    )
+    if (!found || found.request.terminal || found.request.revision !== action.expectedRevision)
       return null;
-    return {
+    const step = found.request.steps.find(
+      (s) =>
+        s.action?.id === action.actionId &&
+        (s.action.kind === 'oauth_connect' ||
+          (found.request.remoteSecret === true && s.action.kind === 'inline_form')) &&
+        (s.phase === 'pending' || s.phase === 'failed'),
+    );
+    if (!step) return null;
+    const binding: OauthCardBinding = {
       ghostId: found.request.ghost.id,
       current: () =>
         deps.bridge
           .pendingSnapshots(found.sessionId)
           .some((e) => e.request.requestId === action.requestId && !e.request.terminal),
     };
+    return { snapshot: found.request, step, binding };
   };
-  initializePluginOauthHost({
-    owner: deps.owner,
-    available: deps.available,
-    bind: async (action) => normal(action) ?? (await deps.bots()?.bindRemoteOauth(action)) ?? null,
-    run: async (action) => {
-      if (normal(action))
-        return deps.bridge.resolve(action.requestId, {
-          kind: 'plugin_setup',
-          action: 'run_action',
-          actionId: action.actionId,
-          expectedRevision: action.expectedRevision,
-        });
-      return (await deps.bots()?.resolveRemoteOauth(action)) ?? false;
+  initializePluginOauthHost(
+    {
+      owner: deps.owner,
+      available: deps.available,
+      bind: async (action) =>
+        findCardAction(action)?.binding ?? (await deps.bots()?.bindRemoteOauth(action)) ?? null,
+      run: async (action) => {
+        const card = findCardAction(action);
+        if (card) {
+          const { snapshot, step } = card;
+          if (step.action?.kind === 'inline_form') {
+            const remote = getRemoteOauthContext();
+            const submitSecret = remote?.submitSecret;
+            if (!remote || !submitSecret) return false;
+            const field = step.action.form.fields[0];
+            const presentation = createPluginSecretPresentation(snapshot, step, field);
+            void (async () => {
+              try {
+                let value = await submitSecret({
+                  kind: 'secret-entry',
+                  state: randomBytes(32).toString('base64url'),
+                  presentation,
+                });
+                remote.assertCurrent();
+                // No optimistic write: the same card/revision/action must still be
+                // pending, then the ordinary executor re-resolves its actual vault key.
+                if (!findCardAction(action)) throw new Error('PLUGIN_SECRET_UNAVAILABLE');
+                const accepted = deps.bridge.submitInline(action.requestId, {
+                  actionId: action.actionId,
+                  expectedRevision: action.expectedRevision,
+                  value,
+                });
+                value = '';
+                if (!accepted) throw new Error('PLUGIN_SECRET_UNAVAILABLE');
+              } catch {
+                remote.finish(false);
+              }
+            })();
+            return true;
+          }
+          return deps.bridge.resolve(action.requestId, {
+            kind: 'plugin_setup',
+            action: 'run_action',
+            actionId: action.actionId,
+            expectedRevision: action.expectedRevision,
+          });
+        }
+        return (await deps.bots()?.resolveRemoteOauth(action)) ?? false;
+      },
     },
-  }, deps.identity);
+    deps.identity,
+  );
 }

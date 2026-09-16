@@ -2,13 +2,20 @@ import {
   PLUGIN_OAUTH_CHANNEL,
   oauthId,
   parsePluginOauthAction,
+  parsePluginSecretInput,
+  parsePluginSecretPresentation,
   type InvokeResultPayload,
   type PluginOauthTrustedIdentity,
 } from '@cindy/device-link';
 import { assistPluginOauth } from './controller.js';
 import { capturePluginOauthPeer } from './runtime.js';
 import { authenticateOauthController } from './authentication.js';
-import type { PluginOauthDeviceCodePrompt, PluginOauthDeviceCodeClose, PluginOauthDeviceCodeTarget } from '../../shared/pluginOauthDeviceCode.js';
+import type { LocalPluginSecretRequest } from '../../shared/pluginOauth.js';
+import type {
+  PluginOauthDeviceCodePrompt,
+  PluginOauthDeviceCodeClose,
+  PluginOauthDeviceCodeTarget,
+} from '../../shared/pluginOauthDeviceCode.js';
 
 const active = new Set<string>();
 export interface LocalOauthDeps {
@@ -17,7 +24,12 @@ export interface LocalOauthDeps {
   invoke(deviceId: string, channel: string, args: unknown[]): Promise<InvokeResultPayload>;
   openExternal(url: string): Promise<void>;
   copyDeviceCode?(code: string): () => void;
-  presentDeviceCode?(target: PluginOauthDeviceCodeTarget, prompt: PluginOauthDeviceCodePrompt, assertCurrent: () => void, clearClipboard: () => void): PluginOauthDeviceCodeClose;
+  presentDeviceCode?(
+    target: PluginOauthDeviceCodeTarget,
+    prompt: PluginOauthDeviceCodePrompt,
+    assertCurrent: () => void,
+    clearClipboard: () => void,
+  ): PluginOauthDeviceCodeClose;
   localDeviceId(): string;
   identity(deviceId: string, assertCurrent: () => void): Promise<PluginOauthTrustedIdentity>;
 }
@@ -25,6 +37,14 @@ export interface LocalOauthDeps {
 export async function handleAssistPluginOauth(
   deps: LocalOauthDeps,
   raw: unknown,
+): Promise<{ accepted: true }> {
+  return handleAuthorization(deps, raw);
+}
+
+async function handleAuthorization(
+  deps: LocalOauthDeps,
+  raw: unknown,
+  secret?: Pick<LocalPluginSecretRequest, 'value' | 'presentation'>,
 ): Promise<{ accepted: true }> {
   const fail = () => new Error('OAUTH_BRIDGE_UNAVAILABLE');
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw fail();
@@ -46,8 +66,13 @@ export async function handleAssistPluginOauth(
     const target = await deps.identity(deviceId, assertCurrent);
     assertCurrent();
     if (target.deviceId !== deviceId) throw fail();
-    const exchange = await authenticateOauthController({target, peer: deps.localDeviceId(), action, ghostId, assertCurrent,
-      invoke: async raw => {
+    const exchange = await authenticateOauthController({
+      target,
+      peer: deps.localDeviceId(),
+      action,
+      ghostId,
+      assertCurrent,
+      invoke: async (raw) => {
         // A vanished window may send an encrypted cancellation, but never under a new owner/peer generation.
         peerCurrent();
         if (owner !== deps.owner()) throw fail();
@@ -55,15 +80,21 @@ export async function handleAssistPluginOauth(
         peerCurrent();
         if (owner !== deps.owner() || !result.ok) throw fail();
         return result.result;
-      }});
+      },
+    });
     return await assistPluginOauth(
       {
+        ...(secret ? { secretValue: secret.value, secretPresentation: secret.presentation } : {}),
         assertCurrent,
         openExternal: deps.openExternal,
         copyDeviceCode: deps.copyDeviceCode,
-        presentDeviceCode: (prompt, clearClipboard) => deps.presentDeviceCode?.(
-          { deviceId, ghostId, requestId: action.requestId, actionId: action.actionId }, prompt, assertCurrent, clearClipboard,
-        ) ?? (() => {}),
+        presentDeviceCode: (prompt, clearClipboard) =>
+          deps.presentDeviceCode?.(
+            { deviceId, ghostId, requestId: action.requestId, actionId: action.actionId },
+            prompt,
+            assertCurrent,
+            clearClipboard,
+          ) ?? (() => {}),
         invoke: async (request) => {
           // A closed/navigated window must still cancel its existing transaction.
           // Never send cancellation under a new owner or re-established peer.
@@ -81,4 +112,18 @@ export async function handleAssistPluginOauth(
   } finally {
     active.delete(slot);
   }
+}
+
+/** One-shot local input IPC. The value cannot name a storage path, key or another action. */
+export async function handleSubmitPluginSecret(
+  deps: LocalOauthDeps,
+  raw: unknown,
+): Promise<{ accepted: true }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+    throw new Error('PLUGIN_SECRET_UNAVAILABLE');
+  const { value, presentation, ...target } = raw as Record<string, unknown>;
+  return handleAuthorization(deps, target, {
+    value: parsePluginSecretInput(value),
+    presentation: parsePluginSecretPresentation(presentation),
+  });
 }

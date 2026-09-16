@@ -7740,6 +7740,7 @@
       "restoreAria": "Restore {{name}} settings",
       "minimizeAria": "Minimize {{name}} settings",
       "remoteOauthHint": "Authorize in this computer’s browser to connect the account on the current remote device. Complete other settings on the remote device.",
+      "remoteSecretHint": "Enter the key here to save it only for this plugin on the current cloud instance. It will not appear in chat history.",
       "completeOnDesktop": "Complete this setup on the controlled desktop. This card will update automatically.",
       "cancel": "Cancel",
       "cancelling": "Cancelling…",

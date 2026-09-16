@@ -100,7 +100,7 @@ function DeviceCodeView({ target, active }: { target: PluginOauthDeviceCodeTarge
         <p className="text-13 text-[var(--text-secondary)]" role="status">
           {t('newChat.pluginSetup.deviceCode.copiedHint')}
         </p>
-        <code className="select-all text-20 font-medium tracking-wider text-[var(--text-primary)]"
+        <code className="select-all whitespace-pre-wrap break-all text-20 font-medium tracking-wider text-[var(--text-primary)]"
           aria-label={t('newChat.pluginSetup.deviceCode.label')}>{ready.userCode}</code>
         <p className="text-13 leading-5 text-[var(--text-secondary)]">
           {t('newChat.pluginSetup.deviceCode.instructions', { host: ready.verificationHost })}

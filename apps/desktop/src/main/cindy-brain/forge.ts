@@ -4037,6 +4037,44 @@ const maker = require('@taptap/maker'); // 之后它的自启动全部走了正�
 
 ### 4.12.5 随包 CLI 的登录授权卡片
 
+优先调用通用 \`globalThis.__CINDY_NODE__.bindAuthorization()\`。在**当前 JSON-RPC 请求处理函数内**
+同步捕获返回的 authorize 函数，再交给 CLI 输出/浏览器启动回调；它只绑定这一次仍在途的
+\`callId\`，不允许后台启动或复用。可传入的请求为：
+
+\`\`\`ts
+type AuthorizationRequest =
+  | { kind: 'device'; url: string; userCode?: string; expiresAt?: number }
+  | { kind: 'browser'; url: string; expiresAt?: number }
+  | { kind: 'loopback'; url: string; callbackUrl: string; state: string };
+// device/browser 只表示页面已打开；之后原 CLI 继续轮询、保存、校验。
+// loopback 远程回 {kind:'callback', state, code} 或 {kind:'callback', state, error}；
+// 本机回 {kind:'opened'}，原 CLI 自有 localhost listener 接受浏览器回调。
+const authorize = globalThis.__CINDY_NODE__?.bindAuthorization();
+if (!authorize) throw new Error('Authorization cards unavailable');
+const result = await authorize({ kind: 'device', url: verificationUri,
+  userCode, expiresAt: Date.now() + expiresInSeconds * 1000 });
+// 由现有 provider SDK/CLI 完成后续操作；RPC 成功必须晚于实际领取/保存/校验。
+\`\`\`
+
+\`browser\` 用于上游提供 HTTPS 确认页的扫码或浏览器确认，不传二维码图片、Cookie、
+账号密码或任意 CLI 命令。\`device\` 的 userCode 原样保留（1–32 位字母/数字/空格/连字符），
+不把私有 device_code 当用户码。expiresAt 是绝对毫秒时间且不能延长宿主五分钟上限。
+目标必须命中已安装插件的 OAuth origin / network hosts；GitHub/TapTap 继续用已审查的精确规则。
+
+\`loopback\` 只支持原 CLI 的 Authorization Code + PKCE S256：url 内唯一 state、redirect_uri、
+response_type=code、client_id、code_challenge 与 code_challenge_method=S256 必须完整；
+callbackUrl 必须与 redirect_uri 精确相等，且为 localhost、127.0.0.1 或 [::1] 的显式非特权
+端口 HTTP URL。不能改写上游登记的 redirect、降低 PKCE 或抢占别人端口。verifier 留在源 CLI；
+远程 callback 只经 bootstrap 私有 Promise 交给这一次可信 Node 调用，用原 provider SDK
+交换，不经 stdout/main.js/Agent。既有 CLI 若仅有固定监听器，需要在其受审查适配器内消费
+此私有结果；Host 不代发任意 HTTP。不要把 callback code 放到 argv、日志或 RPC 结果。
+
+普通 API Key/PAT 不走这个 Node 接口：沿用 \`network.secrets\` / \`node.secretBindings\`
+声明，由 Host 原密码卡收集，云端支持时经签名输入桥直接写对应 vault key。插件不读取输入，
+不要求用户把密钥发给模型。保存只证明配置已落地，上游权限由实际业务调用核验。
+
+兼容入口继续保留：
+
 当第三方 CLI 使用「浏览器授权、发起端轮询」时，Node worker 可在**当前请求处理函数内**
 捕获 \`globalThis.__CINDY_NODE__.bindDeviceAuthorization()\` 返回的函数，再在 CLI 输出回调
 里调用 \`await authorize(httpsUrl)\`。同一请求只接受一个链接。Node 请求必须带来自当前

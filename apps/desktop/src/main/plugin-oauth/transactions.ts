@@ -4,10 +4,16 @@ import {
   parsePluginOauthCallback,
   parsePluginDeviceOpened,
   parsePluginDeviceOffer,
+  parsePluginAuthorizationOffer,
+  parsePluginSecretOffer,
+  parsePluginSecretValue,
+  type PluginSecretValue,
   type PluginDeviceOpened,
+  type PluginOauthCallback,
   parsePluginOauthRequest,
   type PluginOauthAction,
   type PluginOauthPhase,
+  type PluginOauthRequest,
 } from '@cindy/device-link';
 import { OauthBox } from './box.js';
 import { withRemoteOauthContext, type RemoteOauthContext } from './context.js';
@@ -24,6 +30,16 @@ export interface OauthTransactionDeps {
   run(action: PluginOauthAction): Promise<boolean> | boolean;
   now?: () => number;
 }
+type TransactionReply = PluginOauthCallback | PluginDeviceOpened | PluginSecretValue;
+type ReplyMode = 'loopback' | 'device' | 'secret';
+interface OfferExchange<T> {
+  offer: { state: string };
+  mode: ReplyMode;
+  parse(value: unknown): T | null;
+  signal?: AbortSignal;
+  expiresAt?: number;
+  maxSecretLength?: number;
+}
 interface Transaction {
   id: string;
   peer: string;
@@ -36,9 +52,10 @@ interface Transaction {
   publicKey: string;
   offer?: string;
   state?: string;
-  mode?: 'loopback' | 'device';
+  mode?: ReplyMode;
+  maxSecretLength?: number;
   lifetime: AbortController;
-  resolve?: (value: ReturnType<typeof parsePluginOauthCallback> | PluginDeviceOpened) => void;
+  resolve?: (value: TransactionReply) => void;
   reject?: (error: Error) => void;
   callbackBox?: string;
   cleanup?: () => void;
@@ -84,6 +101,100 @@ export class OauthTransactions {
     delete t.key;
     delete t.callbackBox;
   }
+  /** All offer modes share the same lifetime and single-use exchange. */
+  private waitForReply<T>(t: Transaction, exchange: OfferExchange<T>): Promise<T> {
+    this.assertCurrent(t);
+    const { offer, signal } = exchange;
+    if (t.phase !== 'starting' || signal?.aborted || !t.key) throw failure();
+    if (exchange.expiresAt !== undefined) {
+      if (exchange.expiresAt <= this.now()) throw failure();
+      t.expiresAt = Math.min(t.expiresAt, exchange.expiresAt);
+    }
+    t.mode = exchange.mode;
+    t.maxSecretLength = exchange.maxSecretLength;
+    t.state = offer.state;
+    t.offer = t.key.seal(t.publicKey, t.id, 'offer', offer);
+    t.phase = 'authorizing';
+    return new Promise<T>((resolve, reject) => {
+      t.resolve = (value) => {
+        try {
+          const reply = exchange.parse(value);
+          if (reply === null) throw failure();
+          resolve(reply);
+        } catch {
+          reject(failure());
+        }
+      };
+      t.reject = reject;
+      if (signal) {
+        const abort = () => this.finish(t, 'cancelled');
+        signal.addEventListener('abort', abort, { once: true });
+        const cleanup = t.cleanup;
+        t.cleanup = () => {
+          cleanup?.();
+          signal.removeEventListener('abort', abort);
+        };
+      }
+    });
+  }
+  private createContext(
+    t: Transaction,
+    request: Extract<PluginOauthRequest, { op: 'start' }>,
+  ): RemoteOauthContext {
+    return {
+      scope: t.id,
+      cancelled: t.lifetime.signal,
+      assertCurrent: () => this.assertCurrent(t),
+      authorize: (offer, signal) =>
+        this.waitForReply(t, {
+          offer,
+          signal,
+          mode: 'loopback',
+          parse: parsePluginOauthCallback,
+        }),
+      authorizeDevice: (rawOffer, signal) => {
+        const offer = parsePluginDeviceOffer(rawOffer);
+        if (offer.userCode !== undefined && request.deviceUserCode !== true) throw failure();
+        return this.waitForReply(t, {
+          offer,
+          signal,
+          mode: 'device',
+          parse: parsePluginDeviceOpened,
+        }).then(() => undefined);
+      },
+      authorizePlugin: (rawOffer, signal) => {
+        if (request.authorizationV1 !== true) throw failure();
+        const offer = parsePluginAuthorizationOffer(rawOffer);
+        if (
+          offer.request.kind === 'device' &&
+          offer.request.userCode !== undefined &&
+          request.deviceUserCode !== true
+        )
+          throw failure();
+        const mode = offer.request.kind === 'loopback' ? 'loopback' : 'device';
+        return this.waitForReply<PluginOauthCallback | PluginDeviceOpened>(t, {
+          offer,
+          signal,
+          mode,
+          expiresAt: offer.request.kind === 'loopback' ? undefined : offer.request.expiresAt,
+          parse: mode === 'loopback' ? parsePluginOauthCallback : parsePluginDeviceOpened,
+        });
+      },
+      submitSecret: (rawOffer) => {
+        if (request.secretSubmission !== true) throw failure();
+        const offer = parsePluginSecretOffer(rawOffer);
+        return this.waitForReply(t, {
+          offer,
+          mode: 'secret',
+          parse: parsePluginSecretValue,
+          maxSecretLength: offer.presentation.maxLength,
+        }).then((reply) => reply.value);
+      },
+      finish: (ok) => {
+        if (!terminal(t.phase)) this.finish(t, ok && this.current(t) ? 'succeeded' : 'failed');
+      },
+    };
+  }
   /** Called by link/owner teardown; one peer failing does not cancel other peers. */
   cancelPeer(peer?: string) {
     if (peer) this.peerEpochs.set(peer, (this.peerEpochs.get(peer) ?? 0) + 1);
@@ -112,6 +223,8 @@ export class OauthTransactions {
         encrypted: true,
         deviceAuthorization: true,
         deviceUserCode: true,
+        authorizationV1: true,
+        secretSubmission: true,
       };
     if (request.op === 'start') {
       const owner = this.deps.owner()!;
@@ -158,58 +271,7 @@ export class OauthTransactions {
         const timer = setTimeout(() => this.finish(t, 'cancelled'), PLUGIN_OAUTH_TTL_MS);
         timer.unref?.();
         t.cleanup = () => clearTimeout(timer);
-        const context: RemoteOauthContext = {
-          scope: id,
-          cancelled: t.lifetime.signal,
-          assertCurrent: () => this.assertCurrent(t),
-          authorize: (offer, signal) => {
-            this.assertCurrent(t);
-            if (t.phase !== 'starting' || signal.aborted) throw failure();
-            t.mode = 'loopback';
-            t.state = offer.state;
-            t.offer = key.seal(t.publicKey, id, 'offer', offer);
-            t.phase = 'authorizing';
-            return new Promise((resolve, reject) => {
-              t.resolve = (value) => {
-                const callback = parsePluginOauthCallback(value);
-                callback ? resolve(callback) : reject(failure());
-              };
-              t.reject = reject;
-              const abort = () => this.finish(t, 'cancelled');
-              signal.addEventListener('abort', abort, { once: true });
-              const cleanup = t.cleanup;
-              t.cleanup = () => {
-                cleanup?.();
-                signal.removeEventListener('abort', abort);
-              };
-            });
-          },
-          authorizeDevice: (rawOffer, signal) => {
-            this.assertCurrent(t);
-            if (t.phase !== 'starting' || signal.aborted) throw failure();
-            const offer = parsePluginDeviceOffer(rawOffer);
-            if (offer.userCode !== undefined && request.deviceUserCode !== true) throw failure();
-            t.mode = 'device';
-            t.state = offer.state;
-            t.offer = key.seal(t.publicKey, id, 'offer', offer);
-            t.phase = 'authorizing';
-            return new Promise<void>((resolve, reject) => {
-              t.resolve = (value) =>
-                parsePluginDeviceOpened(value) ? resolve() : reject(failure());
-              t.reject = reject;
-              const abort = () => this.finish(t, 'cancelled');
-              signal.addEventListener('abort', abort, { once: true });
-              const cleanup = t.cleanup;
-              t.cleanup = () => {
-                cleanup?.();
-                signal.removeEventListener('abort', abort);
-              };
-            });
-          },
-          finish: (ok) => {
-            if (!terminal(t.phase)) this.finish(t, ok && this.current(t) ? 'succeeded' : 'failed');
-          },
-        };
+        const context = this.createContext(t, request);
         try {
           const accepted = await withRemoteOauthContext(context, () => this.deps.run(request));
           if (!accepted) throw failure();
@@ -235,10 +297,18 @@ export class OauthTransactions {
     if (t.phase !== 'authorizing' || !t.key) throw failure();
     const rawCallback = t.key.open(t.publicKey, t.id, 'callback', request.box);
     const callback =
-      t.mode === 'device'
-        ? parsePluginDeviceOpened(rawCallback)
-        : parsePluginOauthCallback(rawCallback);
+      t.mode === 'secret'
+        ? parsePluginSecretValue(rawCallback)
+        : t.mode === 'device'
+          ? parsePluginDeviceOpened(rawCallback)
+          : parsePluginOauthCallback(rawCallback);
     if (!callback || callback.state !== t.state) throw failure();
+    if (
+      'kind' in callback &&
+      callback.kind === 'secret-value' &&
+      callback.value.length > (t.maxSecretLength ?? 0)
+    )
+      throw failure();
     t.phase = 'exchanging';
     t.callbackBox = request.box;
     delete t.offer;

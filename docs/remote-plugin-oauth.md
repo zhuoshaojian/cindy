@@ -17,18 +17,64 @@
 4. loopback OAuth 由本机 Main 监听精确本地端口与路径，再打开浏览器。重定向落到本机后，
    回调加密转交原云端事务；云 Host 校验 state，在原 provider/broker 交换 code、提交账号。
    本机不接收插件的 access/refresh token。
-5. Device Flow 使用已审查的 Host/CLI 适配器；本机打开经校验的 provider 页面，云端继续
-   等待或轮询。GitHub 用户码仅在本机卡片临时显示、可重复复制和重开页面。
+5. Device Flow 或浏览器确认页使用统一适配器；本机打开经校验的 provider 页面，云端继续
+   等待或轮询。用户码仅在本机卡片临时显示、可重复复制和重开页面。
 6. 凭据提交与 readiness 复验成功才完成卡片并继续原请求；浏览器打开或回调到达都不算登录成功。
 
 Host 管理的 `network.secrets[].source=oauth` 沿用插件现有 scopes、PKCE、clientId、
 broker 资格、账号合并和刷新机制，不要求改插件。支持原有直接 loopback 和公网 HTTPS
 bounce；bounce 保留注册地址用于 authorize/exchange，只将最终回调送回控制端。
 
-GitHub `gh-cli`、TapTap Maker 的设备授权通过专用适配器接入。不能从任意插件报错可靠推断
-授权，也不提供任意 Node/CLI 命令的授权代理。API Key/Secret 输入、网站 Cookie、账号保险库、
-外部 MCP 自管 OAuth 不因此获得通用同步能力。SSH 工作区也不获得本机凭据。
+GitHub `gh-cli` 与 TapTap Maker 保留必要的凭据源/CLI 处理，卡片、传输和生命周期复用通用层。
+不能从任意插件报错可靠推断授权，也不提供任意 Node/CLI 命令的授权代理。网站 Cookie、账号
+保险库、外部 MCP 自管 OAuth 不因此获得通用同步能力。SSH 工作区也不获得本机凭据。
 Mobile 可展示或取消现有卡片，没有 Desktop loopback 接口；需在连接该云实例的 Desktop 完成。
+
+## 可扩展登录方式
+
+| 方式 | 接入点 | 谁判定完成 |
+| --- | --- | --- |
+| 标准插件 OAuth / 企业 SSO / MFA | 既有 `source:oauth`、provider/broker 配置，无需改插件 | 云 Host 交换、保存并复验 |
+| 设备码授权 | `bindAuthorization()({kind:'device', url, userCode?, expiresAt?})` | 原 CLI/Node 领取、保存并实际校验 |
+| 浏览器确认、提供 HTTPS 确认页的扫码登录 | `kind:'browser'`；页面由上游提供 | 原 CLI/Node 轮询并校验；打开页面不算成功 |
+| CLI 的 OAuth PKCE loopback | `kind:'loopback'`，精确绑定原 redirect URI、state、S256 challenge | 原可信 Node/CLI 用自己保管的 verifier 交换并校验 |
+| 用户填写的 API Key/PAT | 既有声明式 `inline_form`，专用加密输入桥 | 原 Host executor 写指定 Secret；只表示配置保存，不保证上游权限有效 |
+
+新增 provider 若使用已支持方式，只接入同一类型化接口及安装声明中的目标域名；无需为其添加
+卡片组件、IPC、Agent 工具或新的 relay/API 路由。已有 `bindDeviceAuthorization(url)` 和原
+OAuth 路径继续可用。新方式不自动解释任意 CLI 输出：CLI 包需调用一次通用接口，或由受审查
+的 Host 凭据源适配器接入；不能宣称所有既有 CLI 都无需改动。
+
+代码扩展点：`authorizationAdapters.ts` 按方式登记；`hostLoginAdapters.ts` 注册原生凭据源，
+匹配冲突、失效和失败都拒绝，不试探下一种权限更宽的来源；`builtinAuthorizationTargets.ts`
+集中保存已审查的 GitHub/TapTap 目标约束。新增传输方式须同时增加协议解析、协商与安全测试。
+插件包不能注册任意 Host 回调或进程命令。
+
+代码按以下职责维护，新增方式复用同一事务与卡片生命周期：
+
+| 位置 | 职责 |
+| --- | --- |
+| `packages/device-link/src/pluginAuthorization.ts`、`pluginSecretSubmission.ts` | 跨 Host 的类型与严格解析；新增字段须明确协商与兼容性 |
+| `apps/desktop/src/shared/pluginOauth.ts` | Desktop 本地 IPC 类型、输入卡片展示字段；不增加远程可调用通道 |
+| `main/plugin-oauth/transactions.ts` | 各方式共用的单次交换、有效期、取消与终态清理 |
+| `main/plugin-oauth/controller.ts`、`localIpc.ts` | 本机目标认证、协商、加密回传与结果观测 |
+| `main/plugin-oauth/cards.ts`、`deviceCard.ts` | 绑定既有卡片；只有原 Host/CLI 确认完成才更新为成功 |
+| `main/plugin-oauth/authorizationAdapters.ts`、`hostLoginAdapters.ts` | 浏览器交互方式与受审查的 Host 凭据源适配 |
+
+表中 `main/` 相对 `apps/desktop/src/`。本地输入与加密消息复用同一值校验，输入前不构造
+虚假事务 state；卡片字段在 Renderer 和 Main 复用同一投影，接收时仍独立校验云 Host 的完整展示。
+模式协商、回调类型及 state 校验保留在事务边界，不能由新适配器绕过。
+
+CLI loopback 只接受 `http://127.0.0.1:<port>`、`http://[::1]:<port>` 或 localhost，
+显式非特权端口、固定路径，无 query/hash。authorize URL 必须含唯一且一致的 state、
+redirect_uri、response_type=code、client_id、43 字符 S256 challenge。私有回调只回到发起的
+可信 Node RPC（不经 stdout、沙箱 main.js 或 Agent），交换后只向业务层返回固定状态。
+本机运行时原 CLI 已占用回调端口，桥只打开页面；远程运行时由控制端监听该端口。端口冲突
+明确失败，不抢端口、不改注册地址、不转发任意 HTTP。Node 拥有系统用户权限，不能把这条
+API 描述成针对恶意 Node 的系统隔离。
+
+设备码和原生应用回调分别参考 [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628) 与
+[RFC 8252](https://www.rfc-editor.org/rfc/rfc8252)。上游未提供这类授权契约时不猜测适配。
 
 ## 身份来源与签名握手
 
@@ -81,7 +127,7 @@ type Exchange = { op: 'exchange'; id: string; box: string };
 `plugin-oauth:assist` 仅接受可信顶层 Renderer 提交：
 
 ```ts
-{ deviceId: string, requestId: string, actionId: string, expectedRevision: number }
+{ deviceId: string, ghostId: string, requestId: string, actionId: string, expectedRevision: number }
 // 成功响应：{ accepted: true }
 ```
 
@@ -90,14 +136,16 @@ type Exchange = { op: 'exchange'; id: string; box: string };
 ```ts
 type InnerRequest =
   | { op: 'capabilities' }
-  | ({ op: 'start'; publicKey: string; deviceUserCode?: true } & Action)
+  | ({ op: 'start'; publicKey: string; deviceUserCode?: true;
+       authorizationV1?: true; secretSubmission?: true } & Action)
   | { op: 'status'; id: string }
   | { op: 'callback'; id: string; box: string }
   | { op: 'cancel'; id: string };
 ```
 
 内层 capabilities 的 `version: 1` 是保留的事务版本，不是无签名外层协议。
-`deviceUserCode: true` 必须经双方能力协商。内层 offer/callback 继续加密；state、PKCE、URL
+`deviceUserCode`、`authorizationV1`、`secretSubmission` 必须经双方能力协商，缺失按不支持处理。
+新 offer 不降级成旧 URL 或普通远程 setup。内层 offer/callback 继续加密；state、PKCE、URL
 和回调不经模型或普通卡片事件。所有解析器拒绝未知字段、任意命令和明文 callback code。
 通用 Renderer `device-link:invoke` 拒绝私有通道，普通远程 setup 写入限制保持有效。
 
@@ -106,7 +154,8 @@ type InnerRequest =
 参数。通用适配器按声明的 OAuth origin 或 network hosts 校验，并绑定 manifest 版本快照；
 不能把 CLI 输出、插件文本或额外确认窗口当成信任来源。
 
-loopback 仅监听 `127.0.0.1`，校验 Host、路径、GET、唯一 state 与 code/error；CORS/PNA
+原 Host OAuth loopback 仅监听 `127.0.0.1`；新 CLI 模式还支持上述 IPv6/localhost。
+两者都校验 Host、路径、GET、唯一 state 与 code/error；CORS/PNA
 限声明来源，不反射 provider 内容。不提供端口转发、任意 HTTP fetch 或凭据同步。
 
 ## 设备码的临时展示
@@ -117,7 +166,8 @@ helper 使用私有 tmpfs HOME、DBus 和加密 Keyring；提交前重取 owner 
 复核配置与当前凭据，写入既有 Keyring；不回退明文。取消、任务结束、换账号、超时和
 Host 退出会终止 helper 及所属子进程。新 `gh auth token` 读取确认提交后才宣告成功。
 
-加密 device offer 可包含 `AAAA-BBBB` 用户码。Main 解密后复制到本地剪贴板并打开已校验页面。
+旧 device offer 保留 `AAAA-BBBB` 用户码；新 device 模式可包含 1–32 位字母、数字、空格或连字符，
+保留上游大小写与格式，不作 GitHub 八位码转换。Main 解密后复制到本地剪贴板并打开已校验页面。
 发起卡片可临时查询倒计时、再次复制或重开；不会为重开另建事务。接口为：
 
 ```ts
@@ -131,6 +181,28 @@ Main 绑定原 owner、窗口、顶层 frame、peer 与卡片生命周期；Rend
 用户码不广播、不镜像、不落聊天历史、不进模型或日志。结束/超时清理内存，且只有剪贴板仍
 等于该码时才清除；过期须重新发起，不能复活已消费用户码。旧控制端无用户码能力时 GitHub
 拒绝启动；没有独立用户码的设备授权和 loopback 不受该可选字段影响。
+
+## API Key/PAT 的专用输入桥
+
+仅普通 Host setup coordinator 的 user Secret 卡片声明 `remoteSecret:true`。Bot 的授权卡、
+旧 Host 或只有 `remoteOauth:true` 的卡片不能借此输入。用户在原密码输入卡填写；值仅存在
+组件和一次性 Main 调用中，提交/取消/换卡/卸载即清除，不进入 Renderer store 或聊天记录。
+
+本机 `plugin-oauth:submit-secret` 接受设备、插件、卡片/action/revision、`value` 和用户看到的
+`presentation`（插件名、标题、说明、intro、字段名/说明、长度上限）。Main 只接受自有可信
+顶层 frame，独立从 CIS 取目标身份，验签握手后比较云 Host 的完整字段展示；不一致时不发值。
+内层 offer 为 `{kind:'secret-entry',state,presentation}`，callback 为加密的
+`{kind:'secret-value',state,value}`，只有明确协商 `secretSubmission:true` 才能发送。
+
+源 Host 再核对原卡片/action/revision、owner/peer/期限，复用现有 `submitInline` 和
+`executeGhostSetupInlineSubmission`。写入 key 仅从最新 assessment 的 `secret:` ref 与当前
+user/显式 Node Secret 声明推导；请求不能自选路径或 storage key，OAuth/gh-cli/oidc-token
+凭据不能从此写入。提交前再验当前事务，在同步 vault 写入成功后、change event 之前封存回执。
+失败、取消、换账号、声明变化后的晚到结果不写入。
+
+这是一条已显示字段的单次加密写入，不提供保险库读取、导出、批量同步或 token 回显。
+两个专用本机 IPC 均不加入通用远控 allowlist；传输仍走原签名私有授权通道。API Key 的业务
+可用性须由原插件后续调用验证，不能把“已保存”报告成“平台已授权”。
 
 ## 取消、重试和信任边界
 
@@ -164,6 +236,9 @@ Main 绑定原 owner、窗口、顶层 frame、peer 与卡片生命周期；Rend
 
 单测覆盖签名身份、过期/错目标/重放、真实本地 WebSocket 与 loopback、setup/卡片、
 取消/换账号/提交边界、目标 URL 校验、设备码展示/复制/清理、Node 子进程回收和提示词注入。
+通用模式测试包含真实本地 TCP 回调、不同设备码、CLI state/PKCE、provider 拒绝与取消；
+输入桥测试从签名握手经过真实 coordinator/executor 到测试 vault，并验证展示篡改、串插件/
+设备/action、过长值、迟到提交、失败与密文重放。provider 与存储替身不等于逐平台真实登录。
 这类测试的 provider、relay 身份或 vault 可使用虚构 fixture，不能记作真实云端验收。
 
 每次交付报告应另列源码基线、镜像/客户端产物、测试环境、真实 provider 结果与线上部署状态。

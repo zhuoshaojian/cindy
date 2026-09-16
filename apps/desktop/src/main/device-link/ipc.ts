@@ -12,8 +12,8 @@ import { isCloudPilotDistribution } from '../cloudPilotDistribution.js';
 import { getAccessToken, getCurrentUserId, getDeviceId, getActiveAuthRealm } from '../authManager.js';
 import { getClientEndpoint } from '../clientEndpointsService.js';
 import { copyPrivateDeviceCode } from '../plugin-oauth/deviceCodeClipboard.js';
-import { PLUGIN_OAUTH_CHANNEL, PLUGIN_OAUTH_LOCAL_CHANNEL } from '@cindy/device-link';
-import { handleAssistPluginOauth } from '../plugin-oauth/localIpc.js';
+import { PLUGIN_OAUTH_CHANNEL, PLUGIN_OAUTH_LOCAL_CHANNEL, PLUGIN_SECRET_LOCAL_CHANNEL } from '@cindy/device-link';
+import { handleAssistPluginOauth, handleSubmitPluginSecret } from '../plugin-oauth/localIpc.js';
 import { LocalDeviceCodeSessions } from '../plugin-oauth/deviceCodeSessions.js';
 import { PLUGIN_OAUTH_DEVICE_CODE_CHANNEL } from '../../shared/pluginOauthDeviceCode.js';
 import { getActiveAppSession, isAppSessionBoundaryPending } from '../appSessionState.js';
@@ -583,7 +583,8 @@ export async function handleInvoke(
   if (typeof channel !== 'string' || !channel.trim()) {
     throwIpcError('INVALID_PARAMS', 'channel is required');
   }
-  if (channel === PLUGIN_OAUTH_CHANNEL) throwIpcError('PERMISSION_DENIED', 'OAuth transport is Host-only');
+  if (channel === PLUGIN_OAUTH_CHANNEL || channel === PLUGIN_SECRET_LOCAL_CHANNEL)
+    throwIpcError('PERMISSION_DENIED', 'Authorization transport is Host-only');
   let callArgs = Array.isArray(args) ? args : [];
 
   // Resolve controller-relative references first. If the source session is
@@ -1268,11 +1269,11 @@ export function registerDeviceLinkIpc(deps: DeviceLinkIpcDeps = defaultDeps()): 
     try { return await deviceCodes.handle(scope, raw); }
     catch { throwIpcError('PRECONDITION_FAILED', 'Authorization code unavailable; retry from the current card'); }
   });
-  ipcMain.handle(PLUGIN_OAUTH_LOCAL_CHANNEL, async (event, raw: unknown) => {
+  const authorizationHandler = (secret: boolean) => async (event: import('electron').IpcMainInvokeEvent, raw: unknown) => {
     assertTrustedAppRendererEvent(event);
     requireDeviceLinkCapability();
     try {
-      return await handleAssistPluginOauth({
+      return await (secret ? handleSubmitPluginSecret : handleAssistPluginOauth)({
         owner: () => !isAppSessionBoundaryPending() && getActiveAppSession().mode === 'cloud' ? activeOwnerScopeKey() : null,
         assertTarget: deviceId => {
           if (event.sender.isDestroyed()) throw new Error('OAUTH_BRIDGE_UNAVAILABLE');
@@ -1299,7 +1300,9 @@ export function registerDeviceLinkIpc(deps: DeviceLinkIpcDeps = defaultDeps()): 
         }),
       }, raw);
     } catch { throwIpcError('PRECONDITION_FAILED', 'Remote authorization unavailable; retry from the current card'); }
-  });
+  };
+  ipcMain.handle(PLUGIN_OAUTH_LOCAL_CHANNEL, authorizationHandler(false));
+  ipcMain.handle(PLUGIN_SECRET_LOCAL_CHANNEL, authorizationHandler(true));
   const gated =
     <T extends unknown[]>(handler: (...args: T) => unknown) =>
     (...args: T) => {

@@ -1,4 +1,5 @@
 import { invokeOpenPath } from './openPath';
+import type { LocalPluginOauthRequest, LocalPluginSecretRequest } from '../shared/pluginOauth';
 import { REMOTE_VIEWER } from '../shared/remoteDesktopViewer';
 import type { RoutineInput } from '@cindy/maker-scheduler';
 import type { BotToolsetContext } from '../shared/botRemoteCapabilities';
@@ -6427,8 +6428,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('maker:resolve-interaction', requestId, decision),
 
     /** Opens a remote Host's registered OAuth transaction. Returns no authorization material. */
-    assistPluginOauth: (request: { ghostId: string; deviceId: string; requestId: string; actionId: string; expectedRevision: number }): Promise<{ accepted: boolean }> =>
+    assistPluginOauth: (request: LocalPluginOauthRequest): Promise<{ accepted: boolean }> =>
       ipcRenderer.invoke('plugin-oauth:assist', request),
+    /** Dedicated signed input transport; never uses the ordinary remote invoke API. */
+    submitRemotePluginSecret: (request: LocalPluginSecretRequest): Promise<{ accepted: boolean }> =>
+      ipcRenderer.invoke('plugin-oauth:submit-secret', request),
 
     /** Ephemeral user-entered device code for this frame's active card; no callback code or token. */
     pluginOauthDeviceCode: (request: import('../shared/pluginOauthDeviceCode').PluginOauthDeviceCodeRequest): Promise<import('../shared/pluginOauthDeviceCode').PluginOauthDeviceCodeView | null> =>

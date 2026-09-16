@@ -1,9 +1,11 @@
 import type {
   DeviceAuthorizationHandle,
   DeviceAuthorizationInput,
+  PluginAuthorizationHandle,
+  PluginAuthorizationInput,
 } from '../plugin-oauth/deviceCard.js';
 import { parseDeviceAuthorizationUrl } from '@cindy/device-link';
-import { bindDeviceAuthorizationTarget } from '../plugin-oauth/targetPolicy.js';
+import { bindDeviceAuthorizationTarget, bindPluginAuthorizationTarget } from '../plugin-oauth/targetPolicy.js';
 /**
  * nodeRuntimeBroker — 随意识安装的本地 Node 工作进程守门与 stdio 中继。
  *
@@ -149,6 +151,7 @@ export interface GhostNodeRuntimeBrokerDeps {
   getCallSignal?: (ghostId: string, callId: string) => AbortSignal | null;
   getCallSessionId?: (ghostId: string, callId: string) => string | null;
   openDeviceAuthorization?: (input: DeviceAuthorizationInput) => DeviceAuthorizationHandle;
+  openAuthorization?: (input: PluginAuthorizationInput) => PluginAuthorizationHandle;
   ownerScope?: GhostOwnerScope;
   /**
    * 读取当前插件自己声明的 Node 凭证。生产接 safeStorage；返回 null =
@@ -1049,8 +1052,8 @@ export class GhostNodeRuntimeBroker {
     if (!this.ownerScopeUsable(entry.ghost.manifest.id, entry.ownerScopeSnapshot)) return;
     const message = parseGhostNodeChildToHostMessage(raw);
     if (!message) return;
-    if (message.type === 'device-authorize') {
-      this.authorizeDevice(entry, message);
+    if (message.type === 'device-authorize' || message.type === 'plugin-authorize') {
+      this.authorizePlugin(entry, message);
       return;
     }
     if (message.type === 'spawn-child') {
@@ -1068,14 +1071,16 @@ export class GhostNodeRuntimeBroker {
     }
   }
 
-  private authorizeDevice(
+  private authorizePlugin(
     entry: WorkerEntry,
-    message: Extract<GhostNodeChildToHostMessage, { type: 'device-authorize' }>,
+    message: Extract<GhostNodeChildToHostMessage, { type: 'device-authorize' | 'plugin-authorize' }>,
   ): void {
     const ghostId = entry.ghost.manifest.id;
     const pending = entry.pending.get(message.rpcId);
-    const reply = (ok: boolean) =>
-      this.replyToWorker(entry, { type: 'device-authorize-result', reqId: message.reqId, ok });
+    const reply = (ok: boolean, result?: Awaited<PluginAuthorizationHandle['result']>) =>
+      this.replyToWorker(entry, message.type === 'device-authorize'
+        ? { type: 'device-authorize-result', reqId: message.reqId, ok }
+        : { type: 'plugin-authorize-result', reqId: message.reqId, ok, ...(result ? { result } : {}) });
     const sessionId = pending?.callId
       ? this.deps.getCallSessionId?.(ghostId, pending.callId)
       : null;
@@ -1083,7 +1088,7 @@ export class GhostNodeRuntimeBroker {
       !pending?.signal ||
       !sessionId ||
       !this.isLiveBoundRpc(entry, message.rpcId) ||
-      !this.deps.openDeviceAuthorization ||
+      !(message.type === 'device-authorize' ? this.deps.openDeviceAuthorization : this.deps.openAuthorization) ||
       pending.authorizationStarted
     ) {
       reply(false);
@@ -1091,8 +1096,11 @@ export class GhostNodeRuntimeBroker {
     }
     pending.authorizationStarted = true;
     try {
-      const url = parseDeviceAuthorizationUrl(message.url);
-      const checkTarget = bindDeviceAuthorizationTarget(entry.ghost.manifest, url);
+      const request = message.type === 'device-authorize'
+        ? { kind: 'device' as const, url: parseDeviceAuthorizationUrl(message.url) } : message.request;
+      const checkTarget = message.type === 'device-authorize'
+        ? bindDeviceAuthorizationTarget(entry.ghost.manifest, request.url)
+        : bindPluginAuthorizationTarget(entry.ghost.manifest, request);
       const assertCurrent = () => {
         const currentGhost = this.deps.getGhost(ghostId);
         if (!currentGhost || !currentGhost.enabled || currentGhost.dir !== entry.ghost.dir)
@@ -1108,19 +1116,29 @@ export class GhostNodeRuntimeBroker {
           throw new Error('DEVICE_AUTHORIZATION_UNAVAILABLE');
       };
       assertCurrent();
-      pending.authorization = this.deps.openDeviceAuthorization({
+      const input = {
         ghost: { id: ghostId, name: entry.ghost.manifest.name },
         sessionId,
-        url,
         signal: pending.signal,
         assertCurrent,
         cancel: () => pending.cancel(),
-      });
-      void pending.authorization.opened
+      };
+      let handle: DeviceAuthorizationHandle;
+      let result: Promise<Awaited<PluginAuthorizationHandle['result']> | undefined>;
+      if (message.type === 'device-authorize') {
+        handle = this.deps.openDeviceAuthorization!({ ...input, url: request.url });
+        result = handle.opened.then(() => undefined);
+      } else {
+        const authorization = this.deps.openAuthorization!({ ...input, request });
+        handle = authorization;
+        result = authorization.result;
+      }
+      pending.authorization = handle;
+      void result
         .then(
-          () => {
+          value => {
             assertCurrent();
-            reply(true);
+            reply(true, value);
           },
           () => {
             reply(false);

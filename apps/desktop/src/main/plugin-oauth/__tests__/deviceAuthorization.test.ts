@@ -76,6 +76,16 @@ function setup(userCode?: string) {
 }
 
 describe('private device authorization', () => {
+  it.each(['abcDEF123', 'AB CD EF', '123456'])('copies the exact generic provider code %s without erasing newer clipboard content', code => {
+    let value = '';
+    const clipboard = {writeText: (text: string) => { value = text; }, readText: () => value,
+      clear: () => { value = ''; }};
+    const clear = copyPrivateDeviceCode(clipboard, code);
+    expect(value).toBe(code);
+    clear(); expect(value).toBe('');
+    copyPrivateDeviceCode(clipboard, code);
+    value = 'user clipboard'; clear(); expect(value).toBe('user clipboard');
+  });
   it.each([
     'http://provider.example/login',
     'https://user:pass@provider.example/login',

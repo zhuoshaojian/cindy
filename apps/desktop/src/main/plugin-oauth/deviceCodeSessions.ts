@@ -1,4 +1,4 @@
-import { oauthId, PLUGIN_OAUTH_TTL_MS, parseDeviceAuthorizationUrl } from '@cindy/device-link';
+import { oauthId, PLUGIN_OAUTH_TTL_MS, parseDeviceAuthorizationUrl, parseAuthorizationUserCode } from '@cindy/device-link';
 import type {
   PluginOauthDeviceCodeTarget,
   PluginOauthDeviceCodePrompt,
@@ -43,7 +43,8 @@ export class LocalDeviceCodeSessions {
   }): PluginOauthDeviceCodeClose {
     deps.assertCurrent();
     const authorizeUrl = parseDeviceAuthorizationUrl(prompt.authorizeUrl);
-    if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(prompt.userCode) ||
+    parseAuthorizationUserCode(prompt.userCode);
+    if (
         !Number.isSafeInteger(prompt.expiresAt) || prompt.expiresAt <= this.now() ||
         prompt.expiresAt - this.now() > PLUGIN_OAUTH_TTL_MS) throw fail();
     const key = this.key(scope, target);

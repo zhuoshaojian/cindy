@@ -28,6 +28,8 @@ export * from './remoteCursor.js';
 export * from './peerRecoveryScheduler.js';
 export * from './invokePolicy.js';
 export * from './pluginOauth.js';
+export * from './pluginAuthorization.js';
+export * from './pluginSecretSubmission.js';
 
 export * from './pluginDeviceAuthorization.js';
 export * from './pluginOauthAuthentication.js';

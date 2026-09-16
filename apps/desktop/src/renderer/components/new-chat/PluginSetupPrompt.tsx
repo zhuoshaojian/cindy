@@ -98,10 +98,11 @@ function PluginSetupPromptStateful({
   const terminal = pending.terminal === true || allSatisfied || cancelledTerminal;
   const busy = !!commandInFlight || (!compact && !!currentStep && RUNNING_PHASES.has(currentStep.phase));
   const blockedRemoteAction = (step = currentStep): boolean =>
-    remote && !(pending.remoteOauth && step?.action?.kind === 'oauth_connect');
-  const cancelBlocked = !!commandInFlight && !(remote && pending.remoteOauth &&
-    commandInFlight.action === 'run_action' && pending.steps.some(
-      step => step.action?.id === commandInFlight.actionId && step.action?.kind === 'oauth_connect'));
+    remote && !((pending.remoteOauth && step?.action?.kind === 'oauth_connect') ||
+      (pending.remoteSecret && step?.action?.kind === 'inline_form'));
+  const cancelBlocked = !!commandInFlight && !(remote &&
+    ((pending.remoteOauth && commandInFlight.action === 'run_action') ||
+      (pending.remoteSecret && commandInFlight.action === 'submit_form')));
   const title = compact ? pending.ghost.name : t('newChat.pluginSetup.title', { name: pending.ghost.name });
   const inlineFormAction = currentStep?.action?.kind === 'inline_form' ? currentStep.action : null;
   const inlineFormField = inlineFormAction?.form.fields[0];
@@ -288,10 +289,10 @@ function PluginSetupPromptStateful({
             type="password"
             autoComplete="new-password"
             spellCheck={false}
-            autoFocus={!hasCurrentGroupAlternatives && !remote && !busy && !terminal}
+            autoFocus={!hasCurrentGroupAlternatives && !blockedRemoteAction(step) && !busy && !terminal}
             value={context.value}
             maxLength={field.maxLength}
-            disabled={remote || busy || terminal}
+            disabled={blockedRemoteAction(step) || busy || terminal}
             placeholder={
               field.placeholder ||
               t('newChat.pluginSetup.form.placeholder', {
@@ -328,18 +329,18 @@ function PluginSetupPromptStateful({
               'text-14 text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]',
               'outline-none transition-colors focus-visible:border-[var(--focus-ring)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring-soft)]',
               context.error ? 'border-[var(--error-border)]' : 'border-[var(--border-default)]',
-              (remote || busy || terminal) &&
+              (blockedRemoteAction(step) || busy || terminal) &&
                 'cursor-not-allowed bg-[var(--surface-elevated-soft)] text-[var(--text-disabled)]',
             )}
           />
           {showSubmit ? (
             <button
               type="button"
-              disabled={remote || busy || context.missing || context.tooLong}
+              disabled={blockedRemoteAction(step) || busy || terminal || context.missing || context.tooLong}
               onClick={() => submitStepAction(step)}
               className={cn(
                 'h-9 shrink-0 rounded-[9999px] px-4 text-13 font-medium transition-colors',
-                remote || busy || context.missing || context.tooLong
+                blockedRemoteAction(step) || busy || terminal || context.missing || context.tooLong
                   ? 'cursor-not-allowed border border-[var(--border-default)] bg-transparent text-[var(--text-disabled-tertiary)] opacity-60'
                   : 'border border-transparent bg-[var(--confirm-btn-primary-bg)] text-[var(--confirm-btn-primary-text)] hover:bg-[var(--confirm-btn-primary-hover)]',
               )}
@@ -485,7 +486,8 @@ function PluginSetupPromptStateful({
 
         {remote && !terminal ? (
           <div className="rounded-[12px] border border-[var(--ask-option-border)] bg-[var(--ask-option-list-bg)] px-3 py-2.5 text-13 text-[var(--ask-option-desc)]">
-            {t(pending.remoteOauth && pending.steps.some(s => s.action?.kind === 'oauth_connect')
+            {t(pending.remoteSecret && currentStep?.action?.kind === 'inline_form'
+              ? 'newChat.pluginSetup.remoteSecretHint' : pending.remoteOauth && pending.steps.some(s => s.action?.kind === 'oauth_connect')
               ? 'newChat.pluginSetup.remoteOauthHint' : 'newChat.pluginSetup.completeOnDesktop')}
           </div>
         ) : null}

@@ -7738,6 +7738,7 @@
       "restoreAria": "{{name}} 설정 펼치기",
       "minimizeAria": "{{name}} 설정 접기",
       "remoteOauthHint": "이 컴퓨터의 브라우저에서 인증하면 현재 원격 기기에 계정이 연결됩니다. 다른 설정은 원격 기기에서 완료하세요.",
+      "remoteSecretHint": "여기에 입력한 키는 현재 클라우드 인스턴스의 이 플러그인에만 저장됩니다. 채팅 기록에는 남지 않습니다.",
       "completeOnDesktop": "원격 컴퓨터에서 설정을 완료하세요. 이 카드는 자동으로 업데이트됩니다.",
       "cancel": "취소",
       "cancelling": "취소 중…",

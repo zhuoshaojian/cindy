@@ -1,5 +1,6 @@
 import type { ImMessageSource } from '../../shared/imMessageSource';
 import { readBotAuthorizationCard } from '../../shared/botAuthorization';
+import { createPluginSecretPresentation } from '../../shared/pluginOauth';
 /**
  * makerChatStore — Module-level store for Maker chat (Claude / Codex), sharded by sessionId.
  * ---------------------------------------------------------------------------
@@ -107,6 +108,7 @@ import * as sessionService from '@/lib/sessionService';
 import {
   makerApiFor,
   assistRemotePluginOauth,
+  submitRemotePluginSecret,
   makerApiForDevice,
   getSessionFor,
   listMessagesFor,
@@ -720,6 +722,7 @@ type PluginSetupInlineFormAction = Extract<GhostSetupAllowedAction, { kind: 'inl
 
 export interface PendingPluginSetup {
   remoteOauth?: true;
+  remoteSecret?: true;
   reopenActionId?: string;
   requestId: string;
   revision: number;
@@ -7382,6 +7385,7 @@ function parsePluginSetupInlineFormAction(
 /** Strict renderer boundary parser: unknown push data never reaches the card. */
 export function parsePendingPluginSetup(request: {
   remoteOauth?: unknown;
+  remoteSecret?: unknown;
   requestId?: unknown;
   revision?: unknown;
   terminal?: unknown;
@@ -7498,6 +7502,7 @@ export function parsePendingPluginSetup(request: {
     requestId: request.requestId,
     revision: request.revision,
     ...(request.remoteOauth === true ? { remoteOauth: true as const } : {}),
+    ...(request.remoteSecret === true ? { remoteSecret: true as const } : {}),
     ...(request.terminal === true ? { terminal: true as const } : {}),
     ghost: {
       id: ghost.id,
@@ -15228,7 +15233,8 @@ function respondToPluginSetup(
   const pending = state.pendingPluginSetup;
   if (!pending || pending.requestId !== requestId) return;
   if (state.pluginSetupCommandInFlight && !(action === 'cancel' && isRemoteSession(sessionId) &&
-    pending.remoteOauth && state.pluginSetupCommandInFlight.action === 'run_action')) return;
+    ((pending.remoteOauth && state.pluginSetupCommandInFlight.action === 'run_action') ||
+      (pending.remoteSecret && state.pluginSetupCommandInFlight.action === 'submit_form')))) return;
 
   const selectedAction = actionId
     ? pending.steps.find((step) => step.action?.id === actionId)?.action
@@ -15238,7 +15244,7 @@ function respondToPluginSetup(
     if (isRemoteSession(sessionId) && (!pending.remoteOauth || selectedAction.kind !== 'oauth_connect')) return;
   } else if (action === 'submit_form') {
     if (
-      isRemoteSession(sessionId) ||
+      (isRemoteSession(sessionId) && !pending.remoteSecret) ||
       !selectedAction ||
       selectedAction.kind !== 'inline_form' ||
       typeof values?.value !== 'string'
@@ -15256,16 +15262,26 @@ function respondToPluginSetup(
       actionId: selectedAction.id,
     };
     setState(sessionId, (s) => ({ ...s, pluginSetupCommandInFlight: command }));
-    window.electronAPI.maker
-      .submitPluginSetupInline({
-        requestId,
-        actionId: selectedAction.id,
-        expectedRevision: pending.revision,
-        value,
-      })
+    const step = pending.steps.find((s) => s.action?.id === selectedAction.id)!;
+    const submission = {
+      requestId,
+      actionId: selectedAction.id,
+      expectedRevision: pending.revision,
+      value,
+    };
+    const operation = isRemoteSession(sessionId)
+      ? submitRemotePluginSecret(sessionId, {
+          ...submission,
+          ghostId: pending.ghost.id,
+          presentation: createPluginSecretPresentation(pending, step, field),
+        })
+      : window.electronAPI.maker.submitPluginSetupInline(submission);
+    operation
       .catch(() => {
         // Do not attach IPC error details here: this path carries a secret.
         log.error('Failed to submit plugin setup form');
+        if (sessions.get(sessionId)?.pluginSetupCommandInFlight !== command) return;
+        toast.warning(i18n.t('newChat.pluginSetup.error.ACTION_FAILED'));
         setState(sessionId, (s) =>
           s.pluginSetupCommandInFlight === command ? { ...s, pluginSetupCommandInFlight: null } : s,
         );

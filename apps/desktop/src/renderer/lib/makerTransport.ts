@@ -33,14 +33,28 @@ import * as messageService from '@/lib/messageService';
 import * as sessionService from '@/lib/sessionService';
 import { extractIpcError } from '@/utils/ipcError';
 import type { TurnChangeSetUpdatedPayload } from '../../shared/turnChangeSet';
+import type { LocalPluginOauthRequest, LocalPluginSecretRequest } from '../../shared/pluginOauth';
 
 type FullMaker = typeof window.electronAPI.maker;
 
 /** The dedicated local Main API owns the browser and encrypted callback; Renderer sees status only. */
-export function assistRemotePluginOauth(sessionId: string, request: { ghostId: string; requestId: string; actionId: string; expectedRevision: number }): Promise<{ accepted: boolean }> {
+export function assistRemotePluginOauth(
+  sessionId: string,
+  request: Omit<LocalPluginOauthRequest, 'deviceId'>,
+): Promise<{ accepted: boolean }> {
   const deviceId = getStickySessionDeviceId(sessionId);
   if (!deviceId) return Promise.reject(new Error('Remote authorization unavailable'));
   return window.electronAPI.maker.assistPluginOauth({ deviceId, ...request });
+}
+
+/** This local call goes straight to Main's signed bridge, never makerApiFor/device-link invoke. */
+export function submitRemotePluginSecret(
+  sessionId: string,
+  request: Omit<LocalPluginSecretRequest, 'deviceId'>,
+): Promise<{ accepted: boolean }> {
+  const deviceId = getStickySessionDeviceId(sessionId);
+  if (!deviceId) return Promise.reject(new Error('Remote authorization unavailable'));
+  return window.electronAPI.maker.submitRemotePluginSecret({ deviceId, ...request });
 }
 
 /**

@@ -1,24 +1,28 @@
-import http from 'node:http';
 import {
   PLUGIN_OAUTH_TTL_MS,
-  parsePluginOauthCallback,
   parsePluginDeviceOffer,
+  parsePluginSecretOffer,
+  parsePluginSecretValue,
+  parsePluginSecretPresentation,
+  type PluginSecretPresentation,
   oauthId,
   type PluginOauthAction,
+  type PluginOauthCallback,
+  type PluginDeviceOpened,
   type PluginOauthOffer,
   type PluginOauthRequest,
-  type PluginOauthCallback,
 } from '@cindy/device-link';
 import { OauthBox } from './box.js';
-import type { PluginOauthDeviceCodePrompt, PluginOauthDeviceCodeClose } from '../../shared/pluginOauthDeviceCode.js';
-import { ghostNetworkHostMatches } from '../../shared/ghost.js';
 import {
-  getGhostOAuthResultCopy,
-  getRemoteOAuthCallbackCopy,
-  OAUTH_RESULT_HTML_LANG,
-  pickOAuthResultPageLang,
-  renderOAuthResultPage,
-} from '../oauthResultPage.js';
+  openAuthorizationOffer,
+  type AuthorizationAdapterHandle,
+} from './authorizationAdapters.js';
+import type {
+  PluginOauthDeviceCodePrompt,
+  PluginOauthDeviceCodeClose,
+} from '../../shared/pluginOauthDeviceCode.js';
+import { listenForOauthCallback } from './loopbackListener.js';
+export { listenForOauthCallback } from './loopbackListener.js';
 
 const fail = () => new Error('OAUTH_BRIDGE_UNAVAILABLE');
 function object(value: unknown): Record<string, unknown> {
@@ -85,144 +89,17 @@ export function parseOauthOffer(raw: unknown): PluginOauthOffer {
   };
 }
 
-/** Fixed listener, no arbitrary URL fetch/port tunnelling or port-owner termination. */
-export async function listenForOauthCallback(
-  offer: PluginOauthOffer,
-  deliver: (value: PluginOauthCallback) => Promise<void>,
-  assertCurrent: () => void,
-): Promise<{ close(): void }> {
-  const endpoint = new URL(offer.callbackUrl);
-  let consumed = false;
-  let closed = false;
-  const server = http.createServer(
-    { maxHeaderSize: 16_384, requestTimeout: 10_000, headersTimeout: 10_000 },
-    (req, res) => {
-      res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('Referrer-Policy', 'no-referrer');
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      const reply = (status: number) => {
-        if (res.destroyed || res.writableEnded) return;
-        res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
-        // No provider text, URL or code in the browser result.
-        const lang = pickOAuthResultPageLang(req.headers['accept-language']);
-        const copy = getRemoteOAuthCallbackCopy(lang);
-        const errors = getGhostOAuthResultCopy(lang);
-        res.end(
-          renderOAuthResultPage({
-            htmlLang: OAUTH_RESULT_HTML_LANG[lang],
-            variant: status === 200 ? 'warning' : 'error',
-            title: status === 200 ? copy.title : errors.errorTitle,
-            body:
-              status === 200
-                ? copy.body
-                : errors.errors['invalid-callback'].replace('{brand}', 'Cindy'),
-            pageKind: 'ghost-oauth',
-          }),
-        );
-      };
-      try {
-        assertCurrent();
-        if (
-          closed ||
-          req.headers.host !== endpoint.host ||
-          !req.url?.startsWith('/') ||
-          req.url.startsWith('//') ||
-          req.url.length > 12_288
-        ) {
-          reply(400);
-          return;
-        }
-        const url = new URL(req.url, endpoint.origin);
-        if (url.pathname !== endpoint.pathname) {
-          reply(404);
-          return;
-        }
-        const origin = req.headers.origin;
-        if (typeof origin === 'string') {
-          const parsed = new URL(origin);
-          if (
-            parsed.origin !== origin ||
-            parsed.protocol !== 'https:' ||
-            (!offer.corsOrigins.includes(origin) &&
-              !offer.corsHosts.some((h) => ghostNetworkHostMatches(h, parsed.hostname)))
-          ) {
-            reply(403);
-            return;
-          }
-          res.setHeader('Access-Control-Allow-Origin', origin);
-          res.setHeader('Vary', 'Origin');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-          res.setHeader('Access-Control-Allow-Private-Network', 'true');
-        }
-        if (req.method === 'OPTIONS') {
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-        if (req.method !== 'GET') {
-          reply(405);
-          return;
-        }
-        if (consumed) {
-          reply(409);
-          return;
-        }
-        if (
-          url.searchParams.getAll('state').length !== 1 ||
-          url.searchParams.get('state') !== offer.state ||
-          url.searchParams.getAll('code').length + url.searchParams.getAll('error').length !== 1
-        ) {
-          reply(400);
-          return;
-        }
-        const callback = parsePluginOauthCallback({
-          state: offer.state,
-          ...(url.searchParams.has('error')
-            ? { error: url.searchParams.get('error') }
-            : { code: url.searchParams.get('code') }),
-        });
-        if (!callback) {
-          reply(400);
-          return;
-        }
-        consumed = true;
-        void deliver(callback).then(
-          () => reply(200),
-          () => reply(502),
-        );
-      } catch {
-        reply(410);
-      }
-    },
-  );
-  server.maxConnections = 8;
-  const close = () => {
-    closed = true;
-    server.close();
-    server.closeAllConnections();
-  };
-  server.on('error', close);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(Number(endpoint.port), '127.0.0.1', () => {
-        server.removeListener('error', reject);
-        resolve();
-      });
-    });
-    assertCurrent();
-    return { close };
-  } catch {
-    close();
-    throw fail();
-  }
-}
-
 export interface OauthControllerDeps {
+  /** Supplied only by the dedicated local input IPC, never generic assist or a Node adapter. */
+  secretValue?: string;
+  secretPresentation?: PluginSecretPresentation;
   invoke(request: PluginOauthRequest): Promise<unknown>;
   openExternal(url: string): Promise<void>;
   copyDeviceCode?(code: string): () => void;
-  presentDeviceCode?(prompt: PluginOauthDeviceCodePrompt, clearClipboard: () => void): PluginOauthDeviceCodeClose;
+  presentDeviceCode?(
+    prompt: PluginOauthDeviceCodePrompt,
+    clearClipboard: () => void,
+  ): PluginOauthDeviceCodeClose;
   assertCurrent(): void;
   now?: () => number;
   pause?: () => Promise<void>;
@@ -232,12 +109,25 @@ export async function assistPluginOauth(
   deps: OauthControllerDeps,
   action: PluginOauthAction,
 ): Promise<{ accepted: true }> {
+  try {
+    return await runAuthorization(deps, action);
+  } finally {
+    // Capability/handshake failures happen before a transaction exists too.
+    deps.secretValue = undefined;
+  }
+}
+
+async function runAuthorization(
+  deps: OauthControllerDeps,
+  action: PluginOauthAction,
+): Promise<{ accepted: true }> {
   const now = deps.now ?? Date.now;
   const deadline = now() + PLUGIN_OAUTH_TTL_MS;
   deps.assertCurrent();
   const caps = object(await deps.invoke({ op: 'capabilities' }));
   if (caps.version !== 1 || caps.callback !== 'desktop-loopback' || caps.encrypted !== true)
     throw fail();
+  if (deps.secretValue !== undefined && caps.secretSubmission !== true) throw fail();
   deps.assertCurrent();
   const key = new OauthBox();
   const deviceUserCode = caps.deviceUserCode === true && !!deps.copyDeviceCode;
@@ -247,6 +137,8 @@ export async function assistPluginOauth(
       ...action,
       publicKey: key.publicKey,
       ...(deviceUserCode ? { deviceUserCode: true } : {}),
+      ...(caps.authorizationV1 === true ? { authorizationV1: true } : {}),
+      ...(deps.secretValue !== undefined ? { secretSubmission: true } : {}),
     }),
   );
   if (
@@ -257,7 +149,17 @@ export async function assistPluginOauth(
     throw fail();
   const id = start.id;
   const peerKey = start.publicKey;
+  const deliverSealedCallback = async (box: string) => {
+    deps.assertCurrent();
+    const result = object(await deps.invoke({ op: 'callback', id, box }));
+    if (result.accepted !== true) throw fail();
+  };
+  const deliverCallback = async (callback: PluginOauthCallback | PluginDeviceOpened) => {
+    deps.assertCurrent();
+    await deliverSealedCallback(key.seal(peerKey, id, 'callback', callback));
+  };
   let listener: { close(): void } | undefined;
+  let adapter: AuthorizationAdapterHandle | undefined;
   let opened = false;
   let finished = false;
   let callbackFailed = false;
@@ -277,27 +179,59 @@ export async function assistPluginOauth(
       if (!['starting', 'authorizing', 'exchanging'].includes(String(status.phase))) throw fail();
       if (status.phase === 'authorizing' && !opened) {
         if (typeof status.offer !== 'string') throw fail();
-        const rawOffer = key.open(peerKey, id, 'offer', status.offer);
-        if (object(rawOffer).kind === 'device') {
+        const rawOffer = object(key.open(peerKey, id, 'offer', status.offer));
+        if (rawOffer.kind === 'secret-entry') {
+          if (caps.secretSubmission !== true || deps.secretValue === undefined) throw fail();
+          const offer = parsePluginSecretOffer(rawOffer);
+          if (
+            JSON.stringify(offer.presentation) !==
+            JSON.stringify(parsePluginSecretPresentation(deps.secretPresentation))
+          )
+            throw fail();
+          const payload = parsePluginSecretValue({
+            kind: 'secret-value',
+            state: offer.state,
+            value: deps.secretValue,
+          });
+          if (payload.value.length > offer.presentation.maxLength) throw fail();
+          deps.assertCurrent();
+          const sealed = key.seal(peerKey, id, 'callback', payload);
+          deps.secretValue = undefined;
+          await deliverSealedCallback(sealed);
+          opened = true;
+          continue;
+        }
+        // Never send an input secret to a transaction that asks for another mode.
+        if (deps.secretValue !== undefined) throw fail();
+        if (rawOffer.kind === 'authorization') {
+          if (caps.authorizationV1 !== true) throw fail();
+          adapter = await openAuthorizationOffer(rawOffer, {
+            ...deps,
+            deadline,
+            failed: () => {
+              callbackFailed = true;
+            },
+            copyDeviceCode: deviceUserCode ? deps.copyDeviceCode : undefined,
+            deliver: deliverCallback,
+          });
+          opened = true;
+          continue;
+        }
+        if (rawOffer.kind === 'device') {
           if (caps.deviceAuthorization !== true) throw fail();
           const offer = parsePluginDeviceOffer(rawOffer);
           deps.assertCurrent();
           if (offer.userCode !== undefined) {
             if (!deviceUserCode || !deps.copyDeviceCode) throw fail();
             clearDeviceCode = deps.copyDeviceCode(offer.userCode);
-            closeDeviceCode = deps.presentDeviceCode?.({ userCode: offer.userCode,
-              authorizeUrl: offer.authorizeUrl, expiresAt: deadline }, clearDeviceCode);
+            closeDeviceCode = deps.presentDeviceCode?.(
+              { userCode: offer.userCode, authorizeUrl: offer.authorizeUrl, expiresAt: deadline },
+              clearDeviceCode,
+            );
           }
           await deps.openExternal(offer.authorizeUrl);
           deps.assertCurrent();
-          const ack = object(
-            await deps.invoke({
-              op: 'callback',
-              id,
-              box: key.seal(peerKey, id, 'callback', { kind: 'device-opened', state: offer.state }),
-            }),
-          );
-          if (ack.accepted !== true) throw fail();
+          await deliverCallback({ kind: 'device-opened', state: offer.state });
           opened = true;
           continue; // Browser open is not authorization completion. Keep observing the cloud operation.
         }
@@ -306,15 +240,7 @@ export async function assistPluginOauth(
           offer,
           async (callback) => {
             try {
-              deps.assertCurrent();
-              const result = object(
-                await deps.invoke({
-                  op: 'callback',
-                  id,
-                  box: key.seal(peerKey, id, 'callback', callback),
-                }),
-              );
-              if (result.accepted !== true) throw fail();
+              await deliverCallback(callback);
             } catch {
               callbackFailed = true;
               throw fail();
@@ -330,7 +256,9 @@ export async function assistPluginOauth(
     }
     throw fail();
   } finally {
+    deps.secretValue = undefined;
     listener?.close();
+    adapter?.close(finished ? 'completed' : now() >= deadline ? 'expired' : 'ended');
     clearDeviceCode?.();
     closeDeviceCode?.(finished ? 'completed' : now() >= deadline ? 'expired' : 'ended');
     if (!finished) await deps.invoke({ op: 'cancel', id }).catch(() => {});

@@ -229,6 +229,7 @@ export class GhostSetupCoordinator {
         ? validateReauthPlan(request.plan, assessment)
         : validatePlan(request.plan, assessment)) ?? defaultPlan(assessment);
     let snapshot = toSnapshot(requestId, identity, assessment, plan);
+    if (this.deps.executeInlineAction) snapshot.remoteSecret = true;
     let settled = false;
     let verifying: Promise<void> | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -289,6 +290,7 @@ export class GhostSetupCoordinator {
           activeActionId,
           allPendingSteps,
         });
+        if (this.deps.executeInlineAction) snapshot.remoteSecret = true;
         this.deps.bridge.update(snapshot);
       };
 
@@ -457,7 +459,7 @@ export class GhostSetupCoordinator {
         await runAction(command.actionId, command.expectedRevision, responseTarget);
       };
 
-      const submitInline = async (submit: {
+      const submitInlineCurrent = async (submit: {
         actionId: string;
         expectedRevision: number;
         value: string;
@@ -517,6 +519,12 @@ export class GhostSetupCoordinator {
           return;
         }
         await verify();
+      };
+
+      const submitInline = async (submit: Parameters<typeof submitInlineCurrent>[0]): Promise<void> => {
+        const remote = getRemoteOauthContext();
+        try { remote?.assertCurrent(); await submitInlineCurrent(submit); }
+        finally { remote?.finish(false); }
       };
 
       const onAbort = (): void => {

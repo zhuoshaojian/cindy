@@ -40,6 +40,8 @@ export interface GhostSetupInteractionStep {
 export interface GhostSetupInteractionSnapshot {
   /** Presentation hint; only the dedicated Main bridge may execute OAuth remotely. */
   remoteOauth?: true;
+  /** Only the ordinary Host-owned inline setup executor supports the signed input bridge. */
+  remoteSecret?: true;
   kind: 'plugin_setup';
   requestId: string;
   revision: number;
@@ -333,6 +335,7 @@ export function sanitizeGhostSetupSnapshotForRemote(
   return {
     kind: snapshot.kind,
     ...(supportsRemotePluginOauth() ? { remoteOauth: true as const } : {}),
+    ...(supportsRemotePluginOauth() && snapshot.remoteSecret ? { remoteSecret: true as const } : {}),
     requestId: snapshot.requestId,
     revision: snapshot.revision,
     ...(snapshot.terminal ? { terminal: true as const } : {}),

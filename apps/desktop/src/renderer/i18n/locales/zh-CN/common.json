@@ -7734,6 +7734,7 @@
       "restoreAria": "展开 {{name}} 设置",
       "minimizeAria": "收起 {{name}} 设置",
       "remoteOauthHint": "在这台电脑的浏览器中授权，账号将连接到当前远程设备。其他设置仍需在远程设备上完成。",
+      "remoteSecretHint": "在此填写，仅保存到当前云实例的这个插件。内容不会进入对话记录。",
       "completeOnDesktop": "请在远程电脑完成设置，本卡片会自动更新状态。",
       "cancel": "取消",
       "cancelling": "正在取消…",

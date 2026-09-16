@@ -1,5 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { PluginOauthCallback, PluginOauthOffer, PluginDeviceOffer } from '@cindy/device-link';
+import type {
+  PluginSecretOffer,
+  PluginOauthCallback,
+  PluginOauthOffer,
+  PluginDeviceOffer,
+  PluginAuthorizationOffer,
+  PluginDeviceOpened,
+} from '@cindy/device-link';
 
 /** Captured by a validated card action, never from model/Renderer URL parameters. */
 export interface RemoteOauthContext {
@@ -8,6 +15,11 @@ export interface RemoteOauthContext {
   authorize(offer: PluginOauthOffer, signal: AbortSignal): Promise<PluginOauthCallback>;
   /** Optional additive capability; old loopback callers stay unchanged. */
   authorizeDevice?(offer: PluginDeviceOffer, signal: AbortSignal): Promise<void>;
+  authorizePlugin?(
+    offer: PluginAuthorizationOffer,
+    signal: AbortSignal,
+  ): Promise<PluginOauthCallback | PluginDeviceOpened>;
+  submitSecret?(offer: PluginSecretOffer): Promise<string>;
   cancelled?: AbortSignal;
   finish(ok: boolean): void;
 }

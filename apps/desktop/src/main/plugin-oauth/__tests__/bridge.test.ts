@@ -1,7 +1,11 @@
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parsePluginOauthRequest, type PluginOauthOffer } from '@cindy/device-link';
+import {
+  parsePluginOauthRequest,
+  type PluginOauthOffer,
+  type PluginOauthRequest,
+} from '@cindy/device-link';
 import { OauthBox } from '../box.js';
 import { OauthTransactions } from '../transactions.js';
 import { getRemoteOauthContext, type RemoteOauthContext } from '../context.js';
@@ -45,12 +49,22 @@ function harness() {
   });
   hosts.push(host);
   const controller = new OauthBox();
-  const start = async (peer = 'desktop-1', requestId = action.requestId) =>
+  const start = async (
+    peer = 'desktop-1',
+    requestId = action.requestId,
+    capabilities: Partial<
+      Pick<
+        Extract<PluginOauthRequest, { op: 'start' }>,
+        'authorizationV1' | 'deviceUserCode' | 'secretSubmission'
+      >
+    > = {},
+  ) =>
     (await host.request(peer, {
       op: 'start',
       ...action,
       requestId,
       publicKey: controller.publicKey,
+      ...capabilities,
     })) as { id: string; publicKey: string };
   return {
     host,
@@ -178,6 +192,120 @@ describe('remote OAuth transactions', () => {
     await h.start();
     await expect(h.start()).rejects.toThrow();
   });
+});
+
+describe('shared authorization transaction lifecycle', () => {
+  const modes = ['oauth', 'legacy-device', 'device', 'browser', 'loopback', 'secret'] as const;
+  const presentation = {
+    ghostName: 'Fixture',
+    title: 'API Key',
+    description: '',
+    intro: '',
+    fieldLabel: 'API Key',
+    fieldDescription: '',
+    maxLength: 200,
+  };
+  function begin(mode: (typeof modes)[number], context: RemoteOauthContext, signal: AbortSignal) {
+    if (mode === 'oauth') return context.authorize(offer, signal);
+    if (mode === 'legacy-device')
+      return context.authorizeDevice!(
+        {
+          kind: 'device',
+          authorizeUrl: 'https://provider.example/device',
+          state,
+        },
+        signal,
+      );
+    if (mode === 'secret')
+      return context.submitSecret!({ kind: 'secret-entry', state, presentation });
+    const callbackUrl = 'http://127.0.0.1:12345/cli/callback';
+    const cliState = 'cli_state_0123456789';
+    const params = new URLSearchParams({
+      client_id: 'fixture',
+      response_type: 'code',
+      state: cliState,
+      redirect_uri: callbackUrl,
+      code_challenge: 'c'.repeat(43),
+      code_challenge_method: 'S256',
+    });
+    return context.authorizePlugin!(
+      {
+        kind: 'authorization',
+        state,
+        request:
+          mode === 'loopback'
+            ? {
+                kind: 'loopback',
+                url: `https://provider.example/authorize?${params}`,
+                callbackUrl,
+                state: cliState,
+              }
+            : { kind: mode, url: 'https://provider.example/activate' },
+      },
+      signal,
+    );
+  }
+
+  it.each(modes)('cancels a pending %s offer and rejects a later success', async (mode) => {
+    const h = harness();
+    const tx = await h.start('desktop-1', action.requestId, {
+      authorizationV1: true,
+      secretSubmission: true,
+    });
+    const context = h.contexts.get(action.requestId)!;
+    const signal = new AbortController().signal;
+    const waiting = begin(mode, context, signal);
+    const rejected = expect(waiting).rejects.toThrow('OAUTH_BRIDGE_UNAVAILABLE');
+    expect(() => begin(mode, context, signal)).toThrow('OAUTH_BRIDGE_UNAVAILABLE');
+    h.host.cancelRequest(action.requestId);
+    await rejected;
+    context.finish(true);
+    await expect(h.host.request('desktop-1', { op: 'status', id: tx.id })).resolves.toEqual({
+      phase: 'cancelled',
+    });
+  });
+
+  it.each(modes)(
+    'keeps %s bound to its reply type and source lifetime after exchange',
+    async (mode) => {
+      const h = harness();
+      const tx = await h.start('desktop-1', action.requestId, {
+        authorizationV1: true,
+        secretSubmission: true,
+      });
+      const context = h.contexts.get(action.requestId)!;
+      const source = new AbortController();
+      const waiting = begin(mode, context, source.signal);
+      const reply =
+        mode === 'secret'
+          ? { kind: 'secret-value', state, value: 'synthetic-pat' }
+          : mode === 'oauth' || mode === 'loopback'
+            ? { state, code: 'synthetic-code' }
+            : { kind: 'device-opened', state };
+      const wrong =
+        mode === 'secret'
+          ? { kind: 'device-opened', state }
+          : { kind: 'secret-value', state, value: 'synthetic-pat' };
+      const callback = (value: unknown) =>
+        h.host.request('desktop-1', {
+          op: 'callback',
+          id: tx.id,
+          box: h.controller.seal(tx.publicKey, tx.id, 'callback', value),
+        });
+      await expect(callback(wrong)).rejects.toThrow();
+      await callback(reply);
+      await waiting;
+      await expect(h.host.request('desktop-1', { op: 'status', id: tx.id })).resolves.toEqual({
+        phase: 'exchanging',
+      });
+      if (mode === 'secret') h.host.cancelRequest(action.requestId);
+      else source.abort();
+      context.finish(true);
+      await expect(h.host.request('desktop-1', { op: 'status', id: tx.id })).resolves.toEqual({
+        phase: 'cancelled',
+      });
+    },
+  );
 });
 
 describe('real local loopback callback and cloud-owned account exchange', () => {

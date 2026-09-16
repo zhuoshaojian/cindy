@@ -1,5 +1,6 @@
-import { parseDeviceAuthorizationUrl } from '@cindy/device-link';
+import { parseDeviceAuthorizationUrl, parsePluginAuthorizationRequest, type PluginAuthorizationRequest } from '@cindy/device-link';
 import { ghostNetworkHostMatches, type GhostManifest } from '../../shared/ghost.js';
+import { builtinAuthorizationTargets } from './builtinAuthorizationTargets.js';
 
 /** Narrow only browser authorization delegation; ordinary in-flight plugin network capabilities are unchanged. */
 export function bindDeviceAuthorizationTarget(manifest: GhostManifest, raw: string): (current: GhostManifest) => void {
@@ -7,14 +8,8 @@ export function bindDeviceAuthorizationTarget(manifest: GhostManifest, raw: stri
   const snapshot = JSON.stringify({id: manifest.id, version: manifest.version, network: manifest.network ?? null});
   const allowed = (m: GhostManifest) => {
     if (url.port) return false; // HTTPS default only; no alternate local/private service on a permitted hostname.
-    // Existing packaged CLI adapters: bind the provider endpoint, never infer trust from CLI text.
-    // GitHub supplies the private user code separately; TapTap's reviewed adapter uses only ?code=.
-    if (m.id === 'cindy-github') return url.origin === 'https://github.com'
-      && url.pathname === '/login/device' && !url.search && !url.hash;
-    if (m.id === 'taptap-maker') return url.origin === 'https://maker.taptap.cn'
-      && url.pathname === '/pat-tokens' && !url.hash
-      && [...url.searchParams.keys()].join(',') === 'code'
-      && /^[A-Za-z0-9_-]{32}$/.test(url.searchParams.get('code') ?? '');
+    const builtin = Object.hasOwn(builtinAuthorizationTargets, m.id) ? builtinAuthorizationTargets[m.id] : undefined;
+    if (builtin) return builtin(url);
     const declaration = m.network;
     const oauthOrigins = (declaration?.secrets ?? []).flatMap(s => s.oauth ? [new URL(s.oauth.authorizeUrl).origin] : []);
     const hosts = declaration?.hosts ?? [];
@@ -27,4 +22,12 @@ export function bindDeviceAuthorizationTarget(manifest: GhostManifest, raw: stri
     if (snapshot !== JSON.stringify({id: current.id, version: current.version, network: current.network ?? null})
       || !allowed(current)) throw new Error('DEVICE_AUTHORIZATION_TARGET_REJECTED');
   };
+}
+
+/** Typed mode selection does not relax the current provider/manifest target binding. */
+export function bindPluginAuthorizationTarget(manifest: GhostManifest, raw: PluginAuthorizationRequest): (current: GhostManifest) => void {
+  const request = parsePluginAuthorizationRequest(raw);
+  if (request.kind === 'loopback' && Object.hasOwn(builtinAuthorizationTargets, manifest.id))
+    throw new Error('PLUGIN_AUTHORIZATION_TARGET_REJECTED');
+  return bindDeviceAuthorizationTarget(manifest, request.url);
 }

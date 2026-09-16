@@ -73,7 +73,7 @@ import { withCardToken } from '../cindy-brain/cardService.js';
 import { drainGhostCallMedia } from '../cindy-brain/ghostMediaLedger.js';
 import {
   getGhostCardService,
-  connectGhostGithubAccount,
+  connectGhostAccount,
   getGhostManager,
   getGhostPipeDispatcher,
   getGhostSetupAssessment,
@@ -1459,8 +1459,8 @@ export function getCindyGhostsMcpDeps(
       const workingDir = context?.workingDir ?? null;
       const visible = classifyGhostVisibility(target.id, workingDir, ghostVisibilityDeps);
       if (!visible.ok) return visible;
-      if (target.id === 'cindy-github') {
-        const result = await connectGhostGithubAccount({ sessionId, signal,
+      {
+        const result = await connectGhostAccount({ ghostId: target.id, sessionId, signal,
           ...(target.reauthorize ? { reauthorize: true } : {}),
           assertCurrent: () => {
             if (signal?.aborted

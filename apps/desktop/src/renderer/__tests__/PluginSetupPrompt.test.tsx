@@ -268,6 +268,29 @@ describe('PluginSetupPrompt', () => {
     expect((screen.getByPlaceholderText('Enter API Key') as HTMLInputElement).disabled).toBe(true);
   });
 
+  it('uses the existing password card for an explicitly supported cloud input and clears the value on handoff', () => {
+    const onCommand = vi.fn();
+    const p = { ...inlinePending, remoteSecret: true as const };
+    const { rerender } = render(<PluginSetupPrompt pending={p} viewerState="expanded"
+      commandInFlight={null} remote onViewerStateChange={vi.fn()} onCommand={onCommand} />);
+    const input = screen.getByPlaceholderText('Enter API Key') as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    expect(input.type).toBe('password');
+    expect(screen.getByText(/current cloud instance/)).toBeTruthy();
+    fireEvent.change(input, {target: {value: 'synthetic-input'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Save Configuration'}));
+    expect(onCommand).toHaveBeenCalledWith('setup-1', 'submit_form', 'inline:api-key', {value: 'synthetic-input'});
+    expect(input.value).toBe('');
+    expect(parsePendingPluginSetup(p)?.remoteSecret).toBe(true);
+    rerender(<PluginSetupPrompt pending={p} viewerState="expanded"
+      commandInFlight={{requestId: p.requestId, action: 'submit_form', actionId: 'inline:api-key'}}
+      remote onViewerStateChange={vi.fn()} onCommand={onCommand} />);
+    const cancel = screen.getByRole('button', {name: 'Cancel'}) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(false);
+    fireEvent.click(cancel);
+    expect(onCommand).toHaveBeenLastCalledWith('setup-1', 'cancel');
+  });
+
   it('disables duplicate commands while Main owns an in-flight action', () => {
     render(
       <PluginSetupPrompt

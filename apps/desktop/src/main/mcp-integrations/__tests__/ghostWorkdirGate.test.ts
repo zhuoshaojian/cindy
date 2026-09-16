@@ -177,7 +177,7 @@ const sessionSnapshotMock = vi.fn(async (): Promise<{
   remoteHostId: null,
 }));
 vi.mock('../../cindy-brain/index.js', () => ({
-  connectGhostGithubAccount: githubConnectMock,
+  connectGhostAccount: githubConnectMock,
   getGhostManager: () => ({ list: listMock, managedRootDirs: () => [] }),
   ghostForgeForbiddenRootDirs: () => [],
   listAvailableGhostsForAuthorization: () => listMock(),

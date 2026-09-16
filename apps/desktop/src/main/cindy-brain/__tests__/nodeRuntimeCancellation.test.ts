@@ -124,6 +124,61 @@ describe('Node cancellation boundaries', () => {
 });
 
 describe('Node private authorization bridge', () => {
+  it('routes generic device codes privately and keeps setup completion tied to the Node result', async () => {
+    const finish = vi.fn(), dispose = vi.fn();
+    const open = vi.fn((input: Parameters<NonNullable<GhostNodeRuntimeBrokerDeps['openAuthorization']>>[0]) => {
+      expect(input.sessionId).toBe('trusted-session');
+      expect(input.request).toEqual({ kind: 'device', url: 'https://provider.example/activate', userCode: '123456789' });
+      return { opened: Promise.resolve(), result: Promise.resolve({ kind: 'opened' as const }), finish, dispose };
+    });
+    const h = harness(true, { getCallSessionId: () => 'trusted-session', openAuthorization: open });
+    const result = h.request('call-a');
+    await until(() => h.worker.requests.length === 1);
+    const id = h.worker.requests[0].id;
+    h.worker.listener?.({ type: 'plugin-authorize', reqId: 'generic', rpcId: id,
+      request: { kind: 'device', url: 'https://provider.example/activate', userCode: '123456789' } });
+    await until(() => h.worker.controls.some(x => x.reqId === 'generic'));
+    expect(h.worker.controls.find(x => x.reqId === 'generic')).toEqual({
+      type: 'plugin-authorize-result', reqId: 'generic', ok: true, result: { kind: 'opened' },
+    });
+    expect(finish).not.toHaveBeenCalled();
+    h.worker.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result: { ok: true } }) + '\n');
+    expect(await result).toEqual({ ok: true, result: { ok: true } });
+    expect(finish).toHaveBeenCalledWith(true);
+    expect(JSON.stringify(h.worker.requests)).not.toContain('123456789');
+  });
+
+  it('does not revive a cancelled generic request when its private callback arrives late', async () => {
+    let receive!: (value: { kind: 'opened' }) => void;
+    const waiting = new Promise<{ kind: 'opened' }>(r => { receive = r; });
+    const finish = vi.fn(), dispose = vi.fn();
+    const h = harness(true, { getCallSessionId: () => 'trusted-session',
+      openAuthorization: () => ({ opened: Promise.resolve(), result: waiting, finish, dispose }) });
+    const result = h.request('call-a');
+    await until(() => h.worker.requests.length === 1);
+    const id = h.worker.requests[0].id;
+    h.worker.listener?.({ type: 'plugin-authorize', reqId: 'generic', rpcId: id,
+      request: { kind: 'browser', url: 'https://provider.example/qr' } });
+    h.calls.get('call-a')!.abort();
+    expect(await result).toMatchObject({ ok: false, errorCode: 'CANCELLED' });
+    receive({ kind: 'opened' });
+    await until(() => h.worker.controls.some(x => x.reqId === 'generic'));
+    expect(h.worker.controls.find(x => x.reqId === 'generic')).toMatchObject({ ok: false });
+    expect(dispose).toHaveBeenCalled();
+    expect(finish).not.toHaveBeenCalled();
+  });
+
+  it('applies the same declared target check to generic browser requests', async () => {
+    const open = vi.fn();
+    const h = harness(true, { getCallSessionId: () => 'trusted-session', openAuthorization: open });
+    const result = h.request('call-a');
+    await until(() => h.worker.requests.length === 1);
+    h.worker.listener?.({ type: 'plugin-authorize', reqId: 'generic', rpcId: h.worker.requests[0].id,
+      request: { kind: 'browser', url: 'https://untrusted.example/qr' } });
+    expect(open).not.toHaveBeenCalled();
+    expect(await result).toMatchObject({ ok: false, errorCode: 'CANCELLED' });
+  });
+
   it('rejects an undeclared browser target and cancels the bound request', async () => {
     const open = vi.fn();
     const h = harness(true, {
