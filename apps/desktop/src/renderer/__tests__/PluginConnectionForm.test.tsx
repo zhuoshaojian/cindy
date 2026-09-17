@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@/i18n';
 import i18n from '@/i18n';
@@ -19,6 +19,46 @@ function form(p = pending, device = 'cloud-a') {
   return { ...render(element()), element, onCommand };
 }
 describe('cloud connection card', () => {
+  it.each([false, true])('keeps Save beside Cancel and outside the scrolling body (compact=%s)', compact => {
+    const onCommand = vi.fn();
+    render(<PluginSetupPrompt pending={pending} remote remoteDeviceId="cloud-a" compact={compact}
+      viewerState="expanded" commandInFlight={null} onCommand={onCommand} onViewerStateChange={vi.fn()} />);
+    const save = screen.getByRole('button', { name: 'Save Configuration' }) as HTMLButtonElement;
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    const host = screen.getByLabelText('Instance address');
+    const token = screen.getByLabelText('Access token');
+    const scrollRegion = screen.queryByTestId('interaction-prompt-scroll-region');
+    expect(save.closest('form')).toBeNull();
+    expect(save.form).toBe(host.closest('form'));
+    expect(save.parentElement?.parentElement).toBe(cancel.parentElement);
+    if (!compact) {
+      expect(scrollRegion?.contains(host)).toBe(true);
+      expect(scrollRegion?.contains(save)).toBe(false);
+    }
+    expect(save.disabled).toBe(true);
+    fireEvent.change(host, { target: { value: 'https://git.example.test/' } });
+    fireEvent.change(token, { target: { value: 'synthetic-pat' } });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect(onCommand).toHaveBeenCalledTimes(1);
+    expect((token as HTMLInputElement).value).toBe('');
+  });
+  it('associates each footer with only its own card form', () => {
+    const first = form(), second = form({ ...pending, requestId: 'other-card' }, 'cloud-b');
+    const cards = screen.getAllByRole('button', { name: 'Cancel' }).map(cancel => cancel.parentElement!);
+    const saves = cards.map(card => within(card).getByRole('button', { name: 'Save Configuration' }) as HTMLButtonElement);
+    expect(saves[0].form).not.toBe(saves[1].form);
+    const fill = (save: HTMLButtonElement, host: string) => {
+      fireEvent.change(within(save.form!).getByLabelText('Instance address'), { target: { value: host } });
+      fireEvent.change(within(save.form!).getByLabelText('Access token'), { target: { value: 'synthetic-pat' } });
+    };
+    fill(saves[0], 'https://first.example.test');
+    fill(saves[1], 'https://second.example.test');
+    fireEvent.click(saves[1]);
+    expect(first.onCommand).not.toHaveBeenCalled();
+    expect(second.onCommand).toHaveBeenCalledWith('other-card', 'submit_form', 'manage_connection:connection:service',
+      { host: 'https://second.example.test', value: 'synthetic-pat' });
+  });
   it('renders a protected connection form, sends one private submission and clears input', () => {
     const h = form();
     const host = screen.getByLabelText('Instance address'), token = screen.getByLabelText('Access token');

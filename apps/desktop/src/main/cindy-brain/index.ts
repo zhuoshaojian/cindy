@@ -5227,7 +5227,7 @@ export async function executeGhostSetupInlineAction(args: {
 }
 
 /** Only called under the authenticated remote connection-card context. */
-export function bindGhostSetupConnectionAction(args: { ghostId: string; actionId: string }):
+export function bindGhostSetupConnectionAction(args: { ghostId: string; actionId: string; onCommitted(): void }):
   ((value: import('@cindy/device-link').PluginConnectionInput) => boolean) | null {
   const manifest = findAvailableGhost(args.ghostId)?.manifest;
   if (!manifest) return null;

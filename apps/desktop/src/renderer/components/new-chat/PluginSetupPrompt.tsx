@@ -68,6 +68,7 @@ function PluginSetupPromptStateful({
   const { t } = useTranslation();
   const inputId = useId();
   const [iconFailed, setIconFailed] = useState(false);
+  const [connectionActions, setConnectionActions] = useState<HTMLDivElement | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [formTouched, setFormTouched] = useState<Record<string, boolean>>({});
   const [linkOpenFailed, setLinkOpenFailed] = useState<Record<string, boolean>>({});
@@ -408,6 +409,8 @@ function PluginSetupPromptStateful({
 
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
+      {connectionForm() && !hasCurrentGroupAlternatives && !terminal && commandInFlight?.action !== 'cancel'
+        ? <div ref={setConnectionActions} /> : null}
       {compact && pending.reopenActionId && !terminal && !remote ? <button type="button"
         disabled={!!commandInFlight} onClick={() => onCommand(pending.requestId, 'run_action', pending.reopenActionId)}
         className="h-9 rounded-[9999px] border border-[var(--border-default)] px-4 text-13 text-[var(--text-primary)] disabled:opacity-50">
@@ -621,6 +624,7 @@ function PluginSetupPromptStateful({
                       ) : null}
                       {currentGroupOption && connectionForm(step) && !terminal && commandInFlight?.action !== 'cancel' ? <PluginConnectionForm
                         key={step.action!.id} busy={busy} disabled={blockedRemoteAction(step)}
+                        actionsContainer={hasCurrentGroupAlternatives ? undefined : connectionActions}
                         onSubmit={(host, token) => onCommand(pending.requestId, 'submit_form', step.action!.id, { host, value: token })}
                       /> : null}
                       {directActionOption ? (

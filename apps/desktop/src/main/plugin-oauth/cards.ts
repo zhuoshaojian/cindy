@@ -14,7 +14,7 @@ export function initializePluginOauthCards(deps: {
   owner(): string | null;
   available(peer: string): boolean;
   identity?: () => { deviceId: string; membershipId: string } | null;
-  bindConnection?(args: { ghostId: string; actionId: string }): ((value: PluginConnectionInput) => boolean) | null;
+  bindConnection?(args: { ghostId: string; actionId: string; onCommitted(): void }): ((value: PluginConnectionInput) => boolean) | null;
 }): void {
   const findCardAction = (action: PluginOauthAction) => {
     const found = deps.bridge
@@ -53,7 +53,8 @@ export function initializePluginOauthCards(deps: {
           if (step.action?.kind === 'manage_connection') {
             const remote = getRemoteOauthContext();
             if (!remote?.submitConnection || !deps.bindConnection) return false;
-            const save = deps.bindConnection({ ghostId: snapshot.ghost.id, actionId: action.actionId });
+            const save = deps.bindConnection({ ghostId: snapshot.ghost.id, actionId: action.actionId,
+              onCommitted: () => { deps.bridge.connectionCommitted(action.requestId, action.actionId, action.expectedRevision); } });
             if (!save) return false;
             const presentation = createPluginConnectionPresentation(snapshot, step);
             void (async () => {

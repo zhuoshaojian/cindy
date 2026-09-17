@@ -114,6 +114,7 @@ interface PendingSetupInteraction {
     responseTarget?: GhostSetupInteractionResponseTarget,
   ) => Promise<void> | void;
   onInlineSubmit?: (submit: GhostSetupInlineSubmit) => Promise<void> | void;
+  onConnectionCommitted?: (actionId: string) => void;
 }
 
 export class GhostSetupInteractionBridge {
@@ -126,6 +127,7 @@ export class GhostSetupInteractionBridge {
     snapshot: GhostSetupInteractionSnapshot,
     onCommand: PendingSetupInteraction['onCommand'],
     onInlineSubmit?: PendingSetupInteraction['onInlineSubmit'],
+    onConnectionCommitted?: PendingSetupInteraction['onConnectionCommitted'],
   ): void {
     if (this.pending.has(snapshot.requestId)) {
       throw new Error(`plugin setup interaction already exists: ${snapshot.requestId}`);
@@ -136,6 +138,7 @@ export class GhostSetupInteractionBridge {
       completed: false,
       onCommand,
       ...(onInlineSubmit ? { onInlineSubmit } : {}),
+      ...(onConnectionCommitted ? { onConnectionCommitted } : {}),
     });
     try {
       this.broadcastSnapshot(sessionId, snapshot);
@@ -200,10 +203,20 @@ export class GhostSetupInteractionBridge {
     return true;
   }
 
-  /**
-   * Retire a settled request from pending/actionable semantics while keeping
-   * its last snapshot addressable for a delayed visual dismissal.
-   */
+  /** Main-only receipt after the exact connection card has committed its vault write. */
+  connectionCommitted(requestId: string, actionId: string, expectedRevision: number): boolean {
+    const entry = this.pending.get(requestId);
+    if (!entry || entry.completed || entry.snapshot.terminal ||
+        entry.snapshot.revision !== expectedRevision || !entry.onConnectionCommitted) return false;
+    const step = entry.snapshot.steps.find(step => step.action?.id === actionId &&
+      step.action.kind === 'manage_connection' && (step.phase === 'pending' || step.phase === 'failed'));
+    if (!step) return false;
+    // Main-only commit receipt. Never exposed through resolve or a Renderer command.
+    entry.onConnectionCommitted(actionId);
+    return true;
+  }
+
+  /** Retire a settled request while retaining its snapshot for delayed dismissal. */
   complete(requestId: string): boolean {
     const entry = this.pending.get(requestId);
     if (!entry || entry.completed) return false;

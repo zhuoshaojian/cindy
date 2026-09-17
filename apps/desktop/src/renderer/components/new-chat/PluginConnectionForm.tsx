@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { normalizePluginConnectionHost, parsePluginConnectionInput } from '@cindy/device-link';
 import { Button } from '@/components/ui/button';
@@ -6,10 +7,13 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 
 /** Input is ephemeral and local to the current target/card/revision. Never a chat draft. */
-export function PluginConnectionForm({ busy, disabled, onSubmit }: {
+export function PluginConnectionForm({ busy, disabled, actionsContainer, onSubmit }: {
   busy: boolean; disabled: boolean; onSubmit(host: string, token: string): void;
+  /** Keep the submit action beside Cancel, outside the card's scrolling body. */
+  actionsContainer?: HTMLElement | null;
 }) {
   const { t } = useTranslation();
+  const formId = useId();
   const [host, setHost] = useState(''), [token, setToken] = useState('');
   const [error, setError] = useState<'host' | 'token' | null>(null);
   const hostRef = useRef<HTMLInputElement>(null), tokenRef = useRef<HTMLInputElement>(null);
@@ -25,7 +29,11 @@ export function PluginConnectionForm({ busy, disabled, onSubmit }: {
     onSubmit(host, token);
     setToken(''); setHost(''); setError(null);
   };
-  return <form className="mt-3 flex min-w-0 flex-col gap-3" autoComplete="off" onSubmit={e => { e.preventDefault(); submit(); }}>
+  const submitButton = <Button type="submit" form={formId} size="lg" loading={busy}
+    disabled={disabled || !host.trim() || !token.trim()}>
+    {t('newChat.pluginSetup.saveConfiguration')}
+  </Button>;
+  return <form id={formId} className="mt-3 flex min-w-0 flex-col gap-3" autoComplete="off" onSubmit={e => { e.preventDefault(); submit(); }}>
     <FormField label={t('newChat.pluginSetup.connection.host')} required reserveFeedback
       hint={t('newChat.pluginSetup.connection.hostHint')}
       error={error === 'host' ? t('newChat.pluginSetup.connection.hostInvalid') : undefined}>
@@ -38,8 +46,7 @@ export function PluginConnectionForm({ busy, disabled, onSubmit }: {
         disabled={disabled || busy} maxLength={4096} autoCapitalize="none" spellCheck={false} autoComplete="new-password" />}
     </FormField>
     <p className="text-12 leading-5 text-[var(--text-secondary)]">{t('newChat.pluginSetup.connection.hint')}</p>
-    <div><Button type="submit" size="lg" loading={busy} disabled={disabled || !host.trim() || !token.trim()}>
-      {t('newChat.pluginSetup.saveConfiguration')}
-    </Button></div>
+    {actionsContainer === undefined ? <div>{submitButton}</div>
+      : actionsContainer ? createPortal(submitButton, actionsContainer) : null}
   </form>;
 }

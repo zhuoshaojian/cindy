@@ -14,7 +14,7 @@ import { invalidatePluginOauth, publishedPluginOauthIdentity, requestPluginOauth
 const cleanups: Array<() => void> = [];
 afterEach(() => { cleanups.splice(0).forEach(f => f()); invalidatePluginOauth(); });
 const input = { host: 'https://git.example.test/', token: 'synthetic-connection-token' };
-async function harness(fault?: 'vault' | 'owner' | 'manifest' | 'stale') {
+async function harness(fault?: 'vault' | 'owner' | 'manifest' | 'stale', configured = false) {
   let owner = 'membership';
   const values = new Map<string, string>(), wire: unknown[] = [], messages: unknown[] = [];
   const store = vi.fn((ghost: string, key: string, value: string) => {
@@ -24,6 +24,11 @@ async function harness(fault?: 'vault' | 'owner' | 'manifest' | 'stale') {
   const manager = new GhostConnectionManager({ vault: { store,
     read: (ghost, key) => values.get(`${ghost}:${key}`) ?? null,
     remove: (ghost, key) => { values.delete(`${ghost}:${key}`); }, readTail: () => null } });
+  if (configured) {
+    manager.upsert('demo', 'service', { host: 'git.example.test', token: 'synthetic-old-token', max: 2 });
+    manager.upsert('demo', 'service', { host: 'other.example.test', token: 'synthetic-other-token', max: 2 });
+    store.mockClear();
+  }
   const changes = new GhostSetupChangeBus();
   const bridge = new GhostSetupInteractionBridge({ broadcast: (...args) => messages.push(args) });
   const action = { id: 'manage_connection:connection:service', kind: 'manage_connection' as const };
@@ -31,8 +36,8 @@ async function harness(fault?: 'vault' | 'owner' | 'manifest' | 'stale') {
     kind: 'chip', entry: 'main.js', tools: [], network: { hosts: [], connections: [{ key: 'service', label: 'Service',
       maxConnections: 2, inject: { header: 'PRIVATE-TOKEN', format: '{value}' } }] } };
   const assess = (): GhostSetupAssessment => ({ state: values.size ? 'ready' : 'required',
-    revision: changes.currentRevision('demo'), groups: values.size ? [] : [{ id: 'connection', mode: 'any_of',
-      items: [{ ref: 'connection:service', kind: 'connection', label: 'Service', state: 'missing', actions: [action] }] }] });
+    revision: changes.currentRevision('demo'), groups: [{ id: 'connection', mode: 'any_of',
+      items: [{ ref: 'connection:service', kind: 'connection', label: 'Service', state: values.size ? 'satisfied' : 'missing', actions: [action] }] }] });
   const coordinator = new GhostSetupCoordinator({ bridge, changeBus: changes, assess, remoteConnection: true,
     validateTarget: () => ({ ok: true }), getGhostIdentity: () => ({ id: 'demo', name: 'Demo' }),
     executeAction: async () => ({ ok: true }), terminalGraceMs: 0 });
@@ -47,7 +52,7 @@ async function harness(fault?: 'vault' | 'owner' | 'manifest' | 'stale') {
     identity: () => ({ deviceId: 'cloud-device', membershipId: 'membership' }),
     bindConnection: args => value => save({ ...args, value }) });
   const abort = new AbortController();
-  const ready = coordinator.ensureReady({ sessionId: 'task', ghostId: 'demo', signal: abort.signal });
+  const ready = coordinator.ensureReady({ sessionId: 'task', ghostId: 'demo', signal: abort.signal, reauthorize: configured });
   cleanups.push(() => abort.abort());
   await vi.waitFor(() => expect(bridge.pendingSnapshots()).toHaveLength(1));
   const snapshot = bridge.pendingSnapshots()[0].request;
@@ -63,12 +68,36 @@ async function harness(fault?: 'vault' | 'owner' | 'manifest' | 'stale') {
       const result = await requestPluginOauth('desktop', args[0]); wire.push({ request: args[0], result });
       return { ok: true, result };
     } };
-  return { ready, values, store, save, wire, messages, openExternal, manager, target, presentation, deps,
+  return { ready, values, store, save, wire, messages, openExternal, manager, target, presentation, deps, abort, bridge,
     submit: (override: Record<string, unknown> = {}) => handleSubmitPluginConnection(deps, {
       ...target, presentation, value: input, ...override }) };
 }
 
 describe('authenticated exact-host connection form', () => {
+  it('reopens an existing connection and replaces only its token after the signed submission commits', async () => {
+    const h = await harness(undefined, true);
+    const before = h.manager.list('demo', 'service');
+    const receipt = vi.spyOn(h.bridge, 'connectionCommitted');
+    expect(h.store).not.toHaveBeenCalled();
+    expect(h.bridge.pendingSnapshots()).toHaveLength(1);
+    await expect(h.submit()).resolves.toEqual({ accepted: true });
+    expect(receipt).toHaveReturnedWith(true);
+    await expect(h.ready).resolves.toMatchObject({ ok: true });
+    expect(h.manager.list('demo', 'service')).toEqual(before);
+    expect(h.manager.resolveTokenByHost('demo', 'service', 'git.example.test')).toBe(input.token);
+    expect(h.manager.resolveTokenByHost('demo', 'service', 'other.example.test')).toBe('synthetic-other-token');
+    expect(h.save).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify([h.wire, h.messages])).not.toContain(input.token);
+    expect(JSON.stringify([h.wire, h.messages])).not.toContain('synthetic-old-token');
+  });
+  it('cancelled reconfiguration keeps existing credentials and refuses the stale card', async () => {
+    const h = await harness(undefined, true);
+    h.abort.abort();
+    await expect(h.ready).resolves.toMatchObject({ ok: false, errorCode: 'SETUP_CANCELLED' });
+    await expect(h.submit()).rejects.toThrow();
+    expect(h.store).not.toHaveBeenCalled();
+    expect(h.manager.resolveTokenByHost('demo', 'service', 'git.example.test')).toBe('synthetic-old-token');
+  });
   it('rejects an old reader before creating a transaction and drops private input', async () => {
     const invoke = vi.fn(async () => ({ version: 1, callback: 'desktop-loopback', encrypted: true, secretSubmission: true }));
     const deps: OauthControllerDeps = { invoke, assertCurrent: vi.fn(), openExternal: vi.fn(), connectionValue: input };

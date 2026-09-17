@@ -279,7 +279,7 @@ user/显式 Node Secret 声明推导；请求不能自选路径或 storage key�
 普通 remote setup；原 OAuth、设备码、API Key 契约不变。
 
 地址仅接受一个 HTTPS 默认端口 DNS 主机，可填裸域名或根 URL；路径、查询、通配符、IP、
-自定义端口、userinfo 与重定向输入不接受。控制端和云 Host 都校验，云 Host 从当前未满足
+自定义端口、userinfo 与重定向输入不接受。控制端和云 Host 都校验，云 Host 从当前
 assessment 的 connection ref 和当前 manifest 取连接声明，不能由调用者指定 vault key、
 注入头或额外权限。发 offer 时冻结 manifest，提交时任何声明变化都拒绝。
 
@@ -288,3 +288,9 @@ assessment 的 connection ref 和当前 manifest 取连接声明，不能由调�
 失败补偿；owner/peer/card/revision/期限在写入前复验，成功回执先于 change event。
 输入在提交、取消、换卡、换设备时清空，不落对话、镜像缓存、通知或日志。
 此回执只证明连接配置保存，真实平台登录和权限必须随后用插件最小只读调用验收。
+
+已保存连接可通过 `connect_account(..., reauthorize: true)` 再次配置；Host 重新展示当前
+声明的连接卡，不因旧 Token 存在就报告本次完成，也不预先删除旧连接。只有该卡片、action
+和 revision 对应的真实保存回执能完成重配，普通 change event、其他卡片或 Renderer 命令
+不能伪造回执。同地址沿用原连接 ID 和默认选择，只替换提交的 Token；取消保留旧凭据。
+Desktop 的保存按钮与取消按钮同处正文滚动区外；输入仍只留在原组件的临时内存。

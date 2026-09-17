@@ -145,11 +145,17 @@ export class GhostSetupCoordinator {
     let unsubscribe = () => {};
     let wakeVerify: (() => void) | null = null;
     let assessmentDirty = false;
+    const reconnectedActions = new Set<string>();
+    let localConnectionAction: { id: string; ref: string; revision: number } | undefined;
 
     // Subscribe before the initial read. A committed settings write racing the
     // first assessment will then keep the read loop running until one complete
     // assessment observes a quiet revision.
-    unsubscribe = this.deps.changeBus.subscribe(request.ghostId, () => {
+    unsubscribe = this.deps.changeBus.subscribe(request.ghostId, event => {
+      if (localConnectionAction && event.source === 'connection' && event.ref === localConnectionAction.ref &&
+          event.revision > localConnectionAction.revision) {
+        reconnectedActions.add(localConnectionAction.id);
+      }
       assessmentDirty = true;
       if (wakeVerify) wakeVerify();
     });
@@ -191,10 +197,9 @@ export class GhostSetupCoordinator {
       unsubscribe();
       return cancelled();
     }
-    let reconnected = false;
     const requestedReauth = (next: GhostSetupAssessment): GhostSetupAssessment | null =>
       toReauthInteractionAssessment(next) ??
-      (request.reauthorize && !reconnected ? toExplicitReauthInteractionAssessment(next) : null);
+      (request.reauthorize ? toExplicitReauthInteractionAssessment(next, reconnectedActions) : null);
     const reauthAssessment =
       (request.plan || request.reauthorize) && request.sessionId ? requestedReauth(assessment) : null;
     const reauthMode = reauthAssessment !== null;
@@ -385,6 +390,10 @@ export class GhostSetupCoordinator {
             return;
           }
           activeActionId = action.id;
+          if (action.kind === 'manage_connection' && !remoteOauth) {
+            localConnectionAction = { id: action.id, ref: action.id.slice('manage_connection:connection:'.length),
+              revision: this.deps.changeBus.currentRevision(request.ghostId) };
+          }
           publish(assessment, 'action_running');
           // Local OAuth actions remain shared; remote ones belong to their transaction. Navigation actions
           // belong to a session + responding window: two sessions displayed in
@@ -422,11 +431,12 @@ export class GhostSetupCoordinator {
           }
           if (settled) return;
           if (!result.ok) {
+            if (localConnectionAction?.id === action.id) localConnectionAction = undefined;
             publish(assessment, 'failed', result.errorCode ?? 'ACTION_FAILED');
             return;
           }
           if (action.kind === 'oauth_connect') {
-            reconnected = true;
+            reconnectedActions.add(action.id);
             assessmentDirty = true;
           }
           if (result.waitingExternal) publish(assessment, 'waiting_external');
@@ -535,7 +545,12 @@ export class GhostSetupCoordinator {
         settle(cancelled(), 'cancelled', 0);
       };
       try {
-        this.deps.bridge.open(sessionId, snapshot, onCommand, submitInline);
+        this.deps.bridge.open(sessionId, snapshot, onCommand, submitInline, actionId => {
+          if (settled) return;
+          reconnectedActions.add(actionId);
+          assessmentDirty = true;
+          void verify();
+        });
       } catch (error) {
         settle(this.internalFailure('插件设置卡片打开失败', error), 'open-failed', 0);
         return;
@@ -686,16 +701,20 @@ export function toReauthInteractionAssessment(
   };
 }
 
-/** A user-requested reconnect exposes only real, currently declared OAuth actions. */
+/** A user-requested reconnect exposes only current OAuth/connection actions, without deleting credentials. */
 function toExplicitReauthInteractionAssessment(
   assessment: GhostSetupAssessment,
+  completedActions: ReadonlySet<string>,
 ): GhostSetupAssessment | null {
   if (assessment.state !== 'ready') return null;
   const groups = assessment.groups.flatMap((group) => {
-    const items = group.items.filter(item => item.kind === 'oauth' &&
-      item.actions.some(action => action.kind === 'oauth_connect'))
-      .map(item => ({ ...item, state: 'expired' as const,
-        actions: item.actions.filter(action => action.kind === 'oauth_connect') }));
+    if (group.items.some(item => item.actions.some(action => completedActions.has(action.id)))) return [];
+    const items = group.items.flatMap(item => {
+      const actions = item.actions.filter(action => !completedActions.has(action.id) &&
+        ((item.kind === 'oauth' && action.kind === 'oauth_connect') ||
+          (item.kind === 'connection' && action.kind === 'manage_connection')));
+      return actions.length ? [{ ...item, state: 'expired' as const, actions }] : [];
+    });
     return items.length ? [{ ...group, items }] : [];
   });
   return groups.length ? { ...assessment, state: 'required', groups } : null;
