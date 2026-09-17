@@ -15,13 +15,15 @@ interface Entry {
   close: PluginOauthDeviceCodeClose;
 }
 
+const isActive = (view: PluginOauthDeviceCodeView): view is Extract<PluginOauthDeviceCodeView, { phase: 'ready' | 'browser' }> => view.phase === 'ready' || view.phase === 'browser';
+
 const fail = () => new Error('OAUTH_BRIDGE_UNAVAILABLE');
 function parseRequest(raw: unknown): PluginOauthDeviceCodeRequest {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw fail();
   const v = raw as Record<string, unknown>;
   if (Object.keys(v).sort().join(',') !== 'actionId,deviceId,ghostId,operation,requestId' ||
       !oauthId(v.deviceId) || !oauthId(v.ghostId) || !oauthId(v.requestId) ||
-      typeof v.actionId !== 'string' || !v.actionId || v.actionId.length > 256 || /[\x00-\x1f]/.test(v.actionId) ||
+      typeof v.actionId !== 'string' || !v.actionId || v.actionId.length > 256 || [...v.actionId].some(char => char.charCodeAt(0) < 32) ||
       typeof v.operation !== 'string' || !['read', 'copy', 'reopen'].includes(v.operation)) throw fail();
   return v as unknown as PluginOauthDeviceCodeRequest;
 }
@@ -46,19 +48,37 @@ export class LocalDeviceCodeSessions {
     if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(prompt.userCode) ||
         !Number.isSafeInteger(prompt.expiresAt) || prompt.expiresAt <= this.now() ||
         prompt.expiresAt - this.now() > PLUGIN_OAUTH_TTL_MS) throw fail();
+    return this.register(scope, target, {
+      phase: 'ready', userCode: prompt.userCode, verificationHost: new URL(authorizeUrl).hostname,
+      expiresAt: prompt.expiresAt, copiedAt: this.now(),
+    }, deps.assertCurrent, code => deps.copy(code), () => deps.openExternal(authorizeUrl), deps.clearClipboard);
+  }
+
+  /** The controller supplies a closure over an already validated URL; no URL reaches Renderer. */
+  presentBrowser(scope: string, target: PluginOauthDeviceCodeTarget, expiresAt: number,
+    assertCurrent: () => void, reopen: () => Promise<void>): PluginOauthDeviceCodeClose {
+    assertCurrent();
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= this.now() || expiresAt - this.now() > PLUGIN_OAUTH_TTL_MS) throw fail();
+    return this.register(scope, target, { phase: 'browser', expiresAt }, assertCurrent,
+      () => { throw fail(); }, reopen, () => {});
+  }
+
+  private register(scope: string, target: PluginOauthDeviceCodeTarget,
+    view: Extract<PluginOauthDeviceCodeView, { phase: 'ready' | 'browser' }>,
+    assertCurrent: () => void, copy: (code: string) => void,
+    reopen: () => Promise<void>, clearClipboard: () => void): PluginOauthDeviceCodeClose {
     const key = this.key(scope, target);
     this.entries.get(key)?.close('ended');
     if (this.entries.size >= 64) {
       for (const [oldKey, entry] of this.entries) {
-        if (entry.view.phase !== 'ready') this.entries.delete(oldKey);
+        if (!isActive(entry.view)) this.entries.delete(oldKey);
       }
       if (this.entries.size >= 64) throw fail();
     }
-    let expiry: ReturnType<typeof setTimeout>;
     const close: PluginOauthDeviceCodeClose = phase => {
-      if (entry.view.phase !== 'ready') return;
+      if (!isActive(entry.view)) return;
       clearTimeout(expiry);
-      deps.clearClipboard();
+      clearClipboard();
       // Remove all closures that capture authorization material, retaining only a brief status.
       entry.view = { phase };
       entry.copy = () => { throw fail(); };
@@ -69,19 +89,15 @@ export class LocalDeviceCodeSessions {
       forget.unref?.();
     };
     const entry: Entry = {
-      view: { phase: 'ready', userCode: prompt.userCode, verificationHost: new URL(authorizeUrl).hostname,
-        expiresAt: prompt.expiresAt, copiedAt: this.now() },
-      assertCurrent: deps.assertCurrent,
+      view, assertCurrent, reopen, close,
       copy: () => {
         if (entry.view.phase !== 'ready') throw fail();
-        deps.copy(entry.view.userCode);
+        copy(entry.view.userCode);
         entry.view = { ...entry.view, copiedAt: this.now() };
       },
-      reopen: () => deps.openExternal(authorizeUrl),
-      close,
     };
     this.entries.set(key, entry);
-    expiry = setTimeout(() => close('expired'), prompt.expiresAt - this.now());
+    const expiry = setTimeout(() => close('expired'), view.expiresAt - this.now());
     expiry.unref?.();
     return close;
   }
@@ -97,13 +113,13 @@ export class LocalDeviceCodeSessions {
       entry.close('ended');
       throw fail();
     }
-    if (entry.view.phase === 'ready' && this.now() >= entry.view.expiresAt) entry.close('expired');
+    if (isActive(entry.view) && this.now() >= entry.view.expiresAt) entry.close('expired');
     if (request.operation !== 'read') {
-      if (entry.view.phase !== 'ready') throw fail();
+      if (!isActive(entry.view)) throw fail();
       if (request.operation === 'copy') entry.copy();
       else await entry.reopen();
       try { entry.assertCurrent(); } catch { entry.close('ended'); throw fail(); }
-      if (entry.view.phase !== 'ready' || this.now() >= entry.view.expiresAt) {
+      if (!isActive(entry.view) || this.now() >= entry.view.expiresAt) {
         entry.close('expired');
         throw fail();
       }

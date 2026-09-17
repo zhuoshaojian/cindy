@@ -254,7 +254,7 @@ describe('PluginSetupPrompt', () => {
     const onCommand = vi.fn();
     render(<PluginSetupPrompt pending={{ ...pending, remoteOauth: true }} viewerState="expanded"
       commandInFlight={null} remote onViewerStateChange={vi.fn()} onCommand={onCommand} />);
-    const authorize = screen.getByRole('button', { name: 'Authorize' }) as HTMLButtonElement;
+    const authorize = screen.getByRole('button', { name: pending.steps[0].title }) as HTMLButtonElement;
     expect(authorize.disabled).toBe(false);
     fireEvent.click(authorize);
     expect(onCommand).toHaveBeenCalledWith(pending.requestId, 'run_action', pending.steps[0].action!.id);

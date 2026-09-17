@@ -7725,6 +7725,23 @@
       "stop": "停止生成"
     },
     "pluginSetup": {
+      "account": {
+        "opening": "正在打开授权页",
+        "connected": "账号已连接",
+        "cancelled": "已取消连接",
+        "expired": "本次授权已过期",
+        "ended": "本次授权已结束",
+        "failed": "未能连接账号",
+        "waiting": "等待浏览器授权",
+        "verifying": "正在确认授权结果",
+        "continue": "任务将继续。",
+        "reconnectHint": "重新连接以继续授权。",
+        "waitingHint": "请在浏览器中完成授权，完成后任务会自动继续。",
+        "remoteHint": "在本机浏览器中授权，账号将供远程设备上的 Cindy 使用。",
+        "codeInstructions": "在 {{host}} 输入验证码",
+        "remaining": "{{time}} 后过期",
+        "reconnect": "重新连接"
+      },
       "reopen": "重新打开",
       "title": "{{name}} 设置",
       "assessmentReadFailed": "无法读取插件配置状态。",

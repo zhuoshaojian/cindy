@@ -15,6 +15,7 @@ export type PluginOauthDeviceCodeRequest = PluginOauthDeviceCodeTarget & {
 /** Only the short user-entered device code is displayable, never OAuth callback codes or tokens. */
 export type PluginOauthDeviceCodeView =
   | { phase: 'ready'; userCode: string; verificationHost: string; expiresAt: number; copiedAt: number }
+  | { phase: 'browser'; expiresAt: number }
   | { phase: 'completed' | 'expired' | 'ended' };
 
 export interface PluginOauthDeviceCodePrompt {

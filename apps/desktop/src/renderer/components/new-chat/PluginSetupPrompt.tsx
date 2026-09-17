@@ -12,6 +12,7 @@ import type {
   PluginSetupViewerState,
 } from '@/lib/makerChatStore';
 import type { GhostSetupStepPhase } from '../../../shared/ghost';
+import { RemoteOauthSetupCard } from './RemoteOauthSetupCard';
 import { PluginOauthDeviceCode } from './PluginOauthDeviceCode';
 
 interface PluginSetupPromptProps {
@@ -449,6 +450,12 @@ function PluginSetupPromptStateful({
       ) : null}
     </div>
   );
+
+  if (remote && pending.remoteOauth && pending.steps.length === 1 &&
+      (currentStep?.action?.kind === 'oauth_connect' || (terminal && !currentStep?.action))) {
+    return <RemoteOauthSetupCard pending={pending} compact={compact} remoteDeviceId={remoteDeviceId}
+      commandInFlight={commandInFlight} onCommand={onCommand} />;
+  }
 
   const Shell = compact ? AuthorizationShell : InteractionPromptCardShell;
   return (

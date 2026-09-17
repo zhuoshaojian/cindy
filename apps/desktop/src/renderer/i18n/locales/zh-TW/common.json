@@ -7725,6 +7725,23 @@
       "stop": "停止生成"
     },
     "pluginSetup": {
+      "account": {
+        "opening": "正在開啟授權頁",
+        "connected": "帳號已連接",
+        "cancelled": "已取消連接",
+        "expired": "本次授權已過期",
+        "ended": "本次授權已結束",
+        "failed": "無法連接帳號",
+        "waiting": "等待瀏覽器授權",
+        "verifying": "正在確認授權結果",
+        "continue": "任務將繼續。",
+        "reconnectHint": "重新連接以繼續授權。",
+        "waitingHint": "請在瀏覽器中完成授權，完成後任務會自動繼續。",
+        "remoteHint": "在本機瀏覽器中授權，帳號將供遠端裝置上的 Cindy 使用。",
+        "codeInstructions": "在 {{host}} 輸入驗證碼",
+        "remaining": "{{time}} 後過期",
+        "reconnect": "重新連接"
+      },
       "reopen": "重新開啟",
       "title": "{{name}} 設定",
       "assessmentReadFailed": "無法讀取插件配置狀態。",
