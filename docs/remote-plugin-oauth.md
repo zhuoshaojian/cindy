@@ -40,6 +40,27 @@ Mobile 可展示或取消现有卡片，没有 Desktop loopback 接口；需在�
 | CLI 的 OAuth PKCE loopback | `kind:'loopback'`，精确绑定原 redirect URI、state、S256 challenge | 原可信 Node/CLI 用自己保管的 verifier 交换并校验 |
 | 用户填写的 API Key/PAT | 既有声明式 `inline_form`，专用加密输入桥 | 原 Host executor 写指定 Secret；只表示配置保存，不保证上游权限有效 |
 
+手动创建 Token 的 CLI 插件可以只给登录 RPC 声明 `node.secretBindings`，普通
+`setup.requires` 保持空数组，以继续复用已存在的 CLI 登录。携带当前 `callId` 的
+Node 请求缺少对应凭证时，`nodeSecretSetup.ts` 按精确方法/入口生成临时配置卡；
+`promptSecrets: true` 用于用户明确要求手动登录或替换 Token，即使已有值也展示输入框。
+这个标记只属于插件到运行它的 Host 的本地请求；跨 Host 卡片、密钥协商、加密提交协议不变。
+Host 只有在本次卡片实际提交后才在 Worker 私有 envelope 写入
+`cindy.secretInputCompleted=true`；需要本次人工输入的登录方法检查此标记，旧 Host
+缺标记时拒绝导入，不能因其忽略 `promptSecrets` 而静默使用旧值。插件自报标记无效。
+没有在途任务、声明不匹配、账号或包已变化、用户取消时不启动 Node 请求，不清除旧凭证。
+
+卡片中的 Token 只交给目标 Host 的既有 vault executor，再从私有
+`request.cindy.secrets` 注入声明的 Node RPC；不经工具参数、聊天消息、普通远控或插件
+`main.js`。真正需要向官方 CLI 交付时仅使用 stdin，固定参数中不包含 Token，返回值仅报告
+状态。TapTap Maker 手动适配的流程为：网页创建 Token → 本地保密卡输入 → 目标 Host 保存 →
+官方 CLI 验证 Token 并保存登录 → 最小只读权限核验。平台验证失败不算登录成功。
+
+这不是针对恶意 Node 插件的系统隔离；可信插件/CLI 最终会使用凭证，既有 CLI 凭证目录仍属于
+该插件的存储边界。新适配仅在支持上述 Node 接线的受控镜像中交付；旧 Host 不作为手动卡片
+验收环境，也不通过聊天收取 Token 降级。更换存量登录前的取消保留原值；提交新 Token 后，
+Host vault 可保存待验证的值，CLI 仅在平台验证成功后替换自己的登录材料。
+
 新增 provider 若使用已支持方式，只接入同一类型化接口及安装声明中的目标域名；无需为其添加
 卡片组件、IPC、Agent 工具或新的 relay/API 路由。已有 `bindDeviceAuthorization(url)` 和原
 OAuth 路径继续可用。新方式不自动解释任意 CLI 输出：CLI 包需调用一次通用接口，或由受审查

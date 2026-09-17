@@ -147,6 +147,7 @@ export interface NodeRuntimeStartAttemptContext {
 
 export interface GhostNodeRuntimeBrokerDeps {
   getGhost(id: string): InstalledGhost | null;
+  openSecretInput?: (input: import('./nodeSecretSetup.js').NodeSecretSetupInput) => Promise<boolean>;
   /** Main's exact live tool-call lookup; a plugin cannot select another call's owner. */
   getCallSignal?: (ghostId: string, callId: string) => AbortSignal | null;
   getCallSessionId?: (ghostId: string, callId: string) => string | null;
@@ -158,6 +159,7 @@ export interface GhostNodeRuntimeBrokerDeps {
    * 未保存或保险库不可用。调用方不得记录返回值。
    */
   readSecret?: (ghostId: string, secretKey: string) => string | null;
+  secretSaved?: (ghostId: string, secretKey: string) => boolean;
   /** 只解析本插件显式引用的 OAuth 槽；不交付 refresh token。 */
   resolveOauthSecret?: (ghostId: string, secretKey: string, accountId?: string) => Promise<
     { ok: true; accessToken: string } | { ok: false; error: string }
@@ -704,6 +706,7 @@ function clearHostSecrets(secrets: Record<string, string> | undefined): void {
  * 任意命令执行。stop(ghostId) 收掉该意识全部进程。
  */
 export class GhostNodeRuntimeBroker {
+  private readonly secretInputCalls = new Set<string>();
   /**
    * key = `ghostId::entryRel`(entryRel = 主入口或申报的额外入口;ghostId 与
    * 安全相对路径的字符集都不含 ":",拼接无歧义)。
@@ -821,9 +824,11 @@ export class GhostNodeRuntimeBroker {
     this.stoppedGhosts.delete(ghostId);
     const requestGeneration = this.stopGeneration.get(ghostId) ?? 0;
     const requestManifest = JSON.stringify(ghost.manifest);
+    const requestDirectory = ghost.dir;
     const requestStillCurrent = (): boolean => {
       const current = this.deps.getGhost(ghostId);
       return !this.destroyed && current?.enabled === true
+        && current.dir === requestDirectory
         && (this.stopGeneration.get(ghostId) ?? 0) === requestGeneration
         && JSON.stringify(current.manifest) === requestManifest;
     };
@@ -831,6 +836,9 @@ export class GhostNodeRuntimeBroker {
       return errorResult('INVALID_REQUEST', 'node-request 载荷必须是对象');
     }
     const request = payload as Record<string, unknown>;
+    if (request.promptSecrets !== undefined && typeof request.promptSecrets !== 'boolean') {
+      return errorResult('INVALID_REQUEST', 'promptSecrets must be a boolean');
+    }
     if (request.authAccount !== undefined &&
       (typeof request.authAccount !== 'string' || request.authAccount.length === 0 || request.authAccount.length > 64)) {
       return errorResult('INVALID_REQUEST', 'authAccount 必须是 1–64 字符的账号 id');
@@ -922,6 +930,56 @@ export class GhostNodeRuntimeBroker {
     }
 
     let hostSecrets: Record<string, string> | undefined;
+    let secretInputCompleted = false;
+    const manualBindings = secretBindings.filter(binding => !binding.oauthSecret);
+    if (request.promptSecrets === true && manualBindings.length === 0) {
+      return errorResult('INVALID_REQUEST', 'This Node method has no manual credential binding');
+    }
+    // A missing optional credential can prompt only inside the exact live tool
+    // call. No account, key or URL can be selected by the plugin's params.
+    let needsSecretInput = request.promptSecrets === true;
+    try {
+      if (!needsSecretInput && this.deps.openSecretInput && this.deps.secretSaved) {
+        needsSecretInput = manualBindings.some(binding => !this.deps.secretSaved!(ghostId, binding.key));
+      }
+    } catch {
+      return errorResult('INTERNAL', 'Plugin credential status is unavailable');
+    }
+    if (manualBindings.length > 0 && needsSecretInput) {
+      const callId = typeof request.callId === 'string' ? request.callId : null;
+      const sessionId = callId ? this.deps.getCallSessionId?.(ghostId, callId) : null;
+      if (signal && callId && sessionId && this.deps.openSecretInput) {
+        const inputKey = `${ghostId}\0${callId}`;
+        if (this.secretInputCalls.has(inputKey) || this.secretInputCalls.size >= MAX_PENDING_REQUESTS) {
+          return errorResult('RATE_LIMITED', 'A protected credential input is already pending');
+        }
+        const assertCurrent = () => {
+          if (signal.aborted || !requestStillCurrent() ||
+            !this.ownerScopeUsable(ghostId, ownerScopeSnapshot) ||
+            this.deps.getCallSignal?.(ghostId, callId) !== signal ||
+            this.deps.getCallSessionId?.(ghostId, callId) !== sessionId) {
+            throw new Error('NODE_SECRET_INPUT_UNAVAILABLE');
+          }
+        };
+        this.secretInputCalls.add(inputKey);
+        try {
+          assertCurrent();
+          const saved = await this.deps.openSecretInput({
+            ghostId, entry: entryRel, method: request.method as string,
+            sessionId, signal, force: request.promptSecrets === true, assertCurrent,
+          });
+          assertCurrent();
+          if (!saved) return errorResult('CANCELLED', 'Plugin credential input was not completed');
+          secretInputCompleted = true;
+        } catch {
+          return errorResult('CANCELLED', 'Plugin credential input is no longer active');
+        } finally {
+          this.secretInputCalls.delete(inputKey);
+        }
+      } else if (request.promptSecrets === true) {
+        return errorResult('PERMISSION_DENIED', 'Protected credential input requires a live task');
+      }
+    }
     if (secretBindings.length > 0) {
       hostSecrets = Object.create(null) as Record<string, string>;
       try {
@@ -1022,6 +1080,7 @@ export class GhostNodeRuntimeBroker {
         ownerScopeSnapshot,
         signal,
         request.callId as string | undefined,
+        secretInputCompleted,
       );
       // writeLine/JSON.stringify 在 sendRpc 内同步完成；随即抹掉本次临时对象，
       // 不让凭证明文跟随 Promise 生命周期常驻在 broker 闭包里。
@@ -2026,6 +2085,7 @@ export class GhostNodeRuntimeBroker {
     ownerScopeSnapshot: unknown = entry.ownerScopeSnapshot,
     signal?: AbortSignal,
     callId?: string,
+    secretInputCompleted = false,
   ): Promise<unknown> {
     this.assertOwnerScopeUsable(entry.ghost.manifest.id, ownerScopeSnapshot);
     if (signal?.aborted) return Promise.reject(new NodeRpcError('cancelled', 'The tool call was cancelled'));
@@ -2082,6 +2142,7 @@ export class GhostNodeRuntimeBroker {
           ...(signal || (hostSecrets && Object.keys(hostSecrets).length > 0)
             ? { cindy: {
                 ...(signal ? { cancelWithCall: true } : {}),
+                ...(secretInputCompleted ? { secretInputCompleted: true } : {}),
                 ...(hostSecrets && Object.keys(hostSecrets).length > 0 ? { secrets: hostSecrets } : {}),
               } }
             : {}),

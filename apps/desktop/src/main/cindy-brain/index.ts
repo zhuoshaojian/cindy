@@ -165,6 +165,7 @@ import {
   type GhostSetupInteractionResponseTarget,
 } from './ghostSetupInteractionBridge.js';
 import { executeGhostSetupInlineSubmission } from './ghostSetupInlineExecutor.js';
+import { requestNodeSecretSetup } from './nodeSecretSetup.js';
 import { executeGhostSetupConnectionSubmission } from './ghostSetupConnectionExecutor.js';
 import { handleGhostSecretsRequest } from './runtime/ghostSecretsEndpoint.js';
 import { handleGhostOauthRequest } from './runtime/ghostOauthEndpoint.js';
@@ -1798,6 +1799,17 @@ export function getGhostNodeRuntimeBroker(): GhostNodeRuntimeBroker {
       getCallSignal: (ghostId, callId) => getGhostPipeDispatcher().getPendingCallSignal(ghostId, callId),
       getCallSessionId: (ghostId, callId) =>
         getGhostPipeDispatcher().getPendingCallSessionId(ghostId, callId),
+      openSecretInput: input => {
+        const bridge = getGhostSetupInteractionBridge();
+        if (!bridge) throw new Error('NODE_SECRET_INPUT_UNAVAILABLE');
+        return requestNodeSecretSetup({
+          bridge,
+          changeBus: getGhostSetupChangeBus(),
+          getManifest: ghostId => findAvailableGhost(ghostId)?.manifest ?? null,
+          secretSaved: ghostSecretSaved,
+          storeSecret: storeGhostSecret,
+        }, input);
+      },
       openDeviceAuthorization: (input) => {
         const bridge = getGhostSetupInteractionBridge();
         if (!bridge) throw new Error('DEVICE_AUTHORIZATION_UNAVAILABLE');
@@ -1822,6 +1834,7 @@ export function getGhostNodeRuntimeBroker(): GhostNodeRuntimeBroker {
       },
       ownerScope: ghostOwnerScope,
       readSecret: (ghostId, secretKey) => readGhostSecret(ghostId, secretKey),
+      secretSaved: ghostSecretSaved,
       resolveOauthSecret: async (ghostId, secretKey, accountId) => {
         const ghost = findAvailableGhost(ghostId);
         const source = ghost

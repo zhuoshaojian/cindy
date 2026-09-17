@@ -6465,6 +6465,8 @@ export interface GhostPipeNodeRequest {
   callId?: string;
   /** JSON-RPC 方法名；mcp-stdio 时使用 tools/list、tools/call 等 MCP 方法。 */
   method: string;
+  /** Live call only: show the existing protected card for this RPC's manual Node bindings. */
+  promptSecrets?: boolean;
   params?: unknown;
   /**
    * 单次等待上限,缺省 30 秒;允许 1–120 秒。声明了 maxTotalMs 时语义变为

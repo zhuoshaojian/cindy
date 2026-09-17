@@ -3891,8 +3891,17 @@ const authorizationCode = request.cindy.secrets.mail_code;
 
 - \`secretBindings\` 最多 4 条，每条 \`methods\` 1–16 个；省略 \`entry\`
   只绑定主入口，不能借同名方法把凭证送去其它入口；
-- 未保存凭证时宿主在请求进入 Worker 前返回 \`PERMISSION_DENIED\`，设置页可用
-  \`GET /secrets\` 的 saved 状态引导用户；
+- 在途工具调用携带 \`callId\` 时，缺少本次方法/入口声明的手动凭证会先显示既有保密输入卡，
+  云端任务复用签名加密输入桥；用户提交后才进入 Worker。显式登录或更换 Token 可带
+  \`promptSecrets: true\`，即使已保存也重新显示卡片；取消不清除原凭证。
+  没有在途调用或旧 Host 不支持此接线时仍返回 \`PERMISSION_DENIED\`，不会回退到聊天收取
+  Token。设置页继续使用 \`/secrets\`，不要把输入放入业务 RPC 或 BroadcastChannel；
+  完成本次卡片提交后，Host 在 Worker 私有 \`request.cindy.secretInputCompleted\` 标记
+  \`true\`。要求本次人工填写的登录方法必须检查该标记；旧 Host 缺标记时拒绝执行，不能
+  因其忽略新请求字段而静默复用旧 Token；标记不能由插件 main.js 自报；
+- 若手动凭证只用于登录方法，可用 \`setup: { requires: [] }\` 保留既有 CLI 登录及其它工具，
+  由具体绑定方法触发卡片。此配置就绪仅表示凭证已保存；插件还需执行最小只读权限验证。
+  这个增量只涉及插件→本机 Host 的 Node 请求；远程卡片和输入协议不增加字段；
 - 宿主不会直接把明文交给 \`main.js\`、Agent 参数或写入宿主日志；但 Worker
   收到明文后可以主动回传、落盘或写日志，浏览器侧代码和 Agent 也可能因此间接
   获得它。插件详情的能力清单会逐条披露此风险，只安装可信来源插件；
