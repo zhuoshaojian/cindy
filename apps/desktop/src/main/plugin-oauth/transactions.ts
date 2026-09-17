@@ -8,6 +8,9 @@ import {
   parsePluginSecretOffer,
   parsePluginSecretValue,
   type PluginSecretValue,
+  parsePluginConnectionOffer,
+  parsePluginConnectionValue,
+  type PluginConnectionValue,
   type PluginDeviceOpened,
   type PluginOauthCallback,
   parsePluginOauthRequest,
@@ -30,8 +33,8 @@ export interface OauthTransactionDeps {
   run(action: PluginOauthAction): Promise<boolean> | boolean;
   now?: () => number;
 }
-type TransactionReply = PluginOauthCallback | PluginDeviceOpened | PluginSecretValue;
-type ReplyMode = 'loopback' | 'device' | 'secret';
+type TransactionReply = PluginOauthCallback | PluginDeviceOpened | PluginSecretValue | PluginConnectionValue;
+type ReplyMode = 'loopback' | 'device' | 'secret' | 'connection';
 interface OfferExchange<T> {
   offer: { state: string };
   mode: ReplyMode;
@@ -190,6 +193,12 @@ export class OauthTransactions {
           maxSecretLength: offer.presentation.maxLength,
         }).then((reply) => reply.value);
       },
+      submitConnection: (rawOffer) => {
+        if (request.connectionSubmission !== true) throw failure();
+        const offer = parsePluginConnectionOffer(rawOffer);
+        return this.waitForReply(t, { offer, mode: 'connection', parse: parsePluginConnectionValue })
+          .then(reply => reply.value);
+      },
       finish: (ok) => {
         if (!terminal(t.phase)) this.finish(t, ok && this.current(t) ? 'succeeded' : 'failed');
       },
@@ -225,6 +234,7 @@ export class OauthTransactions {
         deviceUserCode: true,
         authorizationV1: true,
         secretSubmission: true,
+        connectionSubmission: true,
       };
     if (request.op === 'start') {
       const owner = this.deps.owner()!;
@@ -297,7 +307,9 @@ export class OauthTransactions {
     if (t.phase !== 'authorizing' || !t.key) throw failure();
     const rawCallback = t.key.open(t.publicKey, t.id, 'callback', request.box);
     const callback =
-      t.mode === 'secret'
+      t.mode === 'connection'
+        ? parsePluginConnectionValue(rawCallback)
+        : t.mode === 'secret'
         ? parsePluginSecretValue(rawCallback)
         : t.mode === 'device'
           ? parsePluginDeviceOpened(rawCallback)

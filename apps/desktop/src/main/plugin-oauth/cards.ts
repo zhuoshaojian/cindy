@@ -1,6 +1,6 @@
-import type { PluginOauthAction } from '@cindy/device-link';
+import type { PluginOauthAction, PluginConnectionInput } from '@cindy/device-link';
 import { randomBytes } from 'node:crypto';
-import { createPluginSecretPresentation } from '../../shared/pluginOauth.js';
+import { createPluginSecretPresentation, createPluginConnectionPresentation } from '../../shared/pluginOauth.js';
 import { getRemoteOauthContext } from './context.js';
 import type { GhostSetupInteractionBridge } from '../cindy-brain/ghostSetupInteractionBridge.js';
 import type { BotAuthorizationService } from '../maker-ipc/botAuthorizationService.js';
@@ -14,6 +14,7 @@ export function initializePluginOauthCards(deps: {
   owner(): string | null;
   available(peer: string): boolean;
   identity?: () => { deviceId: string; membershipId: string } | null;
+  bindConnection?(args: { ghostId: string; actionId: string }): ((value: PluginConnectionInput) => boolean) | null;
 }): void {
   const findCardAction = (action: PluginOauthAction) => {
     const found = deps.bridge
@@ -25,7 +26,8 @@ export function initializePluginOauthCards(deps: {
       (s) =>
         s.action?.id === action.actionId &&
         (s.action.kind === 'oauth_connect' ||
-          (found.request.remoteSecret === true && s.action.kind === 'inline_form')) &&
+          (found.request.remoteSecret === true && s.action.kind === 'inline_form') ||
+          (found.request.remoteConnection === true && !!deps.bindConnection && s.action.kind === 'manage_connection')) &&
         (s.phase === 'pending' || s.phase === 'failed'),
     );
     if (!step) return null;
@@ -48,6 +50,24 @@ export function initializePluginOauthCards(deps: {
         const card = findCardAction(action);
         if (card) {
           const { snapshot, step } = card;
+          if (step.action?.kind === 'manage_connection') {
+            const remote = getRemoteOauthContext();
+            if (!remote?.submitConnection || !deps.bindConnection) return false;
+            const save = deps.bindConnection({ ghostId: snapshot.ghost.id, actionId: action.actionId });
+            if (!save) return false;
+            const presentation = createPluginConnectionPresentation(snapshot, step);
+            void (async () => {
+              let value: PluginConnectionInput | undefined;
+              try {
+                value = await remote.submitConnection!({ kind: 'connection-entry',
+                  state: randomBytes(32).toString('base64url'), presentation });
+                remote.assertCurrent();
+                if (!findCardAction(action) || !save(value)) throw new Error('PLUGIN_CONNECTION_UNAVAILABLE');
+              } catch { remote.finish(false); }
+              finally { value = undefined; }
+            })();
+            return true;
+          }
           if (step.action?.kind === 'inline_form') {
             const remote = getRemoteOauthContext();
             const submitSecret = remote?.submitSecret;

@@ -30,6 +30,7 @@ export * from './invokePolicy.js';
 export * from './pluginOauth.js';
 export * from './pluginAuthorization.js';
 export * from './pluginSecretSubmission.js';
+export * from './pluginConnectionSubmission.js';
 
 export * from './pluginDeviceAuthorization.js';
 export * from './pluginOauthAuthentication.js';

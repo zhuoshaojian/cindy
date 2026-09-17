@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
   PluginSecretOffer,
+  PluginConnectionOffer,
+  PluginConnectionInput,
   PluginOauthCallback,
   PluginOauthOffer,
   PluginDeviceOffer,
@@ -20,6 +22,7 @@ export interface RemoteOauthContext {
     signal: AbortSignal,
   ): Promise<PluginOauthCallback | PluginDeviceOpened>;
   submitSecret?(offer: PluginSecretOffer): Promise<string>;
+  submitConnection?(offer: PluginConnectionOffer): Promise<PluginConnectionInput>;
   cancelled?: AbortSignal;
   finish(ok: boolean): void;
 }

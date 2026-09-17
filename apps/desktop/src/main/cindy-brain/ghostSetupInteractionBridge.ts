@@ -42,6 +42,8 @@ export interface GhostSetupInteractionSnapshot {
   remoteOauth?: true;
   /** Only the ordinary Host-owned inline setup executor supports the signed input bridge. */
   remoteSecret?: true;
+  /** Dedicated exact-host connection form; never generic remote settings access. */
+  remoteConnection?: true;
   kind: 'plugin_setup';
   requestId: string;
   revision: number;
@@ -336,6 +338,7 @@ export function sanitizeGhostSetupSnapshotForRemote(
     kind: snapshot.kind,
     ...(supportsRemotePluginOauth() ? { remoteOauth: true as const } : {}),
     ...(supportsRemotePluginOauth() && snapshot.remoteSecret ? { remoteSecret: true as const } : {}),
+    ...(supportsRemotePluginOauth() && snapshot.remoteConnection ? { remoteConnection: true as const } : {}),
     requestId: snapshot.requestId,
     revision: snapshot.revision,
     ...(snapshot.terminal ? { terminal: true as const } : {}),

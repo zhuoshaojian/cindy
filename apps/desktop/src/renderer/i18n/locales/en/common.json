@@ -7740,6 +7740,14 @@
       "restoreAria": "Restore {{name}} settings",
       "minimizeAria": "Minimize {{name}} settings",
       "remoteOauthHint": "Authorize in this computer’s browser to connect the account on the current remote device. Complete other settings on the remote device.",
+      "connection": {
+        "host": "Instance address",
+        "hostHint": "Enter the service’s HTTPS address, using its default port.",
+        "hostInvalid": "Enter one HTTPS domain without a path, query, or custom port.",
+        "token": "Access token",
+        "tokenInvalid": "Enter a valid access token (up to 4096 characters).",
+        "hint": "Saved only for this plugin on the current cloud instance. The token is sent only to the address you enter and is not included in chat history."
+      },
       "remoteSecretHint": "Enter the key here to save it only for this plugin on the current cloud instance. It will not appear in chat history.",
       "completeOnDesktop": "Complete this setup on the controlled desktop. This card will update automatically.",
       "cancel": "Cancel",

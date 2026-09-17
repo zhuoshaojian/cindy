@@ -5,6 +5,11 @@ import {
   parsePluginSecretValue,
   parsePluginSecretPresentation,
   type PluginSecretPresentation,
+  parsePluginConnectionOffer,
+  parsePluginConnectionValue,
+  parsePluginConnectionPresentation,
+  type PluginConnectionInput,
+  type PluginConnectionPresentation,
   oauthId,
   type PluginOauthAction,
   type PluginOauthCallback,
@@ -93,6 +98,8 @@ export interface OauthControllerDeps {
   /** Supplied only by the dedicated local input IPC, never generic assist or a Node adapter. */
   secretValue?: string;
   secretPresentation?: PluginSecretPresentation;
+  connectionValue?: PluginConnectionInput;
+  connectionPresentation?: PluginConnectionPresentation;
   invoke(request: PluginOauthRequest): Promise<unknown>;
   openExternal(url: string): Promise<void>;
   copyDeviceCode?(code: string): () => void;
@@ -114,6 +121,7 @@ export async function assistPluginOauth(
   } finally {
     // Capability/handshake failures happen before a transaction exists too.
     deps.secretValue = undefined;
+    deps.connectionValue = undefined;
   }
 }
 
@@ -128,6 +136,7 @@ async function runAuthorization(
   if (caps.version !== 1 || caps.callback !== 'desktop-loopback' || caps.encrypted !== true)
     throw fail();
   if (deps.secretValue !== undefined && caps.secretSubmission !== true) throw fail();
+  if (deps.connectionValue !== undefined && (caps.connectionSubmission !== true || deps.secretValue !== undefined)) throw fail();
   deps.assertCurrent();
   const key = new OauthBox();
   const deviceUserCode = caps.deviceUserCode === true && !!deps.copyDeviceCode;
@@ -139,6 +148,7 @@ async function runAuthorization(
       ...(deviceUserCode ? { deviceUserCode: true } : {}),
       ...(caps.authorizationV1 === true ? { authorizationV1: true } : {}),
       ...(deps.secretValue !== undefined ? { secretSubmission: true } : {}),
+      ...(deps.connectionValue !== undefined ? { connectionSubmission: true } : {}),
     }),
   );
   if (
@@ -180,6 +190,20 @@ async function runAuthorization(
       if (status.phase === 'authorizing' && !opened) {
         if (typeof status.offer !== 'string') throw fail();
         const rawOffer = object(key.open(peerKey, id, 'offer', status.offer));
+        if (rawOffer.kind === 'connection-entry') {
+          if (caps.connectionSubmission !== true || deps.connectionValue === undefined) throw fail();
+          const offer = parsePluginConnectionOffer(rawOffer);
+          if (JSON.stringify(offer.presentation) !== JSON.stringify(parsePluginConnectionPresentation(deps.connectionPresentation))) throw fail();
+          const payload = parsePluginConnectionValue({ kind: 'connection-value', state: offer.state, value: deps.connectionValue });
+          deps.assertCurrent();
+          const sealed = key.seal(peerKey, id, 'callback', payload);
+          deps.connectionValue = undefined;
+          await deliverSealedCallback(sealed);
+          opened = true;
+          continue;
+        }
+        // A connection form cannot be reinterpreted as a free-form secret or OAuth action.
+        if (deps.connectionValue !== undefined) throw fail();
         if (rawOffer.kind === 'secret-entry') {
           if (caps.secretSubmission !== true || deps.secretValue === undefined) throw fail();
           const offer = parsePluginSecretOffer(rawOffer);
@@ -257,6 +281,7 @@ async function runAuthorization(
     throw fail();
   } finally {
     deps.secretValue = undefined;
+    deps.connectionValue = undefined;
     listener?.close();
     adapter?.close(finished ? 'completed' : now() >= deadline ? 'expired' : 'ended');
     clearDeviceCode?.();

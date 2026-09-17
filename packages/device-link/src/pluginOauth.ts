@@ -17,6 +17,7 @@ export type PluginOauthRequest =
       deviceUserCode?: true;
       authorizationV1?: true;
       secretSubmission?: true;
+      connectionSubmission?: true;
     } & PluginOauthAction)
   | { op: "status"; id: string }
   | { op: "cancel"; id: string }
@@ -89,6 +90,7 @@ export function parsePluginOauthRequest(
       ...(value.deviceUserCode === true ? ["deviceUserCode"] : []),
       ...(value.authorizationV1 === true ? ["authorizationV1"] : []),
       ...(value.secretSubmission === true ? ["secretSubmission"] : []),
+      ...(value.connectionSubmission === true ? ["connectionSubmission"] : []),
     ])
   ) {
     const action = parsePluginOauthAction({
@@ -108,6 +110,7 @@ export function parsePluginOauthRequest(
         ...(value.deviceUserCode === true ? { deviceUserCode: true } : {}),
         ...(value.authorizationV1 === true ? { authorizationV1: true } : {}),
         ...(value.secretSubmission === true ? { secretSubmission: true } : {}),
+        ...(value.connectionSubmission === true ? { connectionSubmission: true } : {}),
       };
   }
   if (

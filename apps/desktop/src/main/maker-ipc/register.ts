@@ -151,6 +151,7 @@ import { isGhostDisabledForWorkdir } from '../cindy-brain/ghostWorkdirPrefs.js';
 import {
   executeGhostSetupAction,
   executeGhostSetupInlineAction,
+  bindGhostSetupConnectionAction,
   getGhostManager,
   getGhostPipeDispatcher,
   getGhostSetupAssessment,
@@ -2385,6 +2386,7 @@ const ghostSetupInteractionBridge = initGhostSetupInteractionBridge({
 });
 
 initGhostSetupCoordinator({
+  remoteConnection: true,
   changeBus: getGhostSetupChangeBus(),
   bridge: ghostSetupInteractionBridge,
   assess: (ghostId) => getGhostSetupAssessment(ghostId),
@@ -2433,6 +2435,7 @@ initGhostSetupCoordinator({
 });
 
 initializePluginOauthCards({
+  bindConnection: bindGhostSetupConnectionAction,
   identity: getInstanceConfig,
   bridge: ghostSetupInteractionBridge,
   bots: getBotAuthorizationService,

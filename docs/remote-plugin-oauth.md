@@ -243,3 +243,27 @@ user/显式 Node Secret 声明推导；请求不能自选路径或 storage key�
 
 每次交付报告应另列源码基线、镜像/客户端产物、测试环境、真实 provider 结果与线上部署状态。
 本次上游对齐不以历史版本验收代替新版本验收，也不自动部署云实例或升级用户数据。
+
+## 受保护的实例连接表单
+
+支持 `network.connections` 的插件通过原 `manage_connection:connection:<key>` setup action
+接入，不要求插件新增 OAuth 或更改凭据格式。新版云 Host 的卡片投影声明
+`remoteConnection:true`；新版 Desktop 显示地址和遮罩令牌输入，旧端保持不支持此动作。
+
+专用本机 IPC `plugin-oauth:submit-connection` 不进入通用远控 allowlist。它沿签名 v2
+握手明确协商 `connectionSubmission:true`，比较用户看到的完整 presentation
+（ghostName/title/description/intro/connectionKey），再发送加密 callback：
+`{kind:'connection-value',state,value:{host,token}}`。对应加密 offer 为
+`{kind:'connection-entry',state,presentation}`。未协商的端拒绝，不转用 secret-entry 或
+普通 remote setup；原 OAuth、设备码、API Key 契约不变。
+
+地址仅接受一个 HTTPS 默认端口 DNS 主机，可填裸域名或根 URL；路径、查询、通配符、IP、
+自定义端口、userinfo 与重定向输入不接受。控制端和云 Host 都校验，云 Host 从当前未满足
+assessment 的 connection ref 和当前 manifest 取连接声明，不能由调用者指定 vault key、
+注入头或额外权限。发 offer 时冻结 manifest，提交时任何声明变化都拒绝。
+
+用户在可信卡片中填写的精确地址构成本次连接目标。插件 iframe 不能调用此入口；其原有
+设置页新增主机确认保留。云 Host 复用 GhostConnectionManager 的同步保存、条数限制和
+失败补偿；owner/peer/card/revision/期限在写入前复验，成功回执先于 change event。
+输入在提交、取消、换卡、换设备时清空，不落对话、镜像缓存、通知或日志。
+此回执只证明连接配置保存，真实平台登录和权限必须随后用插件最小只读调用验收。

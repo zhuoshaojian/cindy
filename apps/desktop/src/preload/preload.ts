@@ -6433,6 +6433,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** Dedicated signed input transport; never uses the ordinary remote invoke API. */
     submitRemotePluginSecret: (request: LocalPluginSecretRequest): Promise<{ accepted: boolean }> =>
       ipcRenderer.invoke('plugin-oauth:submit-secret', request),
+    submitRemotePluginConnection: (request: import('../shared/pluginOauth').LocalPluginConnectionRequest): Promise<{ accepted: boolean }> =>
+      ipcRenderer.invoke('plugin-oauth:submit-connection', request),
 
     /** Ephemeral user-entered device code for this frame's active card; no callback code or token. */
     pluginOauthDeviceCode: (request: import('../shared/pluginOauthDeviceCode').PluginOauthDeviceCodeRequest): Promise<import('../shared/pluginOauthDeviceCode').PluginOauthDeviceCodeView | null> =>

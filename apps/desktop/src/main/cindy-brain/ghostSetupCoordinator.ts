@@ -65,6 +65,7 @@ export type GhostSetupActionResult =
     };
 
 export interface GhostSetupCoordinatorDeps {
+  remoteConnection?: true;
   changeBus: GhostSetupChangeBus;
   bridge: GhostSetupInteractionBridge;
   assess: (ghostId: string) => Promise<GhostSetupAssessment> | GhostSetupAssessment;
@@ -230,6 +231,7 @@ export class GhostSetupCoordinator {
         : validatePlan(request.plan, assessment)) ?? defaultPlan(assessment);
     let snapshot = toSnapshot(requestId, identity, assessment, plan);
     if (this.deps.executeInlineAction) snapshot.remoteSecret = true;
+    if (this.deps.remoteConnection) snapshot.remoteConnection = true;
     let settled = false;
     let verifying: Promise<void> | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -291,6 +293,7 @@ export class GhostSetupCoordinator {
           allPendingSteps,
         });
         if (this.deps.executeInlineAction) snapshot.remoteSecret = true;
+        if (this.deps.remoteConnection) snapshot.remoteConnection = true;
         this.deps.bridge.update(snapshot);
       };
 

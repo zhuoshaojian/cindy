@@ -33,7 +33,7 @@ import * as messageService from '@/lib/messageService';
 import * as sessionService from '@/lib/sessionService';
 import { extractIpcError } from '@/utils/ipcError';
 import type { TurnChangeSetUpdatedPayload } from '../../shared/turnChangeSet';
-import type { LocalPluginOauthRequest, LocalPluginSecretRequest } from '../../shared/pluginOauth';
+import type { LocalPluginOauthRequest, LocalPluginSecretRequest, LocalPluginConnectionRequest } from '../../shared/pluginOauth';
 
 type FullMaker = typeof window.electronAPI.maker;
 
@@ -55,6 +55,12 @@ export function submitRemotePluginSecret(
   const deviceId = getStickySessionDeviceId(sessionId);
   if (!deviceId) return Promise.reject(new Error('Remote authorization unavailable'));
   return window.electronAPI.maker.submitRemotePluginSecret({ deviceId, ...request });
+}
+
+export function submitRemotePluginConnection(sessionId: string, request: Omit<LocalPluginConnectionRequest, 'deviceId'>): Promise<{ accepted: boolean }> {
+  const deviceId = getStickySessionDeviceId(sessionId);
+  if (!deviceId) return Promise.reject(new Error('Remote authorization unavailable'));
+  return window.electronAPI.maker.submitRemotePluginConnection({ deviceId, ...request });
 }
 
 /**

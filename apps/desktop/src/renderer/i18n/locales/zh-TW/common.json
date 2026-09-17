@@ -7734,6 +7734,14 @@
       "restoreAria": "展開 {{name}} 設定",
       "minimizeAria": "收起 {{name}} 設定",
       "remoteOauthHint": "在這台電腦的瀏覽器中授權，帳號將連接到目前的遠端裝置。其他設定仍需在遠端裝置上完成。",
+      "connection": {
+        "host": "執行個體地址",
+        "hostHint": "填寫服務的 HTTPS 地址，使用預設連接埠。",
+        "hostInvalid": "請填寫單個 HTTPS 網域，不含路徑、查詢參數或自訂連接埠。",
+        "token": "存取權杖",
+        "tokenInvalid": "請填寫有效的存取權杖，最多 4096 個字元。",
+        "hint": "僅儲存到目前雲端執行個體的這個插件。權杖僅用於你填寫的地址，不會進入對話記錄。"
+      },
       "remoteSecretHint": "在此填寫，僅儲存到目前雲端實例的這個插件。內容不會進入對話記錄。",
       "completeOnDesktop": "請在遠端電腦完成設定，本卡片會自動更新狀態。",
       "cancel": "取消",

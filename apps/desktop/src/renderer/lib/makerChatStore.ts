@@ -1,6 +1,7 @@
 import type { ImMessageSource } from '../../shared/imMessageSource';
 import { readBotAuthorizationCard } from '../../shared/botAuthorization';
-import { createPluginSecretPresentation } from '../../shared/pluginOauth';
+import { createPluginSecretPresentation, createPluginConnectionPresentation } from '../../shared/pluginOauth';
+import { parsePluginConnectionInput } from '@cindy/device-link';
 /**
  * makerChatStore — Module-level store for Maker chat (Claude / Codex), sharded by sessionId.
  * ---------------------------------------------------------------------------
@@ -109,6 +110,7 @@ import {
   makerApiFor,
   assistRemotePluginOauth,
   submitRemotePluginSecret,
+  submitRemotePluginConnection,
   makerApiForDevice,
   getSessionFor,
   listMessagesFor,
@@ -723,6 +725,7 @@ type PluginSetupInlineFormAction = Extract<GhostSetupAllowedAction, { kind: 'inl
 export interface PendingPluginSetup {
   remoteOauth?: true;
   remoteSecret?: true;
+  remoteConnection?: true;
   reopenActionId?: string;
   requestId: string;
   revision: number;
@@ -773,6 +776,7 @@ export interface PluginSetupCommandInFlight {
 
 export interface PluginSetupInlineFormValues {
   value: string;
+  host?: string;
 }
 
 /**
@@ -7386,6 +7390,7 @@ function parsePluginSetupInlineFormAction(
 export function parsePendingPluginSetup(request: {
   remoteOauth?: unknown;
   remoteSecret?: unknown;
+  remoteConnection?: unknown;
   requestId?: unknown;
   revision?: unknown;
   terminal?: unknown;
@@ -7503,6 +7508,7 @@ export function parsePendingPluginSetup(request: {
     revision: request.revision,
     ...(request.remoteOauth === true ? { remoteOauth: true as const } : {}),
     ...(request.remoteSecret === true ? { remoteSecret: true as const } : {}),
+    ...(request.remoteConnection === true ? { remoteConnection: true as const } : {}),
     ...(request.terminal === true ? { terminal: true as const } : {}),
     ghost: {
       id: ghost.id,
@@ -15234,7 +15240,7 @@ function respondToPluginSetup(
   if (!pending || pending.requestId !== requestId) return;
   if (state.pluginSetupCommandInFlight && !(action === 'cancel' && isRemoteSession(sessionId) &&
     ((pending.remoteOauth && state.pluginSetupCommandInFlight.action === 'run_action') ||
-      (pending.remoteSecret && state.pluginSetupCommandInFlight.action === 'submit_form')))) return;
+      ((pending.remoteSecret || pending.remoteConnection) && state.pluginSetupCommandInFlight.action === 'submit_form')))) return;
 
   const selectedAction = actionId
     ? pending.steps.find((step) => step.action?.id === actionId)?.action
@@ -15243,6 +15249,25 @@ function respondToPluginSetup(
     if (!selectedAction || selectedAction.kind === 'inline_form') return;
     if (isRemoteSession(sessionId) && (!pending.remoteOauth || selectedAction.kind !== 'oauth_connect')) return;
   } else if (action === 'submit_form') {
+    if (selectedAction?.kind === 'manage_connection' && isRemoteSession(sessionId) && pending.remoteConnection) {
+      let value: import('@cindy/device-link').PluginConnectionInput;
+      try { value = parsePluginConnectionInput({ host: values?.host, token: values?.value }); }
+      catch { return; }
+      const step = pending.steps.find(s => s.action?.id === selectedAction.id)!;
+      if (pending.terminal || !['pending', 'failed'].includes(step.phase)) return;
+      bumpInteractionReconcileEpoch(sessionId);
+      const command: PluginSetupCommandInFlight = { requestId, action, actionId: selectedAction.id };
+      setState(sessionId, s => ({ ...s, pluginSetupCommandInFlight: command }));
+      void submitRemotePluginConnection(sessionId, { requestId, actionId: selectedAction.id,
+        expectedRevision: pending.revision, ghostId: pending.ghost.id, value,
+        presentation: createPluginConnectionPresentation(pending, step) }).catch(() => {
+          // Never log the request, provider reply or IPC details from credential input.
+          if (sessions.get(sessionId)?.pluginSetupCommandInFlight !== command) return;
+          toast.warning(i18n.t('newChat.pluginSetup.error.ACTION_FAILED'));
+          setState(sessionId, s => s.pluginSetupCommandInFlight === command ? { ...s, pluginSetupCommandInFlight: null } : s);
+        });
+      return;
+    }
     if (
       (isRemoteSession(sessionId) && !pending.remoteSecret) ||
       !selectedAction ||

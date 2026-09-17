@@ -13,6 +13,7 @@ import type {
 } from '@/lib/makerChatStore';
 import type { GhostSetupStepPhase } from '../../../shared/ghost';
 import { PluginOauthDeviceCode } from './PluginOauthDeviceCode';
+import { PluginConnectionForm } from './PluginConnectionForm';
 
 interface PluginSetupPromptProps {
   remoteDeviceId?: string;
@@ -46,7 +47,7 @@ function normalizedCopy(value: string | undefined): string {
 export function PluginSetupPrompt({ pending, ...props }: PluginSetupPromptProps) {
   return (
     <PluginSetupPromptStateful
-      key={`${pending.requestId}:${pending.revision}`}
+      key={`${props.remoteDeviceId ?? 'local'}:${pending.requestId}:${pending.revision}`}
       pending={pending}
       {...props}
     />
@@ -99,10 +100,12 @@ function PluginSetupPromptStateful({
   const busy = !!commandInFlight || (!compact && !!currentStep && RUNNING_PHASES.has(currentStep.phase));
   const blockedRemoteAction = (step = currentStep): boolean =>
     remote && !((pending.remoteOauth && step?.action?.kind === 'oauth_connect') ||
-      (pending.remoteSecret && step?.action?.kind === 'inline_form'));
+      (pending.remoteSecret && step?.action?.kind === 'inline_form') ||
+      (pending.remoteConnection && step?.action?.kind === 'manage_connection'));
   const cancelBlocked = !!commandInFlight && !(remote &&
     ((pending.remoteOauth && commandInFlight.action === 'run_action') ||
-      (pending.remoteSecret && commandInFlight.action === 'submit_form')));
+      ((pending.remoteSecret || pending.remoteConnection) && commandInFlight.action === 'submit_form')));
+  const connectionForm = (step = currentStep) => remote && pending.remoteConnection && step?.action?.kind === 'manage_connection';
   const title = compact ? pending.ghost.name : t('newChat.pluginSetup.title', { name: pending.ghost.name });
   const inlineFormAction = currentStep?.action?.kind === 'inline_form' ? currentStep.action : null;
   const inlineFormField = inlineFormAction?.form.fields[0];
@@ -409,7 +412,7 @@ function PluginSetupPromptStateful({
         className="h-9 rounded-[9999px] border border-[var(--border-default)] px-4 text-13 text-[var(--text-primary)] disabled:opacity-50">
         {t('newChat.pluginSetup.reopen')}
       </button> : null}
-      {currentStep?.action && !terminal && !hasCurrentGroupAlternatives ? (
+      {currentStep?.action && !terminal && !hasCurrentGroupAlternatives && !connectionForm() ? (
         <button
           type="button"
           disabled={
@@ -484,7 +487,7 @@ function PluginSetupPromptStateful({
           <p className="text-14 leading-5 text-[var(--ask-option-desc)]">{pending.intro}</p>
         ) : null}
 
-        {remote && !terminal ? (
+        {remote && !terminal && !connectionForm() ? (
           <div className="rounded-[12px] border border-[var(--ask-option-border)] bg-[var(--ask-option-list-bg)] px-3 py-2.5 text-13 text-[var(--ask-option-desc)]">
             {t(pending.remoteSecret && currentStep?.action?.kind === 'inline_form'
               ? 'newChat.pluginSetup.remoteSecretHint' : pending.remoteOauth && pending.steps.some(s => s.action?.kind === 'oauth_connect')
@@ -552,6 +555,7 @@ function PluginSetupPromptStateful({
                   hasCurrentGroupAlternatives &&
                   step.action &&
                   step.action.kind !== 'inline_form' &&
+                  !connectionForm(step) &&
                   (step.phase === 'pending' || step.phase === 'failed');
                 return (
                   <li
@@ -608,6 +612,10 @@ function PluginSetupPromptStateful({
                           {renderInlineFormControl(step, false, hasCurrentGroupAlternatives)}
                         </div>
                       ) : null}
+                      {currentGroupOption && connectionForm(step) && !terminal && commandInFlight?.action !== 'cancel' ? <PluginConnectionForm
+                        key={step.action!.id} busy={busy} disabled={blockedRemoteAction(step)}
+                        onSubmit={(host, token) => onCommand(pending.requestId, 'submit_form', step.action!.id, { host, value: token })}
+                      /> : null}
                       {directActionOption ? (
                         <button
                           type="button"

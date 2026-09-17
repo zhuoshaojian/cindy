@@ -165,6 +165,7 @@ import {
   type GhostSetupInteractionResponseTarget,
 } from './ghostSetupInteractionBridge.js';
 import { executeGhostSetupInlineSubmission } from './ghostSetupInlineExecutor.js';
+import { executeGhostSetupConnectionSubmission } from './ghostSetupConnectionExecutor.js';
 import { handleGhostSecretsRequest } from './runtime/ghostSecretsEndpoint.js';
 import { handleGhostOauthRequest } from './runtime/ghostOauthEndpoint.js';
 import { handleGhostConnectionsRequest } from './runtime/ghostConnectionsEndpoint.js';
@@ -5210,6 +5211,22 @@ export async function executeGhostSetupInlineAction(args: {
     },
     args,
   );
+}
+
+/** Only called under the authenticated remote connection-card context. */
+export function bindGhostSetupConnectionAction(args: { ghostId: string; actionId: string }):
+  ((value: import('@cindy/device-link').PluginConnectionInput) => boolean) | null {
+  const manifest = findAvailableGhost(args.ghostId)?.manifest;
+  if (!manifest) return null;
+  const expectedManifest = JSON.stringify(manifest);
+  return value => executeGhostSetupConnectionSubmission({
+    getAssessment: getGhostSetupAssessment,
+    getManifest: ghostId => findAvailableGhost(ghostId)?.manifest ?? null,
+    manager: getGhostConnectionManager(),
+    emitChange: (ghostId, key) => {
+      getGhostSetupChangeBus().emit(ghostId, { source: 'connection', ref: key });
+    },
+  }, { ...args, value, expectedManifest });
 }
 
 /**

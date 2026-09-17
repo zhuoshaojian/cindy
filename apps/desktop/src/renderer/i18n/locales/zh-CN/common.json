@@ -7734,6 +7734,14 @@
       "restoreAria": "展开 {{name}} 设置",
       "minimizeAria": "收起 {{name}} 设置",
       "remoteOauthHint": "在这台电脑的浏览器中授权，账号将连接到当前远程设备。其他设置仍需在远程设备上完成。",
+      "connection": {
+        "host": "实例地址",
+        "hostHint": "填写服务的 HTTPS 地址，使用默认端口。",
+        "hostInvalid": "请填写单个 HTTPS 域名，不带路径、查询参数或自定义端口。",
+        "token": "访问令牌",
+        "tokenInvalid": "请填写有效的访问令牌，最多 4096 个字符。",
+        "hint": "仅保存到当前云实例的这个插件。令牌只用于你填写的地址，不进入对话记录。"
+      },
       "remoteSecretHint": "在此填写，仅保存到当前云实例的这个插件。内容不会进入对话记录。",
       "completeOnDesktop": "请在远程电脑完成设置，本卡片会自动更新状态。",
       "cancel": "取消",

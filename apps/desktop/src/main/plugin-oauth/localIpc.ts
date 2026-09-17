@@ -4,13 +4,15 @@ import {
   parsePluginOauthAction,
   parsePluginSecretInput,
   parsePluginSecretPresentation,
+  parsePluginConnectionInput,
+  parsePluginConnectionPresentation,
   type InvokeResultPayload,
   type PluginOauthTrustedIdentity,
 } from '@cindy/device-link';
 import { assistPluginOauth } from './controller.js';
 import { capturePluginOauthPeer } from './runtime.js';
 import { authenticateOauthController } from './authentication.js';
-import type { LocalPluginSecretRequest } from '../../shared/pluginOauth.js';
+import type { LocalPluginSecretRequest, LocalPluginConnectionRequest } from '../../shared/pluginOauth.js';
 import type {
   PluginOauthDeviceCodePrompt,
   PluginOauthDeviceCodeClose,
@@ -45,6 +47,7 @@ async function handleAuthorization(
   deps: LocalOauthDeps,
   raw: unknown,
   secret?: Pick<LocalPluginSecretRequest, 'value' | 'presentation'>,
+  connection?: Pick<LocalPluginConnectionRequest, 'value' | 'presentation'>,
 ): Promise<{ accepted: true }> {
   const fail = () => new Error('OAUTH_BRIDGE_UNAVAILABLE');
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw fail();
@@ -85,6 +88,7 @@ async function handleAuthorization(
     return await assistPluginOauth(
       {
         ...(secret ? { secretValue: secret.value, secretPresentation: secret.presentation } : {}),
+        ...(connection ? { connectionValue: connection.value, connectionPresentation: connection.presentation } : {}),
         assertCurrent,
         openExternal: deps.openExternal,
         copyDeviceCode: deps.copyDeviceCode,
@@ -125,5 +129,13 @@ export async function handleSubmitPluginSecret(
   return handleAuthorization(deps, target, {
     value: parsePluginSecretInput(value),
     presentation: parsePluginSecretPresentation(presentation),
+  });
+}
+
+export async function handleSubmitPluginConnection(deps: LocalOauthDeps, raw: unknown): Promise<{ accepted: true }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('PLUGIN_CONNECTION_UNAVAILABLE');
+  const { value, presentation, ...target } = raw as Record<string, unknown>;
+  return handleAuthorization(deps, target, undefined, {
+    value: parsePluginConnectionInput(value), presentation: parsePluginConnectionPresentation(presentation),
   });
 }

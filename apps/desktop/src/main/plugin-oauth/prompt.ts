@@ -9,6 +9,8 @@ After installation, read ghost_info again in the same task; the initial roster i
 
 For supported OAuth plugins, the user can click the card from a connected Cindy Desktop client and authorize in that computer's browser. The two Hosts relay the callback privately; the cloud Host exchanges and stores the credentials. Only the Host's completed connection status establishes success. Phone clients currently support viewing and cancelling these cards, not receiving loopback callbacks; follow the Host's supported-client guidance.
 
+For a Host-supported connection form, the user enters the service address and access token in the protected Desktop card. Use the existing connect_account/setup action to request it; do not ask for the token in chat or invent an OAuth flow for a token-based plugin. Saving configuration does not prove provider access: follow it with the plugin's smallest read-only account check and report any platform permission failure accurately.
+
 Never ask the user to paste an OAuth callback, authorization code, access/refresh token, password, or cookie into the conversation. Do not read or copy another device's credential store. A required third-party consent or MFA step is separate from Cindy login; do not initiate another Cindy SSO login to solve a plugin authorization request.`;
 
 export function appendCloudPluginOauthPrompt(existing: string, cloudInstance: boolean): string {
