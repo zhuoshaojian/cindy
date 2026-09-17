@@ -222,6 +222,7 @@ export interface OauthControllerDeps {
   invoke(request: PluginOauthRequest): Promise<unknown>;
   openExternal(url: string): Promise<void>;
   copyDeviceCode?(code: string): () => void;
+  presentBrowserAuthorization?(expiresAt: number, reopen: () => Promise<void>): PluginOauthDeviceCodeClose;
   presentDeviceCode?(prompt: PluginOauthDeviceCodePrompt, clearClipboard: () => void): PluginOauthDeviceCodeClose;
   assertCurrent(): void;
   now?: () => number;
@@ -288,6 +289,7 @@ export async function assistPluginOauth(
             closeDeviceCode = deps.presentDeviceCode?.({ userCode: offer.userCode,
               authorizeUrl: offer.authorizeUrl, expiresAt: deadline }, clearDeviceCode);
           }
+          if (!closeDeviceCode) closeDeviceCode = deps.presentBrowserAuthorization?.(deadline, () => deps.openExternal(offer.authorizeUrl));
           await deps.openExternal(offer.authorizeUrl);
           deps.assertCurrent();
           const ack = object(
@@ -323,6 +325,7 @@ export async function assistPluginOauth(
           deps.assertCurrent,
         );
         deps.assertCurrent();
+        closeDeviceCode = deps.presentBrowserAuthorization?.(deadline, () => deps.openExternal(offer.authorizeUrl));
         await deps.openExternal(offer.authorizeUrl);
         opened = true;
       }

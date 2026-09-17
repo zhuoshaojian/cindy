@@ -1,5 +1,5 @@
 import { Copy, ExternalLink } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
@@ -8,15 +8,25 @@ import type { PluginOauthDeviceCodeTarget, PluginOauthDeviceCodeView } from '../
 // Notification deduplication contains only card IDs/deadlines, never authorization material.
 const notified = new Map<string, number>();
 
-/** Ephemeral view; it never writes to the chat store, messages, localStorage or remote transport. */
-export function PluginOauthDeviceCode({ target, active }: {
-  target: PluginOauthDeviceCodeTarget;
-  active: boolean;
-}) {
-  return <DeviceCodeView key={JSON.stringify(target)} target={target} active={active} />;
+export interface PluginOauthPresentation {
+  view: PluginOauthDeviceCodeView | null;
+  now: number;
+  working: 'copy' | 'reopen' | null;
+  failed: boolean;
+  operate: (operation: 'copy' | 'reopen') => Promise<void>;
 }
 
-function DeviceCodeView({ target, active }: { target: PluginOauthDeviceCodeTarget; active: boolean }) {
+/** Ephemeral view; it never writes to the chat store, messages, localStorage or remote transport. */
+export function PluginOauthDeviceCode({ target, active, children, running = false }: {
+  target: PluginOauthDeviceCodeTarget;
+  active: boolean;
+  running?: boolean;
+  children?: (state: PluginOauthPresentation) => ReactNode;
+}) {
+  return <DeviceCodeView key={JSON.stringify(target)} target={target} active={active} running={running} children={children} />;
+}
+
+function DeviceCodeView({ target, active, children, running }: { target: PluginOauthDeviceCodeTarget; active: boolean; running: boolean; children?: (state: PluginOauthPresentation) => ReactNode }) {
   const { t } = useTranslation();
   const [view, setView] = useState<PluginOauthDeviceCodeView | null>(null);
   const [now, setNow] = useState(Date.now);
@@ -34,6 +44,9 @@ function DeviceCodeView({ target, active }: { target: PluginOauthDeviceCodeTarge
 
   useEffect(() => {
     const generation = ++epoch.current;
+    command.current = false;
+    setWorking(null);
+    setFailed(false);
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (!active || !window.electronAPI.maker.pluginOauthDeviceCode) {
@@ -45,8 +58,8 @@ function DeviceCodeView({ target, active }: { target: PluginOauthDeviceCodeTarge
         const next = await window.electronAPI.maker.pluginOauthDeviceCode({ ...target, operation: 'read' });
         if (!alive || generation !== epoch.current) return;
         setNow(Date.now());
-        setView(next);
-        if (next?.phase === 'ready') {
+        setView(next && (next.phase === 'ready' || next.phase === 'browser') && next.expiresAt <= Date.now() ? { phase: 'expired' } : next);
+        if (next?.phase === 'ready' && next.expiresAt > Date.now()) {
           for (const [id, expiry] of notified) if (expiry <= Date.now()) notified.delete(id);
           const notice = `${key}:${next.expiresAt}`;
           if (!notified.has(notice)) {
@@ -55,25 +68,25 @@ function DeviceCodeView({ target, active }: { target: PluginOauthDeviceCodeTarge
             toast.success(t('newChat.pluginSetup.deviceCode.copiedHint'), { duration: 5000 });
           }
         }
-        if (!next || next.phase === 'ready') timer = setTimeout(() => void read(), 750);
+        if (!next || next.phase === 'ready' || next.phase === 'browser' || running) timer = setTimeout(() => void read(), 750);
       } catch {
         if (alive) setView(previous => previous ? { phase: 'ended' } : null);
       }
     };
     void read();
     return () => { alive = false; ++epoch.current; clearTimeout(timer); };
-  }, [key, active, t]);
+  }, [key, active, running, t]);
 
   useEffect(() => {
-    if (view?.phase !== 'ready') return;
+    if (view?.phase !== 'ready' && view?.phase !== 'browser') return;
     const timer = setTimeout(() => setView({ phase: 'expired' }), Math.max(0, view.expiresAt - Date.now()));
     return () => clearTimeout(timer);
-  }, [view?.phase, view?.phase === 'ready' ? view.expiresAt : null]);
+  }, [view?.phase, view?.phase === 'ready' || view?.phase === 'browser' ? view.expiresAt : null]);
 
-  if (!active || !view) return null;
-  const ready = view.phase === 'ready' && view.expiresAt > now ? view : null;
+  const ready = active && view?.phase === 'ready' && view.expiresAt > now ? view : null;
   const operate = async (operation: 'copy' | 'reopen') => {
-    if (!ready || command.current) return;
+    const available = active && (view?.phase === 'ready' || view?.phase === 'browser') && view.expiresAt > Date.now();
+    if (!available || (operation === 'copy' && !ready) || command.current) return;
     command.current = true;
     const generation = epoch.current;
     setWorking(operation);
@@ -85,12 +98,14 @@ function DeviceCodeView({ target, active }: { target: PluginOauthDeviceCodeTarge
       setNow(Date.now());
       if (operation === 'copy' && next?.phase === 'ready') toast.success(t('newChat.pluginSetup.deviceCode.copied'));
     } catch {
-      if (current.current) setFailed(true);
+      if (current.current && generation === epoch.current) setFailed(true);
     } finally {
-      command.current = false;
-      if (current.current) setWorking(null);
+      if (generation === epoch.current) command.current = false;
+      if (current.current && generation === epoch.current) setWorking(null);
     }
   };
+  if (children) return children({ view: active ? view : null, now, working, failed, operate });
+  if (!active || !view || view.phase === 'browser') return null;
   const seconds = ready ? Math.max(0, Math.ceil((ready.expiresAt - now) / 1000)) : 0;
   const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   return (
