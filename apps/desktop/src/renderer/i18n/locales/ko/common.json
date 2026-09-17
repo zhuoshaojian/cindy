@@ -7729,6 +7729,23 @@
       "stop": "생성 중지"
     },
     "pluginSetup": {
+      "account": {
+        "opening": "인증 페이지 여는 중",
+        "connected": "계정 연결됨",
+        "cancelled": "연결 취소됨",
+        "expired": "인증 시간이 만료되었습니다",
+        "ended": "인증이 종료되었습니다",
+        "failed": "계정에 연결하지 못했습니다",
+        "waiting": "브라우저 인증 대기 중",
+        "verifying": "인증 결과 확인 중",
+        "continue": "작업이 계속됩니다.",
+        "reconnectHint": "다시 연결하여 인증을 계속하세요.",
+        "waitingHint": "브라우저에서 인증을 완료하면 작업이 자동으로 계속됩니다.",
+        "remoteHint": "이 컴퓨터의 브라우저에서 인증하여 원격 기기의 Cindy가 이 계정을 사용하도록 허용합니다.",
+        "codeInstructions": "{{host}}에서 코드 입력",
+        "remaining": "{{time}} 후 만료",
+        "reconnect": "다시 연결"
+      },
       "reopen": "다시 열기",
       "title": "{{name}} 설정",
       "assessmentReadFailed": "플러그인 설정 상태를 읽을 수 없습니다.",

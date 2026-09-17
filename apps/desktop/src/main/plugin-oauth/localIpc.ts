@@ -26,6 +26,7 @@ export interface LocalOauthDeps {
   invoke(deviceId: string, channel: string, args: unknown[]): Promise<InvokeResultPayload>;
   openExternal(url: string): Promise<void>;
   copyDeviceCode?(code: string): () => void;
+  presentBrowserAuthorization?(target: PluginOauthDeviceCodeTarget, expiresAt: number, assertCurrent: () => void, reopen: () => Promise<void>): PluginOauthDeviceCodeClose;
   presentDeviceCode?(
     target: PluginOauthDeviceCodeTarget,
     prompt: PluginOauthDeviceCodePrompt,
@@ -92,6 +93,9 @@ async function handleAuthorization(
         assertCurrent,
         openExternal: deps.openExternal,
         copyDeviceCode: deps.copyDeviceCode,
+        presentBrowserAuthorization: (expiresAt, reopen) => deps.presentBrowserAuthorization?.(
+          { deviceId, ghostId, requestId: action.requestId, actionId: action.actionId }, expiresAt, assertCurrent, reopen,
+        ) ?? (() => {}),
         presentDeviceCode: (prompt, clearClipboard) =>
           deps.presentDeviceCode?.(
             { deviceId, ghostId, requestId: action.requestId, actionId: action.actionId },

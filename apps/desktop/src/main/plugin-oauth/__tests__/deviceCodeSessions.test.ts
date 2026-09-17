@@ -89,3 +89,32 @@ it('preserves newer clipboard content on completion and disallows remote invocat
   expect(h.clipboard()).toBe('unrelated text');
   expect(REMOTE_INVOKE_ALLOWLIST.has(PLUGIN_OAUTH_DEVICE_CODE_CHANNEL)).toBe(false);
 });
+
+it('reopens a browser authorization without exposing its URL, copying a code, or creating another transaction', async () => {
+  const registry = new LocalDeviceCodeSessions();
+  const url = 'https://accounts.example.com/authorize?state=private-state';
+  const open = vi.fn(async (_url: string) => {});
+  const close = registry.presentBrowser(scope, target, 61_000, () => {}, () => open(url));
+  const read = () => registry.handle(scope, { ...target, operation: 'read' });
+  expect(await read()).toEqual({ phase: 'browser', expiresAt: 61_000 });
+  await registry.handle(scope, { ...target, operation: 'reopen' });
+  expect(open).toHaveBeenCalledExactlyOnceWith(url);
+  await expect(registry.handle(scope, { ...target, operation: 'copy' })).rejects.toThrow();
+  expect(await registry.handle('different-frame', { ...target, operation: 'read' })).toBeNull();
+  close('ended');
+  expect(await read()).toEqual({ phase: 'ended' });
+  await expect(registry.handle(scope, { ...target, operation: 'reopen' })).rejects.toThrow();
+});
+
+it('expires browser-only authorizations and revalidates the initiating frame after reopen', async () => {
+  const registry = new LocalDeviceCodeSessions();
+  let current = true;
+  const assertCurrent = () => { if (!current) throw new Error('stale'); };
+  registry.presentBrowser(scope, target, 61_000, assertCurrent, async () => { current = false; });
+  await expect(registry.handle(scope, { ...target, operation: 'reopen' })).rejects.toThrow();
+  current = true;
+  expect(await registry.handle(scope, { ...target, operation: 'read' })).toEqual({ phase: 'ended' });
+  registry.presentBrowser(scope, target, 61_000, assertCurrent, async () => {});
+  await vi.advanceTimersByTimeAsync(60_001);
+  expect(await registry.handle(scope, { ...target, operation: 'read' })).toEqual({ phase: 'expired' });
+});

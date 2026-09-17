@@ -16,6 +16,10 @@ import { listenForOauthCallback } from './loopbackListener.js';
 export interface AuthorizationAdapterDeps {
   openExternal(url: string): Promise<void>;
   copyDeviceCode?(code: string): () => void;
+  presentBrowserAuthorization?(
+    expiresAt: number,
+    reopen: () => Promise<void>,
+  ): PluginOauthDeviceCodeClose;
   presentDeviceCode?(
     prompt: PluginOauthDeviceCodePrompt,
     clear: () => void,
@@ -60,6 +64,13 @@ async function openBrowser(
         clear,
       );
     }
+    if (!dismiss) {
+      dismiss = deps.presentBrowserAuthorization?.(deps.deadline, async () => {
+        deps.assertCurrent();
+        await deps.openExternal(request.url);
+        deps.assertCurrent();
+      });
+    }
     await deps.openExternal(request.url);
     deps.assertCurrent();
     await deps.deliver({ kind: 'device-opened', state: offer.state });
@@ -98,18 +109,26 @@ async function openLoopback(
     deps.assertCurrent,
     request.state,
   );
+  let dismiss: PluginOauthDeviceCodeClose | undefined;
   try {
     deps.signal?.addEventListener('abort', listener.close, { once: true });
     deps.assertCurrent();
+    dismiss = deps.presentBrowserAuthorization?.(deps.deadline, async () => {
+      deps.assertCurrent();
+      await deps.openExternal(request.url);
+      deps.assertCurrent();
+    });
     await deps.openExternal(request.url);
     deps.assertCurrent();
     return {
-      close: () => {
+      close: (phase = 'ended') => {
+        dismiss?.(phase);
         deps.signal?.removeEventListener('abort', listener.close);
         listener.close();
       },
     };
   } catch {
+    dismiss?.('ended');
     deps.signal?.removeEventListener('abort', listener.close);
     listener.close();
     throw fail();

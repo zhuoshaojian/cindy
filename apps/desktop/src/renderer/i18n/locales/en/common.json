@@ -7731,6 +7731,23 @@
       "stop": "Stop generating"
     },
     "pluginSetup": {
+      "account": {
+        "opening": "Opening authorization page",
+        "connected": "Account connected",
+        "cancelled": "Connection cancelled",
+        "expired": "Authorization expired",
+        "ended": "Authorization ended",
+        "failed": "Could not connect account",
+        "waiting": "Waiting for browser authorization",
+        "verifying": "Confirming authorization",
+        "continue": "The task will continue.",
+        "reconnectHint": "Reconnect to continue authorization.",
+        "waitingHint": "Complete authorization in your browser. The task will then continue automatically.",
+        "remoteHint": "Authorize in this computer’s browser to let Cindy on the remote device use this account.",
+        "codeInstructions": "Enter the code at {{host}}",
+        "remaining": "Expires in {{time}}",
+        "reconnect": "Reconnect"
+      },
       "reopen": "Reopen",
       "title": "{{name}} Settings",
       "assessmentReadFailed": "Couldn't read the plugin setup status.",

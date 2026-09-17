@@ -1292,6 +1292,8 @@ export function registerDeviceLinkIpc(deps: DeviceLinkIpcDeps = defaultDeps()): 
         },
         openExternal: url => shell.openExternal(url),
         copyDeviceCode: code => copyPrivateDeviceCode(clipboard, code),
+        presentBrowserAuthorization: (target, expiresAt, assertCurrent, reopen) =>
+          deviceCodes.presentBrowser(deviceCodeScope(event), target, expiresAt, assertCurrent, reopen),
         presentDeviceCode: (target, prompt, assertCurrent, clearClipboard) => deviceCodes.present(deviceCodeScope(event), target, prompt, {
           assertCurrent,
           clearClipboard,

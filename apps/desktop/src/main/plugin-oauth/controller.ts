@@ -103,6 +103,7 @@ export interface OauthControllerDeps {
   invoke(request: PluginOauthRequest): Promise<unknown>;
   openExternal(url: string): Promise<void>;
   copyDeviceCode?(code: string): () => void;
+  presentBrowserAuthorization?(expiresAt: number, reopen: () => Promise<void>): PluginOauthDeviceCodeClose;
   presentDeviceCode?(
     prompt: PluginOauthDeviceCodePrompt,
     clearClipboard: () => void,
@@ -253,6 +254,7 @@ async function runAuthorization(
               clearDeviceCode,
             );
           }
+          if (!closeDeviceCode) closeDeviceCode = deps.presentBrowserAuthorization?.(deadline, () => deps.openExternal(offer.authorizeUrl));
           await deps.openExternal(offer.authorizeUrl);
           deps.assertCurrent();
           await deliverCallback({ kind: 'device-opened', state: offer.state });
@@ -273,6 +275,7 @@ async function runAuthorization(
           deps.assertCurrent,
         );
         deps.assertCurrent();
+        closeDeviceCode = deps.presentBrowserAuthorization?.(deadline, () => deps.openExternal(offer.authorizeUrl));
         await deps.openExternal(offer.authorizeUrl);
         opened = true;
       }

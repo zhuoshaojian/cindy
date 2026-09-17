@@ -148,6 +148,52 @@ function harness(request: PluginAuthorizationRequest) {
 }
 
 describe('generic authorization through the signed Host bridge', () => {
+  it.each(['browser', 'loopback'] as const)(
+    'reopens the current generic %s transaction and closes its presentation',
+    async (kind) => {
+      const request =
+        kind === 'loopback'
+          ? await loopback()
+          : {
+              kind,
+              url: 'https://provider.example/authorize?state=synthetic',
+            };
+      let current = true;
+      const open = vi.fn(async () => {}),
+        dismiss = vi.fn();
+      let reopen!: () => Promise<void>;
+      const handle = await openAuthorizationOffer(
+        {
+          kind: 'authorization',
+          state: 's'.repeat(43),
+          request,
+        },
+        {
+          openExternal: open,
+          deadline: Date.now() + 60_000,
+          assertCurrent() {
+            if (!current) throw new Error('stale');
+          },
+          deliver: async () => {},
+          failed() {},
+          presentBrowserAuthorization: (_expiresAt, callback) => {
+            reopen = callback;
+            return dismiss;
+          },
+        },
+      );
+      cleanups.push(() => handle.close());
+      await reopen();
+      expect(open).toHaveBeenCalledTimes(2);
+      expect(open).toHaveBeenLastCalledWith(request.url);
+      current = false;
+      await expect(reopen()).rejects.toThrow('stale');
+      expect(open).toHaveBeenCalledTimes(2);
+      handle.close('completed');
+      expect(dismiss).toHaveBeenCalledWith('completed');
+    },
+  );
+
   it('rejects an expired challenge before a browser or callback listener is opened', async () => {
     const openExternal = vi.fn(),
       deliver = vi.fn();
