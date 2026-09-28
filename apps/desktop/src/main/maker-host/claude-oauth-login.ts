@@ -1,3 +1,4 @@
+import { openManagementAuthorization, attachManagementAuthorization } from '../host-settings/managementAuthorization.js';
 /**
  * claude-oauth-login —— Claude.ai 订阅 OAuth 浏览器登录(忠实移植 cc-code services/oauth)。
  *
@@ -303,6 +304,7 @@ export async function runClaudeOAuthLogin(opts?: {
   const state = generateState();
   const listener = new CallbackListener();
   const abort = new AbortController();
+  attachManagementAuthorization(() => { abort.abort(); listener.close(); });
   _currentListener = listener;
   _currentAbort = abort;
   _currentLoginKey = opts?.loginKey;
@@ -329,7 +331,7 @@ export async function runClaudeOAuthLogin(opts?: {
     // Register the callback before opening a browser with an existing login.
     // Observe rejection even if opening the browser itself fails.
     void codePromise.catch(() => {});
-    await shell.openExternal(authUrl);
+    await openManagementAuthorization(authUrl, (url) => shell.openExternal(url));
     const code = await codePromise;
 
     opts?.onProgress?.('exchanging');

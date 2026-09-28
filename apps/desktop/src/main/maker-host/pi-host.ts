@@ -1,6 +1,7 @@
 import { readCachedGenericOAuthAccessToken } from './generic-oauth.js';
 import { providerPresetModelRecord, providerModelAdapterId } from '@cindy/model-providers';
 import { readDisabledSkillPaths } from '../skillhub/activationPreferences';
+import { prepareHostSettingsSkillDiscovery } from '../host-settings/cindy-settings-skill.js';
 import { subscriptionAccountKind, subscriptionAccountState, isXaiSubscriptionProviderId } from './subscription-account-auth.js';
 /**
  * pi agent 的 desktop host 装配 —— auth / runtimeConfig / 二进制解析 / 构造,
@@ -1855,6 +1856,7 @@ export function buildPiAgent(opts: BuildPiAgentOpts): PiAgent | null {
   log.info('pi agent enabled', { binaryPath });
   return new PiAgent({
     getDisabledSkillPaths: readDisabledSkillPaths,
+    prepareHostOwnedSkills: () => prepareHostSettingsSkillDiscovery('pi'),
     resolveModelContextLimit: (providerId, modelId) => {
       const catalog = getActiveCatalog();
       const source = resolveModelContextProviderId(catalog, 'pi', providerId, modelId);

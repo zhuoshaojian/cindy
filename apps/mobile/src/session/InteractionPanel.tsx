@@ -609,10 +609,13 @@ function PermissionCard({
   const requestId = readRequestId(item);
   const [armedDecision, setArmedDecision] = useState<'allow-once' | 'always-allow' | null>(null);
   const permissionState = buildMobilePermissionCardState({ armedDecision, presentation });
+  const isSettings = presentation.toolName === 'cindy_host_settings';
+  const settings = presentation.settings;
   const requestDecision = (
     action: 'allow-once' | 'always-allow',
     decision: Record<string, unknown>,
   ) => {
+    if (isSettings && !settings) return;
     if (permissionState.isHighRisk && armedDecision !== action) {
       setArmedDecision(action);
       return;
@@ -623,20 +626,35 @@ function PermissionCard({
   return (
     <View style={cardStyle(styles, touchLayout)} testID="interaction.permission.card">
       <View style={styles.compactCardHeader}>
-        <Text style={styles.kind}>{t('interaction.permission.kind')}</Text>
-        <Text numberOfLines={1} style={styles.compactCardTitle}>{permissionState.title}</Text>
+        {!isSettings ? <Text style={styles.kind}>{t('interaction.permission.kind')}</Text> : null}
+        <Text numberOfLines={isSettings ? undefined : 1} style={styles.compactCardTitle}>{settings?.title ?? permissionState.title}</Text>
       </View>
-      <PermissionEvidence
+      {isSettings ? <>
+        {settings ? <>
+          <ScrollView style={styles.settingsChanges} nestedScrollEnabled>
+            {settings.changes.map((change, index) => (
+              <View key={index} style={styles.settingsChange}>
+                <Text style={styles.settingsLabel}>{change.label}</Text>
+                <Text selectable style={styles.settingsValue}>
+                  {change.previous !== undefined ? <><Text style={styles.permissionEvidenceDetail}>{change.previous}</Text>{' → '}</> : null}
+                  {change.value}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+          <Text style={styles.permissionEvidenceDetail}>{settings.description}</Text>
+        </> : <Text style={styles.permissionEvidenceDetail}>{t('interaction.panel.unsupportedType')}</Text>}
+      </> : <PermissionEvidence
         armed={!!armedDecision}
         presentation={presentation}
         riskWarningText={permissionState.riskWarningText}
         touchLayout={touchLayout}
-      />
+      />}
       <View style={actionsStyle(styles, touchLayout)}>
         <ResolveButton
-          accessibilityLabel={t('interaction.permission.denyAccessibility')}
+          accessibilityLabel={settings?.cancelLabel ?? t('interaction.permission.denyAccessibility')}
           busy={busy}
-          label={t('interaction.permission.deny')}
+          label={settings?.cancelLabel ?? t('interaction.permission.deny')}
           onPress={() => onDecision(buildPermissionDecision('deny', { reason: 'User denied' }))}
           requestId={requestId}
           touchStyle={resolveButtonLayoutStyle(touchLayout, 'secondary')}
@@ -661,11 +679,12 @@ function PermissionCard({
           />
         ) : null}
         <ResolveButton
-          accessibilityLabel={t('interaction.permission.allowOnceAccessibility')}
+          accessibilityLabel={settings?.confirmLabel ?? t('interaction.permission.allowOnceAccessibility')}
           armed={armedDecision === 'allow-once'}
           busy={busy}
+          invalidReason={isSettings && !settings ? t('interaction.panel.unsupportedType') : null}
           confirmLabel={t('interaction.permission.allowOnceConfirm')}
-          label={t('interaction.permission.allowOnce')}
+          label={settings?.confirmLabel ?? t('interaction.permission.allowOnce')}
           onPress={() => requestDecision('allow-once', buildPermissionDecision('allow'))}
           requestId={requestId}
           touchStyle={resolveButtonLayoutStyle(touchLayout, 'primary')}
@@ -2028,6 +2047,24 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     maxHeight: 112,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  settingsChanges: {
+    maxHeight: 192,
+  },
+  settingsChange: {
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
+  settingsLabel: {
+    color: colors.textPrimary,
+    fontSize: typeScale.body,
+    fontWeight: fontWeight.medium,
+    lineHeight: lineHeight.body,
+  },
+  settingsValue: {
+    color: colors.textPrimary,
+    fontSize: typeScale.body,
+    lineHeight: lineHeight.body,
   },
   codeText: {
     color: colors.textPrimary,

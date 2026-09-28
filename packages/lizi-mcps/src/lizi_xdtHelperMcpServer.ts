@@ -33,6 +33,7 @@ import { registerBotRoutineTools, type BotRoutineCallbacks } from './xdt-helper/
 import { jsonObjectArg } from './json-object-arg.js';
 
 import { XdtHelperToolRegistry } from './lizi_xdtHelperToolRegistry.js';
+import { registerHostSettingsTools, type HostSettingsCallbacks } from './xdt-helper/settings.js';
 import {
   registerGetCapabilitiesTool,
   registerGetCurrentSessionIdTool,
@@ -108,7 +109,7 @@ const CALL_TOOL_INPUT = {
 
 // list_tools 入口类目: cindy(自省) / control(会话控制面) / history(聊天历史) / feedback(官方反馈提交) / handoff(session 间 handoff)。
 // 协同 team 工具已拆到独立 cindy_orca server(插件开关 gate)。
-const CATEGORY_ENUM = ['cindy', 'control', 'history', 'feedback', 'handoff', 'bots'] as const;
+const CATEGORY_ENUM = ['cindy', 'control', 'history', 'feedback', 'handoff', 'bots', 'settings'] as const;
 
 interface SessionTaskCallbacks {
   startSessionTask(params: {
@@ -568,6 +569,7 @@ export type ControlDispatchOutcome =
 
 export interface XdtHelperMcpDeps {
   logger?: LiziMcpLogger;
+  settings?: HostSettingsCallbacks;
   /** Host-owned runtime classification used to keep Bot tasks on a narrow surface. */
   resolveSurface?: (input: {
     sessionId: string;
@@ -654,7 +656,8 @@ export function createXdtHelperMcpServer(
     const context = resolveLiziMcpSessionContext(sessionCtx);
     const sessionId = context.sessionId;
     const remoteBotOnly = !!context.remoteHostId && context.agentKind !== 'pi';
-    const defaultCategories = new Set(CATEGORY_ENUM.filter((category) => category !== 'bots'));
+    const defaultCategories = new Set<string>(CATEGORY_ENUM.filter((category) => category !== 'bots' && category !== 'settings'));
+    if (deps.settings && await deps.settings.allowed(context).catch(() => false)) defaultCategories.add('settings');
     if (!sessionId || !deps.resolveSurface) return remoteBotOnly ? new Set() : defaultCategories;
     const surface = await deps.resolveSurface({ sessionId }).catch(() => 'restricted' as const);
     // Bot-specific memory, Skills, messaging, delegation and durable notes all
@@ -663,6 +666,8 @@ export function createXdtHelperMcpServer(
     if (surface === 'bot') return new Set(['bots', 'cindy']);
     return remoteBotOnly || surface === 'restricted' ? new Set() : defaultCategories;
   };
+
+  if (deps.settings) registerHostSettingsTools(registry, deps.settings, () => resolveLiziMcpSessionContext(sessionCtx));
 
   // 'cindy' 类: 自省 (无 host 依赖, 始终注册)。
   registerGetCapabilitiesTool(registry);

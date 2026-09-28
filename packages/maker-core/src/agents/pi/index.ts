@@ -1,6 +1,7 @@
 import { getPiExtensionUiCapability } from './extension-ui-capabilities.js';
 import { parsePiManagementArgs, parsePiManagementText } from './managed-command.js';
-import { snapshotDisabledSkillLaunch, currentDisabledSkillLaunchPaths, extendDisabledSkillLaunchPaths, type DisabledSkillLaunchSnapshot } from '../shared/skill-activation.js';
+import { snapshotDisabledSkillLaunch, currentDisabledSkillLaunchPaths, extendDisabledSkillLaunchPaths, isSkillDisabled, type DisabledSkillLaunchSnapshot } from '../shared/skill-activation.js';
+import { withHostOwnedSkillEntries } from '../shared/customization-scanner.js';
 /**
  * PiAgent —— pi coding agent(earendil-works/pi)接入。
  *
@@ -3572,6 +3573,8 @@ export class PiAgent extends BaseAgent {
     // snapshot. Freeze it once per new runtime, then assemble only its eligible
     // skills. Missing/throwing authorities and paths fail closed; never infer
     // approval from permission mode, MCP/plugin state, or caller vendor options.
+    const hostSkillPaths = opts.remoteHostId || opts.botRuntimeProfile || reviewMode
+      ? [] : (await this.deps.prepareHostOwnedSkills?.())?.paths ?? [];
     const disabledSkillPaths = opts.remoteHostId || opts.botRuntimeProfile || reviewMode
       ? [] : [...(this.deps.getDisabledSkillPaths?.() ?? [])];
     let disabledSkillLaunch = snapshotDisabledSkillLaunch(disabledSkillPaths);
@@ -3678,6 +3681,7 @@ export class PiAgent extends BaseAgent {
       disabledSkillLaunch = extendDisabledSkillLaunchPaths(disabledSkillLaunch,
         piDisabledDiscoveryPaths(currentDisabledSkillLaunchPaths(disabledSkillLaunch), [
           path.join(configHome, 'skills'), path.join(os.homedir(), '.agents', 'skills'),
+          ...hostSkillPaths,
           ...managedPackageResources.skills.map((skill) => skill.path),
         ]));
       await fs.writeFile(settingsPath, JSON.stringify(applyPiDisabledSkillSettings(settings,
@@ -3727,6 +3731,8 @@ export class PiAgent extends BaseAgent {
       bridgeExtensionPath,
       ...(localSubagentSupported ? ['--extension', subagentExtensionPath] : []),
       ...(!reviewMode && planModeExtAvailable ? ['--extension', planModeExtPath] : []),
+      ...hostSkillPaths.filter(skillPath => !isSkillDisabled(skillPath, disabledSkillSnapshot))
+        .flatMap(skillPath => ['--skill', skillPath]),
       ...(loadProjectResourcesInPlace
         ? piProjectResourceCliArgs(projectResourceCli)
         : botSkillSelection.explicitSkillPaths.flatMap((skillPath) => ['--skill', skillPath])),
@@ -7562,7 +7568,8 @@ export class PiAgent extends BaseAgent {
 
   /** SkillHub raw view; project items remain discovered until runtime truth says otherwise. */
   override async listCustomizations(opts: ListCustomizationsOptions): Promise<ListCustomizationsResult> {
-    return scanPiCustomizations(opts);
+    const hostSkills = !opts.kinds?.length || opts.kinds.includes('skill') ? await this.deps.prepareHostOwnedSkills?.() : undefined;
+    return withHostOwnedSkillEntries(await scanPiCustomizations(opts), 'pi', hostSkills?.paths ?? []);
   }
 
   /**
@@ -7578,7 +7585,7 @@ export class PiAgent extends BaseAgent {
       return scanRemotePiSkills({ fileOps, workingDir: opts.workingDir });
     }
     const [{ items, errors }, managedPackages] = await Promise.all([
-      scanPiCustomizations({
+      this.listCustomizations({
         workingDirs: opts.workingDir ? [opts.workingDir] : [],
       }),
       opts.includeManagedPiPackages ? this.deps.resolvePiManagedPackageResources?.().catch(() => undefined) : undefined,

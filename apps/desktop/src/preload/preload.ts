@@ -1,4 +1,6 @@
 import { invokeOpenPath } from './openPath';
+import { createDesktopPreferencesApi } from './desktopPreferences';
+import { createModelPresentationPreferencesApi } from './modelPresentationPreferences';
 import type { LocalPluginOauthRequest, LocalPluginSecretRequest } from '../shared/pluginOauth';
 import { REMOTE_VIEWER } from '../shared/remoteDesktopViewer';
 import type { RoutineInput } from '@cindy/maker-scheduler';
@@ -1064,12 +1066,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pageZoomOut: (): Promise<{ ok: true; zoomFactor: number }> => ipcRenderer.invoke('page-zoom:out'),
   pageZoomReset: (): Promise<{ ok: true; zoomFactor: number }> =>
     ipcRenderer.invoke('page-zoom:reset'),
+  desktopPreferences: createDesktopPreferencesApi(ipcRenderer),
+  modelPresentationPreferences: createModelPresentationPreferencesApi(ipcRenderer),
+  hostSettings: {
+    get: () => ipcRenderer.invoke('host-settings:get'),
+    update: (input) => ipcRenderer.invoke('host-settings:update', input),
+    saveHistory: (input) => ipcRenderer.invoke('host-settings:save-history', input),
+    importPrompt: (input) => ipcRenderer.invoke('host-settings:import-prompt', input),
+    onChanged: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, stamp: import('../shared/hostSettings').SettingsOwnerStamp | null) => callback(stamp);
+      ipcRenderer.on('host-settings:changed', listener);
+      return () => ipcRenderer.removeListener('host-settings:changed', listener);
+    },
+  } satisfies import('../shared/hostSettings').HostSettingsRendererApi,
   appearanceSettings: {
     getSync: (): AppearanceSettings | null => appearanceSettingsInfo,
     get: (): Promise<unknown> => ipcRenderer.invoke('appearance-settings:get'),
     setPatch: (patch: Partial<AppearanceSettings>): Promise<AppearanceSettings> =>
       ipcRenderer.invoke('appearance-settings:set-patch', patch),
     reset: (): Promise<AppearanceSettings> => ipcRenderer.invoke('appearance-settings:reset'),
+    clearFields: (fields: Array<keyof AppearanceSettings>): Promise<AppearanceSettings> =>
+      ipcRenderer.invoke('appearance-settings:clear-fields', fields),
     onChanged: fanOutAppearanceSettingsChanged,
   },
   onApplicationMenuCommand: (callback: (command: ApplicationMenuCommand) => void): (() => void) =>

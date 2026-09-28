@@ -59,6 +59,11 @@ const providerRouteMutationCounts = new Map<string, number>();
 const providerRouteCredentialRevisions = new Map<string, number>();
 let nextProviderRouteCredentialRevision = 1;
 
+/** Non-sensitive generation for read/validate/commit operations that span awaits. */
+export function getProviderRouteMutationStamp(): string {
+  return `${nextProviderRouteCredentialRevision}:${providerRouteMutationCounts.size}`;
+}
+
 export type ProviderRouteMutationRelease = (() => void) & {
   /** Publish the new non-sensitive route/capability/credential dispatch generation. */
   commit(): void;

@@ -46,6 +46,8 @@ export interface ConnectionReadOptions {
 }
 
 export interface ProviderListOptions extends ConnectionReadOptions {
+  /** 设置默认值只需要聊天目录，跳过可选媒体运行时的额外读取；不来自 IPC 输入。 */
+  includeMediaReadiness?: boolean;
   /**
    * Internal catalog override for policy consumers that need the routing truth
    * rather than the user-selectable projection. Never sourced from IPC input.
@@ -72,7 +74,7 @@ export interface ProviderConnectionReaders {
 }
 
 export interface ProviderServiceDeps {
-  getProviderPresentation?: (providerId: string) => { name?: string; removed?: boolean };
+  getProviderPresentation?: (providerId: string, opts: ConnectionReadOptions) => { name?: string; removed?: boolean };
   /** 返回当前生效目录（同步）。桌面端注入 active-catalog 的 getActiveCatalog。 */
   getCatalog: () => Catalog;
   /** 连接状态判定器。 */
@@ -112,7 +114,7 @@ export interface ProviderServiceDeps {
    * buildRegistry 据此烘焙 ProviderView.suspended 与 CatalogModel.disabled,让所有
    * 消费方(renderer / IM / Orca 路由 / device-link)拿到同一份准入事实。缺省 = 全启用。
    */
-  getModelAccess?: () => ModelDisableOverrides;
+  getModelAccess?: (opts: ConnectionReadOptions) => ModelDisableOverrides;
 }
 
 export interface ProviderService {
@@ -185,7 +187,7 @@ export function createProviderService(deps: ProviderServiceDeps): ProviderServic
     }
     let media: readonly { providerId: string; id: string }[] | undefined;
     try {
-      media = deps.getAvailableMediaModels?.();
+      media = opts?.includeMediaReadiness === false ? undefined : deps.getAvailableMediaModels?.();
     } catch (error) {
       // Media is optional enrichment; configuration and chat providers remain usable.
       media = [];
@@ -204,9 +206,9 @@ export function createProviderService(deps: ProviderServiceDeps): ProviderServic
     if (deps.subscriptionAccountInfo) await Promise.all(catalog.providers
       .filter(p => p.id === 'anthropic' || p.id === 'xai' || p.auth.native === 'claude' || p.auth.native === 'xai')
       .map(async p => subscriptionInfo.set(p.id, await deps.subscriptionAccountInfo!(p.id))));
-    return buildRegistry(catalog, connected, discoveryFailures, deps.getModelAccess?.()).map((provider) => ({
+    return buildRegistry(catalog, connected, discoveryFailures, deps.getModelAccess?.(readOpts)).map((provider) => ({
       ...(subscriptionInfo.get(provider.id) ? { subscriptionAccount: subscriptionInfo.get(provider.id) } : {}),
-      ...provider, ...(provider.source === 'builtin' ? deps.getProviderPresentation?.(provider.id) ?? {} : {}), ...(accountInfo.get(provider.id) ? { openAiAccount: accountInfo.get(provider.id) } : {}),
+      ...provider, ...(provider.source === 'builtin' ? deps.getProviderPresentation?.(provider.id, readOpts) ?? {} : {}), ...(accountInfo.get(provider.id) ? { openAiAccount: accountInfo.get(provider.id) } : {}),
       // Deletion disconnects first. A live binding wins over a stale removed flag if
       // restoring display preferences failed after authentication was committed.
       ...(provider.connected ? { removed: false } : {}),

@@ -1,6 +1,7 @@
 /** 资源用量窗口专用 preload：只暴露窗口 chrome、外观、快捷键和进程采样能力。 */
 
 import { contextBridge, ipcRenderer } from 'electron';
+import { createDesktopPreferencesReadApi } from './desktopPreferences';
 
 import type { AppearanceSettings } from '../shared/appearanceSettings';
 import type { LocalThemesResult } from '../shared/local-themes';
@@ -49,6 +50,7 @@ const fanOutFullscreenChange = (cb: (isFullscreen: boolean) => void): (() => voi
   onPayload('fullscreen-change', cb);
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  desktopPreferences: createDesktopPreferencesReadApi(ipcRenderer),
   platform: process.platform,
   preferredSystemLocale: readPreferredSystemLocale(),
   windowMinimize: (): void => ipcRenderer.send('window-minimize'),

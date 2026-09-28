@@ -42,7 +42,8 @@ export type XdtHelperToolCategory =
   | 'control'
   | 'feedback'
   | 'handoff'
-  | 'bots';
+  | 'bots'
+  | 'settings';
 
 export type XdtHelperToolContentBlock =
   | { type: 'text'; text: string }

@@ -7,7 +7,8 @@ import { beginClaudeLocalLogin, cancelClaudeOAuthLogin } from '../claude-oauth-l
 
 const source = readFileSync(new URL('../../bootstrap-electron.ts', import.meta.url), 'utf8');
 const start = source.indexOf('  ipcMain.handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_LOGIN,');
-const end = source.indexOf('  ipcMain.handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_LOGOUT,', start);
+const end = source.indexOf('  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_LOGOUT,', start);
+if (start < 0 || end < start) throw new Error('Claude local-login handler boundaries not found');
 const compiled = transpileModule(source.slice(start, end), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText;
 
 it.each(['scan', 'proxy'] as const)('does not bind a cancelled local login while waiting for %s', async (stage) => {

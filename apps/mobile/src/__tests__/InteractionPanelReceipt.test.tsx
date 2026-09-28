@@ -60,6 +60,42 @@ beforeEach(() => {
 });
 afterEach(() => act(() => root.unmount()));
 
+it.each(['allow', 'deny'] as const)('confirms Host settings remotely with a one-shot %s receipt', async (behavior) => {
+  const settingsRequestId = 'settings-confirmation-1';
+  const input = {
+    preview: { version: 1, title: '修改设置', description: '下次 Agent 会话生效。',
+      confirmLabel: '保存修改', cancelLabel: '取消',
+      changes: [{ label: '个性化指令', previous: '未设置', value: `${'Review the entire change. '.repeat(40)}END_OF_SETTINGS_CHANGE` }],
+    },
+  };
+  // This is the existing pending snapshot used on initial open and reconnect.
+  remoteSessionStore.setPendingInteractions('s1', [{ request: {
+    kind: 'permission', requestId: settingsRequestId,
+    toolName: 'cindy_host_settings', title: 'Confirm Host settings', input,
+    metadata: { hostOwnedConfirmation: 'host_settings_v1' },
+  } }]);
+  resolveInteraction.mockResolvedValue({ accepted: true });
+  await act(async () => root.render(<Harness />));
+  expect(host.textContent).toContain('END_OF_SETTINGS_CHANGE');
+  expect(host.textContent).toContain('下次 Agent 会话生效');
+  expect(host.textContent).toContain('未设置 →');
+  expect(host.textContent).not.toContain('cindy_host_settings');
+  expect(host.textContent).not.toContain('"preview"');
+  expect(host.textContent).toContain('保存修改');
+  expect(host.textContent).toContain('取消');
+  expect(host.querySelector('[data-testid="interaction.permission.alwaysAllowButton"]')).toBeNull();
+  const buttonId = behavior === 'allow' ? 'allowOnceButton' : 'denyButton';
+  const button = host.querySelector<HTMLButtonElement>(`[data-testid="interaction.permission.${buttonId}"]`)!;
+  expect(button).not.toBeNull();
+  await act(async () => button.click());
+  expect(resolveInteraction).toHaveBeenCalledOnce();
+  expect(resolveInteraction).toHaveBeenCalledWith(settingsRequestId, expect.objectContaining({ kind: 'permission', behavior }));
+  expect(resolveInteraction.mock.calls[0]![1].updatedInput).toBeUndefined();
+  expect(resolveInteraction.mock.calls[0]![1].permissionUpdates).toBeUndefined();
+  expect(host.querySelector('[data-testid="interaction.permission.card"]')).toBeNull();
+  expect(onError).toHaveBeenCalledWith(null);
+});
+
 it('restores the last answer after a rejected receipt and clears it only after an accepted retry', async () => {
   let reply!: (receipt: { accepted: boolean }) => void;
   resolveInteraction.mockImplementationOnce(() => new Promise((resolve) => { reply = resolve; }));

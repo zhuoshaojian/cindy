@@ -671,6 +671,8 @@ export interface PiSubagentRunnerLaunchRequest {
 export interface AgentDeps {
   /** Cindy-only local Skill overrides. Freeze at native runtime startup; never apply to SSH. */
   getDisabledSkillPaths?: () => readonly string[];
+  /** Single-entry Host-owned Skills. Local discovery/startup only, never SSH or live-runtime refresh. */
+  prepareHostOwnedSkills?: () => Promise<{ paths: readonly string[]; revision: string; changed?: boolean }>;
   /** Optional low-I/O, provider-neutral turn change recorder supplied by the host. */
   turnChangeCapture?: TurnChangeCaptureHooks;
   auth: AuthAdapter;

@@ -1,4 +1,5 @@
 import { cindyManagedHomeDir } from '../cloudPilotDistribution.js';
+import { prepareHostSettingsSkill } from '../host-settings/cindy-settings-skill.js';
 import { retainInvalidatedProviderPresentation, retainProviderPresentationAfterAuthChange } from './provider-presentation-store.js';
 import { subscriptionAccountKind, subscriptionAccountState, readClaudeAccountOAuth, getValidClaudeAccountOAuth } from './subscription-account-auth.js';
 /**
@@ -597,6 +598,7 @@ export class DesktopClaudeAuthAdapter implements AuthAdapter {
   }
 
   private async runEnsureSharedGlobalSkills(): Promise<void> {
+    await prepareHostSettingsSkill();
     try {
       const ownerId = getActiveAppSession().dataOwnerId;
       const result = await withSharedGlobalSkillProjectionMutation(ownerId, () =>
@@ -1382,6 +1384,7 @@ export class DesktopCodexAuthAdapter implements AuthAdapter {
   }
 
   private async runEnsureGlobalCodexAssets(): Promise<void> {
+    await prepareHostSettingsSkill();
     // Load-bearing order: Codex skill linking scans ~/.agents/skills, so shared
     // links must populate that directory before prepareCodexGlobalSkillsLinks runs.
     const ownerId = getActiveAppSession().dataOwnerId;

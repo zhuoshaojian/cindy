@@ -9,6 +9,20 @@ import { createProviderService } from '../provider-service.js';
 const bundledCatalog = () => BUNDLED_CATALOG;
 
 describe('createProviderService', () => {
+  it('设置查询把只读标记传到准入/展示配置，且不触发可选媒体运行时', async () => {
+    const access = vi.fn(() => ({ disabledModels: {}, disabledProviders: {} }));
+    const presentation = vi.fn(() => ({})); const media = vi.fn(() => []);
+    const svc = createProviderService({ getCatalog: bundledCatalog,
+      connection: { xd: () => false, anthropic: () => false, openai: () => false, xai: () => false },
+      getModelAccess: access, getProviderPresentation: presentation, getAvailableMediaModels: media });
+    await svc.listProviders({ allowSideEffects: false, includeMediaReadiness: false });
+    expect(access).toHaveBeenCalledWith({ allowSideEffects: false, waitForDiscovery: false });
+    expect(presentation).toHaveBeenCalledWith('openai', { allowSideEffects: false, waitForDiscovery: false });
+    expect(media).not.toHaveBeenCalled();
+    await svc.listProviders({ allowSideEffects: true });
+    expect(access).toHaveBeenLastCalledWith({ allowSideEffects: true, waitForDiscovery: false });
+    expect(media).toHaveBeenCalledTimes(1);
+  });
   it('uses managed provider configuration names instead of stale presentation overrides', async () => {
     const provider = buildUserProvider({
       id: 'cindy-local-ollama', name: 'Ollama', auth: { method: 'none' },

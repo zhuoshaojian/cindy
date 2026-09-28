@@ -903,3 +903,17 @@ export const genericOAuthSecretIo = {
     }
   },
 };
+
+/** Main-only MCP credential edits. Strict reads distinguish absence from unreadable storage. */
+export const cloudMcpCredentialStore = {
+  has(id: string): boolean {
+    if (!electronSecretIo.isAvailable() || !getActiveAppSession().dataOwnerId) throw new Error('MCP_CREDENTIAL_STORAGE_UNAVAILABLE');
+    return electronSecretIo.read(customMcpSecretStorageKey(id)) !== null;
+  },
+  set(id: string, value: string): void {
+    if (!value.trim() || value.length > 8192 || !electronSecretIo.write(customMcpSecretStorageKey(id), value.trim())) throw new Error('MCP_CREDENTIAL_WRITE_FAILED');
+  },
+  remove(id: string): void {
+    if (!electronSecretIo.remove(customMcpSecretStorageKey(id)).success) throw new Error('MCP_CREDENTIAL_REMOVE_FAILED');
+  },
+};

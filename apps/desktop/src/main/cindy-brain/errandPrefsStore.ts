@@ -1,3 +1,6 @@
+import { inspectSettingsJson, isSettingsRecord } from '../maker-host/inspect-settings-json.js';
+import { validateOptionalSettingsFields } from '../maker-host/settings-inspection.js';
+import path from 'node:path';
 /**
  * errandPrefsStore —— agent 槽「派活取件(errand)」的每插件用户配置持久化。
  *
@@ -128,6 +131,22 @@ const store = createOverrideSettingsFile<GhostErrandPrefs>({
   label: 'ghost-errand-prefs',
 });
 
+/** Saved Host choices only, never starts an errand or resolves its model connection. */
+export function inspectGhostErrandPrefs(root: string) {
+  return inspectSettingsJson(path.join(root, 'ghost-errand-prefs.json'), raw => {
+    validateOptionalSettingsFields(raw, { errand: isSettingsRecord });
+    if (isSettingsRecord(raw.errand)) for (const config of Object.values(raw.errand)) {
+      if (!isSettingsRecord(config)) throw new Error('invalid errand preferences');
+      const normalized = normalizeConfig(config);
+      for (const key of ['agentKind', 'model', 'effort', 'fastMode', 'providerId', 'permissionMode', 'workingDir']) {
+        if (Object.hasOwn(config, key) && !Object.hasOwn(normalized, key)) throw new Error('invalid errand preference');
+      }
+    }
+    // Session mappings are runtime association data, not configuration to inspect.
+    return normalize({ errand: raw.errand });
+  });
+}
+
 /** 读某插件的 errand 配置(缺省空对象 = 全跟随默认)。 */
 export function readGhostErrandConfig(ghostId: string): GhostErrandConfig {
   // mtime 守卫现读:直接改文件也算配置入口(与 cindy prefs 同契约)。
@@ -173,3 +192,4 @@ export function writeGhostErrandSessionId(
 }
 
 export const __testing = { normalize, normalizeConfig, sessionMapKey };
+export const getHostPluginErrandStore = () => store;

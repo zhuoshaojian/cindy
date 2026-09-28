@@ -8,10 +8,14 @@
  * 同时守住:订阅分支绝不注入 ANTHROPIC_API_KEY(与 OAuth 共存触发 cc shouldDisableAuth);
  * gateway-key 模式不受影响、不带订阅 token。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildClaudeEnv } from '../../../../../../packages/maker-core/src/agents/claude-code/env-builder.js';
 
 const h = vi.hoisted(() => ({
+  userData: '',
   hasOAuth: true,
   oauth: null as Record<string, unknown> | null,
   gatewayKey: 'sk-xd-gateway' as string | null,
@@ -39,7 +43,7 @@ vi.mock('../provider-presentation-store.js', () => ({
 
 vi.mock('electron', () => ({
   app: {
-    getPath: () => '/tmp/xdt-test-userdata-nonexistent',
+    getPath: () => h.userData,
     // ripgrep 探测已惰性化(issue #1956):runtime-configs import 期不再读
     // getAppPath / isPackaged,这里无需再补。
   },
@@ -103,7 +107,10 @@ vi.mock('../../secrets/providerSecretStore.js', () => ({
   }),
 }));
 
-// getAuthEnv 前置的共享 skills 预热会碰真实文件系统 —— 剪断(与本测试无关)。
+// getAuthEnv 前置的 Skills 预热会碰真实文件系统 —— 两条准备入口都剪断(与本测试无关)。
+vi.mock('../../host-settings/cindy-settings-skill.js', () => ({
+  prepareHostSettingsSkill: async () => ({ status: 'unavailable', changed: false }),
+}));
 vi.mock('../shared-global-skills.js', () => ({
   prepareSharedGlobalSkillLinks: async () => ({ warnings: [] }),
   prepareSharedProjectSkillLinks: async () => ({ warnings: [] }),
@@ -115,6 +122,9 @@ vi.mock('../anthropic-compat-proxy-host.js', () => ({
 
 describe('DesktopClaudeAuthAdapter.getAuthEnv — 订阅 OAuth env 注入', () => {
   beforeEach(() => {
+    h.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-claude-oauth-env-'));
+    vi.spyOn(os, 'homedir').mockReturnValue(h.userData);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(h.userData, 'claude-home'));
     h.hasOAuth = true;
     h.oauth = {
       accessToken: 'at-live',
@@ -135,6 +145,10 @@ describe('DesktopClaudeAuthAdapter.getAuthEnv — 订阅 OAuth env 注入', () =
     h.canUseGateway = true;
     h.accounts.clear();
     h.refreshAccount.mockReset();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks(); vi.unstubAllEnvs();
+    fs.rmSync(h.userData, { recursive: true, force: true });
   });
 
   it('keeps the owner-scoped BYOK key readable when Cindy gateway access is disabled', async () => {

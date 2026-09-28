@@ -17,6 +17,8 @@ const h = vi.hoisted(() => ({
   userDataDir: '',
   dataOwnerId: 'owner-a' as string | null,
   generation: 1,
+  mode: 'local' as 'local' | 'cloud',
+  legacyClaim: false,
   catalog: null as Catalog | null,
   claudeCredentialPresent: true,
   grokCredentialPresent: true,
@@ -41,7 +43,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../appSessionState.js', () => ({
   getActiveAppSession: () => ({
-    mode: h.dataOwnerId ? ('local' as const) : ('signed-out' as const),
+    mode: h.dataOwnerId ? h.mode : ('signed-out' as const),
     dataOwnerId: h.dataOwnerId,
     generation: h.generation,
   }),
@@ -108,12 +110,12 @@ vi.mock('../auth-adapters.js', () => ({
 }));
 
 vi.mock('../../authManager.js', () => ({
-  getAuthState: () => ({ mode: 'local' as const, user: null }),
+  getAuthState: () => ({ mode: h.mode, user: h.mode === 'cloud' ? { id: h.dataOwnerId } : null }),
 }));
 vi.mock('../../appCapabilities.js', () => ({
   getAppCapabilities: () => ({ canUseCindyGateway: false }),
 }));
-vi.mock('../../ownerNamespaceMigration.js', () => ({ hasLegacyOwnerNamespaceClaim: () => false }));
+vi.mock('../../ownerNamespaceMigration.js', () => ({ hasLegacyOwnerNamespaceClaim: () => h.legacyClaim }));
 vi.mock('../../manifestService.js', () => ({
   isDev: () => true,
   getBaseUrl: () => 'https://example.invalid',
@@ -129,7 +131,7 @@ vi.mock('../../secrets/providerSecretStore.js', () => ({
   readCustomProviderKey: () => null,
   // builtinApiKeyConnected(gemini)在 listProviders 里读 key 存在性;本测试不关心
   // 该供应商,恒返回 null = 未配置。
-  getProviderSecretStore: () => ({ get: () => null }),
+  getProviderSecretStore: () => ({ get: () => null, has: () => false }),
 }));
 
 import {
@@ -159,6 +161,7 @@ beforeEach(() => {
   h.userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-native-conn-claim-'));
   h.dataOwnerId = 'owner-a';
   h.generation = 1;
+  h.mode = 'local'; h.legacyClaim = false;
   h.catalog = BUNDLED_CATALOG;
   h.claudeCredentialPresent = true;
   h.grokCredentialPresent = true;
@@ -177,6 +180,15 @@ afterEach(() => {
 });
 
 describe('native provider connection claim on read', () => {
+  it('设置纯读 getter 不运行旧凭证绑定迁移，默认 getter 仍保留原行为', async () => {
+    h.mode = 'cloud'; h.legacyClaim = true;
+    await getDesktopProviderService({ allowSideEffects: false }).listProviders({ allowSideEffects: false });
+    expect(isNativeProviderAuthBound('anthropic')).toBe(false);
+    expect(h.refreshAnthropicModels).not.toHaveBeenCalled();
+    expect(h.codexLoginWithSideEffects).not.toHaveBeenCalled();
+    getDesktopProviderService();
+    expect(isNativeProviderAuthBound('anthropic')).toBe(true);
+  });
   it('projects only bound native account identities without exposing credentials', async () => {
     const before = await listProviders(false);
     for (const id of ['anthropic', 'xai']) {

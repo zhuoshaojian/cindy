@@ -46,7 +46,7 @@
  *    尾斜杠归一;
  *  - `allowHttp` 宽松模式(仅 dev 本地文件路径允许开启):https-only 字段追加
  *    接受 http:、wss 字段追加 ws:,让 endpoint.local.json 能填 localhost;
- *    packaged / CDN 路径一律不开,打包校验零放松;
+ *    packaged / CDN 路径一律不开,打包校验零放松;cloudInstanceApiBaseUrl 始终仅 HTTPS;
  *  - schemaVersion 缺失、非正整数或大于当前支持版本 → 整份拒绝(breaking change
  *    才 bump 版本)。2026-07 追加 cdnBaseUrl 时**没有** bump:新字段随全新的
  *    hotfix CDN 域名 + `/endpoint.json` 路径发布,老客户端读的是老 CDN 老路径
@@ -92,6 +92,8 @@ export const CLIENT_ENDPOINT_KEYS = [
   // (同 review / cdnBaseUrl 先例,理由见上方版本注释)。
   'authDesktopCallbackUrl',
   'deviceLinkApiBaseUrl',
+  // 云实例的脱敏设置快照接收端。可选且不推导地址，缺失时停用上报；旧端忽略此字段。
+  'cloudInstanceApiBaseUrl',
   'oauthBrokerApiBaseUrl',
   // oss-server(公开资产直传预签名,当前场景:头像上传)。
   'ossApiBaseUrl',
@@ -169,6 +171,7 @@ const FIELD_PROTOCOLS: Record<ClientEndpointKey, readonly string[]> = {
   authApiBaseUrl: ['https:'],
   authDesktopCallbackUrl: ['https:'],
   deviceLinkApiBaseUrl: ['https:'],
+  cloudInstanceApiBaseUrl: ['https:'],
   oauthBrokerApiBaseUrl: ['https:'],
   ossApiBaseUrl: ['https:'],
   heartbeatUrl: ['https:'],
@@ -206,7 +209,8 @@ function allowedProtocols(
   allowHttp: boolean,
 ): readonly string[] {
   const base = FIELD_PROTOCOLS[key];
-  if (!allowHttp) return base;
+  // 快照携带实例 Bearer，新业务端点不接受开发模式的明文协议例外。
+  if (!allowHttp || key === 'cloudInstanceApiBaseUrl') return base;
   const relaxed = [...base];
   if (base.includes('https:') && !base.includes('http:')) relaxed.push('http:');
   if (base.includes('wss:') && !base.includes('ws:')) relaxed.push('ws:');
@@ -280,6 +284,9 @@ export function parseClientEndpointManifest(
     }
     if (url.username || url.password) {
       return { ok: false, reason: `credentials-in-url:${key}` };
+    }
+    if (key === 'cloudInstanceApiBaseUrl' && (normalized.includes('?') || normalized.includes('#'))) {
+      return { ok: false, reason: `invalid-field:${key}` };
     }
     endpoints[key] = normalized;
   }
