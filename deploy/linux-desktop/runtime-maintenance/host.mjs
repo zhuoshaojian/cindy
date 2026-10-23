@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { createMaintenanceGate, atomicJson, ingresses, shutdownEvidence } from './gate.mjs';
+import { createMaintenanceGate, atomicJson, ingresses, shutdownEvidence, maintenanceActivitySample } from './gate.mjs';
 
 const directory = '/run/cindy-maintenance';
 const ledgerFile = '/var/lib/cindy/user-data/.cis-maintenance/ledger.json';
@@ -29,6 +29,7 @@ if (process.platform === 'linux' && process.argv.includes('--cloud-instance')) {
 export const cloudMaintenance = {
   run(kind, fn, existing = false) { return gate ? gate.run(kind, fn, existing) : fn(); },
   admit(kind, existing = false) { gate?.admit(kind, existing); },
+  restoreScheduleWake(schedule, computed, at) { return gate ? gate.restoreScheduleWake(schedule, computed, at) : computed; },
   schedulerAllowed() { return !gate || gate.schedulerAllowed(); },
   scan(fn) { return gate ? gate.scan(fn) : fn(); },
 };
@@ -52,12 +53,7 @@ async function poll() {
   try {
     const revision = gate.revision();
     const observation = activity ? await activity() : null;
-    const valid = observation?.isCurrent?.() === true;
-    const blockers = observation?.idle?.blockers ?? ['activity-unknown'];
-    gate.observe({ atMs: observation?.cloudActivity?.observedAtMs,
-      active: blockers.filter(v => v !== 'idle-grace' && !v.endsWith('-unknown')).length,
-      legacyQueued: observation?.inputCounts?.queued, unknown: valid && !blockers.some(v => v.includes('unknown')) ? 0 : 1,
-      nextWakeAtMs: observation?.idle?.nextWakeAtMs ?? null }, revision);
+    gate.observe(maintenanceActivitySample(observation), revision);
     const command = projected('command.json');
     if (command !== null) {
       try { gate.accept(command); } catch { /* rejected/stale command never opens admission */ }

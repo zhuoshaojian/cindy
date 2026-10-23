@@ -58,6 +58,11 @@ export function transformMaintenanceSource(code, relative) {
     return `/* cloud-maintenance-v1 */\nimport { configureMaintenanceActivity } from '${virtualId}';\nimport { readMaintenanceActivity } from 'virtual:cindy-cloud-task-activity';\n`
       + code.replace(marker, `    configureMaintenanceActivity(readMaintenanceActivity);\n${marker}`);
   }
+  if (relative === 'packages/maker-scheduler/src/engine/scheduler.ts') {
+    const anchor = '        next = computeNextFireAt(current, now);';
+    assert.equal(code.split(anchor).length, 2, 'Maintenance schedule recovery integration changed');
+    code = code.replace(anchor, `${anchor}\n        next = cloudMaintenance.restoreScheduleWake(current, next, now);`);
+  }
   const required = entries[relative], found = new Set(), edits = [];
   const source = ts.createSourceFile(relative, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   function walk(node) {

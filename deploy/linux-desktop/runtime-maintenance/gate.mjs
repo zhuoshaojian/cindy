@@ -95,8 +95,7 @@ export function createMaintenanceGate({ binding, podUid, ledgerFile, now = Date.
       && ['active', 'legacyQueued', 'unknown'].every(k => integer(value[k]))
       && (value.nextWakeAtMs === null || integer(value.nextWakeAtMs));
     sample = valid ? value : null; sampleRevision = revision;
-    if (!valid || revision !== activityRevision || inFlight || value.active || value.legacyQueued || value.unknown
-      || (value.nextWakeAtMs !== null && value.nextWakeAtMs < at + 20 * 60_000)) quietSinceMs = null;
+    if (!valid || revision !== activityRevision || inFlight || value.active || value.legacyQueued || value.unknown) quietSinceMs = null;
     else if (quietSinceMs === null) quietSinceMs = at;
   }
   function canSeal() {
@@ -104,7 +103,6 @@ export function createMaintenanceGate({ binding, podUid, ledgerFile, now = Date.
       && now() >= sample.atMs && now() - sample.atMs <= 15000 && !inFlight
       && !sample.active && !sample.legacyQueued && !sample.unknown
       && quietSinceMs !== null && now() - quietSinceMs >= 10000
-      && (sample.nextWakeAtMs === null || sample.nextWakeAtMs >= now() + 20 * 60_000)
       && ingresses.every(k => coverage.includes(k));
   }
   const stateDigest = () => digest({ state, podUid, bootId });
@@ -151,6 +149,14 @@ export function createMaintenanceGate({ binding, podUid, ledgerFile, now = Date.
       try { return await fn(); } finally { inFlight--; activityRevision++; }
     },
     run, admit, phase, accept, observe, revision: () => activityRevision,
+    // The replacement boot starts sealed. Preserve a valid persisted due fire
+    // instead of startup normalization advancing it past the maintenance outage.
+    // Invalid/manual/completed one-shot schedules still use the scheduler's result.
+    restoreScheduleWake(schedule, computed, at) {
+      return !fault && state.phase === 'sealed' && computed !== undefined
+        && integer(schedule.nextFireAt) && schedule.nextFireAt <= at
+        ? schedule.nextFireAt : computed;
+    },
     schedulerAllowed() { return !closed(); }, // protect: do not suppress due work during prepare
     receipt() {
       if (!fault && state.phase === 'preparing' && now() >= state.command.expiresAt) {
@@ -163,7 +169,7 @@ export function createMaintenanceGate({ binding, podUid, ledgerFile, now = Date.
         stateDigest: stateDigest(), heartbeatAtMs: now(), heartbeatSequence: ++heartbeatSequence,
         quietSinceMs, counts: { active: fresh ? sample.active : 0, legacyQueued: fresh ? sample.legacyQueued : 0,
           deferred: 0, inFlight, unknown: fresh && !fault ? sample.unknown : 1 },
-        nextWakeAtMs: fresh ? sample.nextWakeAtMs : null, ingresses: [...coverage], deferredTasks: false };
+        scheduleAdmission: 'running-only', nextWakeAtMs: fresh ? sample.nextWakeAtMs : null, ingresses: [...coverage], deferredTasks: false };
     },
   };
 }
@@ -180,4 +186,17 @@ export function shutdownEvidence(receipt, { reason, faults, now }) {
     statefulSetUid: receipt.statefulSetUid, pvcUid: receipt.pvcUid, podUid: receipt.podUid, bootId: receipt.bootId,
     operationId: receipt.operationId, epoch: receipt.epoch, sequence: receipt.sequence, commandDigest: receipt.commandDigest,
     reason, completedAtMs: now };
+}
+
+/** Maintenance protects actual work; the ordinary idle/suspend probe still
+ * treats an imminent wake as a blocker. Keep all unknown/queue/input evidence. */
+export function maintenanceActivitySample(observation) {
+  const blockers = observation?.idle?.blockers ?? ['activity-unknown'];
+  return {
+    atMs: observation?.cloudActivity?.observedAtMs,
+    active: blockers.filter(v => v !== 'idle-grace' && v !== 'scheduler-next-wake' && !v.endsWith('-unknown')).length,
+    legacyQueued: observation?.inputCounts?.queued,
+    unknown: observation?.isCurrent?.() === true && !blockers.some(v => v.includes('unknown')) ? 0 : 1,
+    nextWakeAtMs: observation?.idle?.nextWakeAtMs ?? null,
+  };
 }

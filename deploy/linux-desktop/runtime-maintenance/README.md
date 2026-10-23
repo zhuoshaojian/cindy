@@ -38,3 +38,30 @@ explicit single-instance execution contract are documented in
 the CIS service contract (`docs/cloud-instance-server.md` in the server repository).
 The web API remains a configuration preview until an automatic worker is
 separately qualified and enabled.
+
+## Pending schedules during automatic maintenance
+
+The runtime advertises `scheduleAdmission: "running-only"` in its maintenance-v1
+receipt. Deploy the corresponding CIS parser first: older CIS rejects this added
+receipt field and must not control this image. New CIS retains the legacy wake
+headroom rule for old runtimes; it ignores future/past unstarted wake times only
+for automatic maintenance-window plans with the new source capability. Manual
+upgrade requests keep their existing schedule protection.
+
+Only `scheduler-next-wake` is removed from maintenance activity. The ordinary
+idle/suspension reader is unchanged. Running/queued work, active sessions, remote
+input, in-flight scheduler scans and unknown observations still prevent sealing.
+The scheduler continues during prepare; a racing trigger invalidates quiet and
+must finish before seal. Window headroom, leases and stopped-volume backup remain.
+
+On a sealed replacement boot, valid persisted schedules due during downtime retain
+their `nextFireAt` instead of startup normalization skipping the pending occurrence.
+The original scheduler claims each once after release, then resumes its cadence;
+this does not replay every missed interval. Manual, invalid and completed one-shot
+schedules stay excluded. Schedules/cron are not deleted or disabled, and no new
+accepted-work queue is introduced (`deferredTasks` remains false).
+
+`gate.test.mjs` covers pending wakes, real-work races and maintenance-only sampling.
+`overlay.test.mjs` executes the real transformed scheduler with memory storage and
+a fake clock through sealed startup, release and two ticks. Both files run under
+one second locally; this is simulated runtime integration, not a live cloud upgrade.

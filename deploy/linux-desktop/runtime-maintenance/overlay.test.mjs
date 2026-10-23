@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
+import { createMaintenanceGate, ingresses } from './gate.mjs';
 import { createRequire } from 'node:module';
 import { transformMaintenanceSource, cloudMaintenancePlugin, targets } from './overlay.mjs';
 import { transformCloudActivitySource } from '../runtime-activity/overlay.mjs';
@@ -53,4 +55,73 @@ test('quit chain faults and completion are wired exactly, and drift fails the bu
   assert.throws(()=>transformMaintenanceSource(excerpt.replace('— continuing','- continuing'),lifecycle),/quit integration changed/);
   assert.throws(()=>transformMaintenanceSource(excerpt.replace('noteQuitDisposersCompleted();',''),lifecycle),/completion changed/);
   assert.throws(()=>transformMaintenanceSource(out,lifecycle),/twice/);
+});
+
+// Integration tier: execute the actual overlaid scheduler, with in-memory storage
+// and a fake clock. Regression: startup used to skip a fire due during shutdown.
+// Existing gate-only tests cannot detect schedule normalization dropping that fire.
+test('sealed replacement preserves due schedules and executes each once after release', { skip: !source }, async () => {
+  const require = createRequire(path.join(source, 'package.json')), esbuild = require('esbuild');
+  const relative = 'packages/maker-scheduler/src/engine/scheduler.ts';
+  const transformed = transformMaintenanceSource(fs.readFileSync(path.join(source, relative), 'utf8'), relative);
+  const compiled = esbuild.buildSync({ stdin: { contents: transformed, loader: 'ts',
+    resolveDir: path.dirname(path.join(source, relative)) }, bundle: true, platform: 'node', format: 'cjs',
+    external: ['virtual:cindy-cloud-maintenance'], write: false }).outputFiles[0].text;
+  let at = Date.parse('2026-10-23T03:00:00Z'), saved;
+  const binding = { instanceId: 'i', deviceId: 'd', statefulSetUid: 's', pvcUid: 'p' };
+  const options = { binding, ledgerFile: '/synthetic/ledger', now: () => at, coverage: ingresses,
+    save: (_p, value) => { saved = structuredClone(value); }, load: () => {
+      if (saved) return structuredClone(saved); throw Object.assign(new Error(), { code: 'ENOENT' }); } };
+  let gate = createMaintenanceGate({ ...options, podUid: 'source', bootId: 'source' });
+  const command = action => ({ version: 1, ...binding, operationId: 'op', epoch: 1,
+    sequence: gate.receipt().sequence + 1, action, sourcePodUid: 'source', sourceBootId: 'source',
+    targetDigest: `sha256:${'a'.repeat(64)}`, policyDigest: 'b'.repeat(64), windowEndAt: at + 3_600_000,
+    expiresAt: at + 180_000, expectedReceiptDigest: gate.receipt().stateDigest });
+  const prepare = command('prepare'); gate.accept(prepare);
+  const sample = () => gate.observe({ atMs: at, active: 0, legacyQueued: 0, unknown: 0, nextWakeAtMs: at + 1 }, gate.revision());
+  sample(); at += 10_000; sample();
+  const seal = { ...command('seal'), windowEndAt: prepare.windowEndAt }; gate.accept(seal);
+  const due = at + 1000; at += 60_000;
+  gate = createMaintenanceGate({ ...options, podUid: 'candidate', bootId: 'candidate' });
+  const base = { name: 'test', cronExpr: '* * * * *', timezone: 'UTC', prompt: 'test',
+    recurring: true, status: 'active', createdAt: due - 60_000, nextFireAt: due };
+  const rows = new Map([
+    ['cron', { ...base, id: 'cron' }], ['interval', { ...base, id: 'interval', intervalMs: 60_000 }],
+    ['once', { ...base, id: 'once', recurring: false }],
+    ['manual', { ...base, id: 'manual', manual: true }],
+    ['finished', { ...base, id: 'finished', recurring: false, lastFiredAt: due - 1000 }],
+    ['invalid', { ...base, id: 'invalid', cronExpr: 'invalid' }],
+  ]), runs = new Map(), fired = [];
+  const storage = {
+    listActive: async () => [...rows.values()].filter(r => r.status === 'active').map(r => ({ ...r })),
+    get: async id => rows.has(id) ? { ...rows.get(id) } : null,
+    update: async (id, patch) => { const r = { ...rows.get(id), ...patch }; rows.set(id, r); return { ...r }; },
+    markRunningAsInterrupted: async () => [], hasRunningRuns: async () => false,
+    claimDueFire: async (id, expected) => {
+      if (rows.get(id)?.nextFireAt !== expected) return null;
+      const r = { ...rows.get(id), nextFireAt: undefined }; rows.set(id, r); return { ...r };
+    },
+    insertRun: async run => { runs.set(run.id, { ...run }); return run; },
+    updateRun: async (id, patch) => { const r = { ...runs.get(id), ...patch }; runs.set(id, r); return r; },
+    listRuns: async id => [...runs.values()].filter(r => r.scheduleId === id),
+  };
+  const module = { exports: {} };
+  vm.runInNewContext(compiled, { module, exports: module.exports,
+    require: id => id === 'virtual:cindy-cloud-maintenance' ? { cloudMaintenance: gate } : require(id),
+    setInterval: () => ({ unref() {} }), clearInterval() {}, AbortController, setTimeout, clearTimeout });
+  let serial = 0;
+  const scheduler = new module.exports.Scheduler({ storage, clock: { now: () => at }, generateId: () => `run-${++serial}`,
+    runner: { fire: async schedule => { fired.push(schedule.id); return {}; } } });
+  try {
+    await scheduler.start();
+    for (const id of ['cron', 'interval', 'once']) assert.equal(rows.get(id).nextFireAt, due);
+    for (const id of ['manual', 'finished', 'invalid']) assert.equal(rows.get(id).nextFireAt, undefined);
+    await scheduler.tick(); assert.deepEqual(fired, []);
+    gate.accept({ ...command('release'), windowEndAt: prepare.windowEndAt });
+    await scheduler.tick(); await scheduler.tick();
+    assert.deepEqual(fired.sort(), ['cron', 'interval', 'once']);
+    assert.equal(runs.size, 3);
+    assert.equal(rows.get('once').status, 'expired');
+    for (const id of ['cron', 'interval']) assert.ok(rows.get(id).nextFireAt > at);
+  } finally { await scheduler.stop(); }
 });

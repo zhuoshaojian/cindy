@@ -52,7 +52,7 @@ jobs:
             /tools/shared/
             /tools/codex-package/
             /packages/maker-core/src/session.ts
-            /packages/maker-scheduler/src/engine/scheduler.ts
+            /packages/maker-scheduler/src/
             /apps/desktop/package.json
             /apps/desktop/src/main/bootstrap-electron.ts
             /apps/desktop/src/main/lifecycle.ts

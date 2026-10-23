@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createMaintenanceGate, digest, ingresses, readJson, atomicJson, shutdownEvidence } from './gate.mjs';
+import { createMaintenanceGate, digest, ingresses, readJson, atomicJson, shutdownEvidence, maintenanceActivitySample } from './gate.mjs';
 
 function fixture(t, overrides = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-maintenance-gate-'));
@@ -59,10 +59,9 @@ test('seal waits for a scheduler DB scan that was already in flight',async t=>{
   f.sample();f.gate.accept(f.command('seal'));
   await f.gate.scan(()=>assert.fail('sealed scheduler scan ran'));
 });
-for(const reason of ['active','legacyQueued','unknown','next-wake','stale','coverage']) test(`seal refuses ${reason}`,t=>{
+for(const reason of ['active','legacyQueued','unknown','stale','coverage']) test(`seal refuses ${reason}`,t=>{
   const f=fixture(t,reason==='coverage'?{coverage:ingresses.slice(1)}:{});f.gate.accept(f.command('prepare'));f.quiet();
   if(['active','legacyQueued','unknown'].includes(reason)) f.sample({[reason]:1});
-  if(reason==='next-wake') f.sample({nextWakeAtMs:f.now()+30000});
   if(reason==='stale') f.advance(15001);
   assert.throws(()=>f.gate.accept(f.command('seal')),/RETRY/);
 });
@@ -131,4 +130,44 @@ test('clean-shutdown evidence is issued only for an orderly, fault-free quit of 
     assert.equal(shutdownEvidence(sealed, { reason, faults: 0, now: 1 }), null);
   assert.equal(shutdownEvidence(sealed, { reason: 'signal:SIGTERM', faults: 1, now: 1 }), null);
   assert.equal(shutdownEvidence({ ...sealed, counts: { ...sealed.counts, inFlight: 1 } }, { reason: 'signal:SIGTERM', faults: 0, now: 1 }), null);
+});
+
+// Regression: a persisted, unstarted schedule used to reset quiet forever.
+// Unit tier; real gate.accept/receipt with fake clock, no sleeps or task abortion.
+test('pending schedules do not block seal, including overdue and near-future wakes', t => {
+  for (const offset of [-1, 0, 30_000, 1_199_999]) {
+    const f = fixture(t); f.gate.accept(f.command('prepare'));
+    const wake = f.now() + offset;
+    f.sample({ nextWakeAtMs: wake }); f.advance(10_000); f.sample({ nextWakeAtMs: wake });
+    f.gate.accept(f.command('seal')); f.sample({ nextWakeAtMs: wake });
+    assert.equal(f.gate.receipt().phase, 'sealed');
+    assert.equal(f.gate.receipt().nextWakeAtMs, wake);
+    assert.equal(f.gate.receipt().scheduleAdmission, 'running-only');
+  }
+});
+test('a scheduled task starting after quiet still prevents seal until it finishes', async t => {
+  const f = fixture(t); f.gate.accept(f.command('prepare')); f.quiet();
+  let finish;
+  const run = f.gate.run('scheduler', () => new Promise(resolve => { finish = resolve; }), true);
+  assert.throws(() => f.gate.accept(f.command('seal')), /RETRY/);
+  finish(); await run; f.quiet();
+  f.gate.accept(f.command('seal'));
+  assert.equal(f.gate.receipt().phase, 'sealed');
+});
+
+test('maintenance separates a pending wake from real scheduler, session and input activity', () => {
+  const observation = { isCurrent: () => true, cloudActivity: { observedAtMs: 1000 },
+    inputCounts: { queued: 0 }, idle: { blockers: ['idle-grace', 'scheduler-next-wake'], nextWakeAtMs: 1001 } };
+  assert.deepEqual(maintenanceActivitySample(observation),
+    { atMs: 1000, active: 0, legacyQueued: 0, unknown: 0, nextWakeAtMs: 1001 });
+  // Busy/unknown categories are retained, including scheduler work already queued.
+  for (const blocker of ['scheduler-running', 'scheduler-in-flight', 'scheduler-waiting', 'session-busy', 'remote-input']) {
+    assert.equal(maintenanceActivitySample({ ...observation,
+      idle: { ...observation.idle, blockers: [...observation.idle.blockers, blocker] } }).active, 1);
+  }
+  assert.equal(maintenanceActivitySample({ ...observation, inputCounts: { queued: 1 } }).legacyQueued, 1);
+  assert.equal(maintenanceActivitySample({ ...observation, isCurrent: () => false }).unknown, 1);
+  assert.equal(maintenanceActivitySample({ ...observation,
+    idle: { blockers: ['scheduler-unknown'] } }).unknown, 1);
+  assert.deepEqual(observation.idle.blockers, ['idle-grace', 'scheduler-next-wake']);
 });
