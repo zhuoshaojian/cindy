@@ -22,7 +22,8 @@ Runner、DinD、BuildKit 是构建工具，不是云实例需要安装的额外�
 最新完成自动交付的产物为 `0.1.113-cloud.28`，运行 [39908202230](https://github.com/zhuoshaojian/cindy/actions/runs/39908202230)。
 完整源码构建、原生 Linux 隔离 smoke 和 ACS 缓存 2/2 Ready 均通过；本版隐藏 Dock
 首选项面板，保留默认锁定和 `cloud.27` 的远程桌面输入积压修复，见
-[Dock 验收记录](../ACCEPTANCE-DOCK-20261023.md)。本人实例升级验收仍是独立步骤。
+[Dock 验收记录](../ACCEPTANCE-DOCK-20261023.md)。交付后已独立完成本人实例的原生客户端
+主动升级、停机备份及主容器/init 缓存命中检查；完整远控验收仍有待确认项，未推广其他实例。
 基础源码仍固定为 `source-freeze.json` 中的 `4eb73c7f`；`includedPatch` 仅替换
 `captureHost.ts`，从 `aea2f91c` 读取并校验 SHA-256。有效输入积压时释放按键、丢弃
 过载输入并保留会话，不再直接停止桌面。构建记录中的 `runtimeFixCommit` 与 `patches`
@@ -43,7 +44,8 @@ smoke 后复用已测 BuildKit 结果，经 VPC 按 digest 上传再写双标签
 实例升级与镜像交付分开：`cloud.9` 的存量升级、新领取选择和客户端测试包见服务端
 [更新验收](https://github.com/zhuoshaojian/cindy-server/blob/feat/cloud-settings-readonly/docs/cloud-instance/runtime-update-20261022.md)。
 `cloud.1` 的跨上游升级保留在 [0.1.113 验收记录](../ACCEPTANCE-0113-20261022.md)。
-CI 本身不切换实例，本轮没有补做新的 OAuth/DeviceLink 验收。
+CI 本身不切换实例。cloud.28 本人实例的分项 DeviceLink 结果和未通过项目见上方 Dock
+验收记录，本轮未补做 OAuth 验收。
 历史实例升级与 init 修复见 [2026-10-21 验收](../ACCEPTANCE-CLOUD2-20261021.md)。
 历史镜像、缓存和运行编号保留在对应验收记录，不作为当前发行输入。
 
