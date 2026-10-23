@@ -167,3 +167,28 @@ The new package was not installed or launched during this refresh; current clien
 installations and data were left untouched. These package/UI checks do not close
 the remaining cloud DeviceLink checks above. Client renderer changes and this
 record do not match the cloud-image delivery workflow's push paths.
+
+### Subsequent installed-client check
+
+At the owner's request, the verified DMG was installed as the separate
+`Cindy Cloud Dev CN.app` on the Apple Silicon Mac. The old Dev process exited
+cleanly, and the new package reopened the existing Dev profile after the owner
+approved macOS Keychain access. The production Cindy application was not replaced.
+
+The signed-in application's actual home sidebar was checked in both light and
+dark modes, using the Appearance settings' normal theme controls and generated
+Chromium pointer/key events. The circled slider icon is the `Settings2` shortcut
+labelled **Configure Cloud Cindy**; its size is 24×24px in both modes.
+
+- At rest and after blur, the shortcut wrapper opacity is 0.
+- Hovering the device row reveals the icon with opacity 1.
+- A Tab key from the preceding device control focuses the shortcut, shows its
+  focus ring and reveals it without mouse hover.
+- Clicking it opens the cloud-settings route for the same device. Returning to
+  the home page and moving focus/pointer away hides it again.
+- Captures of the actual sidebar row were inspected in both modes. The original
+  **Follow system** theme setting was restored after the checks.
+
+These checks passed on installed version `0.1.113-dev.cloud.20261023.1`; they
+replace the earlier untested-installation limitation for this package. They do
+not re-test cloud upgrades, DeviceLink input, OAuth or mobile hardware.
