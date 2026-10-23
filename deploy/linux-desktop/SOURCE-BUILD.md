@@ -47,7 +47,7 @@ are supported and fetch the frozen source bytes on demand. Frozen commits must b
   the upstream commit recorded in `delivery/version.json`. The builder checks both
   the exact upstream tag and ancestry. `includedPatch` pins selected replacements
   from `runtime-desktop-xfce/source-manifest.json`'s `clientRuntimeFixCommit` by
-  SHA-256. Cloud revision 27 replaces only `captureHost.ts` for input-overload
+  SHA-256. From cloud revision 27, the patch replaces only `captureHost.ts` for input-overload
   recovery; the remaining application source stays at the frozen commit. Build
   records bind both the frozen source and the exact runtime patch.
 - The upstream version and cloud revision are build arguments shared by the
@@ -59,6 +59,10 @@ are supported and fetch the frozen source bytes on demand. Frozen commits must b
 - `Dockerfile` compiles the frozen application in that base using its pnpm lock,
   pinned development headers and verified external assets. It applies the existing
   cloud overlays and builds maintenance/context bundles from the same source.
+  It also rebuilds the [cloud Plank library](runtime-desktop-xfce/plank/README.md)
+  from pinned upstream/Debian sources to hide Dock Preferences. The build retains
+  the stock ABI and ships the corresponding source; compiler dependencies remain
+  in a disposable stage. Dock defaults and existing user configuration are unchanged.
 - `assemble-runtime.py` installs the application once, the tracked helpers,
   Xfce/Dock sources and the Chrome compatibility wrapper. It removes no user data.
 - `stage-runtime-agents.py` bundles the frozen Claude binary and complete Codex

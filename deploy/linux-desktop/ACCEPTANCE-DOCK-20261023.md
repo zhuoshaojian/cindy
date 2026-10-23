@@ -27,5 +27,22 @@ sandbox, old-home-permission, application-version and clean-shutdown checks.
 
 ## Delivery / production
 
-Full native-amd64 image build, release smoke and ACS cache: pending the first run.
-No cloud instance was upgraded for this change during local validation.
+The fork's [run 39908202230](https://github.com/zhuoshaojian/cindy/actions/runs/39908202230)
+completed successfully on 2026-10-23 at 06:13:46 UTC. Recipe commit:
+`3a496e9783fd425129361f014f2c802aa57661ac`.
+
+- Image: `cloud-runtime-cn:0.1.113-cloud.28-cn-amd64`.
+- Registry manifest: `sha256:d02e9195cecca7555ad19431374c05bdf3332ad52ebc866af4aa85eaaf40b3ec`.
+- Tested image config: `sha256:fb31b8bc66bb7958e65598ac14676a55b1df20b5648f60c47f40d670abdc0559`.
+- The native `x86_64` full-image smoke passed with `dockPreferencesHidden=true`,
+  desktop ready, sandboxed renderers, legacy HOME permissions, application version
+  `0.1.113-cloud.28`, isolated network, read-only root and clean shutdown.
+- ACS cache plan: 2/2 Ready. The new runtime cache is
+  `imc-uf64c6lm5ar3bhp8drpo`; the other receipt reuses the plan's explicit legacy
+  init image cache. Main and init may both consume the new runtime reference.
+  Receipts are in the run's `cloud-cache-39908202230-1` artifact.
+
+This proves image delivery and cache readiness. `podMatchVerified` and
+`releaseApproved` remain false: actual instance cache-hit checks, CIS admission,
+native-client upgrade and DeviceLink acceptance are separate. No cloud instance
+was upgraded for this change during these checks, and no new-claim default changed.
