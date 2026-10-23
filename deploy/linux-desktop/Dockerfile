@@ -23,9 +23,26 @@ RUN --mount=type=cache,id=cindy-linux-build-assets,target=/var/cache/cindy-build
              /workspace/ripgrep-linux-x64.tar.gz /workspace/codex-package-linux-x64.tar.gz /workspace/pi-linux-x64.tar.gz \
     && rm -rf /workspace/debs /var/lib/apt/lists/* /root/.npm/_cacache
 
+# Build only the cloud Dock library; tools remain in a disposable build stage.
+FROM prepared AS dock-build-tools
+COPY build-recipe/runtime-desktop-xfce/plank/build-deps.txt /workspace/plank-build-deps.txt
+RUN apt-get -o Acquire::Retries=5 update \
+    && mapfile -t deps < /workspace/plank-build-deps.txt \
+    && apt-get -o Acquire::Retries=5 install --yes --no-install-recommends "${deps[@]}"
+
+FROM dock-build-tools AS dock-build
+ARG PLANK_SOURCE_URL=https://deb.debian.org/debian/pool/main/p/plank/plank_0.11.89.orig.tar.xz
+ARG PLANK_DEBIAN_SOURCE_URL=https://deb.debian.org/debian/pool/main/p/plank/plank_0.11.89-4.debian.tar.xz
+ADD --checksum=sha256:a662a46eaeffbd40661d1f36abd2589f7a98baef4b918876b872047b7ca59d9d ${PLANK_SOURCE_URL} /workspace/plank-downloads/plank_0.11.89.orig.tar.xz
+ADD --checksum=sha256:afb06a37ecabf0f83d9b338cf8848c11834f06a9ab611436f34d049734023b9a ${PLANK_DEBIAN_SOURCE_URL} /workspace/plank-downloads/plank_0.11.89-4.debian.tar.xz
+COPY build-recipe/runtime-desktop-xfce/plank/ /workspace/plank-recipe/
+COPY recipe/runtime-desktop-xfce/plank/README.md /workspace/plank-recipe/README.md
+RUN --network=none bash /workspace/plank-recipe/build.sh /workspace/plank-downloads /workspace/plank-output
+
 FROM prepared AS prepared-native
 COPY recipe/prime-native-cache.cjs /workspace/recipe/
 RUN node /workspace/recipe/prime-native-cache.cjs /workspace/source /workspace/native-cache 42.11.12
+COPY --from=dock-build /workspace/plank-output/ /workspace/plank-runtime/
 
 # A cacheonly solve can resolve remote metadata without restoring its filesystem.
 # This unexported, network-free target must mount the prepared snapshot before
@@ -49,7 +66,8 @@ RUN /bin/sh /workspace/recipe/build-runtime.sh
 RUN --network=none node /workspace/recipe/verify-native-modules.cjs \
     /workspace/source/node_modules/electron/dist/electron /workspace/artifact/cindy /workspace/artifact/native-modules.json
 ARG SOURCE_DATE_EPOCH
-RUN python3 /workspace/recipe/assemble-runtime.py /workspace/artifact /layer \
+RUN cp -a /workspace/plank-runtime /workspace/artifact/plank \
+    && python3 /workspace/recipe/assemble-runtime.py /workspace/artifact /layer \
     && python3 -I /workspace/recipe/normalize-timestamps.py /layer \
     && python3 /workspace/recipe/audit-runtime-layer.py /layer > /workspace/artifact/runtime-layer-audit.json
 

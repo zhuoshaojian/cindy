@@ -255,6 +255,9 @@ class RuntimeLayerTest(unittest.TestCase):
             p.chmod(0o700)
         for name in ['profile-maintenance-context.mjs', 'profile-runtime-wire.mjs']:
             (self.artifact / name).write_text('// synthetic build output\n')
+        (self.artifact / 'plank/source').mkdir(parents=True)
+        (self.artifact / 'plank/libplank.so.1.0.0').write_bytes(b'synthetic Plank library')
+        (self.artifact / 'plank/source/notice').write_text('synthetic corresponding source')
         self.layer = self.root / 'layer'
         subprocess.run([sys.executable, str(HERE / 'assemble-runtime.py'),
                         str(self.artifact), str(self.layer)], check=True)
@@ -262,6 +265,10 @@ class RuntimeLayerTest(unittest.TestCase):
     def test_complete_layer_and_sources(self):
         result = audit.audit(self.layer)
         self.assertTrue(result['layerSha256'])
+        self.assertEqual((self.layer / 'usr/lib/x86_64-linux-gnu/libplank.so.1.0.0').read_bytes(),
+                         (self.artifact / 'plank/libplank.so.1.0.0').read_bytes())
+        self.assertEqual((self.layer / 'usr/share/doc/cindy-plank/source/notice').read_text(),
+                         'synthetic corresponding source')
         self.assertEqual((self.layer / 'usr/local/bin/cindy-seccomp').read_bytes(),
                          (HERE / 'runtime-support/seccomp-launch.py').read_bytes())
         self.assertEqual((self.layer / 'usr/bin/chromium').read_bytes(),

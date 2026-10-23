@@ -30,6 +30,8 @@ for name in ['profile-maintenance-context.mjs', 'profile-runtime-wire.mjs']:
 install(recipe / 'profile-supervisor.mjs', 'usr/local/lib/cindy/profile-supervisor.mjs')
 install(recipe / 'github-device-login.py', 'usr/local/lib/cindy/github-device-login.py', 0o755)
 desktop = recipe / 'runtime-desktop-xfce'
+install(artifact / 'plank/libplank.so.1.0.0', 'usr/lib/x86_64-linux-gnu/libplank.so.1.0.0')
+shutil.copytree(artifact / 'plank/source', layer / 'usr/share/doc/cindy-plank/source')
 for name in ['cindy-linux-desktop', 'cindy-dock-terminal', 'cindy-dock-chrome']:
     install(desktop / name, 'usr/local/bin/' + name, 0o755)
 install(desktop / 'xfce-session', 'usr/local/lib/cindy/xfce-session', 0o755)

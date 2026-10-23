@@ -57,6 +57,20 @@ for p in pathlib.Path('/proc').iterdir():
    renderers.append(p.name)
  except (FileNotFoundError,ProcessLookupError):pass
 assert renderers
+# Exercise the running Dock's shared UI action. Stock Plank reports true here.
+# This integration check covers CLI / D-Bus entry points omitted by file checks.
+def dock_action(name):
+ return subprocess.check_output(['gdbus','call','--session','--dest','net.launchpad.plank',
+  '--object-path','/net/launchpad/plank','--method','org.gtk.Actions.Describe',name],text=True,timeout=10).strip()
+assert dock_action('preferences').startswith('((false,'), 'DOCK_PREFERENCES_ENABLED'
+assert dock_action('about').startswith('((true,'), 'DOCK_ACTIONS_UNAVAILABLE'
+subprocess.run(['plank','--preferences'],check=True,timeout=10)
+windows=subprocess.check_output(['xprop','-root','_NET_CLIENT_LIST'],text=True)
+import re
+for window in re.findall(r'0x[0-9a-fA-F]+',windows):
+ properties=subprocess.check_output(['xprop','-id',window,'WM_CLASS','_NET_WM_WINDOW_TYPE'],text=True)
+ if '"plank"' in properties.lower():
+  assert '_NET_WM_WINDOW_TYPE_DOCK' in properties, 'DOCK_PREFERENCES_WINDOW_OPENED'
 for n in ['com.cindy.cloud-terminal.desktop','com.cindy.cloud-chrome.desktop']:
  assert (pathlib.Path('/usr/share/applications')/n).is_file()
 with open('/opt/cindy/resources/app.asar','rb') as archive:
@@ -67,7 +81,7 @@ with open('/opt/cindy/resources/app.asar','rb') as archive:
  assert not package.get('unpacked') and 0<package['size']<1024*1024
  archive.seek(8+header_size+int(package['offset']))
  version=json.loads(archive.read(package['size']))['version']
-print(json.dumps({'desktopReady':True,'sandboxedRenderers':True,'legacyHome':True,'applicationVersion':version}))
+print(json.dumps({'dockPreferencesHidden':True,'desktopReady':True,'sandboxedRenderers':True,'legacyHome':True,'applicationVersion':version}))
 '''
 
 

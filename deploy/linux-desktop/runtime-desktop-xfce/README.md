@@ -1,7 +1,7 @@
 # Xfce / Plank cloud desktop sources
 
 These desktop sources are assembled by the [complete source build](../SOURCE-BUILD.md),
-based on Cindy upstream `v0.1.108`.
+using the upstream version pinned in `../delivery/version.json`.
 `source-manifest.json` retains historical R5 comparison metadata: image digest,
 ASAR hash, frozen client patch hashes, package versions and source hashes. Current
 source-build acceptance is linked from `SOURCE-BUILD.md`. Registry credentials, deployment
@@ -27,6 +27,10 @@ part of this source archive.
 - The Chrome launcher uses a separate personal browser profile and retains its
   sandbox and Secret Service password store. Terminal explicitly starts bash,
   because the container account has a noninteractive passwd shell.
+- [The cloud Plank patch](plank/README.md) hides the Preferences menu and disables
+  its shared action, including CLI/D-Bus activation. The original default icon
+  lock and existing user settings are preserved; application menus and clock
+  options remain available.
 - `seccomp.json` is the verified runtime allowlist including `close_range`, needed
   by GLib process spawning. Do not replace the profile with Unconfined.
 - `../runtime-window-controls/` is the cloud-only source transform used to build

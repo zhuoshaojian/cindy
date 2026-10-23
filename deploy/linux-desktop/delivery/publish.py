@@ -50,7 +50,7 @@ def check_build(plan, info, result, smoke, records):
         raise ValueError('IMAGE_PLATFORM_OR_LAYOUT_MISMATCH')
     if smoke.get('imageId') != info['Id'] or smoke.get('passed') is not True or smoke.get('nativeArchitecture') != 'x86_64':
         raise ValueError('NATIVE_SMOKE_MISSING')
-    for check in ['networkIsolated', 'readOnlyRoot', 'sandboxedRenderers', 'legacyHome', 'desktopReady', 'shutdown']:
+    for check in ['dockPreferencesHidden', 'networkIsolated', 'readOnlyRoot', 'sandboxedRenderers', 'legacyHome', 'desktopReady', 'shutdown']:
         if smoke.get(check) is not True:
             raise ValueError('NATIVE_SMOKE_INCOMPLETE:' + check)
     if smoke.get('applicationVersion') != cloud_version(version):
