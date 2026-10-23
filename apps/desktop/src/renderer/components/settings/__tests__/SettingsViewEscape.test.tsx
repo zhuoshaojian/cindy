@@ -13,7 +13,10 @@ import { SettingsView } from '../SettingsView';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-const auth = vi.hoisted(() => ({ mode: 'local' }));
+const auth = vi.hoisted(() => ({ mode: 'local', cloudAccess: 'hidden' }));
+vi.mock('@/features/cloud-settings/CloudInstanceAccess', () => ({
+  useCloudInstanceAccess: () => auth.cloudAccess,
+}));
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({ mode: auth.mode, dataOwnerId: null, user: null }),
 }));
@@ -128,11 +131,13 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   auth.mode = 'local';
+  auth.cloudAccess = 'hidden';
 });
 
 describe('SettingsView Escape', () => {
   it('hosts cloud instance discovery inside Settings and exits without creating an instance', async () => {
     auth.mode = 'cloud';
+    auth.cloudAccess = 'allowed';
     const instanceList = vi.fn().mockResolvedValue([]);
     const instanceClaim = vi.fn();
     vi.stubGlobal('electronAPI', { platform: 'darwin', cloudSettings: { instanceList, instanceClaim } });
@@ -143,6 +148,20 @@ describe('SettingsView Escape', () => {
     expect(instanceClaim).not.toHaveBeenCalled();
     pressEscape();
     expect(location()).toBe('/');
+  });
+
+  // Admission regression: a signed-in account used to see the cloud page
+  // solely because mode=cloud. Unknown/denied permission must not mount it.
+  it.each(['checking', 'hidden'])('hides cloud discovery for a signed-in account with %s access', (access) => {
+    auth.mode = 'cloud';
+    auth.cloudAccess = access;
+    const instanceList = vi.fn();
+    vi.stubGlobal('electronAPI', { platform: 'darwin', cloudSettings: { instanceList } });
+    renderSettings('/settings?tab=cloud-instances&section=cloudInstances');
+    expect(screen.queryByTestId('cloud-instances-page')).toBeNull();
+    expect(screen.getByRole('tabpanel').id).toBe('settings-panel-general');
+    expect(screen.queryByText('cloudSettings.instance.title')).toBeNull();
+    expect(instanceList).not.toHaveBeenCalled();
   });
 
   it('does not fetch cloud instances from a signed-out settings deep link', () => {

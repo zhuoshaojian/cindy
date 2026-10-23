@@ -23,6 +23,7 @@ import {
 } from '../../../shared/cloudSettings';
 import { createCloudSettingsClient, type CloudSettingsClient } from './client';
 import { CloudInstanceSection } from './CloudInstanceSection';
+import { useCloudInstanceAccess } from './CloudInstanceAccess';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
 import { CloudMcpAuthorization } from './CloudMcpAuthorization';
 import { CloudPluginAuthorization } from './CloudPluginAuthorization';
@@ -462,6 +463,13 @@ export function CloudSettingsPanel({
 }
 
 export function CloudSettingsView() {
+  const access = useCloudInstanceAccess();
+  if (access === 'checking') return null;
+  if (access !== 'allowed') return <Navigate to="/settings" replace />;
+  return <AuthorizedCloudSettingsView />;
+}
+
+function AuthorizedCloudSettingsView() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();

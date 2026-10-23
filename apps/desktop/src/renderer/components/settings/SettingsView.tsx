@@ -70,6 +70,7 @@ import { canAccessUsageSettings } from './usageVisibility';
 import { UsageHistorySection } from './usage/UsageHistorySection';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
 import { CloudInstancesSection } from '@/features/cloud-settings/CloudInstancesSection';
+import { useCloudInstanceAccess } from '@/features/cloud-settings/CloudInstanceAccess';
 
 const DEFAULT_SETTINGS_MENU_WIDTH = 260;
 
@@ -84,6 +85,7 @@ export function SettingsView() {
   const { t } = useTranslation();
   const [searchActivation, setSearchActivation] = useState(0);
   const { mode, dataOwnerId, user } = useAuth();
+  const canAccessCloudInstances = useCloudInstanceAccess() === 'allowed';
   const menuWidth = outletContext?.sidebarWidth ?? DEFAULT_SETTINGS_MENU_WIDTH;
   const isMac = window.electronAPI?.platform === 'darwin';
   const [helpAssistantOpen, setHelpAssistantOpen] = useState(false);
@@ -113,12 +115,12 @@ export function SettingsView() {
     if (raw === 'tina') return 'im-bot';
     if (raw === 'billing' && !canAccessBilling) return 'general';
     if (raw === 'usage' && !canAccessUsage) return 'general';
-    if (raw === 'cloud-instances' && mode !== 'cloud') return 'general';
+    if (raw === 'cloud-instances' && !canAccessCloudInstances) return 'general';
     if (raw === 'agent-island' && !isMac) return 'general';
     // legacy 深链:外观设置原在「通用」、回复动效原在「个性化」,旧 section 深链落到「外观」。
     if (isLegacyAppearanceDeepLink(raw, rawSection)) return 'appearance';
     return isSettingsTab(raw) ? raw : 'general';
-  }, [canAccessBilling, canAccessUsage, isMac, rawSection, rawTab, mode]);
+  }, [canAccessBilling, canAccessUsage, canAccessCloudInstances, isMac, rawSection, rawTab]);
   const piExtensionsPanelOpen =
     activeTab === 'general' &&
     (rawTab === 'pi-extensions' || searchParams.get('openPanel') === 'pi-extensions');
@@ -240,16 +242,17 @@ export function SettingsView() {
           (isMac || tabId !== 'agent-island') &&
           (canAccessBilling || tabId !== 'billing') &&
           (canAccessUsage || tabId !== 'usage') &&
-          (mode === 'cloud' || tabId !== 'cloud-instances'),
+          (canAccessCloudInstances || tabId !== 'cloud-instances'),
       ),
-    [canAccessBilling, canAccessUsage, isMac, mode],
+    [canAccessBilling, canAccessUsage, canAccessCloudInstances, isMac],
   );
   const searchContext = useMemo<SettingsSearchContext>(() => ({
     region: CURRENT_CINDY_REGION,
     mode,
     membershipKind: user?.membershipKind ?? null,
     platform: window.electronAPI?.platform ?? '',
-  }), [mode, user?.membershipKind]);
+    canAccessCloudInstances,
+  }), [mode, user?.membershipKind, canAccessCloudInstances]);
   const requestedEntry = resolveSettingsSearchEntry(activeTab, searchParams.get('section'));
   const searchEntry = piExtensionsPanelOpen || (requestedEntry?.isVisible && !requestedEntry.isVisible(searchContext))
     ? null : requestedEntry;

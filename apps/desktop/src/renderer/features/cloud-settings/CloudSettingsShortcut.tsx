@@ -4,12 +4,15 @@ import { useTranslation } from 'react-i18next';
 import { SIDEBAR_RAIL_ICON_BUTTON_CLASS } from '@/components/sidebar/SidebarIconButton';
 import { Tip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useCloudInstanceAccess } from './CloudInstanceAccess';
 
 /** A direct action on the named device, never a second instance picker. */
 export function CloudSettingsShortcut({ deviceId, name }: { deviceId: string; name: string }) {
   const { t } = useTranslation();
   const location = useLocation();
+  const access = useCloudInstanceAccess();
   const label = t('cloudSettings.openFor', { name });
+  if (access !== 'allowed') return null;
   return (
     <div className={cn(
       'shrink-0 pointer-events-none opacity-0 transition-opacity duration-150 motion-reduce:transition-none',

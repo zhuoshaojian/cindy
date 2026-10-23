@@ -8,8 +8,10 @@ import { createCloudSettingsClient } from '../client';
 import { CloudInstancesSection } from '../CloudInstancesSection';
 const state = vi.hoisted(() => ({
   online: true,
+  access: 'allowed',
   deviceId: 'cloud-device-aaaaaaaaaaaaaaaaaaaaaaaa',
 }));
+vi.mock('../CloudInstanceAccess', () => ({ useCloudInstanceAccess: () => state.access }));
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (key: string) => key }),
@@ -42,6 +44,22 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   state.online = true;
+  state.access = 'allowed';
+});
+// A cloud device deep link must not bypass the account's admission result.
+it.each(['checking', 'hidden'])('does not connect or render cloud settings while access is %s', (access) => {
+  state.access = access;
+  render(
+    <MemoryRouter initialEntries={[`/cloud-settings?deviceId=${state.deviceId}`]}>
+      <Routes>
+        <Route path="/cloud-settings" element={<CloudSettingsView />} />
+        <Route path="/settings" element={<p>Local settings</p>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(createCloudSettingsClient).not.toHaveBeenCalled();
+  expect(screen.queryByTestId('cloud-settings')).toBeNull();
+  if (access === 'hidden') expect(screen.getByText('Local settings')).toBeTruthy();
 });
 it('uses the Main bridge even if device-link remote control is disabled', async () => {
   const bridge = {},

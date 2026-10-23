@@ -17,7 +17,7 @@ export default {
         'cloudSettings.instance.autoUpdate',
         'cloudSettings.instance.schedule',
       ],
-      isVisible: ({ mode }) => mode === 'cloud',
+      isVisible: ({ mode, canAccessCloudInstances }) => mode === 'cloud' && canAccessCloudInstances === true,
     },
   ],
 } satisfies SettingsSearchModule;

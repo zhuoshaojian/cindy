@@ -5,16 +5,18 @@ import { useTranslation } from 'react-i18next';
 import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDeviceList';
 import { toast } from '@/lib/toast';
 import { CloudInstancesPage } from './CloudInstancesPage';
+import { useCloudInstanceAccess } from './CloudInstanceAccess';
 
 /** Account-level discovery belongs inside local Settings; instance configuration
  * keeps its own explicit target and returns to this category. */
 export function CloudInstancesSection() {
   const navigate = useNavigate();
   const { mode, dataOwnerId } = useAuth();
+  const access = useCloudInstanceAccess();
   const { t } = useTranslation();
   const devices = useDeviceLinkDeviceList();
   const owner = getDataOwnerGeneration();
-  if (mode !== 'cloud') return null;
+  if (mode !== 'cloud' || access !== 'allowed') return null;
   return (
     <CloudInstancesPage
       key={JSON.stringify([dataOwnerId, owner.generation])}

@@ -29,6 +29,13 @@ const translations: Record<string, string> = {
 const t = ((key: string) => translations[key] ?? key) as unknown as TFunction;
 
 describe('settings search catalog', () => {
+  // Search is another entry point: login alone does not grant cloud access.
+  it.each([undefined, false, true])('requires affirmative cloud admission for search (%s)', (canAccessCloudInstances) => {
+    const documents = buildSettingsSearchDocuments(t, TAB_IDS, {
+      region: 'cn', mode: 'cloud', membershipKind: 'org', platform: 'darwin', canAccessCloudInstances,
+    });
+    expect(documents.some(({ entry }) => entry.tab === 'cloud-instances')).toBe(canAccessCloudInstances === true);
+  });
   it('normalizes mixed-width and repeated whitespace', () => {
     expect(normalizeSettingsSearchText('  Ａppearance\u00a0  ')).toBe('appearance');
   });

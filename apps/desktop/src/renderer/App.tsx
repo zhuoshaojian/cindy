@@ -15,6 +15,7 @@ import { WallpaperSettingsProvider } from '@/hooks/useWallpaperSettings';
 import { FontSettingsProvider } from '@/hooks/useFontSettings';
 import { LocaleProvider } from '@/hooks/useLocale';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { CloudInstanceAccessProvider } from '@/features/cloud-settings/CloudInstanceAccess';
 import { AppShellCoverProvider, useAppShellCover } from '@/contexts/AppShellCoverContext';
 import { LoginHandoffProvider } from '@/contexts/LoginHandoffContext';
 import { EnvCheckProvider, EnvCheckGuard } from '@/contexts/EnvCheckContext';
@@ -216,7 +217,9 @@ function OwnerScopedRouter() {
   const ownerKey = `${dataOwnerId ?? 'signed-out'}:${dataOwnerRecoveryEpoch}`;
   return (
     <MainViewHistoryProvider ownerKey={ownerKey} locationKey={router.state.location.key}>
-      <RouterProvider key={ownerKey} router={router} />
+      <CloudInstanceAccessProvider>
+        <RouterProvider key={ownerKey} router={router} />
+      </CloudInstanceAccessProvider>
     </MainViewHistoryProvider>
   );
 }
