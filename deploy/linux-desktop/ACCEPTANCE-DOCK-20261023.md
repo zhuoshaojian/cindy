@@ -112,4 +112,58 @@ The full remote-input suite is **not passed**:
 
 The fixture's Chrome window and temporary page/log were removed without closing
 unrelated applications. Upgrade and Dock-preferences checks passed; full product
-acceptance remains partial. These results do not authorize fleet promotion.
+acceptance remains partial. These checks alone do not authorize fleet promotion.
+
+## Subsequent explicit admission
+
+The owner subsequently requested making cloud.28 available to the other instances.
+Both CIS roles now admit the exact same CI-delivered digest for the remaining
+11 profiles, including their actual init templates; no new image was built for
+this admission. No instance upgrade was requested or forced by this step.
+
+Readback confirms ten other instances select cloud.28 with `updateAvailable=true`
+and `manualUpgrade=true`. The remaining stopped instance has image/init approval
+but is not enrolled in maintenance, so its existing API still reports no manual
+upgrade; it remains stopped with auto-update disabled. The owner's instance is
+already current. Eligible running instances are outside their maintenance window.
+All 12 instance images, templates, identities and restart counts remain unchanged
+by this policy update; backup, schedules and per-instance update choices are kept.
+
+New claims select cloud.28 through the existing highest-admitted-version rule
+(maintenance and Keyring approval intersection). The configured fallback images
+were not rewritten. CI delivery still does not itself grant CIS admission; the
+explicit policy change is separate from run `39908202230`. The partial DeviceLink
+results above remain partial after admission.
+
+## Native Mac client refresh
+
+The sidebar cloud-settings shortcut now stays hidden at rest and appears on the
+device row's hover or keyboard focus. It uses the same 24px button size as the
+adjacent remote-desktop action. Routing and the selected cloud device are unchanged.
+
+- Client source: `ca20bdcd887f52a8ee29f639c58ef13d28aa6338`.
+- Dev package: `Cindy-Cloud-Dev-CN-0.1.113-dev.cloud.20261023.1-arm64.dmg`
+  (265,667,462 bytes), built from a clean source export with the package-version
+  transform recorded separately. This is an Apple Silicon Mac client package,
+  not another cloud-runtime image.
+- DMG SHA-256:
+  `6907e322bdb588d1b1d742541f57f4eb257e59b6026fe2af713a5a1d4d6a4a00`.
+- Desktop typecheck passed, as did 35 targeted entry/device-header tests and
+  10 Dev distribution/coexistence tests. The real shortcut component passed
+  light/dark isolated UI checks for rest, hover, keyboard focus, blur and 24px
+  dimensions; this fixture did not connect to cloud RPC.
+- The wider changed-UI run passed 86/88 checks. Two existing MCP-card scenarios
+  failed on an SVG `width`/`height` value of `sm`; those unrelated cards were not
+  changed. The shortcut was uncovered by that runner, hence the dedicated checks.
+- The packaged renderer contains the hover/focus change. Package version,
+  source identity, arm64 executable, Dev descriptor and helper bundle identities
+  were checked. The existing `com.xd.cindycn.clouddev` identity and Dev profile are
+  retained, with no production URL/document handlers registered by this package.
+- Ad-hoc signing and strict deep signature verification passed. The DMG checksum,
+  read-only mount, mounted application's signature and application payload hash
+  also passed. The package is not Apple-notarized.
+
+The new package was not installed or launched during this refresh; current client
+installations and data were left untouched. These package/UI checks do not close
+the remaining cloud DeviceLink checks above. Client renderer changes and this
+record do not match the cloud-image delivery workflow's push paths.
