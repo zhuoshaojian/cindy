@@ -316,6 +316,7 @@ export function createCloudSettingsService(deps: {
     s.controller.abort();
   };
   return {
+    instanceAccess: onboarding.access,
     instanceList: onboarding.list,
     instanceClaim: onboarding.claim,
     instanceInitialize: onboarding.initialize,

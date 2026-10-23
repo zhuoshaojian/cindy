@@ -9,7 +9,7 @@ export default {
     'Real CIS/authentication, the full Settings navigation and instance mutations; navigation/search have unit coverage',
   stubs: {
     'src/renderer/contexts/AuthContext':
-      'export const useAuth=()=>({mode:"cloud",isAuthenticated:true,dataOwnerId:"fixture-owner",dataOwnerGeneration:1});',
+      'export const useAuth=()=>({mode:"cloud",isAuthenticated:true,isInitializing:false,canEnterApp:true,dataOwnerId:"fixture-owner",dataOwnerGeneration:1});',
     'src/renderer/features/device-link/useDeviceLinkDeviceList':
       'export const useDeviceLinkDeviceList=()=>[];',
   },

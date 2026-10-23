@@ -9,21 +9,25 @@ import { setDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
 const auth = vi.hoisted(() => ({
   mode: 'cloud',
   isAuthenticated: true,
+  isInitializing: false,
+  canEnterApp: true,
   dataOwnerId: 'owner-a',
   dataOwnerGeneration: 1,
 }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => auth }));
-const instanceList = vi.fn();
+const instanceAccess = vi.fn();
 beforeEach(() => {
   Object.assign(auth, {
     mode: 'cloud',
     isAuthenticated: true,
+    isInitializing: false,
+    canEnterApp: true,
     dataOwnerId: 'owner-a',
     dataOwnerGeneration: 1,
   });
   setDataOwnerGeneration(auth.dataOwnerId, auth.dataOwnerGeneration);
-  instanceList.mockReset().mockResolvedValue([]);
-  vi.stubGlobal('electronAPI', { cloudSettings: { instanceList } });
+  instanceAccess.mockReset().mockResolvedValue({ schemaVersion: 1, allowed: true });
+  vi.stubGlobal('electronAPI', { cloudSettings: { instanceAccess } });
 });
 
 vi.mock('react-i18next', () => ({
@@ -98,26 +102,26 @@ it.each(['local', 'signed-out'])('does not query CIS in %s mode', async (mode) =
   auth.mode = mode;
   render(content());
   expect(access()).toBe('hidden');
-  expect(instanceList).not.toHaveBeenCalled();
+  expect(instanceAccess).not.toHaveBeenCalled();
 });
 
 it.each(['CLOUD_SETTINGS_SCOPE_CHANGED', 'CLOUD_SETTINGS_UNAVAILABLE'])(
   'keeps all consumers hidden on %s and recovers on focus',
   async (code) => {
-    instanceList.mockRejectedValueOnce(new Error(code));
+    instanceAccess.mockRejectedValueOnce(new Error(code));
     render(content());
     expect(access()).toBe('checking');
     await act(async () => {});
     expect(access()).toBe('hidden');
     await act(async () => window.dispatchEvent(new Event('focus')));
     expect(access()).toBe('allowed'); // An admitted account may have no instances yet.
-    expect(instanceList).toHaveBeenCalledTimes(2); // Shared across both consumers.
+    expect(instanceAccess).toHaveBeenCalledTimes(2); // Shared across both consumers.
   },
 );
 
 it('discards an old account response and hides immediately on logout or generation change', async () => {
-  let complete!: (value: []) => void;
-  instanceList.mockImplementationOnce(
+  let complete!: (value: { schemaVersion: 1; allowed: boolean }) => void;
+  instanceAccess.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
         complete = resolve;
@@ -127,18 +131,18 @@ it('discards an old account response and hides immediately on logout or generati
   auth.dataOwnerId = 'owner-b';
   auth.dataOwnerGeneration++;
   setDataOwnerGeneration(auth.dataOwnerId, auth.dataOwnerGeneration);
-  instanceList.mockRejectedValueOnce(new Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
+  instanceAccess.mockRejectedValueOnce(new Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
   view.rerender(content());
   expect(access()).toBe('checking');
   await act(async () => {});
   expect(access()).toBe('hidden');
-  await act(async () => complete([]));
+  await act(async () => complete({ schemaVersion: 1, allowed: true }));
   expect(access()).toBe('hidden');
   await act(async () => window.dispatchEvent(new Event('online')));
   expect(access()).toBe('allowed');
   auth.dataOwnerGeneration++;
   setDataOwnerGeneration(auth.dataOwnerId, auth.dataOwnerGeneration);
-  instanceList.mockImplementationOnce(() => new Promise(() => {}));
+  instanceAccess.mockImplementationOnce(() => new Promise(() => {}));
   view.rerender(content());
   expect(access()).toBe('checking');
   auth.mode = 'signed-out';
@@ -152,7 +156,45 @@ it('rechecks visible permissions periodically and removes revoked access', async
   render(content());
   await act(async () => {});
   expect(access()).toBe('allowed');
-  instanceList.mockRejectedValueOnce(new Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
+  instanceAccess.mockRejectedValueOnce(new Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
   expect(access()).toBe('hidden');
+});
+
+// Query only after Main has committed login and Renderer finished startup.
+it.each(['isInitializing', 'canEnterApp'])(
+  'waits for %s before fetching admission',
+  async (field) => {
+    if (field === 'isInitializing') auth.isInitializing = true;
+    else auth.canEnterApp = false;
+    const view = render(content());
+    expect(access()).toBe('hidden');
+    expect(instanceAccess).not.toHaveBeenCalled();
+    auth.isInitializing = false;
+    auth.canEnterApp = true;
+    view.rerender(content());
+    await act(async () => {});
+    expect(access()).toBe('allowed');
+    expect(instanceAccess).toHaveBeenCalledTimes(1);
+  },
+);
+it('keeps a signed-in denied account hidden, without treating the response as permission', async () => {
+  instanceAccess.mockResolvedValue({ schemaVersion: 1, allowed: false });
+  render(content());
+  await act(async () => {});
+  expect(access()).toBe('hidden');
+});
+it('coalesces focus and visibility events without missing a later revocation', async () => {
+  vi.useFakeTimers();
+  render(content());
+  await act(async () => {});
+  for (const event of ['focus', 'focus', 'online']) {
+    await act(async () => window.dispatchEvent(new Event(event)));
+  }
+  expect(instanceAccess).toHaveBeenCalledTimes(1);
+  instanceAccess.mockResolvedValue({ schemaVersion: 1, allowed: false });
+  await act(async () => vi.advanceTimersByTimeAsync(5_000));
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  expect(access()).toBe('hidden');
+  expect(instanceAccess).toHaveBeenCalledTimes(2);
 });

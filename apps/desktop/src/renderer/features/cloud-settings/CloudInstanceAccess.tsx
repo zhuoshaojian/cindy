@@ -9,12 +9,13 @@ type Access = 'checking' | 'allowed' | 'hidden';
 const CloudInstanceAccessContext = createContext<Access>('hidden');
 
 /** Presentation only. Main holds credentials; CIS still authorizes every action.
- * A successful read (including an empty list) proves management/placement access.
+ * Only the dedicated capability response confirms management/placement access.
  * Never infer permission from login mode, organization names or cached devices. */
 export function CloudInstanceAccessProvider({ children }: { children: ReactNode }) {
-  const { mode, isAuthenticated, dataOwnerId, dataOwnerGeneration } = useAuth();
+  const { mode, isAuthenticated, isInitializing, canEnterApp, dataOwnerId, dataOwnerGeneration } =
+    useAuth();
   const scope =
-    mode === 'cloud' && isAuthenticated && dataOwnerId
+    mode === 'cloud' && isAuthenticated && !isInitializing && canEnterApp && dataOwnerId
       ? JSON.stringify([dataOwnerId, dataOwnerGeneration])
       : null;
   const [result, setResult] = useState<{ scope: string; access: Access } | null>(null);
@@ -27,14 +28,19 @@ export function CloudInstanceAccessProvider({ children }: { children: ReactNode 
     const owner = getDataOwnerGeneration();
     let live = true;
     let inFlight = false;
+    let lastDecisionAt = -Infinity;
     const current = () => live && isDataOwnerGenerationCurrent(owner);
     const refresh = async () => {
-      if (inFlight || !current()) return;
+      if (inFlight || !current() || Date.now() - lastDecisionAt < 5_000) return;
       inFlight = true;
       try {
-        // Read-only existing endpoint: no allocation, wake, login or settings session.
-        await window.electronAPI.cloudSettings.instanceList({});
-        if (current()) setResult({ scope, access: 'allowed' });
+        // Main verifies the committed identity; CIS derives admission from its
+        // current policy, without listing instances, waking or allocating one.
+        const decision = await window.electronAPI.cloudSettings.instanceAccess({});
+        if (current()) {
+          lastDecisionAt = Date.now();
+          setResult({ scope, access: decision.allowed ? 'allowed' : 'hidden' });
+        }
       } catch {
         // A rejected or unavailable check is not permission to display the feature.
         if (current()) setResult({ scope, access: 'hidden' });

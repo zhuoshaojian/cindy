@@ -1166,6 +1166,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopPreferences: createDesktopPreferencesApi(ipcRenderer),
   modelPresentationPreferences: createModelPresentationPreferencesApi(ipcRenderer),
   cloudSettings: {
+    instanceAccess: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceAccess, input),
     instanceList: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceList, input),
     instanceClaim: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceClaim, input),
     instanceInitialize: (input) =>

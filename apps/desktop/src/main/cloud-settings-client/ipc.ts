@@ -37,6 +37,7 @@ export function cloudSettingsClientHandlers(
     };
   }
   return {
+    instanceAccess: handler(z.object({}).strict(), (c) => service.instanceAccess(c)),
     instanceList: handler(z.object({}).strict(), (c) => service.instanceList(c)),
     instanceClaim: handler(z.object({}).strict(), (c) => service.instanceClaim(c)),
     instanceInitialize: handler(cloudInstanceTargetSchema, (c, v) =>

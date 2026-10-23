@@ -7,6 +7,16 @@ import {
 import { managementCommandSchema, type ManagementCommand } from './settingsManagement';
 import { cloudSettingsDomainSchema, type CloudSettingsDomain } from './cloudSettings';
 
+// Account admission is a read-only, versioned CIS result, never an authorization
+// grant for subsequent requests. No instance IDs, credentials or caller identity.
+export const cloudInstanceAccessSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    allowed: z.boolean(),
+  })
+  .strict();
+export type CloudInstanceAccess = z.infer<typeof cloudInstanceAccessSchema>;
+
 // Local IPC and the proposed CIS native caller envelope. Business commands use
 // settingsWeb unchanged. CIS must implement this caller envelope before release.
 export const cloudClientCapabilitiesSchema = z.object({
@@ -61,6 +71,7 @@ export const cloudClientManageSchema = cloudClientHandleSchema
   .extend({ command: managementCommandSchema })
   .strict();
 export interface CloudSettingsRendererApi {
+  instanceAccess(input: Record<string, never>): Promise<CloudInstanceAccess>;
   instanceList(
     input: Record<string, never>,
   ): Promise<import('./cloudInstanceControl').CloudInstanceView[]>;
@@ -92,6 +103,7 @@ export interface CloudSettingsRendererApi {
   close(input: { handle: string }): Promise<void>;
 }
 export const CLOUD_CLIENT_CHANNELS = {
+  instanceAccess: 'cloud-settings-client:instance-access',
   instanceList: 'cloud-settings-client:instance-list',
   instanceClaim: 'cloud-settings-client:instance-claim',
   instanceInitialize: 'cloud-settings-client:instance-initialize',

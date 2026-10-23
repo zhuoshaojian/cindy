@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cloudInstanceAccessSchema } from '../../shared/cloudSettingsClient';
 import type { CloudClientCaller } from './service';
 import { CloudClientError, type CloudClientHttp, type CloudClientIdentity } from './transport';
 import { parseCloud, parseOwnedInstances, projectCloudInstance } from './ownedInstances';
@@ -62,6 +63,11 @@ export function createCloudInstanceOnboarding(deps: {
     }
   }
   return {
+    access(caller: CloudClientCaller) {
+      return perform(caller, false, async (call) =>
+        parseCloud(cloudInstanceAccessSchema, await call('/client/access')),
+      );
+    },
     list(caller: CloudClientCaller) {
       return perform(caller, false, async (call) =>
         parseOwnedInstances(await call(instancesPath)).map(projectCloudInstance),

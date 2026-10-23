@@ -24,11 +24,12 @@ mountPage({
   route: '/settings?tab=cloud-instances',
   host: (ctx) => ({
     cloudSettings: {
-      instanceList: async () => {
-        if (ctx.data.access === 'hidden') throw new Error('CLOUD_SETTINGS_SCOPE_CHANGED');
+      instanceAccess: async () => {
+        if (ctx.data.access === 'hidden') return { schemaVersion: 1, allowed: false };
         if (ctx.data.access === 'checking') return new Promise(() => {});
-        return [];
+        return { schemaVersion: 1, allowed: true };
       },
+      instanceList: async () => [],
       instanceClaim: forbid('cloudSettings.instanceClaim'),
       instancePower: forbid('cloudSettings.instancePower'),
       instanceInitialize: forbid('cloudSettings.instanceInitialize'),

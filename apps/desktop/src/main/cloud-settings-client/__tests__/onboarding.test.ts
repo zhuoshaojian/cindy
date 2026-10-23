@@ -221,3 +221,40 @@ describe('native cloud instance onboarding', () => {
     expect(f.request).not.toHaveBeenCalled();
   });
 });
+
+// Lightweight admission is not an instance-list shortcut; exercise Main's wire
+// validation and identity boundary independently of Renderer visibility.
+it('reads the explicit permission endpoint without creating a session or listing instances', async () => {
+  const f = fixture();
+  f.request.mockResolvedValueOnce({ schemaVersion: 1, allowed: false });
+  expect(await f.api.access(f.caller)).toEqual({ schemaVersion: 1, allowed: false });
+  expect(f.request.mock.calls.map((v) => [v[1], v[2]])).toEqual([['/client/access', 'GET']]);
+  expect(f.openExternal).not.toHaveBeenCalled();
+});
+it.each([
+  {},
+  { allowed: true },
+  { schemaVersion: 2, allowed: true },
+  { schemaVersion: 1, allowed: 'yes' },
+])('rejects malformed permission replies %j', async (reply) => {
+  const f = fixture();
+  f.request.mockResolvedValueOnce(reply);
+  await expect(f.api.access(f.caller)).rejects.toThrow('INVALID_RESPONSE');
+});
+it('does not publish an admission result after the account changes', async () => {
+  const f = fixture();
+  f.request.mockImplementationOnce(async () => {
+    f.revoke();
+    return { schemaVersion: 1, allowed: true };
+  });
+  await expect(f.api.access(f.caller)).rejects.toThrow('SCOPE_CHANGED');
+});
+
+it('rejects caller-supplied permission and membership fields at the IPC boundary', async () => {
+  const f = fixture();
+  const handlers = cloudSettingsClientHandlers(createCloudSettingsService(f.deps));
+  for (const payload of [{ allowed: true }, { membershipId: 'other' }, { orgSlug: 'other' }]) {
+    await expect(handlers.instanceAccess(f.caller, payload)).rejects.toThrow();
+  }
+  expect(f.request).not.toHaveBeenCalled();
+});
