@@ -1,11 +1,45 @@
 import { z } from 'zod';
 import { cloudInstanceAccessSchema } from '../../shared/cloudSettingsClient';
 import type { CloudClientCaller } from './service';
-import { CloudClientError, type CloudClientHttp, type CloudClientIdentity } from './transport';
+import {
+  CloudClientError,
+  isCloudLoginAttemptId,
+  type CloudClientHttp,
+  type CloudClientIdentity,
+} from './transport';
 import { parseCloud, parseOwnedInstances, projectCloudInstance } from './ownedInstances';
 
 const instancesPath = '/instance-login/api/manage/instances';
 const attemptSchema = z.object({ continueUrl: z.string().max(2048) });
+function continuation(baseUrl: string, result: unknown) {
+  const { continueUrl } = parseCloud(attemptSchema, result),
+    base = new URL(baseUrl);
+  if (
+    base.protocol !== 'https:' ||
+    base.username ||
+    base.password ||
+    base.search ||
+    base.hash ||
+    !continueUrl.startsWith('/instance-login/#')
+  )
+    throw new CloudClientError('CLOUD_SETTINGS_INVALID_RESPONSE');
+  const url = new URL(continueUrl, base.origin),
+    fragment = new URLSearchParams(url.hash.slice(1));
+  const id = fragment.get('attemptId'),
+    secret = fragment.get('attemptSecret');
+  if (
+    url.origin !== base.origin ||
+    url.pathname !== '/instance-login/' ||
+    url.search ||
+    Array.from(fragment.keys()).length !== 2 ||
+    !isCloudLoginAttemptId(id) ||
+    !secret ||
+    !/^[A-Za-z0-9_-]{32,256}$/u.test(secret)
+  )
+    throw new CloudClientError('CLOUD_SETTINGS_INVALID_RESPONSE');
+  url.hash = new URLSearchParams({ attemptId: id!, attemptSecret: secret }).toString();
+  return { url: url.href, id: id!, secret };
+}
 
 /** The existing CIS login page owns SSO and any additional verification. Its
  * short-lived capability goes from Main to the pinned CIS browser page only,
@@ -19,7 +53,18 @@ export function createCloudInstanceOnboarding(deps: {
   const now = deps.now ?? Date.now;
   const active = new Map<AbortController, number>();
   const mutations = new Set<string>();
-  const attempts = new Map<string, { callerId: number; url: string; expires: number }>();
+  const attempts = new Map<
+    string,
+    { callerId: number; url: string; expires: number; cancel: () => void }
+  >();
+  function cancelContinuation(baseUrl: string, result: unknown) {
+    try {
+      const value = continuation(baseUrl, result);
+      void deps.http.cancelLogin?.(baseUrl, value.id, value.secret).catch(() => undefined);
+    } catch {
+      /* Invalid/unconfirmed capabilities are never forwarded. */
+    }
+  }
   async function perform<T>(
     caller: CloudClientCaller,
     mutation: boolean,
@@ -44,15 +89,22 @@ export function createCloudInstanceOnboarding(deps: {
     };
     const call = async (path: string, method: 'GET' | 'POST' = 'GET', body?: unknown) => {
       check();
+      const creatingLogin = path === '/instance-login/api/attempts' && method === 'POST';
       const result = await deps.http.request(
-        deps.identity()!,
+        creatingLogin ? identity : deps.identity()!,
         path,
         method,
         body,
-        controller.signal,
-        check,
+        creatingLogin ? AbortSignal.timeout(8_000) : controller.signal,
+        creatingLogin ? () => undefined : check,
       );
-      check();
+      try {
+        check();
+      } catch (error) {
+        if (path === '/instance-login/api/attempts' && method === 'POST')
+          cancelContinuation(identity.baseUrl, result);
+        throw error;
+      }
       return result;
     };
     try {
@@ -104,10 +156,39 @@ export function createCloudInstanceOnboarding(deps: {
         if (!target) throw new CloudClientError('CLOUD_SETTINGS_SCOPE_CHANGED');
         if (!target.status.loginRequired) return;
         const org = target.status.ownership?.orgSlug;
-        if (!org) throw new CloudClientError('CLOUD_SETTINGS_UNSUPPORTED');
+        if (!target.status.ownership) throw new CloudClientError('CLOUD_SETTINGS_INVALID_RESPONSE');
         const key = JSON.stringify([identity.key, caller.id, target.instanceId, target.deviceId]);
-        for (const [id, value] of attempts) if (value.expires <= now()) attempts.delete(id);
+        for (const [id, value] of attempts)
+          if (value.expires <= now()) {
+            value.cancel();
+            attempts.delete(id);
+          }
         let cached = attempts.get(key);
+        if (cached) {
+          const prior = continuation(identity.baseUrl, {
+            continueUrl: cached.url.replace(new URL(cached.url).origin, ''),
+          });
+          try {
+            const state = parseCloud(
+              z.object({ status: z.string() }),
+              await call(`/instance-login/api/attempts/${prior.id}/status`, 'POST', {
+                attemptSecret: prior.secret,
+              }),
+            );
+            if (state.status === 'failed') {
+              attempts.delete(key);
+              cached = undefined;
+            }
+          } catch (error) {
+            check();
+            // The browser may have cancelled/expired the old capability. Only
+            // a definite missing attempt permits creating another one.
+            if (error instanceof CloudClientError && error.code === 'CLOUD_SETTINGS_NOT_READY') {
+              attempts.delete(key);
+              cached = undefined;
+            } else throw error;
+          }
+        }
         if (!cached) {
           if (attempts.size >= 32) throw new CloudClientError('CLOUD_SETTINGS_BUSY');
           const createdAt = now();
@@ -115,38 +196,16 @@ export function createCloudInstanceOnboarding(deps: {
             attemptSchema,
             await call('/instance-login/api/attempts', 'POST', {
               instanceId: target.instanceId,
-              org,
+              ...(org ? { org } : {}),
             }),
           );
-          // Accept only the existing relative CIS continuation, no redirect or
-          // caller-provided URL. Reconstruct a canonical fragment after validation.
-          const base = new URL(identity.baseUrl);
-          if (
-            base.protocol !== 'https:' ||
-            base.username ||
-            base.password ||
-            base.search ||
-            base.hash ||
-            !result.continueUrl.startsWith('/instance-login/#')
-          )
-            throw new CloudClientError('CLOUD_SETTINGS_INVALID_RESPONSE');
-          const url = new URL(result.continueUrl, base.origin);
-          const fragment = new URLSearchParams(url.hash.slice(1));
-          const id = fragment.get('attemptId'),
-            secret = fragment.get('attemptSecret');
-          if (
-            url.origin !== base.origin ||
-            url.pathname !== '/instance-login/' ||
-            url.search ||
-            Array.from(fragment.keys()).length !== 2 ||
-            !z.string().uuid().safeParse(id).success ||
-            !secret ||
-            !/^[A-Za-z0-9_-]{32,256}$/u.test(secret)
-          )
-            throw new CloudClientError('CLOUD_SETTINGS_INVALID_RESPONSE');
-          const safe = new URL('/instance-login/', base.origin);
-          safe.hash = new URLSearchParams({ attemptId: id!, attemptSecret: secret }).toString();
-          cached = { callerId: caller.id, url: safe.href, expires: createdAt + 10 * 60_000 };
+          const value = continuation(identity.baseUrl, result);
+          cached = {
+            callerId: caller.id,
+            url: value.url,
+            expires: createdAt + 10 * 60_000,
+            cancel: () => cancelContinuation(identity.baseUrl, result),
+          };
           attempts.set(key, cached);
         }
         check();
@@ -163,7 +222,10 @@ export function createCloudInstanceOnboarding(deps: {
       for (const [controller, id] of active)
         if (callerId === undefined || id === callerId) controller.abort();
       for (const [key, attempt] of attempts)
-        if (callerId === undefined || attempt.callerId === callerId) attempts.delete(key);
+        if (callerId === undefined || attempt.callerId === callerId) {
+          attempt.cancel();
+          attempts.delete(key);
+        }
     },
   };
 }

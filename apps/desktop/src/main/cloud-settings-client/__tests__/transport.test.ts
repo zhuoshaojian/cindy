@@ -187,3 +187,46 @@ it('maps owner upgrade conflicts without claiming the account changed or leaking
   ).rejects.toThrow(/^CLOUD_SETTINGS_CONFLICT$/);
   expect(fetcher).toHaveBeenCalledOnce();
 });
+
+it('cancels only an exact CIS capability without sending either account bearer', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ status: 'cancelled' }));
+  const http = createCloudClientHttp(fetcher);
+  await http.cancelLogin!('https://cis.example.test', 'aaaaaaaa_bbbbbbbb-cccccc', 'x'.repeat(43));
+  expect(fetcher).toHaveBeenCalledExactlyOnceWith(
+    'https://cis.example.test/instance-login/api/attempts/aaaaaaaa_bbbbbbbb-cccccc/cancel',
+    expect.objectContaining({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attemptSecret: 'x'.repeat(43) }),
+      credentials: 'omit',
+      redirect: 'error',
+      referrerPolicy: 'no-referrer',
+    }),
+  );
+});
+it.each(['../foreign', 'aaaaaaaa_bbbbbbbb-cccccc/other', 'not-an-id'])(
+  'rejects an injected cancellation path %s before fetch',
+  async (id) => {
+    const fetcher = vi.fn<typeof fetch>();
+    await expect(
+      createCloudClientHttp(fetcher).cancelLogin!('https://cis.example.test', id, 'x'.repeat(43)),
+    ).rejects.toThrow('INVALID_RESPONSE');
+    expect(fetcher).not.toHaveBeenCalled();
+  },
+);
+it.each([404, 410])(
+  'only definite missing/expired attempts allow native login retry (%s)',
+  async (status) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status }));
+    await expect(
+      createCloudClientHttp(fetcher).request(
+        owner,
+        '/instance-login/api/attempts/aaaaaaaa_bbbbbbbb-cccccc/status',
+        'POST',
+        { attemptSecret: 'x'.repeat(43) },
+        signal(),
+        () => {},
+      ),
+    ).rejects.toThrow('NOT_READY');
+  },
+);

@@ -1,3 +1,11 @@
+export function isCloudLoginAttemptId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^(?:[A-Za-z0-9_-]{24}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/u.test(
+      value,
+    )
+  );
+}
 import type { CloudClientErrorCode } from '../../shared/cloudSettingsClient';
 
 export class CloudClientError extends Error {
@@ -12,6 +20,7 @@ export interface CloudClientIdentity {
   accessToken: string;
 }
 export interface CloudClientHttp {
+  cancelLogin?(baseUrl: string, attemptId: string, attemptSecret: string): Promise<void>;
   request(
     identity: CloudClientIdentity,
     path: string,
@@ -24,6 +33,36 @@ export interface CloudClientHttp {
 
 export function createCloudClientHttp(fetcher: typeof fetch): CloudClientHttp {
   return {
+    async cancelLogin(baseUrl, attemptId, attemptSecret) {
+      const base = new URL(baseUrl);
+      if (
+        base.protocol !== 'https:' ||
+        base.username ||
+        base.password ||
+        base.search ||
+        base.hash ||
+        !isCloudLoginAttemptId(attemptId) ||
+        !/^[A-Za-z0-9_-]{32,256}$/u.test(attemptSecret)
+      )
+        throw new CloudClientError('CLOUD_SETTINGS_INVALID_RESPONSE');
+      // Only the old attempt capability is needed after a local account switch.
+      // No old/new account token or renderer-supplied URL is forwarded.
+      const response = await fetcher(
+        `${base.origin}${base.pathname.replace(/\/$/u, '')}/instance-login/api/attempts/${attemptId}/cancel`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attemptSecret }),
+          credentials: 'omit',
+          redirect: 'error',
+          cache: 'no-store',
+          referrerPolicy: 'no-referrer',
+          signal: AbortSignal.timeout(8000),
+        },
+      );
+      await response.body?.cancel();
+      if (!response.ok) throw new CloudClientError('CLOUD_SETTINGS_UNAVAILABLE');
+    },
     async request(identity, path, method, body, signal, assertCurrent) {
       assertCurrent();
       let base: URL;
@@ -63,16 +102,19 @@ export function createCloudClientHttp(fetcher: typeof fetch): CloudClientHttp {
         if (!response.ok) {
           await response.body?.cancel();
           throw new CloudClientError(
-            response.status === 404 || response.status === 501
-              ? 'CLOUD_SETTINGS_UNSUPPORTED'
-              : response.status === 409 &&
-                  (method === 'PATCH' || /^\/instances\/[^/]+\/maintenance\/upgrade$/u.test(path))
-                ? 'CLOUD_SETTINGS_CONFLICT'
-                : response.status === 401 || response.status === 403 || response.status === 409
-                  ? 'CLOUD_SETTINGS_SCOPE_CHANGED'
-                  : response.status === 429
-                    ? 'CLOUD_SETTINGS_BUSY'
-                    : 'CLOUD_SETTINGS_UNAVAILABLE',
+            (response.status === 404 || response.status === 410) &&
+              /^\/instance-login\/api\/attempts\/[^/]+\/status$/u.test(path)
+              ? 'CLOUD_SETTINGS_NOT_READY'
+              : response.status === 404 || response.status === 501
+                ? 'CLOUD_SETTINGS_UNSUPPORTED'
+                : response.status === 409 &&
+                    (method === 'PATCH' || /^\/instances\/[^/]+\/maintenance\/upgrade$/u.test(path))
+                  ? 'CLOUD_SETTINGS_CONFLICT'
+                  : response.status === 401 || response.status === 403 || response.status === 409
+                    ? 'CLOUD_SETTINGS_SCOPE_CHANGED'
+                    : response.status === 429
+                      ? 'CLOUD_SETTINGS_BUSY'
+                      : 'CLOUD_SETTINGS_UNAVAILABLE',
           );
         }
         if (response.status === 204) return undefined;

@@ -5,7 +5,8 @@ import { createCloudSettingsService } from '../service';
 import { CloudClientError, type CloudClientHttp, type CloudClientIdentity } from '../transport';
 
 const listPath = '/instance-login/api/manage/instances';
-const attemptId = '11111111-1111-4111-8111-111111111111';
+// Actual CIS createLoginProofs uses 18 random bytes encoded as 24 base64url characters.
+const attemptId = 'aaaaaaaa_bbbbbbbb-cccccc';
 const secret = 'invalid-test-only-'.repeat(3);
 function fixture() {
   let identity: CloudClientIdentity | null = {
@@ -30,7 +31,11 @@ function fixture() {
       latestReleaseTag: '0.1.108',
       upgrade: { state: 'idle' },
       loginRequired: true,
-      ownership: { orgSlug: 'example', membershipId: 'owner-a', passportId: 'private' },
+      ownership: {
+        orgSlug: 'example' as string | null,
+        membershipId: 'owner-a',
+        passportId: 'private',
+      },
     },
   };
   let list: (typeof target)[] = [];
@@ -45,16 +50,24 @@ function fixture() {
       }
       if (path === '/instance-login/api/attempts')
         return { continueUrl: `/instance-login/#attemptId=${attemptId}&attemptSecret=${secret}` };
+      if (path === `/instance-login/api/attempts/${attemptId}/status`) return { status: 'pending' };
       throw Error('unexpected route');
     },
   );
   const caller = { id: 1, assertCurrent: vi.fn() },
     openExternal = vi.fn<(url: string) => Promise<void>>().mockResolvedValue();
-  const deps = { identity: () => identity, http: { request }, openExternal, now: () => now };
+  const cancelLogin = vi.fn<NonNullable<CloudClientHttp['cancelLogin']>>().mockResolvedValue();
+  const deps = {
+    identity: () => identity,
+    http: { request, cancelLogin },
+    openExternal,
+    now: () => now,
+  };
   return {
     api: createCloudInstanceOnboarding(deps),
     caller,
     request,
+    cancelLogin,
     deps,
     openExternal,
     target,
@@ -139,9 +152,11 @@ describe('native cloud instance onboarding', () => {
     f.setList([f.target]);
     expect(await f.api.initialize(f.caller, f.target.deviceId)).toBeUndefined();
     await f.api.initialize(f.caller, f.target.deviceId);
-    expect(f.request.mock.calls.filter((v) => v[2] === 'POST').map((v) => [v[1], v[3]])).toEqual([
-      ['/instance-login/api/attempts', { instanceId: 'instance-a', org: 'example' }],
-    ]);
+    expect(
+      f.request.mock.calls
+        .filter((v) => v[1] === '/instance-login/api/attempts')
+        .map((v) => [v[1], v[3]]),
+    ).toEqual([['/instance-login/api/attempts', { instanceId: 'instance-a', org: 'example' }]]);
     expect(f.openExternal).toHaveBeenCalledTimes(2);
     expect(new URL(f.openExternal.mock.calls[0][0]).origin).toBe('https://cis.example.test');
   });
@@ -151,7 +166,9 @@ describe('native cloud instance onboarding', () => {
     f.openExternal.mockRejectedValueOnce(Error('private url'));
     await expect(f.api.initialize(f.caller, f.target.deviceId)).rejects.toThrow('UNAVAILABLE');
     await f.api.initialize(f.caller, f.target.deviceId);
-    expect(f.request.mock.calls.filter((v) => v[2] === 'POST')).toHaveLength(1);
+    expect(
+      f.request.mock.calls.filter((v) => v[1] === '/instance-login/api/attempts'),
+    ).toHaveLength(1);
   });
   it('does not initialize an unknown device or an already initialized one', async () => {
     const f = fixture();
@@ -185,6 +202,7 @@ describe('native cloud instance onboarding', () => {
     });
     await expect(f.api.initialize(f.caller, f.target.deviceId)).rejects.toThrow('SCOPE_CHANGED');
     expect(f.openExternal).not.toHaveBeenCalled();
+    expect(f.cancelLogin).toHaveBeenCalledWith('https://cis.example.test', attemptId, secret);
   });
   it('expires cached attempts and does not reuse them after invalidation', async () => {
     const f = fixture();
@@ -257,4 +275,51 @@ it('rejects caller-supplied permission and membership fields at the IPC boundary
     await expect(handlers.instanceAccess(f.caller, payload)).rejects.toThrow();
   }
   expect(f.request).not.toHaveBeenCalled();
+});
+
+it('initializes an admitted personal instance without an enterprise selector or local credentials', async () => {
+  const f = fixture();
+  f.target.status.ownership.orgSlug = null;
+  f.setList([f.target]);
+  await f.api.initialize(f.caller, f.target.deviceId);
+  const create = f.request.mock.calls.find((c) => c[1] === '/instance-login/api/attempts')!;
+  expect(create[3]).toEqual({ instanceId: 'instance-a' });
+  expect(f.openExternal).toHaveBeenCalledOnce();
+});
+it('opens a fresh login only after the cached capability is confirmed cancelled', async () => {
+  const f = fixture();
+  f.setList([f.target]);
+  await f.api.initialize(f.caller, f.target.deviceId);
+  f.request
+    .mockResolvedValueOnce({ instances: [f.target] })
+    .mockResolvedValueOnce({ status: 'failed' });
+  await f.api.initialize(f.caller, f.target.deviceId);
+  expect(f.request.mock.calls.filter((c) => c[1] === '/instance-login/api/attempts')).toHaveLength(
+    2,
+  );
+});
+it('does not replay login creation on a transient cached-status error', async () => {
+  const f = fixture();
+  f.setList([f.target]);
+  await f.api.initialize(f.caller, f.target.deviceId);
+  f.request
+    .mockResolvedValueOnce({ instances: [f.target] })
+    .mockRejectedValueOnce(new CloudClientError('CLOUD_SETTINGS_UNAVAILABLE'));
+  await expect(f.api.initialize(f.caller, f.target.deviceId)).rejects.toThrow('UNAVAILABLE');
+  expect(f.request.mock.calls.filter((c) => c[1] === '/instance-login/api/attempts')).toHaveLength(
+    1,
+  );
+});
+it('invalidating a caller cancels its capability without forwarding any account token', async () => {
+  const f = fixture();
+  f.setList([f.target]);
+  await f.api.initialize(f.caller, f.target.deviceId);
+  f.api.invalidate(2);
+  expect(f.cancelLogin).not.toHaveBeenCalled();
+  f.api.invalidate(1);
+  expect(f.cancelLogin).toHaveBeenCalledExactlyOnceWith(
+    'https://cis.example.test',
+    attemptId,
+    secret,
+  );
 });

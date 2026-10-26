@@ -232,3 +232,33 @@ Linux 输入与授权浏览器修复另有隔离 X11 回归；它不代表 Devic
 - 本轮未重打/安装 Desktop 包，未触发真实实例升级，不将组件和接口测试称为新版原生包的
   生产端到端验收。先前网页真实升级证据见
   [`cloud.2 验收记录`](../deploy/linux-desktop/ACCEPTANCE-CLOUD2-20261021.md)。
+
+## 个人云身份登录桥接与云端账号保护（2026-10-26）
+
+此前个人账号领取仅停在待初始化，是当次实现的限制；本轮按用户确认补上个人登录。
+客户端不再要求个人实例有 orgSlug，仍只为当前身份已拥有且待登录的设备创建 CIS attempt。
+跳转保持同源、固定路径和短期 capability 校验，并修正实际 24 字符 base64url attemptId
+被当成 UUID 的问题。账号或窗口失效后清理旧 attempt；迟到创建响应仅供取消，不打开页面。
+已取消/过期的流程允许明确重新发起，瞬时网络错误不重放创建。
+
+CIS 手机号、邮箱、第三方登录和补绑全部复用现有 auth 协议；server 选择实例所属账号，
+验签确认 membership、passport 和 device 后，只交付实例 resource refresh token。普通客户端
+登录态不会复制到云端，个人账号没有自动获得云权限。须先交付 CIS，再使用此客户端。
+受 CAPTCHA 保护的验证码发码另需 auth-server 的可选托管发码模式：挑战签发和发码均
+由同一浏览器在 auth 域完成，不把 CAPTCHA token 经 CIS 转发。新 CIS 检查 providers
+的 `captcha.requestCodePage`；旧 auth 不支持时明确返回 `LOGIN_AUTH_UPGRADE_REQUIRED`。
+因此认证服务、CIS、原生客户端的交付状态必须分别记录，不把源码完成写成已部署。
+
+云镜像额外应用 `deploy/linux-desktop/runtime-identity/`：隐藏设置资料卡的“退出登录”、
+“登录更多账号”和侧栏账号切换。主进程沿用现有 `assertInstanceAuthMutationAllowed`，
+这些操作即使直接调用也被拒绝；CIS bootstrap 和正常刷新继续可用。该覆盖对普通客户端
+及本机 Dev 包不生效，也不屏蔽供应商/插件自身的授权或退出。
+
+本地验证：原生云客户端 170 项回归通过；云身份覆盖在当前 checkout 和冻结云源码上均验证
+实际资料卡渲染、主进程拦截及 CIS 自有令牌放行。CIS 独立 Chromium 覆盖五语、明暗主题、
+320/390/1280px 共 30 组布局，模拟验证码的云设备回写、第三方补绑和取消通过。
+这些认证响应是合成 fixture，不是手机号/邮箱、Google/Apple/微信的真实账号验收。
+另以隔离浏览器覆盖认证服务托管发码：实际 challenge/cData 和 request-code 路由、
+来源 IP 与一次性校验运行，外部 Turnstile/Siteverify 和短信/邮件发送采用测试替身。
+没有重新授权或创建先前已删除的个人测试实例，也没有改动云实例运行状态。
+云端入口隐藏须随后续云镜像交付生效；本地源码测试不代表已更新线上镜像。
