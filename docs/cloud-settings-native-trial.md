@@ -1,6 +1,6 @@
 # 原生云实例设置与隔离 Dev 客户端
 
-本分支已合入上游 `v0.1.113`。本文记录截至 2026-10-24 的实现与验收边界。
+本分支已合入上游 `v0.1.113`。本文记录截至 2026-10-26 的实现与验收边界。
 工作分支包含原生设置、隔离 Dev 发行包和 Linux 运行时修复；安装包和云镜像是两个独立产物，
 云镜像使用 `source-freeze.json` 指定的完整客户端提交，不能把分支 HEAD 视为已经部署。
 镜像构建入口、候选交付与本人实例升级记录见本仓
@@ -45,6 +45,28 @@ Main 身份已提交后，才调用 `GET /client/access`；严格校验
 先部署包含新接口的 CIS，再交付客户端。旧 CIS 返回 404、鉴权失败或网络错误时，
 新客户端隐藏云入口，保留其他功能；不回退到实例列表或本地推断。旧客户端的既有接口
 仍受服务端逐请求准入约束。此改动不需要数据库迁移或新增配置。
+
+## 源码客户端的本地联调
+
+使用仓库的 Desktop 启动包装，显式选择区域、独立沙箱和被动模式：
+
+```sh
+pnpm restart:desktop:remote --region=cn --isolated=dev --passive
+pnpm desktop:whoami --all
+```
+
+以 `DESKTOP_DEV_VERDICT=ready` 和 `desktop:whoami` 的 checkout、区域、沙箱结果为准。
+首次在独立沙箱登录，不复制正式版或隔离发行包的凭证和数据。登录后访问的仍是真实云实例。
+
+CN 源码 remote 模式读取 `config/endpoint.json`；联调前须在该清单中配置当前环境的
+`cloudInstanceApiBaseUrl`（HTTPS 服务根地址，例如 `https://cis.example.com`）。
+仓库公共清单未提供此字段时，普通登录仍可成功，但云实例权限查询不能完成，管理入口会隐藏。
+不要将缺少端点误判成账号无权限，也不要用本地推断绕过服务端准入。
+
+remote 启动包装会按区域重设清单路径，不能靠继承 `XDT_ENDPOINT_MANIFEST_FILE` 切到另一份
+清单。联调时只补所需字段，启动后恢复临时改动，不提交私有地址；下次完整重启仍须准备端点。
+隔离 Dev 发行包的端点由自身 `cloud-dev-endpoints.json` 提供，不会自动成为源码启动的配置。
+完整启动与隔离约定见 [Desktop 开发规则](dev-rules/desktop-development.md)。
 
 ## 现有协议的复用
 
@@ -115,6 +137,21 @@ Cindy 管理的 home。Claude/Codex/GitHub/Pi、Skills、浏览器与托管 SSH 
 全局 Gatekeeper。Dev 的本机数据独立，但登录后操作的是账号的真实云实例。
 
 ## 验收边界
+
+2026-10-26 的本地实机联调：客户端源码
+[`a612eff22f`](https://github.com/zhuoshaojian/cindy/commit/a612eff22fe0ee4f8cde7f2568ab654538baae1a)
+以独立 Electron CN 沙箱启动，对接已部署的 CIS
+[`213e71ba88`](https://github.com/zhuoshaojian/cindy-server/commit/213e71ba88bda977ce06fc8ddadff8d111811253)。
+补齐本地 CIS 端点后，真实企业账号通过 Main 得到 `{ schemaVersion: 1, allowed: true }`；
+重启同一沙箱保留登录态。实际 `设置 → 云实例 → 实例设置` 能读取本人实例、
+`0.1.113-cloud.28-cn-amd64` 版本、更新状态和维护时段；切换「通用」后读到云端协同与
+Agent 资源设置，并显示「仅应用于此云实例」。本轮没有保存配置或触发领取、停启、升级。
+
+本轮服务端操作准入修正通过类型检查和 1,699 项测试（395 项既有条件测试跳过），
+[fork 自动交付](https://github.com/zhuoshaojian/cindy-server/actions/runs/40266319701)已完成。
+测试覆盖查询通过后撤权、旧操作接口及登录尝试的拒绝路径；原生设置请求在入队前再次校验。
+真实无权限账号、实机撤权/换账号/重新聚焦和实际写操作未在本轮重测，不将上述已登录读取
+结果当作这些路径的端到端证据。正式客户端未替换，未合入主干。
 
 2026-10-24 的服务端准入与查询时机修正：CIS 类型检查及 1,693 项测试通过（使用独立临时
 Postgres；395 项既有条件测试跳过）；Desktop 类型检查、330 项云设置/IPC/导航/搜索回归
