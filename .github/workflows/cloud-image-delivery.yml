@@ -54,6 +54,7 @@ jobs:
             /packages/maker-core/src/session.ts
             /packages/maker-scheduler/src/
             /apps/desktop/package.json
+            /apps/desktop/src/main/authManager.ts
             /apps/desktop/src/main/bootstrap-electron.ts
             /apps/desktop/src/main/lifecycle.ts
             /apps/desktop/src/main/updateService.ts
@@ -70,6 +71,8 @@ jobs:
             /apps/desktop/src/main/cindy-brain/pipeDispatcher.ts
             /apps/desktop/src/main/host-settings/helper.ts
             /apps/desktop/src/preload/preload.ts
+            /apps/desktop/src/renderer/components/sidebar/UserInfoSection.tsx
+            /apps/desktop/src/main/instance-runtime/host.ts
             /apps/desktop/src/renderer/components/settings/
             /apps/desktop/src/renderer/components/title-bar/WindowControls.tsx
             /apps/desktop/src/renderer/hooks/useUpdateNotice.ts

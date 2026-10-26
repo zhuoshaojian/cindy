@@ -1,6 +1,7 @@
+import { transformCloudIdentitySource, targets as identityTargets } from './runtime-identity/overlay.mjs';
 import { transformCloudUpdateSource, targets as updateTargets } from './runtime-updates/overlay.mjs';
 import { cloudAppVersion } from './build-version.mjs';
-// Applies the four cloud runtime overlays to the frozen client source before packaging.
+// Applies the cloud runtime overlays to the frozen client source before packaging.
 // Order matches the main-process Vite plugin order already qualified for cloud.5/6:
 // guidance -> window controls -> task activity -> maintenance.
 import fs from 'node:fs';
@@ -38,6 +39,7 @@ const transforms = [
   ['guidance', guidanceTargets, transformCloudSource],
   ['window', windowTargets, transformCloudWindowSource],
   ['updates', updateTargets, transformCloudUpdateSource],
+  ['identity', identityTargets, transformCloudIdentitySource],
   ['activity', activityTargets, transformCloudActivitySource],
   ['maintenance', maintenanceTargets, transformMaintenanceSource],
 ];
