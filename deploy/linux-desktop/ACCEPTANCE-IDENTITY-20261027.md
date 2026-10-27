@@ -1,5 +1,9 @@
 # Managed cloud identity — 2026-10-27
 
+Current release: **cloud.30**, delivered and admitted for new claims and existing
+managed upgrades. The cloud.29 history below records both its real login results
+and its fresh-database defect; the final section records the correction and scope.
+
 ## Delivery and scope
 
 The fork's [delivery run 40438524225](https://github.com/zhuoshaojian/cindy/actions/runs/40438524225)
@@ -197,9 +201,10 @@ passed the recipe/delivery verification job at `8b6fa63102`; candidate publicati
 and ACS cache jobs were skipped because the cloud version did not change. This
 run does not claim the new packaged Electron probe executed.
 
-The correction has not yet produced a new image: cloud.29's immutable tag remains
-unchanged. The next image must pass its packaged Electron probe and a fresh-cloud
-startup before that remaining acceptance item can be marked complete.
+The correction is delivered in cloud.30 as recorded below. Cloud.29's immutable
+tag remains unchanged. Fresh local-profile initialization is now verified; a new
+authenticated cloud claim and its complete heartbeat/DeviceLink startup were not
+repeated after revoking the personal test account's permission.
 
 The temporary personal-account grant and invitation were removed from both CIS
 roles within the original approved window. Both roles are Ready with no old
@@ -210,5 +215,62 @@ was not logged out or rebound, and other instance images were not promoted.
 This change controls the **Cindy instance identity**. Model-provider, plugin and
 MCP third-party authorizations are separate and were not re-authorized in this
 run. DeviceLink readiness is not a new cross-device input/clipboard test; previous
-acceptance limitations remain unchanged. No main-branch merge or fleet promotion
-is implied by this record.
+acceptance limitations remain unchanged.
+
+## cloud.30 correction and release admission
+
+[Fork run 40490539826](https://github.com/zhuoshaojian/cindy/actions/runs/40490539826)
+passed all three delivery jobs at recipe commit
+`3061be398883e40301e61cd34844256bae943ca5`. This explicit retry took 17 minutes
+50 seconds from dispatch to workflow completion, including queue and runner
+supply; it does not include the failed first attempt or the additional checks below.
+
+- Image: `cloud-runtime-cn:0.1.113-cloud.30-cn-amd64`.
+- Manifest: `sha256:c8986e34f61bdd77f177dc78a85ac4758008ba903a4dc9ed4cd19d0440d9e73b`.
+- Config: `sha256:e746fba1bc182e985e2cea2d43524657d26a6f851320c9eba9b0d071dcf56b0f`.
+- Both immutable tags resolve to the tested image. All five audit record hashes
+  match the candidate manifest; the runtime remains two layers.
+- The exact packaged Electron 42.11.12 / ABI 146 probe passed SQLite, vec0 table
+  creation/insertion/vector lookup, and node-pty. Native desktop smoke also passed.
+- ACS receipts were 2/2 Ready. An emptyDir-only probe verified the new cache was
+  actually matched by cloud.30 main and both supported init command variants,
+  with exit code 0, zero restarts and the expected application version.
+
+The first cloud.30 build stopped before publication: the new probe supplied a JS
+Number rowid, which better-sqlite3 binds as REAL while vec0 requires INTEGER. It
+now binds `1n`; local reproduction confirmed Number rejection and BigInt success,
+and the exact packaged Linux probe passed in the retry. No image tag was overwritten.
+Dependency preparation and Electron native compilation caches were reused.
+
+Additional native x86_64 Linux verification used the same published digest,
+read-only root, isolated network, no service-account token, no PVC and no real
+user credentials:
+
+- Actual preload IPC rejected logout, add account, switch account, direct login
+  and entering local mode under managed identity. Account and login state stayed
+  unchanged.
+- A separate fresh **local profile** initialized through the real packaged app:
+  all 130 migrations (0–129) completed, including migration 34 exactly once;
+  repeated ensureReady succeeded, SQLite quick_check returned `ok`, vec reported
+  `v0.1.9`, and the application exited cleanly with code 0.
+- The first disk-check fixture used a dev-only directory override ignored by a
+  normal packaged app. After correcting the fixture to use `XDG_CONFIG_HOME`,
+  the full test passed. The earlier failure was retained; no image was modified.
+- All disposable verification Pods were removed. These checks do not constitute
+  a new real-account OAuth or cross-device input acceptance run.
+
+After qualification, both deployed CIS roles were validated and changed only for
+image defaults/admission. Their actual version-selection code now returns
+cloud.30 for the enabled new-claim placement; the real manifest builder selects
+the same exact reference for main and every init container without creating an
+instance. All 11 running enterprise instances report cloud.30 available and allow
+manual upgrade. The one stopped legacy enterprise instance still lacks maintenance
+enrollment; it stays stopped with auto-update disabled and has no Upgrade now action.
+
+The personal test grant and invitation remain absent in both roles, and the
+server rejects that identity. Enterprise SSO admission is unchanged. The personal
+test instance stays stopped with its PVC retained. Across all 13 records, instance
+images, templates, identities, resources, auto-update choices, Pod UIDs and restart
+counts stayed unchanged; there were no active maintenance operations. Existing
+automatic updates continue to obey each instance's maintenance policy. This is
+release admission, not a forced fleet upgrade, and no main-branch merge was made.
