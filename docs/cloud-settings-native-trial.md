@@ -281,6 +281,9 @@ Auth realm，不受本机登录方式改变。微信、Apple、SSO 直接打开�
 [`bcbd97d84c`](https://github.com/zhuoshaojian/cindy/commit/bcbd97d84ccf7811bfa7b44b18c59392969133e1)。
 CIS `99167ffbec` 经 [fork 流水线](https://github.com/zhuoshaojian/cindy-server/actions/runs/40469189776)
 部署成功，API 与 orchestrator 均已核对为新版本且 Ready。客户端类型检查及 462 项定向测试、
-CIS 类型检查及 1,747 项测试通过（395 项原有跳过）。完整 Dev 启动仍等待 macOS 钥匙串授权，
-真实远端短信、微信、Apple 回写与云端启动待验；临时测试权限已撤销，测试记录保持停止。
+CIS 类型检查及 1,747 项测试通过（395 项原有跳过）。Dev 已取得钥匙串授权并完成真实远端短信、微信、Apple 三轮回调、归属校验和凭证交接。
+微信/Apple 使用同一停止实例的受控重认证状态，未分别启动云进程。短信后的首次云启动
+因 cloud.29 内 SQLite vec 扩展误打包为 LFS 指针而失败；因此不能把完整云启动记为通过。
+源码导出校验与原生扩展发布检查已补齐，修复镜像和首次启动复验仍待完成。临时测试权限
+及邀请已撤销，测试实例保持停止并保留 PVC。
 详见 [cloud.29 验收记录](../deploy/linux-desktop/ACCEPTANCE-IDENTITY-20261027.md)。

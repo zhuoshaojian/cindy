@@ -131,15 +131,74 @@ visually inspected. These UI scenarios use synthetic admission and IPC. The
 broader changed-page scan also covers unrelated pages through shared locale
 files; its pre-existing MCP-card fixture failure is not a cloud-login pass.
 
-The rebuilt isolated Mac Dev process is waiting for macOS Keychain permission
-(`SecKeychainItemCopyContent`); the startup wrapper timed out before a main window
-was ready. The temporary source endpoint override was restored. No full-client
-entry or real remote-login pass is inferred from the standalone UI checks.
+## Real remote login results and first-start failure
 
-**Real remote SMS, WeChat and Apple completion and cloud startup remain pending.**
-The temporary grant remains revoked and the test record stopped, without a runtime
-or pending credential deposit. The healthy enterprise instance was not logged out
-or rebound for this UI work.
+The isolated Mac Dev client was unlocked and its Keychain access authorized.
+The user then completed all three real cloud-targeted login methods through the
+shared native login UI. The local signed-in account stayed unchanged:
+
+| Method | Real interaction | Remote result |
+| --- | --- | --- |
+| SMS | Native CAPTCHA/code delivery; user entered the received code | CIS attempt ready at 08:23:52 UTC; exact owner/device verified; credential handoff consumed. After waking the test instance, runtime auth was ready. |
+| WeChat | Direct provider page; user scanned and approved | CIS attempt ready at 08:34:50 UTC; exact owner/device verified; credential handoff consumed while the instance remained stopped. |
+| Apple | Direct provider page; user approved the previously linked account | CIS attempt ready at 08:36:52 UTC; exact owner/device verified; credential handoff consumed while the instance remained stopped. |
+
+The previously completed local contact binding was reused; neither remote social
+flow presented another phone-binding step. This does not waive binding for an
+unbound account. Enterprise SSO remains available in the shared UI and covered by
+the existing tests; no new real SSO login is claimed here.
+
+To independently exercise each method, only the stopped, exact-identity test
+record was marked as requiring login between methods. No pending attempt or
+credential deposit existed at either transition. Its PVC and stored profile were
+preserved. These were controlled reauthentication fixtures, not three independent
+fresh-PVC deployments or a demonstration of naturally expired credentials.
+
+**The full first cloud startup failed and is not accepted.** After SMS handoff,
+cloud.29 reported auth/binaries/maker ready, but database and DeviceLink were not
+ready. Migration `0034_add_chat_embedding_vec.sql` failed with
+`no such module: vec0` and rolled back. The shipped Linux `vec0.so` is a 131-byte
+Git LFS pointer, not ELF. Its pointer-content SHA-256 is
+`17375560e213194a7e81d77ef363ed85f18a33e87021ad613f7d0a103d4af582`.
+The frozen source instead pins a 159,816-byte ELF with SHA-256
+`5923730861b86c707cca5602b5f91092f9e52a46706dbc6e269fd4bb9c4498e8`.
+Read-only inspection of the same image in the already-upgraded owner instance
+confirmed the packaged defect. That instance's existing database readiness does
+not prove a fresh database can be created. The test log also contains a heartbeat
+URL error (`/heartbeat`); it still needs a clean-start recheck after the database
+blocker is removed.
+
+The build recipe now normalizes Git archive LFS handling, resolves frozen objects
+through Git LFS, checks exact size/SHA-256 and records their provenance. Missing,
+skipped or corrupt downloads abort preparation. The packaged native probe now
+loads the Linux extension, creates a fresh vec0 table and performs an insert and
+nearest-vector query; publication requires the explicit `sqliteVec` result.
+No migration is skipped, and no shipped image is patched in place.
+
+Local verification of this correction:
+
+- Exported the exact frozen commit: all five platform LFS objects match their
+  recorded hashes/sizes; the Linux x64 payload is ELF.
+- A fresh LFS object cache fetched the pinned Linux x64 object through the fork
+  endpoint and matched its source hash. The checksum-pinned Git LFS installer also
+  passed in disposable Linux; the existing runner image is not changed.
+- The verified Linux payload loaded successfully (`v0.1.9`) in a disposable,
+  network-disabled, read-only Docker Linux amd64 container under Apple Silicon
+  emulation. Fresh vec0 creation, insert and nearest-vector lookup passed using
+  Python SQLite. This is an extension check, not the packaged Electron ABI probe
+  or a complete image startup.
+- Source/build regressions: 32 passed; delivery regressions: 57 passed, including
+  rejecting the old SQLite/PTY-only publication proof and failed vec checks.
+
+The correction has not yet produced a new image: cloud.29's immutable tag remains
+unchanged. The next image must pass its packaged Electron probe and a fresh-cloud
+startup before that remaining acceptance item can be marked complete.
+
+The temporary personal-account grant and invitation were removed from both CIS
+roles within the original approved window. Both roles are Ready with no old
+policy Pods. The test instance remains stopped; its PVC is retained as failure
+evidence. There is no pending credential deposit. The healthy enterprise instance
+was not logged out or rebound, and other instance images were not promoted.
 
 This change controls the **Cindy instance identity**. Model-provider, plugin and
 MCP third-party authorizations are separate and were not re-authorized in this
