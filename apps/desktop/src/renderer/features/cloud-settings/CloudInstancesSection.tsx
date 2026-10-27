@@ -17,12 +17,16 @@ export function CloudInstancesSection() {
   const { t } = useTranslation();
   const devices = useDeviceLinkDeviceList();
   const owner = getDataOwnerGeneration();
-  const api = useMemo(() => ({
-    ...window.electronAPI.cloudSettings,
-    instanceInitialize: async ({ deviceId }: { deviceId: string }) => {
-      navigate(`/cloud-login?${new URLSearchParams({ deviceId })}`);
-    },
-  }), [navigate]);
+  const api = useMemo(
+    () => ({
+      ...window.electronAPI.cloudSettings,
+      instanceInitialize: async ({ deviceId }: { deviceId: string }) => {
+        await window.electronAPI.cloudLoginWindow.open({ deviceId });
+      },
+      onLoginCompleted: (cb: () => void) => window.electronAPI.cloudLoginWindow.onCompleted(cb),
+    }),
+    [],
+  );
   if (mode !== 'cloud' || access !== 'allowed') return null;
   return (
     <CloudInstancesPage

@@ -493,7 +493,8 @@ import {
 } from './database-size-warning-settings';
 import { createDatabaseSizeWarningSettingsWatcher } from './database-size-warning-settings-watcher.js';
 import { registerHostSettingsIpc } from './host-settings/ipc.js';
-import { registerCloudSettingsClientIpc } from './cloud-settings-client/runtime.js';
+import { markCloudLoginWindow, isCloudLoginWindow } from './cloud-settings-client/login-window-registry.js';
+import { cloudLoginWindowLifecycle, registerCloudSettingsClientIpc } from './cloud-settings-client/runtime.js';
 import { registerDesktopPreferencesIpc } from './host-settings/desktopPreferencesIpc.js';
 import { isResourceUsageWebContentsId } from './resource-usage-window/registry.js';
 import { isTrustedAppearanceSettingsReadWindow } from './appearance-settings-reader.js';
@@ -1769,6 +1770,7 @@ function clearAccountBoundaryAbortMark(): void {
 
 async function teardownAuthAccountBoundary(reason: string): Promise<void> {
   remoteDesktopViewerWindows.reset();
+  cloudLoginWindowLifecycle.reset();
   const blockingFailures: unknown[] = [];
   // Goal timers can dispatch through the outgoing Maker while launch-fence
   // acquisition waits behind queued filesystem work. Invalidate them before
@@ -2534,6 +2536,7 @@ setAppSessionCommitBoundaryHook(() => {
   cancelClaudeCliLogin();
   clearAllSessionAttention();
   remoteDesktopViewerWindows.reset();
+  cloudLoginWindowLifecycle.reset();
   // 弹出的页签窗口带着旧 owner 的任务指派与 renderer 本地页签缓存:同步销毁,不让新 owner 看到旧内容。
   sidebarTabWindowsController.destroyAllWindows();
   clearAllSessionProviders();
@@ -3093,6 +3096,7 @@ ipcMain.handle('app-menu:set-locale', (_event, locale: unknown): { ok: true } =>
   refreshWindowsAppBadge();
   resourceUsageWindowController.setLocale(currentApplicationMenuLocale);
   remoteDesktopViewerWindows.setLocale(currentApplicationMenuLocale);
+  cloudLoginWindowLifecycle.setLocale(currentApplicationMenuLocale);
   rsbWindowController.setLocale(currentApplicationMenuLocale);
   sidebarTabWindowsController.setLocale(currentApplicationMenuLocale);
   refreshGhostLocalization();
@@ -3997,6 +4001,7 @@ const createWindow = () => {
     }
     resourceUsageWindowController.destroyWindow();
     remoteDesktopViewerWindows.reset();
+    cloudLoginWindowLifecycle.destroy();
     rsbWindowController.destroyWindow();
     sidebarTabWindowsController.destroyAllWindows();
     if (mainWindowRef === mainWindow) mainWindowRef = null;
@@ -4134,6 +4139,8 @@ const createWindow = () => {
         currentApplicationMenuLocale ?? getPreferredApplicationLocale(),
       );
       remoteDesktopViewerWindows.prewarm();
+      cloudLoginWindowLifecycle.setLocale(currentApplicationMenuLocale ?? getPreferredApplicationLocale());
+      cloudLoginWindowLifecycle.prewarm();
       // 侧栏「弹出」已改为按页签弹出(sidebar tab window):预热一扇未指派的隐藏
       // 窗口,弹出时直接指派 → 首份内容 → show。整栏子窗口(rsbWindowController)
       // 不再有用户入口,不再预热,避免启动期多养一个隐藏 renderer。
@@ -4397,7 +4404,19 @@ function parseOptionalDeviceLinkDeviceId(value: unknown): string | null | undefi
 
 const registerIpcHandlers = () => {
   registerHostSettingsIpc(broadcastDatabaseSizeWarningChanged);
-  registerCloudSettingsClientIpc();
+  registerCloudSettingsClientIpc({
+    title: () => t('cloudSettings.onboarding.initialize'),
+    isOpenSender: (sender) => isResourceUsageOpenSender({
+      sender, mainWindow: mainWindowRef,
+      senderWindow: BrowserWindow.fromWebContents(sender), isSecondaryAppWindow,
+    }),
+    createWindow: () => createResourceUsageWindow(undefined, {
+      title: t('cloudSettings.onboarding.initialize'),
+      preload: 'cloudLoginWindowPreload.js', query: 'cloudLoginWindow', hash: '/cloud-login-window',
+      width: 760, height: 720, minWidth: 600, minHeight: 640,
+      register: markCloudLoginWindow, loginCaptcha: true,
+    }),
+  });
   const localPreferencesAccess = {
     isLocalWindow(id: number, access: 'read' | 'write') {
       const sender = webContents.fromId(id);
@@ -4411,6 +4430,7 @@ const registerIpcHandlers = () => {
       return sender === rsbWindowController.getSidebarWebContents()
         || sidebarTabWindowsController.slotForSender(sender) !== null
         || isResourceUsageWebContentsId(id)
+        || isCloudLoginWindow(id)
         || (!isContent && isTrustedAppearanceSettingsReadWindow(win));
     },
   };
@@ -10619,4 +10639,5 @@ function startReadyWorktreeMaintenance(): void {
   }
 }
 
+onQuit('cloud-login-window', () => cloudLoginWindowLifecycle.destroy(), 'sync');
 onQuit('remote-desktop-viewer', () => remoteDesktopViewerWindows.reset(), 'sync');

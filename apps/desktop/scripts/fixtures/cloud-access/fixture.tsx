@@ -23,6 +23,7 @@ function Preview() {
 mountPage({
   route: '/settings?tab=cloud-instances',
   host: (ctx) => ({
+    cloudLoginWindow: { open: forbid('cloudLoginWindow.open'), onCompleted: () => () => {} },
     cloudSettings: {
       instanceAccess: async () => {
         if (ctx.data.access === 'hidden') return { schemaVersion: 1, allowed: false };

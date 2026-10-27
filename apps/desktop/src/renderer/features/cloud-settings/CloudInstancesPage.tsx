@@ -22,7 +22,7 @@ import { stableInstanceState, instanceStatus } from './instanceState';
 export type CloudInstancesApi = Pick<
   CloudSettingsRendererApi,
   'instanceList' | 'instanceClaim' | 'instanceInitialize' | 'instancePower'
->;
+> & { onLoginCompleted?(cb: () => void): () => void };
 type PowerPending = { deviceId: string; action: 'wake' | 'sleep'; uncertain: boolean };
 const card =
   'rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
@@ -103,6 +103,7 @@ export function CloudInstancesPage({
       live.current = false;
     };
   }, [load]);
+  useEffect(() => api.onLoginCompleted?.(() => { void load(); }), [api, load]);
   useEffect(() => {
     const pending =
       !!powerPending || instances?.some((v) => v.loginRequired || !stableInstanceState(v));
@@ -135,7 +136,8 @@ export function CloudInstancesPage({
     await api.instanceInitialize({ deviceId });
     if (live.current) {
       setWaiting(deviceId);
-      openWhenReady.current = deviceId;
+      // An auxiliary login must not navigate the workspace when it completes.
+      if (!api.onLoginCompleted) openWhenReady.current = deviceId;
     }
   };
   const act = async (claim: boolean, deviceId?: string) => {

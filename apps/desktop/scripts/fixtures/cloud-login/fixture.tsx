@@ -1,8 +1,5 @@
 import { mountPage, forbid } from '../../ui-page/harness';
-import { LoginBrandStage } from '../../../src/renderer/components/login/LoginBrandStage';
-import { CloudInstanceLoginPage } from '../../../src/renderer/features/cloud-settings/CloudInstanceLoginPage';
-import { CloudInstanceAccessProvider } from '../../../src/renderer/features/cloud-settings/CloudInstanceAccess';
-import { setDataOwnerGeneration } from '../../../src/renderer/contexts/dataOwnerGeneration';
+import { CloudLoginWindowLayout } from '../../../src/renderer/features/cloud-settings/CloudLoginWindowRoot';
 import type { CloudInstanceLoginView } from '../../../src/shared/cloudInstanceLogin';
 
 const deviceId = 'cloud-device-aaaaaaaaaaaaaaaaaaaaaaaa';
@@ -35,29 +32,23 @@ mountPage({
       complete: false,
     };
     return {
-      platform: 'darwin',
-      cloudSettings: {
-        instanceAccess: async () => ({ schemaVersion: 1, allowed: true }),
-        instanceList: async () => [
-          { deviceId, loginRequired: true, name: '云端 Cindy', nameSequence: 1 },
-        ],
-        instanceLoginStart: async () => view,
-        instanceLoginPoll: async () => view,
-        instanceLoginClose: async () => undefined,
-        instanceLoginDispatch: forbid('real cloud login'),
+      platform: ctx.data.platform ?? 'darwin',
+      cloudLoginWindow: {
+        getState: async () => ({ generation: 1, target: { deviceId, name: '云端 Cindy', nameSequence: 1 } }),
+        rendererReady: async () => undefined,
+        presentationReady: async () => undefined,
+        onChanged: () => () => {},
+        onLocaleChanged: () => () => {},
+        close: async () => undefined,
+        start: async () => view,
+        poll: async () => view,
+        end: async () => undefined,
+        dispatch: forbid('real cloud login'),
       },
       authDispatch: forbid('local account mutation'),
       authInitialize: forbid('local account initialization'),
       acceptPrivacyConsent: async () => undefined,
     };
   },
-  render: () => {
-    setDataOwnerGeneration('fixture-owner', 1);
-    return (
-      <CloudInstanceAccessProvider>
-        <LoginBrandStage />
-        <CloudInstanceLoginPage />
-      </CloudInstanceAccessProvider>
-    );
-  },
+  render: () => <CloudLoginWindowLayout />,
 });

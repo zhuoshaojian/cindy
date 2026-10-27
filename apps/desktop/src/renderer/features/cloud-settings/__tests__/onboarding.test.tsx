@@ -42,8 +42,10 @@ async function setup(
   items: CloudInstanceView[] = [],
   locale: keyof typeof resources = 'zh-CN',
   fail = false,
+  onLoginCompleted?: CloudInstancesApi['onLoginCompleted'],
 ) {
   const api = {
+    onLoginCompleted,
     instanceList: vi.fn<CloudInstancesApi['instanceList']>().mockResolvedValue(items),
     instanceClaim: vi.fn<CloudInstancesApi['instanceClaim']>().mockResolvedValue([target]),
     instanceInitialize: vi.fn<CloudInstancesApi['instanceInitialize']>().mockResolvedValue(),
@@ -314,4 +316,20 @@ it('maintenance shortcut opens only the selected instance without changing its p
   );
   expect(f.onOpen).toHaveBeenCalledExactlyOnceWith('device-b', 'maintenance');
   expect(f.api.instancePower).not.toHaveBeenCalled();
+});
+
+// Regression: a background authorization must refresh the list without moving
+// the main workspace to another route (including when the runtime is ready).
+it('refreshes auxiliary login completion without navigating the client', async () => {
+  let complete!: () => void;
+  const unsubscribe = vi.fn();
+  const f = await setup([target], 'zh-CN', false, (cb) => { complete = cb; return unsubscribe; });
+  fireEvent.click(await screen.findByRole('button', { name: '登录云端 Cindy' }));
+  await screen.findByRole('button', { name: '重新打开登录页' });
+  f.api.instanceList.mockResolvedValue([running]);
+  complete();
+  await screen.findByRole('button', { name: '实例设置' });
+  expect(f.onOpen).not.toHaveBeenCalled();
+  f.unmount();
+  expect(unsubscribe).toHaveBeenCalled();
 });

@@ -3,8 +3,8 @@ export default {
   name: 'cloud-login',
   authRegion: 'cn',
   entry: './fixture.tsx',
-  viewport: { width: 1040, height: 760 },
-  real: 'CloudInstanceLoginPage and shared client LoginPageView/brand/controls, SSO entry and enterprise ID input',
+  viewport: { width: 760, height: 720 },
+  real: 'CloudLoginWindowLayout/CloudInstanceLoginFlow and shared client LoginPageView/brand/controls, SSO entry and enterprise ID input',
   notCovered:
     'Synthetic admission and cloud IPC; real provider authorization, main process, credential deposit and cloud startup require separate acceptance',
   stubs: {
@@ -13,6 +13,7 @@ export default {
   },
   cases: {
     default: { about: 'Client SMS, WeChat, Apple and SSO entry' },
+    windows: { about: 'Auxiliary close controls without main-window shutdown prompts', data: { platform: 'win32' } },
     sso: { about: 'Existing enterprise ID input, without preselecting an organization' },
     code: { about: 'SMS verification in the existing client controls' },
     binding: { about: 'Required contact binding in the existing client controls' },

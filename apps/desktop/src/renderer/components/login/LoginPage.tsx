@@ -1565,7 +1565,7 @@ export function LoginPageView({ intent = 'sign-in', onClose, login, targetLabel,
             className="flex h-full items-center"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
-            <WindowControls />
+            <WindowControls onClose={intent === 'cloud-instance' ? onClose : undefined} />
           </div>
         ) : null}
       </div>

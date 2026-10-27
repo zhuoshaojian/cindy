@@ -2169,6 +2169,11 @@ const config: ForgeConfig = {
           target: 'preload',
         },
         {
+          entry: 'src/preload/cloudLoginWindowPreload.ts',
+          config: 'vite.preload.config.ts',
+          target: 'preload',
+        },
+        {
           entry: 'src/preload/remoteDesktopViewerPreload.ts',
           config: 'vite.preload.config.ts',
           target: 'preload',

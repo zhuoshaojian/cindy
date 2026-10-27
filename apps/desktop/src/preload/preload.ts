@@ -1,3 +1,4 @@
+import { CLOUD_LOGIN_WINDOW } from '../shared/cloudLoginWindow';
 import { CLOUD_CLIENT_CHANNELS } from '../shared/cloudSettingsClient';
 import type { CloudSettingsRendererApi } from '../shared/cloudSettingsClient';
 import { createAccessibilitySupportBridge } from './accessibilitySupport';
@@ -1165,6 +1166,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('page-zoom:reset'),
   desktopPreferences: createDesktopPreferencesApi(ipcRenderer),
   modelPresentationPreferences: createModelPresentationPreferencesApi(ipcRenderer),
+  cloudLoginWindow: {
+    open: (input: { deviceId: string }): Promise<void> => ipcRenderer.invoke(CLOUD_LOGIN_WINDOW.open, input),
+    onCompleted: (cb: () => void) => {
+      const listener = () => cb();
+      ipcRenderer.on(CLOUD_LOGIN_WINDOW.completed, listener);
+      return () => ipcRenderer.removeListener(CLOUD_LOGIN_WINDOW.completed, listener);
+    },
+  },
   cloudSettings: {
     instanceAccess: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceAccess, input),
     instanceList: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceList, input),

@@ -1,0 +1,176 @@
+import { EventEmitter } from 'node:events';
+import type { BrowserWindow, WebContents } from 'electron';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { CloudLoginWindow } from '../login-window';
+import { CLOUD_LOGIN_WINDOW } from '../../../shared/cloudLoginWindow';
+
+// Unit: route-based login previously covered the entire workspace. Exercise the
+// real auxiliary controller composition, including close vs minimize, identity
+// fencing and recovery; neither local login nor resource-monitor tests do this.
+function createWindow(id: number) {
+  let destroyed = false,
+    visible = false;
+  const wc = Object.assign(new EventEmitter(), { id, send: vi.fn(), isDestroyed: () => destroyed });
+  const win = Object.assign(new EventEmitter(), {
+    webContents: wc,
+    isDestroyed: () => destroyed,
+    isVisible: () => visible,
+    isMinimized: () => false,
+    isFullScreen: () => false,
+    show: vi.fn(() => {
+      visible = true;
+      win.emit('show');
+    }),
+    focus: vi.fn(),
+    restore: vi.fn(),
+    setTitle: vi.fn(),
+    hide: vi.fn(() => {
+      visible = false;
+      win.emit('hide');
+    }),
+    destroy: vi.fn(() => {
+      destroyed = true;
+      wc.emit('destroyed');
+      win.emit('closed');
+    }),
+  });
+  return win;
+}
+
+function harness() {
+  let owner: string | undefined = 'account-a';
+  const windows: ReturnType<typeof createWindow>[] = [];
+  const opener = Object.assign(new EventEmitter(), {
+    id: 10,
+    send: vi.fn(),
+    isDestroyed: () => false,
+  }) as unknown as WebContents;
+  const invalidate = vi.fn();
+  const authorize = vi.fn(async (_sender: WebContents, deviceId: string) => ({
+    deviceId,
+    name: null,
+    nameSequence: 1,
+  }));
+  const manager = new CloudLoginWindow({
+    createWindow: () => {
+      const win = createWindow(windows.length + 100);
+      windows.push(win);
+      return win as unknown as BrowserWindow;
+    },
+    isOpenSender: (sender) => sender === opener,
+    ownerKey: () => owner,
+    authorize,
+    invalidate,
+    title: () => 'Cloud login',
+  });
+  const sender = () => windows.at(-1)!.webContents as unknown as WebContents;
+  const ready = () => {
+    manager.controller.markRendererReady(sender());
+    manager.controller.markPresentationReady(sender());
+  };
+  return {
+    manager,
+    windows,
+    opener,
+    sender,
+    ready,
+    invalidate,
+    authorize,
+    setOwner(v?: string) {
+      owner = v;
+    },
+  };
+}
+let f: ReturnType<typeof harness>;
+beforeEach(() => {
+  vi.useFakeTimers();
+  f = harness();
+});
+afterEach(() => {
+  f.manager.destroy();
+  vi.useRealTimers();
+});
+
+it('prewarms hidden without authorizing, and shows only after shell and presentation readiness', async () => {
+  f.manager.prewarm();
+  expect(f.authorize).not.toHaveBeenCalled();
+  expect(f.windows[0].show).not.toHaveBeenCalled();
+  await f.manager.open(f.opener, 'cloud-a');
+  f.manager.controller.markRendererReady(f.sender());
+  expect(f.windows[0].show).not.toHaveBeenCalled();
+  f.manager.controller.markPresentationReady(f.sender());
+  expect(f.windows[0].show).toHaveBeenCalledOnce();
+});
+it('keeps login while minimized or covered; close resets and reuses the same window', async () => {
+  await f.manager.open(f.opener, 'cloud-a');
+  f.ready();
+  const generation = f.manager.state().generation;
+  f.invalidate.mockClear();
+  f.windows[0].emit('minimize');
+  f.windows[0].hide();
+  expect(f.invalidate).not.toHaveBeenCalled();
+  expect(f.manager.assertCurrent(f.sender(), generation).deviceId).toBe('cloud-a');
+  f.windows[0].emit('close', { preventDefault: vi.fn() });
+  expect(f.manager.state().target).toBeNull();
+  expect(f.invalidate).toHaveBeenCalledWith(f.sender().id);
+  await f.manager.open(f.opener, 'cloud-a');
+  expect(f.windows).toHaveLength(1);
+  expect(f.manager.state().generation).toBeGreaterThan(generation);
+  f.manager.close(f.sender(), generation); // stale React cleanup cannot close a new login
+  expect(f.manager.state().target?.deviceId).toBe('cloud-a');
+});
+it('completes without focusing/navigating the workspace and retires the login capability', async () => {
+  await f.manager.open(f.opener, 'cloud-a');
+  f.ready();
+  const generation = f.manager.state().generation;
+  f.manager.complete(f.sender(), generation);
+  expect(f.manager.state().target).toBeNull();
+  expect(f.opener.send).toHaveBeenCalledExactlyOnceWith(CLOUD_LOGIN_WINDOW.completed);
+  expect(() => f.manager.assertCurrent(f.sender(), generation)).toThrow('SCOPE_CHANGED');
+});
+it('rejects a foreign opener/sender and an owner change during authorization', async () => {
+  await expect(f.manager.open({} as WebContents, 'cloud-a')).rejects.toThrow('SCOPE_CHANGED');
+  expect(f.authorize).not.toHaveBeenCalled();
+  f.authorize.mockImplementationOnce(async () => {
+    f.setOwner('account-b');
+    return { deviceId: 'cloud-a', name: null, nameSequence: 1 };
+  });
+  await expect(f.manager.open(f.opener, 'cloud-a')).rejects.toThrow('SCOPE_CHANGED');
+  expect(f.windows).toHaveLength(0);
+  await f.manager.open(f.opener, 'cloud-a');
+  expect(() => f.manager.assertCurrent(f.opener, f.manager.state().generation)).toThrow(
+    'SCOPE_CHANGED',
+  );
+  f.setOwner('account-c');
+  expect(() => f.manager.assertCurrent(f.sender(), f.manager.state().generation)).toThrow(
+    'SCOPE_CHANGED',
+  );
+});
+it('preserves the target but cancels the old handle on crash, with bounded recovery', async () => {
+  await f.manager.open(f.opener, 'cloud-a');
+  f.ready();
+  const old = f.sender(),
+    generation = f.manager.state().generation;
+  f.windows[0].webContents.emit('render-process-gone', {}, { reason: 'crashed' });
+  expect(f.windows).toHaveLength(2);
+  expect(f.manager.state().target?.deviceId).toBe('cloud-a');
+  expect(() => f.manager.assertCurrent(old, generation)).toThrow('SCOPE_CHANGED');
+  expect(f.invalidate).toHaveBeenCalledWith(old.id);
+  f.ready();
+  f.windows[1].webContents.emit('render-process-gone', {}, { reason: 'crashed' });
+  expect(f.windows).toHaveLength(2);
+});
+
+it('keeps the same pending login on reopen, but invalidates it when choosing another instance', async () => {
+  await f.manager.open(f.opener, 'cloud-a');
+  f.ready();
+  const generation = f.manager.state().generation;
+  f.invalidate.mockClear();
+  await f.manager.open(f.opener, 'cloud-a');
+  expect(f.manager.state().generation).toBe(generation);
+  expect(f.invalidate).not.toHaveBeenCalled();
+  await f.manager.open(f.opener, 'cloud-b');
+  expect(f.manager.state().target?.deviceId).toBe('cloud-b');
+  expect(() => f.manager.assertCurrent(f.sender(), generation)).toThrow('SCOPE_CHANGED');
+  expect(f.invalidate).toHaveBeenCalledWith(f.sender().id);
+});

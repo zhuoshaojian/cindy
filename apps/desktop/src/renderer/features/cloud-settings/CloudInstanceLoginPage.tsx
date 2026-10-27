@@ -1,68 +1,40 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LoginPageView } from '@/components/login/LoginPage';
-import { useAppShellCover } from '@/contexts/AppShellCoverContext';
-import { useAuth } from '@/contexts/AuthContext';
-import { useCloudInstanceAccess } from './CloudInstanceAccess';
 import {
   cloudLoginActionSchema,
   type CloudInstanceLoginView,
 } from '../../../shared/cloudInstanceLogin';
 import type { DesktopLoginAction } from '../../../shared/authIpc';
 
-const returnTo = '/settings?tab=cloud-instances';
+import type { CloudLoginApi, CloudLoginWindowState } from '../../../shared/cloudLoginWindow';
 
-export function CloudInstanceLoginPage() {
-  const access = useCloudInstanceAccess();
-  const { dataOwnerId, dataOwnerGeneration } = useAuth();
-  const [params] = useSearchParams();
-  const deviceId = params.get('deviceId');
-  if (access === 'hidden' || !deviceId) return <Navigate to={returnTo} replace />;
-  if (access === 'checking') return null;
-  return (
-    <CloudInstanceLoginFlow
-      key={JSON.stringify([dataOwnerId, dataOwnerGeneration, deviceId])}
-      deviceId={deviceId}
-    />
-  );
-}
-
-/** Separate controller, identical login UI. No local account/login dispatch. */
-function CloudInstanceLoginFlow({ deviceId }: { deviceId: string }) {
-  const api = useMemo(() => window.electronAPI.cloudSettings, []);
-  const navigate = useNavigate();
+/** Same login UI and actions; scoped to an independent window, never local AuthContext. */
+export function CloudInstanceLoginFlow({
+  target,
+  api,
+  onClose,
+}: {
+  target: NonNullable<CloudLoginWindowState['target']>;
+  api: CloudLoginApi;
+  onClose(): void;
+}) {
+  const { deviceId } = target;
   const { t } = useTranslation();
-  const { reportLocalDbGate } = useAppShellCover();
   const [view, setView] = useState<CloudInstanceLoginView | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const handle = useRef<string | null>(null);
   const live = useRef(false);
   const inFlight = useRef(false);
-  const [targetName, setTargetName] = useState<{ name: string | null; number: number } | null>(
-    null,
-  );
   const name =
-    targetName?.name ??
-    (targetName
-      ? t('cloudSettings.onboarding.defaultName', { number: targetName.number })
-      : t('cloudSettings.onboarding.initialize'));
+    target.name ?? t('cloudSettings.onboarding.defaultName', { number: target.nameSequence });
   useEffect(() => {
     live.current = true;
     let disposed = false;
     let ownedHandle: string | null = null;
-    reportLocalDbGate('ready');
     void (async () => {
       try {
-        const instances = await api.instanceList({});
-        if (disposed) return;
-        const target = instances.find((i) => i.deviceId === deviceId);
-        if (!target?.loginRequired) {
-          navigate(returnTo, { replace: true });
-          return;
-        }
-        setTargetName({ name: target.name, number: target.nameSequence });
         const initial = await api.instanceLoginStart({ deviceId });
         ownedHandle = initial.handle;
         if (disposed) {
@@ -101,12 +73,8 @@ function CloudInstanceLoginFlow({ deviceId }: { deviceId: string }) {
       handle.current = null;
       clearInterval(timer);
       if (ownedHandle) void api.instanceLoginClose({ handle: ownedHandle }).catch(() => undefined);
-      reportLocalDbGate('pending');
     };
-  }, [api, deviceId, navigate, reportLocalDbGate]);
-  useEffect(() => {
-    if (view?.complete) navigate(returnTo, { replace: true });
-  }, [navigate, view?.complete]);
+  }, [api, deviceId]);
 
   const dispatchWithResult = async (action: DesktopLoginAction) => {
     const parsed = cloudLoginActionSchema.safeParse(action);
@@ -137,7 +105,7 @@ function CloudInstanceLoginFlow({ deviceId }: { deviceId: string }) {
       intent="cloud-instance"
       targetLabel={name}
       captchaChallengeUrl={view?.captchaChallengeUrl}
-      onClose={() => navigate(returnTo, { replace: true })}
+      onClose={onClose}
       login={{
         isLoading: busy,
         errorCode,

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { fixture } from './fixture';
+import { CLOUD_LOGIN_WINDOW } from '../../../shared/cloudLoginWindow';
 import { CLOUD_CLIENT_CHANNELS, type CloudClientOpen } from '../../../shared/cloudSettingsClient';
 
 const mock = vi.hoisted(() => ({
@@ -50,7 +51,7 @@ vi.mock('../../security/trustedAppRenderer', () => ({
   },
 }));
 let f: ReturnType<typeof fixture>;
-let sender: EventEmitter & { id: number };
+let sender: EventEmitter & { id: number; isDestroyed(): boolean };
 let event: { sender: typeof sender; trusted: boolean };
 function call(key: 'open', payload: unknown): Promise<CloudClientOpen>;
 function call(
@@ -78,7 +79,7 @@ beforeEach(async () => {
     baseUrl: 'https://cis.example.test',
   });
   f = fixture();
-  sender = Object.assign(new EventEmitter(), { id: 1 });
+  sender = Object.assign(new EventEmitter(), { id: 1, isDestroyed: () => false });
   event = { sender, trusted: true };
   mock.fetch.mockImplementation(async (url, init) => {
     const output = await f.request(
@@ -91,7 +92,11 @@ beforeEach(async () => {
     );
     return output === undefined ? new Response(null, { status: 204 }) : Response.json(output);
   });
-  (await import('../runtime')).registerCloudSettingsClientIpc();
+  (await import('../runtime')).registerCloudSettingsClientIpc({
+    isOpenSender: (candidate) => candidate === sender,
+    title: () => 'Cloud login',
+    createWindow: () => { throw Error('These IPC rejection cases must never create a window'); },
+  });
 });
 afterEach(() => {
   mock.quit.mock.calls.find(([name]) => name === 'before-quit')?.[1]();
@@ -100,7 +105,7 @@ afterEach(() => {
 });
 it('registers the closed bridge once and rejects untrusted IPC before network access', async () => {
   (await import('../runtime')).registerCloudSettingsClientIpc();
-  expect(mock.handle).toHaveBeenCalledTimes(Object.keys(CLOUD_CLIENT_CHANNELS).length);
+  expect(mock.handle).toHaveBeenCalledTimes(Object.keys(CLOUD_CLIENT_CHANNELS).length + 9);
   event.trusted = false;
   await expect(call('instanceAccess', {})).rejects.toThrow('PERMISSION_DENIED');
   await expect(call('open', { deviceId: 'cloud-a' })).rejects.toThrow('PERMISSION_DENIED');
@@ -197,3 +202,34 @@ it.each(['destroyed', 'render-process-gone', 'navigation'])(
     expect(mock.fetch).toHaveBeenCalledTimes(count);
   },
 );
+
+// The auxiliary window has its own capability surface: even a trusted main
+// renderer must not submit/poll another window's login or bypass input validation.
+it('rejects cross-window login actions and invalid open parameters before network access', async () => {
+  const invoke = (channel: string, raw: unknown) => {
+    const handler = mock.handle.mock.calls.find(([name]) => name === channel)![1];
+    return handler(event, raw);
+  };
+  await expect(invoke(CLOUD_LOGIN_WINDOW.open, { deviceId: 'cloud-a', owner: 'forged' })).rejects.toThrow('INVALID_PARAMS');
+  await expect(invoke(CLOUD_LOGIN_WINDOW.start, { generation: 1 })).rejects.toThrow('SCOPE_CHANGED');
+  await expect(invoke(CLOUD_LOGIN_WINDOW.state, {})).rejects.toThrow('SCOPE_CHANGED');
+  event.trusted = false;
+  await expect(invoke(CLOUD_LOGIN_WINDOW.open, { deviceId: 'cloud-a' })).rejects.toThrow('PERMISSION_DENIED');
+  expect(mock.fetch).not.toHaveBeenCalled();
+});
+
+it('checks the owned login-required target without requesting maintenance or waking it', async () => {
+  const target = { instanceId: 'instance-a', deviceId: 'cloud-a', customLabel: null, nameSequence: 1,
+    status: { instanceId: 'instance-a', deviceId: 'cloud-a', desiredState: 'stopped', runtimeState: 'missing',
+      image: 'registry.example.test/cloud:0.1.113', readiness: { ready: false }, updateAvailable: false,
+      latestReleaseTag: null, upgrade: { state: 'idle' }, loginRequired: false } };
+  mock.fetch.mockResolvedValueOnce(Response.json({ instances: [target] }));
+  const open = mock.handle.mock.calls.find(([name]) => name === CLOUD_LOGIN_WINDOW.open)![1];
+  await expect(open(event, { deviceId: 'cloud-a' })).rejects.toThrow('CONFLICT');
+  mock.fetch.mockResolvedValueOnce(Response.json({ instances: [{ ...target, status: { ...target.status, loginRequired: true } }] }));
+  // Fixture window creation deliberately fails. Reaching that stage proves an
+  // uninitialized instance doesn't need a maintenance runtime to open login.
+  await expect(open(event, { deviceId: 'cloud-a' })).rejects.toThrow('CLOUD_SETTINGS_UNAVAILABLE');
+  expect(mock.fetch).toHaveBeenCalledTimes(2);
+  expect(mock.fetch.mock.calls.every(([url, init]) => String(url).endsWith('/manage/instances') && init?.method === 'GET')).toBe(true);
+});

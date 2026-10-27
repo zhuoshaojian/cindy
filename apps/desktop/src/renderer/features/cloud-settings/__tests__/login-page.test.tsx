@@ -1,20 +1,13 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { CloudInstanceLoginView } from '../../../../shared/cloudInstanceLogin';
 import type { DesktopLoginAction } from '../../../../shared/authIpc';
 
-// Unit: the cloud route must never initialize/switch a local account, and leaving
-// it must cancel even a late capability. Existing local LoginPage tests do not
-// cover this new controller; the UI fixture separately renders its real view.
-const scope = vi.hoisted(() => ({ access: 'allowed', owner: 'owner-a' }));
+// Unit: the auxiliary login must use only cloud handles, preserve SSO, and
+// dispose late results. The shared local login tests cannot cover this scope.
 const translate = (key: string) => key;
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
-vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({ dataOwnerId: scope.owner, dataOwnerGeneration: 1 }),
-}));
-vi.mock('../CloudInstanceAccess', () => ({ useCloudInstanceAccess: () => scope.access }));
 vi.mock('@/components/login/LoginPage', () => ({
   LoginPageView: ({
     onClose,
@@ -39,7 +32,7 @@ vi.mock('@/components/login/LoginPage', () => ({
     </>
   ),
 }));
-import { CloudInstanceLoginPage } from '../CloudInstanceLoginPage';
+import { CloudInstanceLoginFlow } from '../CloudInstanceLoginPage';
 const view: CloudInstanceLoginView = {
   handle: '11111111-1111-4111-8111-111111111111',
   complete: false,
@@ -63,24 +56,12 @@ const api = {
   instanceLoginPoll: vi.fn(async () => structuredClone(view)),
   instanceLoginClose: vi.fn(async () => undefined),
 };
-function Route() {
-  const location = useLocation();
-  return location.pathname === '/cloud-login' ? (
-    <CloudInstanceLoginPage />
-  ) : (
-    <output>Returned to settings</output>
-  );
-}
+const target = { deviceId: 'cloud-device-test', name: 'Cloud Test', nameSequence: 1 };
 function mount() {
-  return render(
-    <MemoryRouter initialEntries={['/cloud-login?deviceId=cloud-device-test']}>
-      <Route />
-    </MemoryRouter>,
-  );
+  const close = vi.fn();
+  return { ...render(<CloudInstanceLoginFlow target={target} api={api} onClose={close} />), close };
 }
 beforeEach(() => {
-  scope.access = 'allowed';
-  scope.owner = 'owner-a';
   vi.clearAllMocks();
   api.instanceLoginStart.mockResolvedValue(structuredClone(view));
   Object.defineProperty(window, 'electronAPI', {
@@ -95,7 +76,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 it('routes SSO only to the cloud handle and cancels on exit', async () => {
-  mount();
+  const mounted = mount();
   await screen.findByText('Cloud Test:identifier');
   fireEvent.click(screen.getByText('SSO'));
   await waitFor(() =>
@@ -105,15 +86,10 @@ it('routes SSO only to the cloud handle and cancels on exit', async () => {
     }),
   );
   fireEvent.click(screen.getByText('close'));
-  await screen.findByText('Returned to settings');
+  expect(mounted.close).toHaveBeenCalledOnce();
+  mounted.unmount();
   expect(api.instanceLoginClose).toHaveBeenCalledWith({ handle: view.handle });
   expect(window.electronAPI.authInitialize).not.toHaveBeenCalled();
-});
-it('does not open login for a denied account', async () => {
-  scope.access = 'hidden';
-  mount();
-  await screen.findByText('Returned to settings');
-  expect(api.instanceLoginStart).not.toHaveBeenCalled();
 });
 it('closes a handle that arrives after leaving the route', async () => {
   let resolve!: (v: CloudInstanceLoginView) => void;
@@ -128,15 +104,11 @@ it('closes a handle that arrives after leaving the route', async () => {
   await act(async () => resolve(view));
   expect(api.instanceLoginClose).toHaveBeenCalledExactlyOnceWith({ handle: view.handle });
 });
-it('cancels the old owner scope before opening the new one', async () => {
+it('starts a clean flow after close/reopen instead of reusing the previous form', async () => {
   const mounted = mount();
   await screen.findByText('Cloud Test:identifier');
-  scope.owner = 'owner-b';
-  mounted.rerender(
-    <MemoryRouter initialEntries={['/cloud-login?deviceId=cloud-device-test']}>
-      <Route />
-    </MemoryRouter>,
-  );
+  mounted.unmount();
+  mount();
   await waitFor(() => expect(api.instanceLoginStart).toHaveBeenCalledTimes(2));
   expect(api.instanceLoginClose).toHaveBeenCalledWith({ handle: view.handle });
 });

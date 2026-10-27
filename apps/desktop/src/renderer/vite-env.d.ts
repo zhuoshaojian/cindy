@@ -1213,6 +1213,7 @@ interface ElectronAPI {
   setApplicationMenuLocale: (locale: ApplicationMenuLocale) => Promise<{ ok: true }>;
   billing: import('../shared/billing').BillingRendererApi;
   cloudSettings: import('../shared/cloudSettingsClient').CloudSettingsRendererApi;
+  cloudLoginWindow: import('../shared/cloudLoginWindow').CloudLoginWindowApi;
   hostSettings: import('../shared/hostSettings').HostSettingsRendererApi;
   desktopPreferences: import('../shared/desktopPreferences').DesktopPreferencesRendererApi;
   modelPresentationPreferences: import('../shared/modelPresentationPreferences').ModelPresentationPreferencesApi;

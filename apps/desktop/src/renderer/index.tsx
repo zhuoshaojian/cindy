@@ -11,7 +11,9 @@ const isRemoteDesktopViewer = urlParams.get('remoteDesktopViewer') === '1';
 const isResourceUsageWindow = urlParams.get('resourceUsageWindow') === '1';
 const isSidebarWindow = urlParams.get('sidebarWindow') === '1';
 
-void (isRemoteDesktopViewer
+void (urlParams.get('cloudLoginWindow') === '1'
+  ? import('./cloud-login-entry')
+  : isRemoteDesktopViewer
   ? import('./remote-desktop-viewer-entry')
   : isResourceUsageWindow
   ? import('./resource-usage-entry')
