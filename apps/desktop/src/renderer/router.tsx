@@ -10,6 +10,7 @@ import { lazy, Suspense } from 'react';
 import { CloudSettingsView } from '@/features/cloud-settings/CloudSettingsView';
 import { LoginPage } from '@/components/login/LoginPage';
 import { AddAccountLoginPage } from '@/components/login/AddAccountLoginPage';
+import { CloudInstanceLoginPage } from '@/features/cloud-settings/CloudInstanceLoginPage';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { GuestRoute } from '@/components/auth/GuestRoute';
 import { LocalDbGate } from '@/components/auth/LocalDbGate';
@@ -71,6 +72,7 @@ export const router = createHashRouter([
     // 冒泡到这里,全屏展示可恢复错误页(2026-07-09 React #130 事故的直接止血层)。
     errorElement: <RouteErrorFallback />,
     children: [
+      { path: 'cloud-login', element: <CloudInstanceLoginPage /> },
       {
         path: 'add-account',
         element: <AddAccountLoginPage />,

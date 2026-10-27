@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
 import { useTranslation } from 'react-i18next';
@@ -16,12 +17,18 @@ export function CloudInstancesSection() {
   const { t } = useTranslation();
   const devices = useDeviceLinkDeviceList();
   const owner = getDataOwnerGeneration();
+  const api = useMemo(() => ({
+    ...window.electronAPI.cloudSettings,
+    instanceInitialize: async ({ deviceId }: { deviceId: string }) => {
+      navigate(`/cloud-login?${new URLSearchParams({ deviceId })}`);
+    },
+  }), [navigate]);
   if (mode !== 'cloud' || access !== 'allowed') return null;
   return (
     <CloudInstancesPage
       key={JSON.stringify([dataOwnerId, owner.generation])}
       embedded
-      api={window.electronAPI.cloudSettings}
+      api={api}
       canOpenDesktop={(instance) =>
         !!devices?.some(
           (device) =>

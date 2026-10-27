@@ -100,10 +100,33 @@ This CIS workflow does not deploy auth-server.
   authorization. The upgraded instance's existing enterprise session remains
   healthy; a new interactive enterprise SSO login was not forced.
 
-No admitted, uninitialized personal test account was available. The previously
-revoked personal account was not re-enabled, no new instance was claimed, and the
-healthy enterprise instance was not logged out or rebound to exercise another
-identity. Real personal login completion remains a separate acceptance item.
+On 2026-10-27 a dedicated personal test account completed real **local** SMS,
+WeChat and Apple login in the isolated native Dev client. The required contact
+binding was completed by the user. These are not cloud-device login results.
+
+A time-bounded, exact-identity cloud grant was then approved. The native client
+created a real remote continuation, but the user stopped this attempt to correct
+its hosted-page UI. The attempt was canceled, the grant revoked, and the test
+record set to stopped. Readback showed no runtime reference and no pending
+credential deposit. No business cloud container was created for this attempt.
+
+The replacement native flow reuses the actual client LoginPageView, including
+SSO, manual enterprise ID, connection choice, contact binding and verification.
+SMS uses the existing native Auth/CAPTCHA sender with CIS-only verification;
+social/SSO opens the selected Auth method directly. The cloud target remains
+visible and the local account is never switched. Main keeps the attempt secret.
+CIS's additive prepare-code endpoint must deploy before the new client.
+
+Validation: CIS typecheck and its full suite pass (1,747 tests; 395 existing
+skips). Native flow and renderer lifecycle tests cover direct provider dispatch,
+SSO continuation, CAPTCHA failure/retry, binding, owner/window invalidation and
+late cancellation. The shared login UI passed 10 Light/Dark scenarios and was
+visually inspected. These UI scenarios use synthetic admission and IPC. The
+broader changed-page scan also covers unrelated pages through shared locale
+files; its pre-existing MCP-card fixture failure is not a cloud-login pass.
+
+**Real remote SMS, WeChat and Apple completion and cloud startup remain pending.**
+The healthy enterprise instance was not logged out or rebound for this UI work.
 
 This change controls the **Cindy instance identity**. Model-provider, plugin and
 MCP third-party authorizations are separate and were not re-authorized in this

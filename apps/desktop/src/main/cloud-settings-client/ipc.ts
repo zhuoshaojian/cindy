@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cloudLoginHandleSchema, cloudLoginDispatchSchema } from '../../shared/cloudInstanceLogin';
 import {
   cloudInstanceTargetSchema,
   cloudInstancePowerSchema,
@@ -43,6 +44,10 @@ export function cloudSettingsClientHandlers(
     instanceInitialize: handler(cloudInstanceTargetSchema, (c, v) =>
       service.instanceInitialize(c, v.deviceId),
     ),
+    instanceLoginStart: handler(cloudInstanceTargetSchema, (c, v) => service.instanceLoginStart(c, v.deviceId)),
+    instanceLoginDispatch: handler(cloudLoginDispatchSchema, (c, v) => service.instanceLoginDispatch(c, v.handle, v.action)),
+    instanceLoginPoll: handler(cloudLoginHandleSchema, (c, v) => service.instanceLoginPoll(c, v.handle)),
+    instanceLoginClose: handler(cloudLoginHandleSchema, (c, v) => service.instanceLoginClose(c, v.handle)),
     instanceRead: handler(cloudInstanceTargetSchema, (c, v) => service.instanceRead(c, v.deviceId)),
     instanceUpgrade: handler(cloudInstanceUpgradeSchema, (c, v) =>
       service.instanceUpgrade(c, v.deviceId, v.requestId),

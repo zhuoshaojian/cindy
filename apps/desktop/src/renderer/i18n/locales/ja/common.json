@@ -7706,7 +7706,9 @@
       "INVALID_AUTH_CODE": "認証の期限が切れました。",
       "INVALID_LOGIN_TICKET": "ログインセッションの期限が切れました。",
       "INVALID_BIND_TICKET": "確認セッションの期限が切れました。",
-      "REGION_MISMATCH": "ログインサービスの地域がこのアプリと一致しません。"
+      "REGION_MISMATCH": "ログインサービスの地域がこのアプリと一致しません。",
+      "LOGIN_OWNERSHIP_MISMATCH": "このクラウドを取得したアカウントを使ってください。組織アカウントは SSO を選択してください。",
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "クラウドのログインサービスの更新が必要です。後でもう一度お試しください。"
     },
     "rateLimit": {
       "retryAt": "{{time}}（現地時間）以降に再試行してください。",

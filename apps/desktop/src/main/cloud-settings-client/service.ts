@@ -1,4 +1,5 @@
 import { createCloudInstanceOnboarding } from './onboarding';
+import { createCloudInstanceLogin, type CloudLoginDependencies } from './login';
 import { createCloudInstanceControl } from './instanceControl';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -63,12 +64,14 @@ export function createCloudSettingsService(deps: {
   identity(): CloudClientIdentity | null;
   http: CloudClientHttp;
   openExternal?: (url: string) => Promise<void>;
+  loginAuth?: CloudLoginDependencies['loginAuth'];
   now?: () => number;
   pause?: (signal: AbortSignal) => Promise<void>;
   keepAlive?: (refresh: () => Promise<void>) => () => void;
 }) {
   const instances = createCloudInstanceControl(deps);
   const onboarding = createCloudInstanceOnboarding(deps);
+  const login = createCloudInstanceLogin(deps);
   const sessions = new Map<string, Session>();
   const opening = new Map<number, AbortController>();
   const now = deps.now ?? Date.now;
@@ -320,6 +323,10 @@ export function createCloudSettingsService(deps: {
     instanceList: onboarding.list,
     instanceClaim: onboarding.claim,
     instanceInitialize: onboarding.initialize,
+    instanceLoginStart: login.start,
+    instanceLoginDispatch: login.dispatch,
+    instanceLoginPoll: login.poll,
+    instanceLoginClose: login.close,
     instanceRead: instances.read,
     instancePower: instances.power,
     instanceUpgrade: instances.upgrade,
@@ -485,6 +492,7 @@ export function createCloudSettingsService(deps: {
     invalidate(callerId?: number) {
       instances.invalidate(callerId);
       onboarding.invalidate(callerId);
+      login.invalidate(callerId);
       for (const [id, controller] of opening)
         if (callerId === undefined || id === callerId) controller.abort();
       for (const s of sessions.values())

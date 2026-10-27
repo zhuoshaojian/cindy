@@ -1,4 +1,6 @@
 import { app, ipcMain, net, shell, type IpcMainInvokeEvent, type WebContents } from 'electron';
+import { CindyAuthClient } from '@cindy/auth-client';
+import { getResolvedMainLocale } from '../i18n';
 import * as auth from '../authManager';
 import { getClientEndpointForRealm } from '../clientEndpointsService';
 import { isAppSessionBoundaryPending, peekCommittedAppSession } from '../appSessionState';
@@ -48,6 +50,14 @@ export function registerCloudSettingsClientIpc() {
   const service = createCloudSettingsService({
     identity,
     openExternal: (url) => shell.openExternal(url),
+    loginAuth(deviceId) {
+      const region = auth.getActiveAuthRealm();
+      const baseUrl = getClientEndpointForRealm(region, 'authApiBaseUrl');
+      return { baseUrl, client: new CindyAuthClient({
+        baseUrl, region, deviceId, clientType: 'desktop', locale: getResolvedMainLocale(),
+        fetch: (url, init) => net.fetch(url, init as RequestInit),
+      }) };
+    },
     http: createCloudClientHttp((url, init) => net.fetch(url as string, init)),
     keepAlive(refresh) {
       const timer = setInterval(() => {

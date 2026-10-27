@@ -13,6 +13,16 @@ export class CloudClientError extends Error {
     super(code);
   }
 }
+// Only normalized login codes cross the native presentation boundary.
+const loginCodes = new Set([
+  'RATE_LIMITED', 'INVALID_CODE', 'CODE_EXPIRED', 'CAPTCHA_REQUIRED', 'CAPTCHA_INVALID',
+  'LOGIN_OWNERSHIP_MISMATCH', 'LOGIN_METHOD_UNAVAILABLE', 'LOGIN_STATE_INVALID',
+  'LOGIN_ATTEMPT_EXPIRED', 'LOGIN_ATTEMPT_ACTIVE', 'LOGIN_VERIFICATION_LIMIT',
+  'LOGIN_AUTH_UPGRADE_REQUIRED', 'LOGIN_STATE_CONFLICT', 'ORG_NOT_FOUND', 'ORG_SSO_NOT_FOUND',
+]);
+export class CloudLoginRemoteError extends Error {
+  constructor(readonly code: string) { super(code); }
+}
 export interface CloudClientIdentity {
   key: string;
   generation: number;
@@ -100,7 +110,27 @@ export function createCloudClientHttp(fetcher: typeof fetch): CloudClientHttp {
         });
         assertCurrent();
         if (!response.ok) {
-          await response.body?.cancel();
+          if (/^\/instance-login\/api\/attempts(?:\/|$)/u.test(path)) {
+            const reader = response.body?.getReader();
+            const chunks: Uint8Array[] = [];
+            let size = 0;
+            if (reader) try {
+              for (;;) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                size += chunk.value.byteLength;
+                if (size > 8192) { await reader.cancel(); break; }
+                chunks.push(chunk.value);
+              }
+            } finally { reader.releaseLock(); }
+            assertCurrent();
+            let code: unknown;
+            try { code = JSON.parse(Buffer.concat(chunks).toString('utf8'))?.error?.code; } catch { /* sanitized below */ }
+            if (typeof code === 'string' && loginCodes.has(code)) throw new CloudLoginRemoteError(code);
+            if (response.status === 404 && path.endsWith('/prepare-code'))
+              throw new CloudLoginRemoteError('LOGIN_AUTH_UPGRADE_REQUIRED');
+          }
+          if (!response.bodyUsed) await response.body?.cancel();
           throw new CloudClientError(
             (response.status === 404 || response.status === 410) &&
               /^\/instance-login\/api\/attempts\/[^/]+\/status$/u.test(path)
@@ -144,7 +174,7 @@ export function createCloudClientHttp(fetcher: typeof fetch): CloudClientHttp {
         }
       } catch (error) {
         assertCurrent();
-        if (error instanceof CloudClientError) throw error;
+        if (error instanceof CloudClientError || error instanceof CloudLoginRemoteError) throw error;
         // Never relay network errors, response bodies or credentials to the UI.
         throw new CloudClientError('CLOUD_SETTINGS_UNAVAILABLE');
       }

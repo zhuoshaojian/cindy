@@ -79,6 +79,10 @@ export interface CloudSettingsRendererApi {
     input: Record<string, never>,
   ): Promise<import('./cloudInstanceControl').CloudInstanceView[]>;
   instanceInitialize(input: { deviceId: string }): Promise<void>;
+  instanceLoginStart(input: { deviceId: string }): Promise<import('./cloudInstanceLogin').CloudInstanceLoginView>;
+  instanceLoginDispatch(input: z.infer<typeof import('./cloudInstanceLogin').cloudLoginDispatchSchema>): Promise<import('./cloudInstanceLogin').CloudInstanceLoginView>;
+  instanceLoginPoll(input: { handle: string }): Promise<import('./cloudInstanceLogin').CloudInstanceLoginView>;
+  instanceLoginClose(input: { handle: string }): Promise<void>;
   instanceRead(input: {
     deviceId: string;
   }): Promise<import('./cloudInstanceControl').CloudInstanceView>;
@@ -107,6 +111,10 @@ export const CLOUD_CLIENT_CHANNELS = {
   instanceList: 'cloud-settings-client:instance-list',
   instanceClaim: 'cloud-settings-client:instance-claim',
   instanceInitialize: 'cloud-settings-client:instance-initialize',
+  instanceLoginStart: 'cloud-settings-client:instance-login-start',
+  instanceLoginDispatch: 'cloud-settings-client:instance-login-dispatch',
+  instanceLoginPoll: 'cloud-settings-client:instance-login-poll',
+  instanceLoginClose: 'cloud-settings-client:instance-login-close',
   instanceRead: 'cloud-settings-client:instance-read',
   instancePower: 'cloud-settings-client:instance-power',
   instanceUpgrade: 'cloud-settings-client:instance-upgrade',

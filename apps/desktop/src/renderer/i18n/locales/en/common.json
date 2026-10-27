@@ -7738,7 +7738,9 @@
       "INVALID_AUTH_CODE": "Authorization expired. Start sign-in again.",
       "INVALID_LOGIN_TICKET": "The sign-in session expired. Start again.",
       "INVALID_BIND_TICKET": "The verification session expired. Start again.",
-      "REGION_MISMATCH": "The sign-in service region does not match this app."
+      "REGION_MISMATCH": "The sign-in service region does not match this app.",
+      "LOGIN_OWNERSHIP_MISMATCH": "Use the account that owns this cloud instance. For an organization account, choose SSO.",
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "The cloud sign-in service needs an update. Please try again later."
     },
     "rateLimit": {
       "retryAt": "Try again after {{time}} (local time).",

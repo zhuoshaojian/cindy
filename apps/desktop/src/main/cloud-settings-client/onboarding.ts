@@ -11,7 +11,7 @@ import { parseCloud, parseOwnedInstances, projectCloudInstance } from './ownedIn
 
 const instancesPath = '/instance-login/api/manage/instances';
 const attemptSchema = z.object({ continueUrl: z.string().max(2048) });
-function continuation(baseUrl: string, result: unknown) {
+export function continuation(baseUrl: string, result: unknown) {
   const { continueUrl } = parseCloud(attemptSchema, result),
     base = new URL(baseUrl);
   if (

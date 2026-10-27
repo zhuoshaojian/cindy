@@ -7706,7 +7706,9 @@
       "INVALID_AUTH_CODE": "授權已過期，請重新登入",
       "INVALID_LOGIN_TICKET": "登入會話已過期，請重新登入",
       "INVALID_BIND_TICKET": "繫結會話已過期，請重新登入",
-      "REGION_MISMATCH": "登入服務區域與當前客戶端不匹配"
+      "REGION_MISMATCH": "登入服務區域與當前客戶端不匹配",
+      "LOGIN_OWNERSHIP_MISMATCH": "請使用領取此雲端實例的同一帳號；企業帳號請選擇 SSO。",
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "雲端登入服務需要更新，請稍後重試。"
     },
     "rateLimit": {
       "retryAt": "請在 {{time}}（本機時間）之後重試。",

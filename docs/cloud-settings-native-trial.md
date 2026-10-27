@@ -103,8 +103,9 @@ OpenAI 等 loopback 授权由 Main 先监听 Host 指定的本机回环地址、
 
 - 空列表提供显式“领取云实例”，复用既有无 ID wake 分支。已有实例唤醒始终带 ID；写前核对
   归属，响应不明只查询结果，不自动重放领取。
-- `loginRequired` 走既有 CIS 登录尝试与组织 SSO。短期 continuation 只在 Main 与 CIS 登录页
-  间传递，不进 Renderer、日志或磁盘；不复制本机凭证到云端。
+- `loginRequired` 打开客户端共享的 `LoginPageView`，保留短信、已启用的第三方方式、
+  SSO 企业 ID 输入、多连接选择和后续验证。云端目标持续标明；短期 continuation 仅在
+  Main 与 CIS 间传递，不进 Renderer、日志或磁盘，不复制本机凭证到云端。
 - 概览独立于 Host 设置会话，休眠时仍可显示状态和唤醒。休眠确认具体目标与任务影响。
   可见页面转换状态每 5 秒、稳定状态每 30 秒读取，禁止同实例重复写入。
 - 云版本、可用更新与本机版本分别显示。自动更新及维护时段显式保存，携带 revision 与
@@ -244,9 +245,11 @@ Linux 输入与授权浏览器修复另有隔离 X11 回归；它不代表 Devic
 CIS 手机号、邮箱、第三方登录和补绑全部复用现有 auth 协议；server 选择实例所属账号，
 验签确认 membership、passport 和 device 后，只交付实例 resource refresh token。普通客户端
 登录态不会复制到云端，个人账号没有自动获得云权限。须先交付 CIS，再使用此客户端。
-受 CAPTCHA 保护的验证码发码另需 auth-server 的可选托管发码模式：挑战签发和发码均
-由同一浏览器在 auth 域完成，不把 CAPTCHA token 经 CIS 转发。新 CIS 检查 providers
-的 `captcha.requestCodePage`；旧 auth 不支持时明确返回 `LOGIN_AUTH_UPGRADE_REQUIRED`。
+原生客户端沿现有 Auth/CAPTCHA 链路发码，CIS 的新增 `personal/prepare-code` 只记录
+待验证目标，实际验码、owner/device 检查和云凭证回写仍由 CIS 完成。云端挑战页取目标
+Auth realm，不受本机登录方式改变。微信、Apple、SSO 直接打开对应 Auth authorize URL，
+沿原 CIS capability 轮询；不再跳到 CIS 的登录方式选择页。浏览器入口继续使用可选托管
+发码模式并检查 `captcha.requestCodePage`，与原生接入的依赖分开。
 因此认证服务、CIS、原生客户端的交付状态必须分别记录，不把源码完成写成已部署。
 
 云镜像额外应用 `deploy/linux-desktop/runtime-identity/`：隐藏设置资料卡的“退出登录”、
@@ -262,3 +265,14 @@ CIS 手机号、邮箱、第三方登录和补绑全部复用现有 auth 协议�
 来源 IP 与一次性校验运行，外部 Turnstile/Siteverify 和短信/邮件发送采用测试替身。
 没有重新授权或创建先前已删除的个人测试实例，也没有改动云实例运行状态。
 云端入口隐藏须随后续云镜像交付生效；本地源码测试不代表已更新线上镜像。
+
+### 原生登录界面统一（2026-10-27）
+
+云端和本地使用同一个登录呈现组件、主题和控件。云端控制器独立持有不透明 handle，
+不调用本地登录初始化、账号切换或凭证保存；离开页面、切换账号和迟到的创建结果均清理
+未完成尝试。SSO 不因个人账号隐藏；选择与实例归属不符的身份时明确拒绝，不能把个人
+实例转成企业实例。旧 CIS 没有 prepare-code 时明确提示升级，不自动退回复制凭证。
+
+界面场景覆盖短信入口、企业 ID、验证码、补绑和 SSO 二次验证的 Light/Dark；实际控件
+与布局已目检。场景使用合成准入/IPC，不能替代真实服务端登录和云端启动验收。
+原生 IPC 不加入 DeviceLink 通用白名单；本次不新增手机版入口。

@@ -166,6 +166,7 @@ const common = (definition, plugins) => ({
     'import.meta.env.PROD': 'true',
     'import.meta.env.DEV': 'false',
     'import.meta.env.MODE': '"production"',
+    ...(definition.authRegion ? { 'import.meta.env.VITE_CINDY_AUTH_REGION': JSON.stringify(definition.authRegion) } : {}),
     'process.env.NODE_ENV': '"production"',
   },
   logLevel: 'silent',

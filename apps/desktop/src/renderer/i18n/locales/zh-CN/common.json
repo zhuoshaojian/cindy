@@ -7706,7 +7706,9 @@
       "INVALID_AUTH_CODE": "授权已过期，请重新登录",
       "INVALID_LOGIN_TICKET": "登录会话已过期，请重新登录",
       "INVALID_BIND_TICKET": "绑定会话已过期，请重新登录",
-      "REGION_MISMATCH": "登录服务区域与当前客户端不匹配"
+      "REGION_MISMATCH": "登录服务区域与当前客户端不匹配",
+      "LOGIN_OWNERSHIP_MISMATCH": "请使用领取这台云实例的同一个账号；企业账号请选择 SSO。",
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "云端登录服务需要更新，请稍后重试。"
     },
     "rateLimit": {
       "retryAt": "请在 {{time}}（本机时间）之后重试。",
