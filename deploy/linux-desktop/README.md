@@ -12,6 +12,7 @@ release checks. Ordinary desktop builds do not enable these overlays.
 | Material | Purpose |
 | --- | --- |
 | [SOURCE-BUILD.md](SOURCE-BUILD.md), [0.1.113 instance acceptance](ACCEPTANCE-0113-20261022.md) | Complete source-build entry and the separate tested-instance result |
+| [cloud.29 identity acceptance](ACCEPTANCE-IDENTITY-20261027.md) | CI delivery, owner-only upgrade, real logout/account-mutation rejection and login-bridge test limits |
 | [Clipboard and recovery follow-up](ACCEPTANCE-CLIPBOARD-RECOVERY-20261020.md) | R7 source-build and Mac clipboard acceptance, rollout results, and explicit phone-test limits |
 | [Candidate delivery](delivery/README.md) | Fork-only self-hosted source build, isolated smoke, candidate publication and ACS cache preparation |
 | [Dual-version updates](DUAL-VERSION-UPDATES.md), [cloud.2 acceptance](ACCEPTANCE-CLOUD2-20261021.md) | Implemented CIS selection and owner-requested upgrades, application version display, live acceptance and remaining promotion work |
@@ -21,7 +22,7 @@ release checks. Ordinary desktop builds do not enable these overlays.
 | `prepare-linux.sh`, `prepare-codex.mjs`, `prepare-other-assets.mjs` | Prepare the isolated Linux builder and verify external assets |
 | `stage-cloud-overlays.mjs`, `build-runtime.sh` | Apply the cloud transforms to a disposable source export and package it |
 | `runtime-activity/`, `runtime-maintenance/` | Runtime task activity, maintenance gate and clean shutdown evidence |
-| `runtime-guidance/`, `runtime-updates/`, `runtime-window-controls/` | Cloud configuration guidance, managed updates and main-window controls |
+| `runtime-guidance/`, `runtime-updates/`, `runtime-window-controls/`, `runtime-identity/` | Cloud configuration guidance, managed updates, main-window controls and managed-identity account UI |
 | `runtime-entrypoint/`, `runtime-desktop-xfce/` | Historical Openbox entrypoint and current Xfce/Plank sources |
 | `runtime-fonts/` | Verified emoji font staging and permission checks |
 | `release_guard.py` | Offline application payload, permissions, image metadata and startup-evidence gates |
