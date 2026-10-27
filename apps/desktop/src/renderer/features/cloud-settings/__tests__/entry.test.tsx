@@ -219,3 +219,49 @@ it('refreshes both entries on every account switch without reusing denied or all
   }
   expect(instanceAccess).toHaveBeenCalledTimes(4);
 });
+
+// Main can publish a committed owner just before releasing its transition fence.
+// The first read then rejects even though the next read is authorized. No focus
+// or visible-page polling event is guaranteed after the switch.
+it('recovers from the account transition fence without focus, even while hidden', async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+  instanceAccess.mockRejectedValueOnce(new Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
+  try {
+    render(content());
+    await act(async () => {});
+    expect(access()).toBe('hidden');
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual(['allowed', 'allowed']);
+    expect(instanceAccess).toHaveBeenCalledTimes(2);
+  } finally { visibility.mockRestore(); }
+});
+
+it('does not retry an explicit denial and cancels the outgoing account retry', async () => {
+  vi.useFakeTimers();
+  instanceAccess.mockRejectedValueOnce(new Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
+  const view = render(content());
+  await act(async () => {});
+  auth.dataOwnerId = 'denied-account';
+  auth.dataOwnerGeneration++;
+  setDataOwnerGeneration(auth.dataOwnerId, auth.dataOwnerGeneration);
+  instanceAccess.mockResolvedValue({ schemaVersion: 1, allowed: false });
+  view.rerender(content());
+  await act(async () => {});
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(access()).toBe('hidden');
+  expect(instanceAccess).toHaveBeenCalledTimes(2);
+});
+
+it('bounds failed-read retries and cancels them when unmounted', async () => {
+  vi.useFakeTimers();
+  instanceAccess.mockRejectedValue(new Error('CLOUD_SETTINGS_UNAVAILABLE'));
+  const view = render(content());
+  await act(async () => {});
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(access()).toBe('hidden');
+  expect(instanceAccess).toHaveBeenCalledTimes(4);
+  view.unmount();
+  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  expect(instanceAccess).toHaveBeenCalledTimes(4);
+});

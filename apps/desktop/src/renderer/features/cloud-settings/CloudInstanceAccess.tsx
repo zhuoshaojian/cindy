@@ -7,6 +7,7 @@ import {
 
 type Access = 'checking' | 'allowed' | 'hidden';
 const CloudInstanceAccessContext = createContext<Access>('hidden');
+const READ_RETRY_DELAYS_MS = [250, 1_000, 3_000] as const;
 
 /** Presentation only. Main holds credentials; CIS still authorizes every action.
  * Only the dedicated capability response confirms management/placement access.
@@ -29,21 +30,33 @@ export function CloudInstanceAccessProvider({ children }: { children: ReactNode 
     let live = true;
     let inFlight = false;
     let lastDecisionAt = -Infinity;
+    let retryIndex = 0;
+    let retryTimer: number | undefined;
     const current = () => live && isDataOwnerGenerationCurrent(owner);
     const refresh = async () => {
       if (inFlight || !current() || Date.now() - lastDecisionAt < 5_000) return;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      retryTimer = undefined;
       inFlight = true;
       try {
         // Main verifies the committed identity; CIS derives admission from its
         // current policy, without listing instances, waking or allocating one.
         const decision = await window.electronAPI.cloudSettings.instanceAccess({});
         if (current()) {
+          retryIndex = 0;
           lastDecisionAt = Date.now();
           setResult({ scope, access: decision.allowed ? 'allowed' : 'hidden' });
         }
       } catch {
         // A rejected or unavailable check is not permission to display the feature.
-        if (current()) setResult({ scope, access: 'hidden' });
+        if (current()) {
+          setResult({ scope, access: 'hidden' });
+          // The committed auth projection may reach Renderer before Main releases
+          // its owner-transition fence. Retry reads only, without relying on focus
+          // or visibility events. Explicit denial above never starts a retry.
+          const delay = READ_RETRY_DELAYS_MS[retryIndex++];
+          if (delay !== undefined) retryTimer = window.setTimeout(() => void refresh(), delay);
+        }
       } finally {
         inFlight = false;
       }
@@ -59,6 +72,7 @@ export function CloudInstanceAccessProvider({ children }: { children: ReactNode 
     return () => {
       live = false;
       window.clearInterval(timer);
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       window.removeEventListener('focus', visible);
       window.removeEventListener('online', visible);
       document.removeEventListener('visibilitychange', visible);
