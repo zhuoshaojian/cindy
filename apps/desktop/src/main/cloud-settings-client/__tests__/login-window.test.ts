@@ -174,3 +174,47 @@ it('keeps the same pending login on reopen, but invalidates it when choosing ano
   expect(() => f.manager.assertCurrent(f.sender(), generation)).toThrow('SCOPE_CHANGED');
   expect(f.invalidate).toHaveBeenCalledWith(f.sender().id);
 });
+
+// Main native close can hide the client without destroying it. This is distinct
+// from ordinary minimize: retire the capability, including a late open response.
+it('resets a minimized login on main close and rejects a late completion/open', async () => {
+  await f.manager.open(f.opener, 'cloud-a');
+  f.ready();
+  const sender = f.sender(),
+    generation = f.manager.state().generation;
+  f.windows[0].emit('minimize');
+  f.manager.reset();
+  expect(f.manager.state().target).toBeNull();
+  expect(f.windows[0].isVisible()).toBe(false);
+  expect(f.invalidate).toHaveBeenCalledWith(sender.id);
+  expect(() => f.manager.complete(sender, generation)).toThrow('SCOPE_CHANGED');
+  expect(f.opener.send).not.toHaveBeenCalled();
+  let authorize!: (target: { deviceId: string; name: null; nameSequence: number }) => void;
+  f.authorize.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        authorize = resolve;
+      }),
+  );
+  const opening = f.manager.open(f.opener, 'cloud-b');
+  f.manager.reset();
+  authorize({ deviceId: 'cloud-b', name: null, nameSequence: 2 });
+  await expect(opening).rejects.toThrow('SCOPE_CHANGED');
+  expect(f.manager.state().target).toBeNull();
+  expect(f.windows[0].isVisible()).toBe(false);
+});
+
+it('destroys a minimized login on main destruction or quit without recovery leftovers', async () => {
+  await f.manager.open(f.opener, 'cloud-a');
+  f.ready();
+  const old = f.sender();
+  f.windows[0].emit('minimize');
+  f.manager.destroy();
+  f.manager.destroy();
+  vi.runAllTimers();
+  expect(f.manager.state().target).toBeNull();
+  expect(f.windows[0].isDestroyed()).toBe(true);
+  expect(f.windows).toHaveLength(1);
+  expect(f.invalidate).toHaveBeenCalledWith(old.id);
+  expect(f.manager.controller.isOpen()).toBe(false);
+});

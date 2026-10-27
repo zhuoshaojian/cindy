@@ -3406,6 +3406,7 @@ function ensureWindowsTray(): boolean {
 
 function hideMainWindowToWindowsTray(mainWindow: BrowserWindow): void {
   if (ensureWindowsTray()) {
+    cloudLoginWindowLifecycle.reset();
     hideWindowToWindowsTray(mainWindow);
     return;
   }
@@ -4022,6 +4023,9 @@ const createWindow = () => {
     // can restore it without remounting the renderer.
     if (process.platform === 'darwin') {
       event.preventDefault();
+      // Native close hides this window rather than destroying it. Retire any
+      // cloud login, including a minimized one; ordinary minimize is unchanged.
+      cloudLoginWindowLifecycle.reset();
       resourceUsageWindowController.hideWithOwner();
       if (mainWindow.isFullScreen()) {
         mainWindow.once('leave-full-screen', () => {
