@@ -19,7 +19,13 @@ Runner、DinD、BuildKit 是构建工具，不是云实例需要安装的额外�
 | 产品验收与晋级 | 记录明确的 pending 状态 | 完整 OAuth、DeviceLink、Pod 实际缓存命中、灰度、签名信任及稳定通道准入尚未自动化 |
 | CIS 自动更新 | [双版本选择与主动升级](../DUAL-VERSION-UPDATES.md) | 已登记维护实例支持双版本；网页和原生客户端均已接入主动升级。新领取按已准入列表选择同仓库、地区与架构的最高版本；稳定目录与自动晋级待接入 |
 
-最新完成自动交付的产物为 `0.1.113-cloud.28`，运行 [39908202230](https://github.com/zhuoshaojian/cindy/actions/runs/39908202230)。
+当前发行意图为 `0.1.113-cloud.30`：包含冻结源码的 Git LFS 实体校验和最终安装包的
+SQLite vec 运行验证，修复 cloud.29 在全新数据库初始化时缺少扩展的问题。
+提交版本号触发 fork 完整交付；只有构建、隔离启动和 ACS 缓存通过后，才单独登记 CIS
+新领取与存量可升级目标。此版本提交本身不升级任何实例。
+最近已发布的 cloud.29 及其首次启动缺陷见 [身份与登录验收](../ACCEPTANCE-IDENTITY-20261027.md)。
+
+此前 `0.1.113-cloud.28` 的运行 [39908202230](https://github.com/zhuoshaojian/cindy/actions/runs/39908202230)
 完整源码构建、原生 Linux 隔离 smoke 和 ACS 缓存 2/2 Ready 均通过；本版隐藏 Dock
 首选项面板，保留默认锁定和 `cloud.27` 的远程桌面输入积压修复，见
 [Dock 验收记录](../ACCEPTANCE-DOCK-20261023.md)。交付后已独立完成本人实例的原生客户端
