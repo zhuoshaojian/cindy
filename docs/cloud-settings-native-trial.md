@@ -276,3 +276,11 @@ Auth realm，不受本机登录方式改变。微信、Apple、SSO 直接打开�
 界面场景覆盖短信入口、企业 ID、验证码、补绑和 SSO 二次验证的 Light/Dark；实际控件
 与布局已目检。场景使用合成准入/IPC，不能替代真实服务端登录和云端启动验收。
 原生 IPC 不加入 DeviceLink 通用白名单；本次不新增手机版入口。
+
+交付记录：客户端实现已推送 fork `feat/cloud-settings-native-client` 的
+[`bcbd97d84c`](https://github.com/zhuoshaojian/cindy/commit/bcbd97d84ccf7811bfa7b44b18c59392969133e1)。
+CIS `99167ffbec` 经 [fork 流水线](https://github.com/zhuoshaojian/cindy-server/actions/runs/40469189776)
+部署成功，API 与 orchestrator 均已核对为新版本且 Ready。客户端类型检查及 462 项定向测试、
+CIS 类型检查及 1,747 项测试通过（395 项原有跳过）。完整 Dev 启动仍等待 macOS 钥匙串授权，
+真实远端短信、微信、Apple 回写与云端启动待验；临时测试权限已撤销，测试记录保持停止。
+详见 [cloud.29 验收记录](../deploy/linux-desktop/ACCEPTANCE-IDENTITY-20261027.md)。

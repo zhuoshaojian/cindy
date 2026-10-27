@@ -82,9 +82,12 @@ isolated user/network namespace.
 ## Other login methods and bridge coverage
 
 CIS is running fork commit
-[`72be526f0f26d108fc271dc281d2152fd4edf0a8`](https://github.com/zhuoshaojian/cindy-server/commit/72be526f0f26d108fc271dc281d2152fd4edf0a8),
-delivered by [server run 40318433178](https://github.com/zhuoshaojian/cindy-server/actions/runs/40318433178).
-This CIS workflow does not deploy auth-server.
+[`99167ffbecec2a4f63a32bdb6949c45a33ed5383`](https://github.com/zhuoshaojian/cindy-server/commit/99167ffbecec2a4f63a32bdb6949c45a33ed5383),
+delivered by [server run 40469189776](https://github.com/zhuoshaojian/cindy-server/actions/runs/40469189776).
+The run completed successfully. A 07:57 UTC readback confirmed API and
+orchestrator both use that release digest, with current observed generations and
+all desired replicas updated, available and Ready. This CIS workflow does not
+deploy auth-server or change business-instance images.
 
 - Current CN Auth discovery reports **phone, WeChat and Apple** enabled; email and
   Google are disabled. Disabled methods must not be presented as available just
@@ -117,16 +120,26 @@ social/SSO opens the selected Auth method directly. The cloud target remains
 visible and the local account is never switched. Main keeps the attempt secret.
 CIS's additive prepare-code endpoint must deploy before the new client.
 
-Validation: CIS typecheck and its full suite pass (1,747 tests; 395 existing
-skips). Native flow and renderer lifecycle tests cover direct provider dispatch,
+Client implementation:
+[`bcbd97d84ccf7811bfa7b44b18c59392969133e1`](https://github.com/zhuoshaojian/cindy/commit/bcbd97d84ccf7811bfa7b44b18c59392969133e1)
+on `feat/cloud-settings-native-client`. Client typecheck and 462 targeted tests
+pass. CIS typecheck and its full suite pass (1,747 tests; 395 existing skips).
+Native flow and renderer lifecycle tests cover direct provider dispatch,
 SSO continuation, CAPTCHA failure/retry, binding, owner/window invalidation and
 late cancellation. The shared login UI passed 10 Light/Dark scenarios and was
 visually inspected. These UI scenarios use synthetic admission and IPC. The
 broader changed-page scan also covers unrelated pages through shared locale
 files; its pre-existing MCP-card fixture failure is not a cloud-login pass.
 
+The rebuilt isolated Mac Dev process is waiting for macOS Keychain permission
+(`SecKeychainItemCopyContent`); the startup wrapper timed out before a main window
+was ready. The temporary source endpoint override was restored. No full-client
+entry or real remote-login pass is inferred from the standalone UI checks.
+
 **Real remote SMS, WeChat and Apple completion and cloud startup remain pending.**
-The healthy enterprise instance was not logged out or rebound for this UI work.
+The temporary grant remains revoked and the test record stopped, without a runtime
+or pending credential deposit. The healthy enterprise instance was not logged out
+or rebound for this UI work.
 
 This change controls the **Cindy instance identity**. Model-provider, plugin and
 MCP third-party authorizations are separate and were not re-authorized in this
