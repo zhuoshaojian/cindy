@@ -1551,3 +1551,13 @@ test("readDesktopDevLogTail strips terminal control sequences and keeps the last
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+// An ambiguous endpoint source must not stop the currently running dev client.
+test("desktop restart rejects conflicting private endpoint flags before process control", () => {
+  const steps = [];
+  assert.throws(() => runDesktopRestart(
+    ["--region=cn", "--endpoints-file=/private/cloud test/endpoint.json", "--endpoints-cdn"],
+    "/repo/cindy", (step) => steps.push(step), () => {},
+  ), /cannot be combined/);
+  assert.deepEqual(steps, []);
+});

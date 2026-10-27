@@ -1,6 +1,6 @@
 # 原生云实例设置与隔离 Dev 客户端
 
-本分支已合入上游 `v0.1.113`。本文记录截至 2026-10-26 的实现与验收边界。
+本分支已合入上游 `v0.1.113`。本文记录截至 2026-10-27 的实现与验收边界。
 工作分支包含原生设置、隔离 Dev 发行包和 Linux 运行时修复；安装包和云镜像是两个独立产物，
 云镜像使用 `source-freeze.json` 指定的完整客户端提交，不能把分支 HEAD 视为已经部署。
 镜像构建入口、候选交付与本人实例升级记录见本仓
@@ -58,15 +58,34 @@ pnpm desktop:whoami --all
 以 `DESKTOP_DEV_VERDICT=ready` 和 `desktop:whoami` 的 checkout、区域、沙箱结果为准。
 首次在独立沙箱登录，不复制正式版或隔离发行包的凭证和数据。登录后访问的仍是真实云实例。
 
-CN 源码 remote 模式读取 `config/endpoint.json`；联调前须在该清单中配置当前环境的
-`cloudInstanceApiBaseUrl`（HTTPS 服务根地址，例如 `https://cis.example.com`）。
-仓库公共清单未提供此字段时，普通登录仍可成功，但云实例权限查询不能完成，管理入口会隐藏。
-不要将缺少端点误判成账号无权限，也不要用本地推断绕过服务端准入。
+CN 源码 remote 模式默认读取 `config/endpoint.json`。云联调须准备一份仓库外的完整
+端点清单，包含当前区域的 `region` 和 HTTPS `cloudInstanceApiBaseUrl`（服务根地址，
+例如 `https://cis.example.com`），显式传入每次启动：
 
-remote 启动包装会按区域重设清单路径，不能靠继承 `XDT_ENDPOINT_MANIFEST_FILE` 切到另一份
-清单。联调时只补所需字段，启动后恢复临时改动，不提交私有地址；下次完整重启仍须准备端点。
-隔离 Dev 发行包的端点由自身 `cloud-dev-endpoints.json` 提供，不会自动成为源码启动的配置。
+```sh
+pnpm restart:desktop:remote --region=cn --isolated=dev --passive --endpoints-file=/absolute/path/to/private/endpoint.json
+```
+
+`--endpoints-file` 随启动包装传到实际进程，不接受继承的 `XDT_ENDPOINT_MANIFEST_FILE`
+作为隐式覆盖；不能与 `--endpoints-cdn` 同用。真实地址留在仓库外，不放凭证。
+不要临时修改公共清单再恢复：下一次重启会丢失 CIS 地址，登录虽成功，侧边栏和设置的
+云入口却都无法通过权限查询。重启后先检查启动输出采用的清单路径，再验账号切换。
+隔离 Dev 发行包仍使用自身 `cloud-dev-endpoints.json`，不依赖此开发参数；源码联调可从
+已核验的同区域配置准备私有清单，不能复制发行包的账号凭证和业务数据。
+缺少服务地址与账号无权限应分开诊断，均不能用本地推断绕过服务端准入。
 完整启动与隔离约定见 [Desktop 开发规则](dev-rules/desktop-development.md)。
+
+### 账号切换时入口消失的排查（2026-10-27）
+
+现场主进程已提交企业身份，token 的账号、区域与当前会话一致，但
+`cloudInstanceApiBaseUrl` 缺失，权限调用返回 `CLOUD_SETTINGS_SCOPE_CHANGED`。
+此前联调临时修改公共清单、启动后恢复；后续重启失去了云服务配置。
+本次增加显式私有清单参数，不更改 CIS 准入、不重新给个人测试账号开权。
+
+自动回归覆盖私有清单经过子启动包装保留、重新启动与同区域账号切换后端点不丢失、
+跨区域不借用该端点，以及无权限/有权限反复切换时两处消费者同步刷新。
+端点与入口 127 项、启动包装 98 项、开发文档 10 项通过，Desktop 类型检查通过。
+这不替代真实账号切换验收；本次开发客户端重启在 macOS 钥匙串授权处等待，实机结果待补。
 
 ## 现有协议的复用
 

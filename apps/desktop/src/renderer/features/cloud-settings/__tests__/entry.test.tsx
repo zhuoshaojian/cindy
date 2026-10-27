@@ -198,3 +198,24 @@ it('coalesces focus and visibility events without missing a later revocation', a
   expect(access()).toBe('hidden');
   expect(instanceAccess).toHaveBeenCalledTimes(2);
 });
+
+// Both consumers must recover immediately after denied -> admitted -> denied,
+// without waiting for focus or the one-minute permission refresh interval.
+it('refreshes both entries on every account switch without reusing denied or allowed results', async () => {
+  instanceAccess.mockResolvedValueOnce({ schemaVersion: 1, allowed: false });
+  const view = render(content());
+  await act(async () => {});
+  expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual(['hidden', 'hidden']);
+  for (const [owner, allowed] of [['enterprise', true], ['personal', false], ['enterprise', true]] as const) {
+    let resolve!: (value: { schemaVersion: 1; allowed: boolean }) => void;
+    instanceAccess.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    auth.dataOwnerId = owner;
+    auth.dataOwnerGeneration++;
+    setDataOwnerGeneration(owner, auth.dataOwnerGeneration);
+    view.rerender(content());
+    expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual(['checking', 'checking']);
+    await act(async () => resolve({ schemaVersion: 1, allowed }));
+    expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual(allowed ? ['allowed', 'allowed'] : ['hidden', 'hidden']);
+  }
+  expect(instanceAccess).toHaveBeenCalledTimes(4);
+});
