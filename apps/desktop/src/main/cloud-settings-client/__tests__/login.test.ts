@@ -340,4 +340,76 @@ describe('native cloud login controller', () => {
     ).toBe('CLOUD_SETTINGS_INVALID_RESPONSE');
     expect(f.openExternal).not.toHaveBeenCalled();
   });
+
+  // Unit / caller-and-device isolation: previous cases only used one target.
+  // Two active targets plus A's late status must not cancel, complete or expose B.
+  it('isolates two device attempts and drops A’s late completion without disturbing B', async () => {
+    const f = fixture();
+    const other = structuredClone(f.target);
+    other.instanceId = other.status.instanceId = 'instance-b';
+    other.deviceId = other.status.deviceId = 'cloud-device-bbbbbbbbbbbbbbbbbbbbbbbb';
+    const callerB = { id: 2, assertCurrent: vi.fn() };
+    const capB = { id: 'b'.repeat(24), secret: 't'.repeat(43) };
+    let resolveA!: (value: unknown) => void;
+    f.request.mockImplementation(async (_id, path, _method, body, _signal, check) => {
+      check();
+      if (path.endsWith('/manage/instances')) return { instances: [f.target, other] };
+      if (path === '/instance-login/api/attempts') {
+        const instanceId = (body as { instanceId: string }).instanceId;
+        expect(['instance-a', 'instance-b']).toContain(instanceId);
+        const cap = instanceId === 'instance-a' ? f.cap : capB;
+        return { continueUrl: `/instance-login/#attemptId=${cap.id}&attemptSecret=${cap.secret}` };
+      }
+      const isB = path.includes(`/attempts/${capB.id}/`);
+      const cap = isB ? capB : f.cap;
+      expect(path).toContain(`/attempts/${cap.id}/`);
+      expect(body).toMatchObject({ attemptSecret: cap.secret });
+      if (path.endsWith('/personal/social')) {
+        const provider = (body as { provider: string }).provider;
+        return {
+          status: 'pending',
+          authorizeUrl: f
+            .authorize(`/api/auth/social/${provider}/authorize`)
+            .replace(f.deviceId, isB ? other.deviceId : f.deviceId),
+        };
+      }
+      if (path.endsWith('/status')) {
+        if (isB) return { status: 'ready' };
+        return new Promise((resolve) => {
+          resolveA = resolve;
+        });
+      }
+      throw Error('unexpected path');
+    });
+    const a = await f.start();
+    const b = await f.service.start(callerB, other.deviceId);
+    expect(a.handle).not.toBe(b.handle);
+    const action = {
+      type: 'start-browser' as const,
+      kind: 'social' as const,
+      providerOrConnectionId: 'apple',
+      label: 'Apple',
+    };
+    await f.service.dispatch(f.caller, a.handle, action);
+    await f.service.dispatch(callerB, b.handle, action);
+    expect(
+      f.openExternal.mock.calls.map(([url]) => new URL(url).searchParams.get('device_id')),
+    ).toEqual([f.deviceId, other.deviceId]);
+    await expect(f.service.poll(f.caller, b.handle)).rejects.toThrow('SCOPE_CHANGED');
+    const late = f.service.poll(f.caller, a.handle);
+    const rejected = expect(late).rejects.toThrow('SCOPE_CHANGED');
+    f.service.invalidate(f.caller.id);
+    expect(f.cancelLogin).toHaveBeenCalledExactlyOnceWith(
+      'https://cis.example.test',
+      f.cap.id,
+      f.cap.secret,
+    );
+    expect((await f.service.poll(callerB, b.handle)).complete).toBe(true);
+    resolveA({ status: 'ready' });
+    await rejected;
+    await f.service.close(f.caller, b.handle); // foreign caller cannot close B
+    expect((await f.service.poll(callerB, b.handle)).complete).toBe(true);
+    expect(f.cancelLogin).toHaveBeenCalledTimes(1);
+    await f.service.close(callerB, b.handle);
+  });
 });

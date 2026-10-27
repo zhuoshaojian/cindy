@@ -218,3 +218,26 @@ it('destroys a minimized login on main destruction or quit without recovery left
   expect(f.invalidate).toHaveBeenCalledWith(old.id);
   expect(f.manager.controller.isOpen()).toBe(false);
 });
+
+// Unit / instance-switch race: existing tests switch already-open targets.
+// A delayed admission response must not replace the newer, already-visible B.
+it('keeps B selected when A’s earlier admission response arrives last', async () => {
+  let resolveA!: (target: { deviceId: string; name: null; nameSequence: number }) => void;
+  f.authorize.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveA = resolve;
+      }),
+  );
+  const openingA = f.manager.open(f.opener, 'cloud-a');
+  const rejected = expect(openingA).rejects.toThrow('SCOPE_CHANGED');
+  await f.manager.open(f.opener, 'cloud-b');
+  f.ready();
+  const selected = f.manager.state();
+  resolveA({ deviceId: 'cloud-a', name: null, nameSequence: 1 });
+  await rejected;
+  expect(f.manager.state()).toEqual(selected);
+  expect(selected.target?.deviceId).toBe('cloud-b');
+  expect(f.windows).toHaveLength(1);
+  expect(f.windows[0].isVisible()).toBe(true);
+});

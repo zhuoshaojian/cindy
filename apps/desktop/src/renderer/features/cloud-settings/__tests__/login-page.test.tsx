@@ -3,11 +3,17 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CloudInstanceLoginView } from '../../../../shared/cloudInstanceLogin';
 import type { DesktopLoginAction } from '../../../../shared/authIpc';
+import type { CloudLoginWindowState } from '../../../../shared/cloudLoginWindow';
 
 // Unit: the auxiliary login must use only cloud handles, preserve SSO, and
 // dispose late results. The shared local login tests cannot cover this scope.
 const translate = (key: string) => key;
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-i18next')>()),
+  useTranslation: () => ({ t: translate }),
+}));
+vi.mock('@/components/login/LoginBrandStage', () => ({ LoginBrandStage: () => null }));
+vi.mock('@/hooks/useAppShortcut', () => ({ useAppShortcut: () => {} }));
 vi.mock('@/components/login/LoginPage', () => ({
   LoginPageView: ({
     onClose,
@@ -33,6 +39,7 @@ vi.mock('@/components/login/LoginPage', () => ({
   ),
 }));
 import { CloudInstanceLoginFlow } from '../CloudInstanceLoginPage';
+import { CloudLoginWindowLayout } from '../CloudLoginWindowRoot';
 const view: CloudInstanceLoginView = {
   handle: '11111111-1111-4111-8111-111111111111',
   complete: false,
@@ -111,4 +118,59 @@ it('starts a clean flow after close/reopen instead of reusing the previous form'
   mount();
   await waitFor(() => expect(api.instanceLoginStart).toHaveBeenCalledTimes(2));
   expect(api.instanceLoginClose).toHaveBeenCalledWith({ handle: view.handle });
+});
+
+// Unit / cross-target UI isolation: previous tests unmount without a replacement.
+// An old dispatch and an out-of-order state broadcast must not overwrite B's form.
+it('keeps B’s form when A’s dispatch and state broadcast arrive after switching', async () => {
+  let changed!: (state: CloudLoginWindowState) => void;
+  let resolveA!: (state: CloudInstanceLoginView) => void;
+  const stateA = { generation: 1, target };
+  const stateB = {
+    generation: 2,
+    target: { deviceId: 'cloud-device-b', name: 'Cloud B', nameSequence: 2 },
+  };
+  const viewB = { ...structuredClone(view), handle: '22222222-2222-4222-8222-222222222222' };
+  const bridge = {
+    getState: vi.fn(async () => stateA),
+    onChanged: (cb: typeof changed) => {
+      changed = cb;
+      return () => {};
+    },
+    onLocaleChanged: () => () => {},
+    rendererReady: vi.fn(async () => stateA),
+    presentationReady: vi.fn(async () => stateA),
+    start: vi.fn(async (generation: number) => structuredClone(generation === 1 ? view : viewB)),
+    dispatch: vi.fn(
+      () =>
+        new Promise<CloudInstanceLoginView>((r) => {
+          resolveA = r;
+        }),
+    ),
+    poll: vi.fn(async (generation: number) => structuredClone(generation === 1 ? view : viewB)),
+    end: vi.fn(async () => undefined),
+    close: vi.fn(async () => undefined),
+  };
+  Object.assign(window.electronAPI, { cloudLoginWindow: bridge });
+  const mounted = render(<CloudLoginWindowLayout />);
+  await screen.findByText('Cloud Test:identifier');
+  fireEvent.click(screen.getByText('SSO'));
+  expect(bridge.dispatch).toHaveBeenCalledWith(1, {
+    handle: view.handle,
+    action: { type: 'discover-sso-org', org: 'example' },
+  });
+  act(() => changed(stateB));
+  await screen.findByText('Cloud B:identifier');
+  expect(bridge.end).toHaveBeenCalledWith(1, { handle: view.handle });
+  await act(async () => {
+    resolveA({ ...view, state: { step: 'browser-redirect', label: 'A only' } });
+    changed(stateA);
+  });
+  expect(screen.getByText('Cloud B:identifier')).toBeTruthy();
+  expect(screen.queryByText(/browser-redirect/)).toBeNull();
+  expect(bridge.start).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByText('close'));
+  expect(bridge.close).toHaveBeenCalledExactlyOnceWith(2);
+  mounted.unmount();
+  expect(bridge.end).toHaveBeenLastCalledWith(2, { handle: viewB.handle });
 });
