@@ -238,11 +238,18 @@ class PublishTest(unittest.TestCase):
                 (records/n).write_text('{}')
             (records/'build-inputs.json').write_text(json.dumps({'recipeCommit':'a'*40,'version':VERSION}))
             native = records/'native-modules.json'
-            native.write_text(json.dumps({'passed':True,'sqlite':True,'pty':True,'electronVersion':'42.11.12','abi':'145'}))
+            native.write_text(json.dumps({'passed':True,'sqlite':True,'sqliteVec':True,'pty':True,'electronVersion':'42.11.12','abi':'145'}))
             self.assertEqual(len(check_build(p,info,result,proof,records)),5)
-            native.write_text(json.dumps({'passed':True,'sqlite':True,'pty':False,'electronVersion':'42.11.12','abi':'145'}))
+            # cloud.29's old sqlite/pty-only proof missed an LFS pointer in vec0.so.
+            complete = json.loads(native.read_text())
+            for vec_proof in (None, False):
+                legacy = {k:v for k,v in complete.items() if k != 'sqliteVec'}
+                if vec_proof is not None: legacy['sqliteVec'] = vec_proof
+                native.write_text(json.dumps(legacy))
+                with self.assertRaisesRegex(ValueError, 'NATIVE_PROBE_MISSING'): check_build(p,info,result,proof,records)
+            native.write_text(json.dumps({'passed':True,'sqlite':True,'sqliteVec':True,'pty':False,'electronVersion':'42.11.12','abi':'145'}))
             with self.assertRaisesRegex(ValueError, 'NATIVE_PROBE_MISSING'): check_build(p,info,result,proof,records)
-            native.write_text(json.dumps({'passed':True,'sqlite':True,'pty':True,'electronVersion':'42.11.12','abi':'145'}))
+            native.write_text(json.dumps({'passed':True,'sqlite':True,'sqliteVec':True,'pty':True,'electronVersion':'42.11.12','abi':'145'}))
             for key,value in [('imageId','sha256:'+'b'*64),('dockPreferencesHidden',False),('networkIsolated',False),('nativeArchitecture','arm64'),('shutdown',False),('applicationVersion','0.1.108')]:
                 with self.subTest(key=key), self.assertRaises(ValueError): check_build(p,info,result,{**proof,key:value},records)
             broken = copy.deepcopy(info);broken['Config']['Labels']['io.cindy.cloud-revision']='99'

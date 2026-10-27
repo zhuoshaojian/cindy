@@ -177,6 +177,10 @@ jobs:
           buildkitd-flags: ''
           # Protected Environment: pinned mirror and Pod network for ECI DinD.
           driver-opts: ${{ vars.CLOUD_IMAGE_BUILDX_DRIVER_OPTS }}
+      - name: Stage pinned Git LFS for frozen source objects
+        run: |
+          python3 deploy/linux-desktop/delivery/install_git_lfs.py --directory "$RUNNER_TEMP/git-lfs"
+          echo "$RUNNER_TEMP/git-lfs" >> "$GITHUB_PATH"
       - name: Freeze plan and build both Dockerfiles from source
         env:
           BUILDER: ${{ steps.builder.outputs.name }}

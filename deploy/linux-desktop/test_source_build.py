@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import hashlib
 import json
 import os
@@ -7,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -25,6 +27,42 @@ agent_spec.loader.exec_module(agents)
 timestamp_spec = importlib.util.spec_from_file_location('timestamps', HERE / 'normalize-timestamps.py')
 timestamps = importlib.util.module_from_spec(timestamp_spec)
 timestamp_spec.loader.exec_module(timestamps)
+
+class SourceLfsTest(unittest.TestCase):
+    # Unit / real export entry: cloud.29 shipped an LFS pointer and fresh DBs
+    # failed migration 0034. Existing tests covered graph/cache, not source bytes.
+    # A tiny pointer archive must hydrate exact oid/size or abort before packaging.
+    def test_export_hydrates_frozen_pointer_and_rejects_missing_or_corrupt_objects(self):
+        payload = b'\x7fELF fixture'
+        sha = hashlib.sha256(payload).hexdigest()
+        pointer = f'version https://git-lfs.github.com/spec/v1\noid sha256:{sha}\nsize {len(payload)}\n'.encode()
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode='w') as archive:
+            for name, content in [('native/vec0.so', pointer), ('README', b'ordinary source')]:
+                item = tarfile.TarInfo(name); item.size = len(content); item.mode = 0o755; item.mtime = 1234
+                archive.addfile(item, io.BytesIO(content))
+        for output, code, error in [(payload, 0, None), (pointer, 0, 'LFS_OBJECT_MISMATCH'),
+                                    (b'x'*len(payload), 0, 'LFS_OBJECT_MISMATCH'),
+                                    (payload+b'x', 0, 'LFS_OBJECT_MISMATCH'),
+                                    (b'', 1, 'LFS_OBJECT_UNAVAILABLE')]:
+            with self.subTest(output=output, code=code), tempfile.TemporaryDirectory() as folder:
+                def smudge(args, **kwargs):
+                    self.assertEqual(kwargs['input'], pointer)
+                    kwargs['stdout'].write(output)
+                    return subprocess.CompletedProcess(args, code)
+                root = Path(folder) / 'source'
+                with patch.object(build, 'git', return_value=data.getvalue()), patch.object(build.subprocess, 'run', side_effect=smudge):
+                    if error:
+                        with self.assertRaisesRegex(ValueError, error): build.export('frozen', root)
+                        self.assertEqual((root/'native/vec0.so').read_bytes(), pointer)
+                    else:
+                        proof = build.export('frozen', root)
+                        self.assertEqual(proof, {'native/vec0.so': {'sha256': sha, 'size': len(payload)}})
+                        target = root/'native/vec0.so'
+                        self.assertEqual(target.read_bytes(), payload)
+                        self.assertEqual(target.stat().st_mode & 0o777, 0o755)
+                        self.assertEqual(target.stat().st_mtime, 1234)
+                        self.assertEqual((root/'README').read_bytes(), b'ordinary source')
 
 class BuildTransportTest(unittest.TestCase):
     # Unit / run_build: cloud.16 failed before building when the pinned Docker

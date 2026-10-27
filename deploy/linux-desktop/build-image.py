@@ -4,10 +4,12 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
 import tarfile
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -62,21 +64,58 @@ def registry_cache(repository):
     return {'base': repository + ':fork-cloud-settings-cn-amd64-v2-base',
             'prepared': repository + ':fork-cloud-settings-cn-amd64-v4-prepared'}
 
-def git(*args):
-    return subprocess.check_output(['git', *args], cwd=REPO)
+def git(*args, env=None):
+    return subprocess.check_output(['git', *args], cwd=REPO, env=env)
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 def export(revision, destination, *paths):
     destination.mkdir(parents=True, exist_ok=True)
-    data = git('archive', revision, *paths)
+    # Some Git installations apply LFS filters to archive, others export pointers.
+    # Normalize to pointers so both paths use the same verified hydration below.
+    data = git('archive', revision, *paths, env={**os.environ, 'GIT_LFS_SKIP_SMUDGE': '1'})
     with tarfile.open(fileobj=io.BytesIO(data)) as archive:
         archive.extractall(destination, filter='data')
+        pointers = [m.name for m in archive.getmembers() if m.isfile() and m.size <= 1024]
+    lfs = {}
+    for name in pointers:
+        target = destination / name
+        pointer = target.read_bytes()
+        if not pointer.startswith(b'version https://git-lfs.github.com/spec/v1'):
+            continue
+        match = re.fullmatch(rb'version https://git-lfs.github.com/spec/v1\noid sha256:([a-f0-9]{64})\nsize ([0-9]+)\n', pointer)
+        if not match:
+            raise ValueError('INVALID_LFS_POINTER:' + name)
+        sha, size = match[1].decode(), int(match[2])
+        before = target.stat()
+        # Archive pointers can survive even when checkout hydrated the files.
+        # Resolve the frozen pointer through Git LFS (local object cache first),
+        # never copy potentially dirty worktree bytes or trust download success.
+        with tempfile.NamedTemporaryFile(dir=target.parent) as staged:
+            result = subprocess.run(['git', '-c', 'lfs.fetchinclude=', '-c', 'lfs.fetchexclude=',
+                                     '-c', 'lfs.skipdownloaderrors=false', 'lfs', 'smudge', name],
+                                    cwd=REPO, input=pointer, stdout=staged, stderr=subprocess.PIPE,
+                                    env={**os.environ, 'GIT_LFS_SKIP_SMUDGE': '0',
+                                         'GIT_LFS_SKIP_DOWNLOAD_ERRORS': '0'})
+            if result.returncode:
+                raise ValueError('LFS_OBJECT_UNAVAILABLE:' + name)
+            staged.flush()
+            staged.seek(0)
+            actual = hashlib.file_digest(staged, 'sha256').hexdigest()
+            if os.fstat(staged.fileno()).st_size != size or actual != sha:
+                raise ValueError('LFS_OBJECT_MISMATCH:' + name)
+            staged.seek(0)
+            with target.open('wb') as out:
+                shutil.copyfileobj(staged, out)
+        os.chmod(target, before.st_mode & 0o777)
+        os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        lfs[name] = {'sha256': sha, 'size': size}
+    return lfs
 
 def prepare(output, revision):
     context = output / 'context'
-    export(revision, output / 'recipe-export', 'deploy/linux-desktop')
+    recipe_lfs = export(revision, output / 'recipe-export', 'deploy/linux-desktop')
     recipe = output / 'recipe-export/deploy/linux-desktop'
     freeze = json.loads((recipe / 'source-freeze.json').read_text())
     manifest = json.loads((recipe / 'runtime-desktop-xfce/source-manifest.json').read_text())
@@ -88,7 +127,7 @@ def prepare(output, revision):
         raise ValueError('UPSTREAM_TAG_MISMATCH')
     git('merge-base', '--is-ancestor', version['upstreamCommit'], freeze['commit'])
     source = context / 'source'
-    export(freeze['commit'], source)
+    source_lfs = export(freeze['commit'], source)
     for path, expected in freeze['includedPatch'].items():
         p = Path(path)
         if p.is_absolute() or '..' in p.parts: raise ValueError('INVALID_PATCH_PATH')
@@ -100,6 +139,7 @@ def prepare(output, revision):
     inputs = {'recipeCommit': revision, 'sourceCommit': freeze['commit'],
               'runtimeFixCommit': manifest['clientRuntimeFixCommit'] if freeze['includedPatch'] else freeze['commit'],
               'patches': freeze['includedPatch'], 'region': 'cn', 'platform': 'linux/amd64',
+              'lfsFiles': {'recipe': recipe_lfs, 'source': source_lfs},
               'lockSha256': digest((source / 'pnpm-lock.yaml').read_bytes()),
               'recipeFiles': {p.relative_to(recipe).as_posix(): digest(p.read_bytes())
                               for p in sorted(recipe.rglob('*')) if p.is_file()}}

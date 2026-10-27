@@ -58,7 +58,7 @@ def check_build(plan, info, result, smoke, records):
     required = ['runtime-layer-audit.json', 'agent-source-proof.json', 'overlay-application.json', 'build-inputs.json', 'native-modules.json']
     hashes = {name: hashlib.sha256((records / name).read_bytes()).hexdigest() for name in required}
     native = json.loads((records / 'native-modules.json').read_text())
-    if (native.get('passed') is not True or native.get('sqlite') is not True or native.get('pty') is not True
+    if (native.get('passed') is not True or native.get('sqlite') is not True or native.get('sqliteVec') is not True or native.get('pty') is not True
             or native.get('electronVersion') != '42.11.12' or not str(native.get('abi', '')).isdigit()):
         raise ValueError('PACKAGED_NATIVE_PROBE_MISSING')
     inputs = json.loads((records / 'build-inputs.json').read_text())
