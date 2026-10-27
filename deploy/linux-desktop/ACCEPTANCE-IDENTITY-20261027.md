@@ -190,6 +190,13 @@ Local verification of this correction:
 - Source/build regressions: 32 passed; delivery regressions: 57 passed, including
   rejecting the old SQLite/PTY-only publication proof and failed vec checks.
 
+The correction is committed as
+[`13c9d50dae`](https://github.com/zhuoshaojian/cindy/commit/13c9d50dae2672b46670e7c11d7acceee37d628d).
+[Fork run 40477073610](https://github.com/zhuoshaojian/cindy/actions/runs/40477073610)
+passed the recipe/delivery verification job at `8b6fa63102`; candidate publication
+and ACS cache jobs were skipped because the cloud version did not change. This
+run does not claim the new packaged Electron probe executed.
+
 The correction has not yet produced a new image: cloud.29's immutable tag remains
 unchanged. The next image must pass its packaged Electron probe and a fresh-cloud
 startup before that remaining acceptance item can be marked complete.
