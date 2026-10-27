@@ -16,7 +16,8 @@ if(!header.equals(Buffer.from([0x7f,0x45,0x4c,0x46])))throw Error('SQLITE_VEC_NO
 db.loadExtension(vec);
 if(!db.prepare('select vec_version() as version').get().version)throw Error('SQLITE_VEC_VERSION_MISSING');
 db.exec('CREATE VIRTUAL TABLE vec_probe USING vec0(embedding float[2])');
-db.prepare('INSERT INTO vec_probe(rowid,embedding) VALUES (?,?)').run(1,'[1,2]');
+// better-sqlite3 binds JS numbers as REAL; vec0 requires an INTEGER primary key.
+db.prepare('INSERT INTO vec_probe(rowid,embedding) VALUES (?,?)').run(1n,'[1,2]');
 if(db.prepare('SELECT rowid FROM vec_probe WHERE embedding MATCH ? AND k=1').get('[1,2]').rowid!==1)throw Error('SQLITE_VEC_QUERY_FAILED');
 db.close();
 const pty=require(root+'node-pty').spawn('/bin/sh',['-c','printf CINDY_PTY_OK'],{cwd:'/tmp',env:{TERM:'xterm',PATH:'/usr/bin:/bin'}});
