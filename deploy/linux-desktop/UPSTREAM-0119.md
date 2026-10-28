@@ -4,7 +4,7 @@ The cloud fork integrates official `v0.1.119`
 (`0694ed7e001e027a031ffed21a088bd1975132de`) on
 [`feat/cloud-settings-native-client`](https://github.com/zhuoshaojian/cindy/tree/feat/cloud-settings-native-client).
 Neither repository's default branch is changed. Release identity is
-`0.1.119-cloud.1`; delivery and owner-only acceptance must finish before wider admission.
+`0.1.119-cloud.2`; delivery and owner-only acceptance must finish before wider admission.
 
 ## Compatibility decisions
 
@@ -38,6 +38,13 @@ DeviceLink end-to-end acceptance.
 | Database validation / migration replay | Passed / 20 passed |
 | Cloud recipe Node tests | 135 passed; Bash-version-dependent test skipped locally |
 | Full cloud overlay staging | Passed; 29 records |
+
+The first delivery (`cloud.1`, run
+[40732826735](https://github.com/zhuoshaojian/cindy/actions/runs/40732826735))
+stopped at production bundling: Node exhausted the old 6 GiB heap limit. It did
+not publish an image or change any instance. `cloud.2` raises only the packaging
+process limit to 12 GiB inside the existing 28 GiB build container; dependency
+preparation and runtime resource limits are unchanged.
 
 Delivery, exact cache-hit and owner-upgrade evidence will be appended after those
 steps actually complete. Other instances remain outside this validation stage.

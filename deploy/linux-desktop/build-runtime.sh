@@ -2,7 +2,10 @@
 set -eu
 cd /workspace/source
 export TAR_OPTIONS=--no-same-owner
-export CI=1 NODE_OPTIONS=--max-old-space-size=6144
+# v0.1.119's production bundle exceeds the former 6 GiB heap. The build-only
+# DinD container has 28 GiB; reserve headroom for native tools and other targets.
+# Keep dependency preparation and the delivered runtime's limits unchanged.
+export CI=1 NODE_OPTIONS=--max-old-space-size=12288
 export CINDY_AUTH_REGION=cn VITE_CINDY_AUTH_REGION=cn
 test -n "${APP_VERSION:-}"
 export PATH=/workspace/sysroot/usr/bin:$PATH
