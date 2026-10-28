@@ -1,11 +1,9 @@
 {
-  "commit": "4eb73c7f68387b79ed91f788392f47709bd45baa",
-  "upstream": "v0.1.113",
-  "cloudParent": "c4f09bad16248f8012157c6a1661b1f181b7486d",
+  "commit": "fafa00dcd7ab359a39f497f6d73ea10a41cd3746",
+  "upstream": "v0.1.115",
+  "cloudParent": "9f69d4ee7d75c0b0a952744697fe23033b982461",
   "packagingAllowed": true,
   "formalPromotionAllowed": false,
-  "includedPatch": {
-    "apps/desktop/src/renderer/features/remote-desktop/captureHost.ts": "10e277fd4da682ebf96a03b1267e44f008d15393af9890f6825b8dab2ec94f72"
-  },
-  "scope": "own-instance-0113-upgrade-canary"
+  "includedPatch": {},
+  "scope": "fork-upstream-0115-validation"
 }

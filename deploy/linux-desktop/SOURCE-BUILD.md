@@ -51,11 +51,11 @@ Git LFS in its job directory; it does not change the shared runner or install Gi
   independent cloud revision; these become image labels and build records.
 - `source-freeze.json` selects the complete merged client commit, which must contain
   the upstream commit recorded in `delivery/version.json`. The builder checks both
-  the exact upstream tag and ancestry. `includedPatch` pins selected replacements
-  from `runtime-desktop-xfce/source-manifest.json`'s `clientRuntimeFixCommit` by
-  SHA-256. From cloud revision 27, the patch replaces only `captureHost.ts` for input-overload
-  recovery; the remaining application source stays at the frozen commit. Build
-  records bind both the frozen source and the exact runtime patch.
+  the exact upstream tag and ancestry. The current 0.1.115 freeze contains the
+  input-overload recovery fix directly and has an empty `includedPatch`: all
+  application source comes from one merged commit. Older 0.1.113 releases pinned a
+  `captureHost.ts` replacement from `runtime-desktop-xfce/source-manifest.json` by
+  SHA-256; that historical provenance remains in their own build records.
 - The upstream version and cloud revision are build arguments shared by the
   application, image labels and release records. The pinned dependency base has
   its own source identity, so an application version bump retains its build cache.
