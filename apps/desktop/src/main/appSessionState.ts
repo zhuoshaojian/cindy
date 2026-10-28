@@ -6,6 +6,7 @@
  * the reserved owner below and never masquerades as a server user id.
  */
 import { app } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
@@ -81,6 +82,17 @@ const store = createOverrideSettingsFile<PersistedAppSessionSettings>({
 let active: ActiveAppSession | null = null;
 let boundaryDepth = 0;
 let appSessionCommitBoundaryHook: (() => void) | null = null;
+const sessionInvalidationListeners = new Set<() => void>();
+
+/** Cancel owner-bound requests before teardown or a new generation becomes visible. */
+export function onAppSessionInvalidated(listener: () => void): () => void {
+  sessionInvalidationListeners.add(listener);
+  return () => { sessionInvalidationListeners.delete(listener); };
+}
+
+function invalidateSessionRequests(): void {
+  for (const listener of sessionInvalidationListeners) listener();
+}
 
 /**
  * Register synchronous owner-scoped runtime invalidation at the exact commit edge.
@@ -108,6 +120,16 @@ function ensureLoaded(): ActiveAppSession {
 /** Pure inspection for settings projection; never loads or repairs persisted session intent. */
 export function peekCommittedAppSession(): ActiveAppSession | null {
   return active ? { ...active } : null;
+}
+
+/**
+ * Dev UI mock sandbox only: a profile that has never chosen a mode starts
+ * account-free, as if "Skip login" had been chosen once. Any saved choice wins.
+ */
+export function startFreshProfileInLocalMode(): boolean {
+  if (active || fs.existsSync(settingsFilePath())) return false;
+  store.writePatch({ activeMode: 'local' });
+  return true;
 }
 
 /** Read the last committed stable session. */
@@ -148,6 +170,7 @@ export function activeOwnerScopeKey(): string {
  */
 export function beginAppSessionBoundary(): () => void {
   boundaryDepth += 1;
+  invalidateSessionRequests();
   let released = false;
   return () => {
     if (released) return;
@@ -190,6 +213,7 @@ export function commitActiveAppSession(
   }
 
   store.writePatch({ activeMode: mode });
+  invalidateSessionRequests();
   if (ownerChanged) appSessionCommitBoundaryHook?.();
   active = {
     mode,
@@ -223,6 +247,7 @@ export function commitVolatileAppSession(
   if (!ownerChanged && !forceBumpGeneration) {
     return { ...previous };
   }
+  invalidateSessionRequests();
   if (ownerChanged) appSessionCommitBoundaryHook?.();
   active = {
     mode,

@@ -77,6 +77,7 @@ export interface ProviderConnectionReaders {
 }
 
 export interface ProviderServiceDeps {
+  projectProvider?: (provider: ProviderView) => ProviderView;
   getProviderPresentation?: (providerId: string, opts: ConnectionReadOptions) => { name?: string; removed?: boolean };
   /** 返回当前生效目录（同步）。桌面端注入 active-catalog 的 getActiveCatalog。 */
   getCatalog: () => Catalog;
@@ -232,7 +233,7 @@ export function createProviderService(deps: ProviderServiceDeps): ProviderServic
                     ),
                   ],
             },
-    );
+    ).map(provider => deps.projectProvider?.(provider) ?? provider);
   }
 
   return { listProviders };

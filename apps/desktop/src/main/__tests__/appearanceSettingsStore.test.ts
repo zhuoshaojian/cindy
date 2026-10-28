@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppearanceSettings } from '../../shared/appearanceSettings.js';
-import { isValidAppearanceSetting, normalizeAppearanceSettings } from '../../shared/appearanceSettings.js';
+import { DEFAULT_APPEARANCE_SETTINGS, isValidAppearanceSetting, normalizeAppearanceSettings } from '../../shared/appearanceSettings.js';
 import { normalizeHostSettingsChange } from '../../shared/hostSettings.js';
 
 const host = vi.hoisted(() => ({ root: '', logger: { info: vi.fn(), warn: vi.fn() } }));
@@ -12,6 +12,7 @@ vi.mock('../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child:
 vi.mock('../appSessionState.js', () => ({ peekCommittedAppSession: () => ({ mode: 'local', dataOwnerId: 'test-owner', generation: 1 }) }));
 
 import {
+  clearAppearanceSettingsFields, readAppearanceSettingsState,
   commitAppearanceSettings, inspectAppearanceSettings, onAppearanceSettingsChanged,
   updateAppearanceSettingsAtomic, writeAppearanceSettingsPatch,
 } from '../appearance-settings-store.js';
@@ -121,5 +122,46 @@ describe('appearance persisted and helper validation boundary', () => {
       expect(listener).not.toHaveBeenCalled();
       expect(fs.readdirSync(host.root)).toEqual(['appearance-settings.json']);
     } finally { off(); }
+  });
+});
+
+describe('terminal appearance overrides', () => {
+  it('reads old overrides with unchanged values and adds terminal defaults only in memory', () => {
+    const oldOverrides = { uiFamily: 'Inter', codeFamily: 'JetBrains Mono', uiSize: 16, codeSize: 18, windowZoom: 1.2 };
+    const file = path.join(host.root, 'appearance-settings.json');
+    fs.writeFileSync(file, JSON.stringify(oldOverrides));
+    const state = readAppearanceSettingsState();
+    expect(state.value).toEqual({ ...DEFAULT_APPEARANCE_SETTINGS, ...oldOverrides });
+    expect(state.customizedKeys).not.toContain('terminalFamily');
+    expect(state.customizedKeys).not.toContain('terminalSize');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(oldOverrides);
+  });
+
+  it('persists only terminal overrides and clears each one without changing other preferences', async () => {
+    const file = path.join(host.root, 'appearance-settings.json');
+    const otherOverrides = { uiFamily: 'Inter', codeFamily: 'JetBrains Mono', uiSize: 16, codeSize: 18, windowZoom: 1.2 };
+    await writeAppearanceSettingsPatch(otherOverrides);
+    await writeAppearanceSettingsPatch({ terminalFamily: '  Menlo  ', terminalSize: 19 });
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({
+      ...otherOverrides, terminalFamily: 'Menlo', terminalSize: 19,
+    });
+
+    await clearAppearanceSettingsFields(['terminalFamily']);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ ...otherOverrides, terminalSize: 19 });
+    expect(readAppearanceSettingsState().value.terminalFamily).toBe('');
+    expect(readAppearanceSettingsState().customizedKeys).not.toContain('terminalFamily');
+
+    await clearAppearanceSettingsFields(['terminalSize']);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(otherOverrides);
+    expect(readAppearanceSettingsState().value).toEqual({ ...DEFAULT_APPEARANCE_SETTINGS, ...otherOverrides });
+  });
+
+  it('does not persist a defaults snapshot when restoring the only terminal override', async () => {
+    const file = path.join(host.root, 'appearance-settings.json');
+    await writeAppearanceSettingsPatch({ terminalSize: 20 });
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ terminalSize: 20 });
+    await clearAppearanceSettingsFields(['terminalSize']);
+    expect(fs.existsSync(file)).toBe(false);
+    expect(readAppearanceSettingsState().isCustomized).toBe(false);
   });
 });

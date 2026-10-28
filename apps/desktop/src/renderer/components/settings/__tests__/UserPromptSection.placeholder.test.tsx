@@ -24,7 +24,7 @@ describe('个性化设置编辑与保存回执', () => {
     render(<UserPromptSection />);
     expect(editor().className).toContain('placeholder:text-[var(--settings-input-placeholder)]');
     expect(editor().className).toContain('placeholder:font-normal');
-    expect(editor().className).toContain('placeholder:opacity-45');
+    expect(editor().className).not.toMatch(/placeholder:opacity-/);
   });
   it('Host 保存完成前不显示成功，提交编辑时的 revision', async () => {
     let resolve!: () => void;

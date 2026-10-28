@@ -84,9 +84,7 @@ export function GitSafetySectionView({
             >
               {t('settings.gitSafety.autoSnapshotTitle')}
             </p>
-            <p className="text-12 leading-[1.4] text-[var(--settings-section-sublabel)] opacity-70">
-              {t('settings.gitSafety.description')}
-            </p>
+            <p className="text-12 leading-[1.4] text-[var(--text-secondary)]">{t('settings.gitSafety.description')}</p>
           </div>
 
           <div className="cindy-segmented-row-actions">

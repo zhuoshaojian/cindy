@@ -25,7 +25,10 @@ import { readCloudInputActivity } from './maker-ipc/register.js';
 import { getCurrentDbClientSnapshot as cloudActivityDbSnapshot } from './localDb/client/current.js';
 import { isHumanDesktopInputActive, isAgentDesktopInputActive } from './remote-desktop/inputOwnership.js';
 ${code}`;
-    if (code.includes('      registerRelaunchBusyActivityIpc(readRelaunchActivitySources);')) {
+    if (code.includes('      registerRelaunchBusyActivityIpc(readRelaunchActivitySources, {')) {
+      code = once(code, '      registerRelaunchBusyActivityIpc(readRelaunchActivitySources, {',
+        '      registerRelaunchBusyActivityIpc(cloudActivitySources(readRelaunchActivitySources), {');
+    } else if (code.includes('      registerRelaunchBusyActivityIpc(readRelaunchActivitySources);')) {
       code = once(code, '      registerRelaunchBusyActivityIpc(readRelaunchActivitySources);',
         '      registerRelaunchBusyActivityIpc(cloudActivitySources(readRelaunchActivitySources));');
     } else {

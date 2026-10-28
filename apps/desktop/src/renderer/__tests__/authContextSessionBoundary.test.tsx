@@ -109,6 +109,11 @@ import {
   addModelFavorite,
   listModelFavorites,
 } from '@/state/modelFavorites';
+import {
+  __resetForTest as resetRecentModels,
+  listRecentModels,
+  recordRecentModel,
+} from '@/state/recentModels';
 import { __testing as ssoOrgHistoryTesting } from '@/state/ssoOrgHistory';
 import { createModelPresentationTestHost } from './modelPresentationTestHost';
 import { ensureHostModelPresentationLoaded } from '@/state/hostModelPresentationPreferences';
@@ -869,9 +874,10 @@ describe('AuthContext session cache boundaries', () => {
    * applyIncomingState,不能自己拼半套 setter —— 漏接任一 owner 分区都会让本地模式
    * 读写上一个身份的数据:跨身份可见,还会把改动写进别人的账号。
    */
-  it('repartitions unified-picker favorites and engine overrides across local mode', async () => {
+  it('repartitions unified-picker favorites, recents and engine overrides across local mode', async () => {
     resetFavorites();
     resetEnginePrefs();
+    resetRecentModels();
     const host = createModelPresentationTestHost(window.localStorage);
     host.select('account-a', 1);
     host.install();
@@ -880,6 +886,7 @@ describe('AuthContext session cache boundaries', () => {
     await ensureHostModelPresentationLoaded();
     const cloudUid = await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex' });
     expect(await setModelEngineOverride('xd', 'gpt-5.5', 'cc')).toBe(true);
+    recordRecentModel({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex' }, 1000);
     expect(cloudUid).not.toBe('');
 
     await act(async () => {
@@ -892,6 +899,7 @@ describe('AuthContext session cache boundaries', () => {
     // 本地模式是另一个分区:云端身份存的东西一条都不该露出来。
     expect(listModelFavorites()).toHaveLength(0);
     expect(getModelEngineOverride('xd', 'gpt-5.5')).toBeUndefined();
+    expect(listRecentModels()).toHaveLength(0);
     const localUid = await addModelFavorite({
       providerId: 'anthropic',
       modelId: 'claude-opus-5',
@@ -899,6 +907,7 @@ describe('AuthContext session cache boundaries', () => {
     });
     expect(localUid).not.toBe('');
     expect(await setModelEngineOverride('anthropic', 'claude-opus-5', 'codex')).toBe(true);
+    recordRecentModel({ providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'cc' }, 2000);
     expect(listModelFavorites().map((item) => item.uid)).toEqual([localUid]);
 
     mocks.service.exitLocalMode.mockResolvedValue(authState('account-a'));
@@ -914,8 +923,10 @@ describe('AuthContext session cache boundaries', () => {
     expect(host.files.get('account-a')!.value.favorites.items).toMatchObject([{ uid: cloudUid, providerId: 'xd' }]);
     expect(getModelEngineOverride('xd', 'gpt-5.5')).toBe('cc');
     expect(getModelEngineOverride('anthropic', 'claude-opus-5')).toBeUndefined();
+    expect(listRecentModels().map((item) => item.modelId)).toEqual(['gpt-5.5']);
     resetFavorites();
     resetEnginePrefs();
+    resetRecentModels();
     window.localStorage.clear();
   });
 

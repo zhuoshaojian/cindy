@@ -46,6 +46,7 @@ import { readAccountRateLimitsWithRefresh } from './app-server/account-rate-limi
 
 import {
   BaseAgent,
+  LOCAL_AGENT_CLIENT,
   INHERITED_CAPABILITY_SELECTION,
   PINNED_SKILL_INVOCATION,
   CodexResumePreparationBlockedError,
@@ -113,7 +114,7 @@ import {
 } from '../shared/review-read-scope.js';
 import { REVIEW_READ_TOOLS, callReviewReadTool, isWindowsReviewLocalPath, reviewReadDenied } from './review-read-tools.js';
 import {
-  annotatePermissionRequestForUnavailableReview,
+  annotatePermissionRequestForAutoReview,
   composeAutoReviewIntentWithApprovedPlan,
   composeAutoReviewIntentWithClarification,
   createAutoReviewConfirmUndeliveredNotice,
@@ -159,6 +160,16 @@ import {
 import { scanCodexCustomizations } from './customization-scanner.js';
 import { commandExecutionDisplayInput } from './command-display.js';
 import { asyncUserInputQuestions } from './async-user-input.js';
+import {
+  codexUserAgentAtLeast,
+  supportsCodexThreadRollback,
+  supportsCodexApprovalsReviewerProtocol,
+  supportsCodexReadonlyReferenceDirs,
+  supportsCodexCapabilityRoutingProtocol,
+  supportsCodexResumeExcludeTurns,
+  supportsCodexForkExcludeTurns,
+  supportsCodexNativeTurnFork,
+} from './version-gates.js';
 import {
   dedupeCells,
   extractAliveYieldCellsFromCodexItem,
@@ -401,15 +412,6 @@ export function isCodexRollbackUnavailableError(error: unknown): boolean {
   return isCodexPaginatedRollbackUnsupportedError(error) || isCodexRollbackMethodRemovedError(error);
 }
 
-/**
- * thread/rollback 在 Codex 0.156.0 被移除(openai/codex#44915)。按 initialize userAgent
- * 门控:≥ 0.156.0 的 daemon 不再尝试该方法,直接走 fork;版本未知或更老的远端 daemon
- * 仍先试 rollback,由 isCodexRollbackUnavailableError 兜住实际拒绝。
- */
-function supportsCodexThreadRollback(userAgent: string | undefined): boolean {
-  return !codexUserAgentAtLeast(userAgent, [0, 156, 0]);
-}
-
 function normalizeNativeForkTurnId(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
@@ -627,74 +629,6 @@ function mapPermissionToCodex(
     default:
       return manualApprovalConfig;
   }
-}
-
-function codexUserAgentAtLeast(
-  userAgent: string | undefined,
-  minimum: readonly [number, number, number],
-): boolean {
-  const match = /\/(\d+)\.(\d+)\.(\d+)(?:[-+ )]|$)/.exec(userAgent ?? '');
-  if (!match) return false;
-  const version = [Number(match[1]), Number(match[2]), Number(match[3])] as const;
-  for (let i = 0; i < minimum.length; i += 1) {
-    if (version[i]! > minimum[i]!) return true;
-    if (version[i]! < minimum[i]!) return false;
-  }
-  return true;
-}
-
-/**
- * `approvalsReviewer` is verified against the app-server bundled with Codex 0.144.6.
- * Remote hosts may keep an older standalone binary across desktop upgrades, so parse the
- * initialize userAgent and conservatively omit the field unless that verified floor is met.
- */
-function supportsCodexApprovalsReviewerProtocol(userAgent: string | undefined): boolean {
-  return codexUserAgentAtLeast(userAgent, [0, 144, 6]);
-}
-
-/**
- * Runtime workspace roots and named permission profiles were verified against
- * the app-server bundled with Codex 0.144.6. Keep older remote daemons
- * fail-closed: without profiles, legacy workspace-write would make every
- * runtime root writable.
- */
-function supportsCodexReadonlyReferenceDirs(userAgent: string | undefined): boolean {
-  return supportsCodexApprovalsReviewerProtocol(userAgent);
-}
-
-/**
- * Per-thread plugin config for capability arbitration was verified against
- * Codex 0.145.0. If the host policy needs those overrides, an older daemon must
- * be rejected rather than silently starting with the downstream plugins active.
- */
-function supportsCodexCapabilityRoutingProtocol(userAgent: string | undefined): boolean {
-  return codexUserAgentAtLeast(userAgent, [0, 145, 0]);
-}
-
-/**
- * `excludeTurns` was introduced in Codex 0.125.0 and later marked experimental.
- * Older remote daemons can outlive desktop upgrades, so omit the unknown field
- * and preserve their legacy full-history resume behavior.
- */
-function supportsCodexResumeExcludeTurns(userAgent: string | undefined): boolean {
-  return codexUserAgentAtLeast(userAgent, [0, 125, 0]);
-}
-
-/**
- * `thread/fork.excludeTurns` was verified against the app-server bundled with
- * Codex 0.145.0. Without it, the fork response inlines the entire source-thread
- * history in one NDJSON line — a 47MB rollout produced a 31MiB single line that
- * exceeded the client's 16MiB maxLineBytes guard and killed the whole
- * connection (2026-08-08 field incident). Older daemons keep the legacy
- * full-history fork response.
- */
-function supportsCodexForkExcludeTurns(userAgent: string | undefined): boolean {
-  return codexUserAgentAtLeast(userAgent, [0, 145, 0]);
-}
-
-/** Direct lastTurnId fork is used only together with the bounded response contract. */
-function supportsCodexNativeTurnFork(userAgent: string | undefined): boolean {
-  return supportsCodexForkExcludeTurns(userAgent);
 }
 
 const READONLY_REFERENCES_PERMISSION_PROFILE = 'cindy-readonly-references';
@@ -1229,6 +1163,8 @@ const CRITICAL_THREAD_RPC_TIMEOUT_MS = 60_000;
 // 往来、或从发出起等满 5 分钟, 仍按超时收口(错误里带链路计数)。
 const HOSTED_THREAD_RPC_IDLE_MS = 30_000;
 const HOSTED_THREAD_RPC_MAX_MS = 5 * 60_000;
+// 设备托管：执行环境已断开时，下一轮开始前查询它状态的上限(只在隧道上已没有执行环境连接时查)。
+const HOSTED_ENVIRONMENT_STATUS_TIMEOUT_MS = 10_000;
 
 /**
  * upstream-response-idle watchdog 阈值 — codex 侧对齐 claude-code 的同名机制
@@ -1261,6 +1197,13 @@ const CODEX_UPSTREAM_IDLE_SUSPEND_GAP_MS = 30_000;
  * deadline，不会因为后续的 `2/5`、`3/5` 提示重新计时。
  */
 const CODEX_RECONNECT_STALL_TIMEOUT_MS = RETRY_ESCALATION_MAX_ELAPSED_MS;
+
+/**
+ * WebSocket 重试用尽后 Codex 改走 HTTPS 时推的 `warning`。之后要先上传完整历史才有事件,
+ * 慢网下可达数分钟,不再属于重连序列:清掉重连 deadline,由 Codex 自身 HTTP 超时与
+ * upstream-idle 看门狗兜底。
+ */
+const CODEX_HTTPS_FALLBACK_WARNING_PREFIX = 'Falling back from WebSockets to HTTPS transport';
 
 /** 只含空白、格式字符或控制字符的 text delta 不算重连已经恢复。 */
 const CODEX_INVISIBLE_TEXT_PATTERN = /[\s\p{Cf}\p{Cc}]/gu;
@@ -2171,6 +2114,120 @@ export class CodexAgent extends BaseAgent {
     host => this.listSkillsForHost(host, workingDir, forceReload || !!hostSkills && (hostSkills.changed === true || hostSkills.revision !== this.hostSkillDiscoveryRevision))).then(result => { if (hostSkills) this.hostSkillDiscoveryRevision = hostSkills.revision; return result; });
   }
 
+  /**
+   * 本机的 Skill、插件与 MCP 逐项关闭(线程级覆盖)。不传 keep 时全部关闭(Review)；受邀者的
+   * 托管会话用 keep 保留它自己的 Skill、Codex 自带 Skill 与经隧道的 MCP。
+   */
+  private async buildLocalCapabilityIsolationConfig(
+    host: AppServerHost,
+    workingDir: string,
+    keep?: {
+      skill: (skillPath: string, scope?: SkillMetadata['scope']) => boolean;
+      mcpServer: (serverName: string) => boolean;
+      plugin?: (pluginId: string) => boolean;
+      allSkills?: true;
+    },
+  ): Promise<Record<string, unknown>> {
+    const { skills, errors } = keep?.allSkills ? { skills: [], errors: [] } : await this.listSkillsForHost(
+      host,
+      workingDir,
+      false,
+      CRITICAL_THREAD_RPC_TIMEOUT_MS,
+    );
+    const unscopedSkillError = errors.find((error) => !error.path);
+    if (unscopedSkillError && !keep?.skill('')) throw new Error(unscopedSkillError.message);
+
+    const configResponse = await host.request<{ config?: Record<string, unknown> }>(
+      Method.ConfigRead,
+      { includeLayers: false },
+      { timeoutMs: CRITICAL_THREAD_RPC_TIMEOUT_MS },
+    );
+    const effectiveConfig = asRecord(configResponse.config);
+    const configuredMcp = asRecord(effectiveConfig.mcp_servers);
+    const configuredPlugins = asRecord(effectiveConfig.plugins);
+    const configuredMcpServerNames = new Set(
+      Object.entries(configuredMcp)
+        .filter(([, serverConfig]) => hasCodexMcpTransport(serverConfig))
+        .map(([serverName]) => serverName),
+    );
+    const transportConfiguredMcpServerNames = new Set(configuredMcpServerNames);
+    for (const pluginConfig of Object.values(configuredPlugins)) {
+      const pluginMcp = asRecord(asRecord(pluginConfig).mcp_servers);
+      for (const [serverName, serverConfig] of Object.entries(pluginMcp)) {
+        if (!hasCodexMcpTransport(serverConfig)) continue;
+        transportConfiguredMcpServerNames.add(serverName);
+      }
+    }
+    const unconfiguredRuntimeMcpServerNames = new Set<string>();
+    let cursor: string | null = null;
+    do {
+      const status: CodexMcpServerStatusListResponse =
+        await host.request<CodexMcpServerStatusListResponse>(
+        Method.McpServerStatusList,
+        { cursor, limit: 100, detail: 'toolsAndAuthOnly', threadId: null },
+        { timeoutMs: CRITICAL_THREAD_RPC_TIMEOUT_MS },
+      );
+      for (const server of status.data) {
+        if (
+          !transportConfiguredMcpServerNames.has(server.name) &&
+          server.name !== CODEX_APPS_MCP_SERVER_NAME
+        ) {
+          unconfiguredRuntimeMcpServerNames.add(server.name);
+        }
+      }
+      cursor = status.nextCursor;
+    } while (cursor !== null);
+    if (unconfiguredRuntimeMcpServerNames.size > 0) {
+      throw new Error(
+        `Codex reported runtime MCP servers without transport-bearing config: ${[
+          ...unconfiguredRuntimeMcpServerNames,
+        ].sort().join(', ')}`,
+      );
+    }
+
+    const skillPaths = new Set([
+      ...skills.filter((skill) => !keep?.skill(skill.path, skill.scope)).map((skill) => skill.path),
+      ...errors.flatMap((error) => (error.path && !keep?.skill(error.path) ? [error.path] : [])),
+    ]);
+    const pluginIds = new Set(Object.keys(configuredPlugins));
+    for (const skillPath of skillPaths) {
+      const pluginId = pluginIdFromCodexSkillPath(skillPath);
+      if (pluginId) pluginIds.add(pluginId);
+    }
+
+    const isolationConfig: Record<string, unknown> = {};
+    if (skillPaths.size > 0) {
+      isolationConfig['skills.config'] = [...skillPaths]
+        .sort()
+        .map((skillPath) => ({ path: skillPath, enabled: false }));
+    }
+    // Only configured MCP entries have a command/url transport that can
+    // accept a per-thread `.enabled=false` merge. `codex_apps` is an
+    // app-server builtin surfaced by mcpServerStatus/list but absent from
+    // config/read; synthesizing an override for it makes Codex 0.145.0
+    // reject thread/start with "invalid transport". Apps are isolated by
+    // `features.apps=false` instead.
+    for (const serverName of configuredMcpServerNames) {
+      if (keep?.mcpServer(serverName)) continue;
+      isolationConfig[
+        `mcp_servers.${renderReviewConfigSegment(serverName)}.enabled`
+      ] = false;
+    }
+    for (const pluginId of pluginIds) {
+      if (!keep?.plugin?.(pluginId)) {
+        isolationConfig[`plugins.${quoteReviewConfigSegment(pluginId)}.enabled`] = false;
+      }
+      const pluginMcp = asRecord(asRecord(configuredPlugins[pluginId]).mcp_servers);
+      for (const [serverName, serverConfig] of Object.entries(pluginMcp)) {
+        if (!hasCodexMcpTransport(serverConfig)) continue;
+        isolationConfig[
+          `plugins.${quoteReviewConfigSegment(pluginId)}.mcp_servers.${renderReviewConfigSegment(serverName)}.enabled`
+        ] = false;
+      }
+    }
+    return isolationConfig;
+  }
+
   private async listSkillsForHost(
     host: AppServerHost,
     workingDir: string,
@@ -2574,8 +2631,10 @@ export class CodexAgent extends BaseAgent {
       hostPurpose?: 'control-plane' | 'review' | 'custom-context';
       /** Archive-only control host: native storage RPCs, no turns, no MCP bridge. */
       nativeStorageOnly?: boolean;
+      localToolCatalog?: string;
       customContextModel?: string;
       customContextWindow?: number;
+      customContextProviderId?: string | null;
       sqliteHome?: string;
       historyHome?: string;
       /** 受邀者任务的 app-server：值是分享给它的供应商(见 prepareCodexExtraSpawnConfig)。 */
@@ -2812,6 +2871,8 @@ assertRouteCurrent();
         opts.nativeStorageOnly,
         opts.deviceHostedGuestSessionId,
         opts.deviceHostedGuestModelIds,
+        opts.localToolCatalog,
+        opts.customContextProviderId,
       ).finally(() => {
         // 成功: this.hosts 已赋值, 后续走快路径; 失败: 清掉 promise 让下次调用能重试
         const current = this.hostPromises.get(key);
@@ -3063,6 +3124,8 @@ assertRouteCurrent();
     nativeStorageOnly?: boolean,
     deviceHostedGuestSessionId?: string,
     deviceHostedGuestModelIds?: readonly string[],
+    localToolCatalog?: string,
+    customContextProviderId?: string | null,
   ): Promise<AppServerHost> {
     const seq = (this.createHostSeqByKey.get(key) ?? 0) + 1;
     this.createHostSeqByKey.set(key, seq);
@@ -3189,7 +3252,7 @@ assertRouteCurrent();
               ...(!remoteHostId && historyHome ? { runtimeCodexHome: historyHome } : {}),
               // 受邀者任务的 app-server 与账号会话一样走按 host 分开的 proxy(鉴权注入方式冻结在这个 host 上)，
               // 不改写本机用户任务共用的 proxy 状态。
-              ...(key.startsWith('local-account:') || key.startsWith(LOCAL_GUEST_HOST_PREFIX) || deviceHostedGuestProviderId
+              ...(key.startsWith('local-account:') || key.startsWith(LOCAL_GUEST_HOST_PREFIX) || deviceHostedGuestProviderId || localToolCatalog
                 ? { accountHostKey: `${key}:${generation}` } : {}),
               credentialMode: spawnCredentialMode,
               ...(localAuthPolicy === 'isolated'
@@ -3204,6 +3267,7 @@ assertRouteCurrent();
                 ? {
                     customContextModel,
                     customContextWindow,
+                    customContextProviderId,
                     customContextHostKey: `${key}:${generation}`,
                   }
                 : {}),
@@ -3302,6 +3366,7 @@ assertRouteCurrent();
       break;
     }
     if (!remoteHostId && sqliteHome) extraArgs.push('-c', `sqlite_home=${JSON.stringify(sqliteHome)}`);
+    if (localToolCatalog) extraArgs.push('-c', `model_catalog_json=${JSON.stringify(localToolCatalog)}`);
     let externalAuth: CodexExternalAuth | undefined;
     const requireEphemeralAuth = !remoteHostId && (localAuthPolicy === 'isolated'
       || (!!historyHome && path.resolve(historyHome) !== path.resolve(env.CODEX_HOME ?? '')));
@@ -3779,13 +3844,18 @@ assertRouteCurrent();
     const eventQueue: AsyncQueue<AgentEvent> = createAsyncQueue<AgentEvent>();
     const usageTracker = new UsageTracker();
     const translatorRt: CodexRuntimeState = newCodexRuntimeState();
-    const liveUsageSnapshot = () => attachLiveGeneration(usageTracker.snapshot(), {
-      tokenSpeed: translatorRt.generationTimingReliable ? translatorRt.tokenSpeed.snapshot() : undefined,
-      outputTokens: usageTracker.getTurnUsage().output,
-      durationMs: translatorRt.generationOutputDurationMs,
-      openStartedAt: translatorRt.generationStartedAt,
-      reliable: translatorRt.generationTimingReliable,
-    });
+    const liveUsageSnapshot = () => {
+      const speed = translatorRt.generationTimingReliable ? translatorRt.tokenSpeed.snapshot() : undefined;
+      return attachLiveGeneration(usageTracker.snapshot(), {
+        tokenSpeed: speed,
+        // Legacy clients use these fields: they must share the speed snapshot's
+        // measured numerator/denominator, never the billing ledger's lifetime.
+        outputTokens: speed?.tokens ?? translatorRt.generationOutputTokens,
+        durationMs: speed?.elapsedMs ?? 0,
+        openStartedAt: translatorRt.generationStartedAt,
+        reliable: speed !== undefined,
+      });
+    };
     /**
      * 本 turn 用于**目录查找**的模型 id, 在构造 turnParams 时快照(取 mutableCatalogModel,
      * 不是送上游的 wire 值 —— 见该变量注释)。
@@ -3797,6 +3867,16 @@ assertRouteCurrent();
      */
     let activeTurnModel: string | undefined = opts.model;
     let activeTurnContextLimit = this.deps.resolveModelContextLimit?.(opts.providerId, opts.model) ?? null;
+    let activeTurnCompactionPct = this.deps.resolveModelCompactionPct?.(opts.providerId, opts.model) ?? 90;
+    /**
+     * 任务级工作上下文预算（tokens）：host 已按目录上限与模型级上限收敛。
+     * 优先于模型级上限/目录默认；host 在预算变化时直接触发重建，不走热切。
+     */
+    let mutableContextWindowBudget: number | null =
+      typeof opts.contextWindowBudget === 'number' && Number.isSafeInteger(opts.contextWindowBudget)
+      && opts.contextWindowBudget > 0
+        ? opts.contextWindowBudget
+        : null;
     /**
      * 本 turn 实际路由的 provider,与 activeTurnModel 同时快照。
      *
@@ -4893,7 +4973,7 @@ assertRouteCurrent();
     };
     const forceTurnConfirmation = (toolName: string, input: unknown): boolean => {
       const policy = activeTurnPermissionPolicy;
-      if (!policy) return false;
+      if (!policy || mutablePermissionMode === 'bypassPermissions') return false;
       try {
         return policy.forceConfirmToolCall(toolName, input) === true;
       } catch (error) {
@@ -5032,8 +5112,17 @@ assertRouteCurrent();
     // plan_review requestId 去重序号 (同一 turn 理论上只有一个 plan item, 防御性加序号)。
     let planReviewSeq = 0;
     // Undefined preserves app-server defaults; null selects standard; strings select a speed tier.
-    let mutableServiceTier: ServiceTier | null | undefined =
+    let requestedServiceTier: ServiceTier | null | undefined =
       opts.fastMode === undefined ? undefined : opts.fastMode === 'ultrafast' ? 'ultrafast' : opts.fastMode ? 'fast' : null;
+    // Read at every native request boundary, including resume, retries and autonomous continuations.
+    const serviceTierState = {
+      get value(): ServiceTier | null | undefined {
+        return opts.fastModePolicy?.isAllowed() === false ? null : requestedServiceTier;
+      },
+      set value(tier: ServiceTier | null | undefined) {
+        requestedServiceTier = opts.fastModePolicy?.isAllowed() === false ? null : tier;
+      },
+    };
     // Older async thread start/resume responses must not overwrite a newer
     // Fast mode choice made while the request was in flight.
     let serviceTierMutationGeneration = 0;
@@ -5042,7 +5131,7 @@ assertRouteCurrent();
       // Windows Review requires 0.156+ and exposes flat function tools. The legacy
       // ordinary provider gate concerns namespace tools, not these scoped reads.
       ...(reviewMode && process.platform === 'win32' ? REVIEW_READ_TOOLS : []),
-      ...(!reviewMode && shouldRegisterAskUserDynamicTool(opts) ? [ASK_USER_DYNAMIC_TOOL] : []),
+      ...(!reviewMode && !opts[LOCAL_AGENT_CLIENT]?.hostToolsOnly && shouldRegisterAskUserDynamicTool(opts) ? [ASK_USER_DYNAMIC_TOOL] : []),
     ];
     const accountProviderId = this.deps.isCodexAccountProvider?.(opts.providerId) ? opts.providerId! : undefined;
     const accountSessionHost = !opts.remoteHostId && (accountProviderId !== undefined || this.deps.isolateCodexAccountSessions === true);
@@ -5063,7 +5152,7 @@ assertRouteCurrent();
       ?? (localAuthPolicy === 'isolated' ? 'provider-oauth' : undefined);
     const resolveCodexThreadContextWindow = this.deps.resolveCodexThreadContextWindow;
     let initialCustomContextWindow = !reviewMode
-      ? await resolveCodexThreadContextWindow?.(opts.providerId, opts.model) ?? null
+      ? mutableContextWindowBudget ?? await resolveCodexThreadContextWindow?.(opts.providerId, opts.model) ?? null
       : null;
     const customContextCatalogIdentity = (
       model: string,
@@ -5081,14 +5170,17 @@ assertRouteCurrent();
     let usesCustomContextHost = !opts.remoteHostId && initialCustomContextCatalogIdentity !== null;
     const resolveModelSwitchCatalogIdentity = async (
       newModel: string,
-      setOpts?: { providerId?: string | null },
+      setOpts?: { providerId?: string | null; contextWindowBudget?: number | null },
     ): Promise<string | null> => {
       const providerId = setOpts && Object.hasOwn(setOpts, 'providerId')
         ? setOpts.providerId
         : mutableProviderId;
+      const nextBudget = setOpts?.contextWindowBudget !== undefined
+        ? setOpts.contextWindowBudget
+        : mutableContextWindowBudget;
       const contextWindow = reviewMode
         ? null
-        : await resolveCodexThreadContextWindow?.(providerId, newModel) ?? null;
+        : nextBudget ?? await resolveCodexThreadContextWindow?.(providerId, newModel) ?? null;
       return customContextCatalogIdentity(newModel, contextWindow);
     };
     const modelSwitchRequiresRebuild = async (
@@ -5113,11 +5205,21 @@ assertRouteCurrent();
     // 受邀者：CODEX_HOME 换成远程 Agent 运行根下的受邀者目录(本机用户的 AGENTS.md、配置、技能与
     // 历史都不在这里)。登录经既有的 token 桥从本机只读取得，受邀者目录用 ephemeral 凭证存储，
     // 不复制也不在这里刷新本机的 auth.json；也不按 id 到本机的 Codex 历史里查找线程。
+    const localToolCatalog = opts[LOCAL_AGENT_CLIENT]?.hostToolsOnly
+      ? await this.deps.prepareCodexHostToolCatalog?.(opts.model ?? '', initialCustomContextWindow) : undefined;
+    if (opts[LOCAL_AGENT_CLIENT]?.hostToolsOnly && !localToolCatalog) throw new Error('Host-owned conversations require an isolated native tool catalog.');
+    const localClient = opts[LOCAL_AGENT_CLIENT];
+    const localApplicationHome = localClient?.storageDirectory
+      ? path.join(localClient.storageDirectory, 'native-history')
+      : localToolCatalog ? path.join(path.dirname(localToolCatalog), 'native-history') : undefined;
+    if (localApplicationHome) await fs.mkdir(localApplicationHome, {recursive:true,mode:0o700});
     const guestCodexHome = hosted && hostedGuest && hosted.guestHome
       ? path.join(hosted.guestHome, 'codex')
       : undefined;
     if (guestCodexHome) await fs.mkdir(guestCodexHome, { recursive: true, mode: 0o700 });
-    const sessionStorage = guestCodexHome
+    const sessionStorage = localApplicationHome
+      ? {historyHome:localApplicationHome,sqliteHome:localApplicationHome}
+      : guestCodexHome
       ? { historyHome: guestCodexHome, sqliteHome: guestCodexHome }
       : !opts.remoteHostId && opts.resumeSessionId
         ? await this.deps.resolveCodexThreadStorage?.(opts.resumeSessionId)
@@ -5130,7 +5232,7 @@ assertRouteCurrent();
       reviewMode, customContext: usesCustomContextHost, storage: sessionStorage, policy: localAuthPolicy,
       environmentIdentity: companionEnvironment?.identity,
       ...(guestCodexHome ? { guestSession: true } : {}),
-    });
+    }) + (localToolCatalog ? `:host-tools-only:${opts.model ?? ''}` : '');
     let currentHostKey = resolveSessionHostKey();
     let releaseHostBindingLease: (() => void) | null = null;
     const acquireHostBindingLeaseIfNeeded = (): void => {
@@ -5151,6 +5253,7 @@ assertRouteCurrent();
       if (!routeSelection.isCurrent()) throw new CodexRouteSelectionChangedError();
       acquireHostBindingLeaseIfNeeded();
       return await this.getHost(opts.remoteHostId, credentialMode, {
+        ...(localToolCatalog ? {keyOverride:currentHostKey,localToolCatalog} : {}),
         ...(companionEnvironment ? { keyOverride: currentHostKey } : {}),
         ...(accountProviderId ? { providerId: accountProviderId } : {}),
         ...(sessionSqliteHome ? { sqliteHome: sessionSqliteHome } : {}),
@@ -5171,6 +5274,7 @@ assertRouteCurrent();
                 hostPurpose: 'custom-context' as const,
                 customContextModel: opts.model,
                 customContextWindow: initialCustomContextWindow ?? undefined,
+                customContextProviderId: opts.providerId,
               }
             : {}),
       });
@@ -5443,127 +5547,25 @@ assertRouteCurrent();
         );
       }
     }
-    /**
-     * 本机的 Skill、插件与 MCP 逐项关闭(线程级覆盖)。不传 keep 时全部关闭(Review)；受邀者的
-     * 托管会话用 keep 保留它自己的 Skill、Codex 自带 Skill 与经隧道的 MCP。
-     */
-    const buildLocalCapabilityIsolationConfig = async (keep?: {
-      skill: (skillPath: string, scope?: SkillMetadata['scope']) => boolean;
-      mcpServer: (serverName: string) => boolean;
-    }): Promise<Record<string, unknown>> => {
-      const { skills, errors } = await this.listSkillsForHost(
-        host,
-        opts.workingDir,
-        false,
-        CRITICAL_THREAD_RPC_TIMEOUT_MS,
-      );
-      const unscopedSkillError = errors.find((error) => !error.path);
-      if (unscopedSkillError) throw new Error(unscopedSkillError.message);
-
-      const configResponse = await host.request<{ config?: Record<string, unknown> }>(
-        Method.ConfigRead,
-        { includeLayers: false },
-        { timeoutMs: CRITICAL_THREAD_RPC_TIMEOUT_MS },
-      );
-      const effectiveConfig = asRecord(configResponse.config);
-      const configuredMcp = asRecord(effectiveConfig.mcp_servers);
-      const configuredPlugins = asRecord(effectiveConfig.plugins);
-      const configuredMcpServerNames = new Set(
-        Object.entries(configuredMcp)
-          .filter(([, serverConfig]) => hasCodexMcpTransport(serverConfig))
-          .map(([serverName]) => serverName),
-      );
-      const transportConfiguredMcpServerNames = new Set(configuredMcpServerNames);
-      for (const pluginConfig of Object.values(configuredPlugins)) {
-        const pluginMcp = asRecord(asRecord(pluginConfig).mcp_servers);
-        for (const [serverName, serverConfig] of Object.entries(pluginMcp)) {
-          if (!hasCodexMcpTransport(serverConfig)) continue;
-          transportConfiguredMcpServerNames.add(serverName);
-        }
-      }
-      const unconfiguredRuntimeMcpServerNames = new Set<string>();
-      let cursor: string | null = null;
-      do {
-        const status: CodexMcpServerStatusListResponse =
-          await host.request<CodexMcpServerStatusListResponse>(
-          Method.McpServerStatusList,
-          { cursor, limit: 100, detail: 'toolsAndAuthOnly', threadId: null },
-          { timeoutMs: CRITICAL_THREAD_RPC_TIMEOUT_MS },
-        );
-        for (const server of status.data) {
-          if (
-            !transportConfiguredMcpServerNames.has(server.name) &&
-            server.name !== CODEX_APPS_MCP_SERVER_NAME
-          ) {
-            unconfiguredRuntimeMcpServerNames.add(server.name);
-          }
-        }
-        cursor = status.nextCursor;
-      } while (cursor !== null);
-      if (unconfiguredRuntimeMcpServerNames.size > 0) {
-        throw new Error(
-          `Codex reported runtime MCP servers without transport-bearing config: ${[
-            ...unconfiguredRuntimeMcpServerNames,
-          ].sort().join(', ')}`,
-        );
-      }
-
-      const skillPaths = new Set([
-        ...skills.filter((skill) => !keep?.skill(skill.path, skill.scope)).map((skill) => skill.path),
-        ...errors.flatMap((error) => (error.path && !keep?.skill(error.path) ? [error.path] : [])),
-      ]);
-      const pluginIds = new Set(Object.keys(configuredPlugins));
-      for (const skillPath of skillPaths) {
-        const pluginId = pluginIdFromCodexSkillPath(skillPath);
-        if (pluginId) pluginIds.add(pluginId);
-      }
-
-      const isolationConfig: Record<string, unknown> = {};
-      if (skillPaths.size > 0) {
-        isolationConfig['skills.config'] = [...skillPaths]
-          .sort()
-          .map((skillPath) => ({ path: skillPath, enabled: false }));
-      }
-      // Only configured MCP entries have a command/url transport that can
-      // accept a per-thread `.enabled=false` merge. `codex_apps` is an
-      // app-server builtin surfaced by mcpServerStatus/list but absent from
-      // config/read; synthesizing an override for it makes Codex 0.145.0
-      // reject thread/start with "invalid transport". Apps are isolated by
-      // `features.apps=false` instead.
-      for (const serverName of configuredMcpServerNames) {
-        if (keep?.mcpServer(serverName)) continue;
-        isolationConfig[
-          `mcp_servers.${renderReviewConfigSegment(serverName)}.enabled`
-        ] = false;
-      }
-      for (const pluginId of pluginIds) {
-        isolationConfig[
-          `plugins.${quoteReviewConfigSegment(pluginId)}.enabled`
-        ] = false;
-        const pluginMcp = asRecord(asRecord(configuredPlugins[pluginId]).mcp_servers);
-        for (const [serverName, serverConfig] of Object.entries(pluginMcp)) {
-          if (!hasCodexMcpTransport(serverConfig)) continue;
-          isolationConfig[
-            `plugins.${quoteReviewConfigSegment(pluginId)}.mcp_servers.${renderReviewConfigSegment(serverName)}.enabled`
-          ] = false;
-        }
-      }
-      return isolationConfig;
-    };
-    if (reviewMode) {
+    if (reviewMode || opts[LOCAL_AGENT_CLIENT]) {
       try {
-        assertCurrentHost('Review capability isolation');
-        const reviewCapabilityConfig = await buildLocalCapabilityIsolationConfig();
+        assertCurrentHost('local capability isolation');
+        // Native execution retains its project Skills and installed native plugins.
+        // Only the automatically inherited credential-bearing MCP connections are excluded.
+        const nativeClient = opts[LOCAL_AGENT_CLIENT] && !opts[LOCAL_AGENT_CLIENT]!.hostToolsOnly;
+        const reviewCapabilityConfig = await this.buildLocalCapabilityIsolationConfig(host, opts.workingDir, nativeClient
+          ? { skill: () => true, plugin: () => true, mcpServer: () => false, allSkills: true }
+          : undefined);
         capabilityRoutingConfig = {
           ...capabilityRoutingConfig,
           ...reviewCapabilityConfig,
         };
-        assertCurrentHost('Review capability isolation');
+        assertCurrentHost('local capability isolation');
       } catch (error) {
         releaseHostBindingLeaseIfNeeded();
         if (error instanceof CodexRouteSelectionChangedError) throw error;
         throw new Error(
-          `Cannot start Codex Review safely because Cindy could not disable local Skills, plugins, and MCP servers: ${error instanceof Error ? error.message : String(error)}`,
+          `Cannot prepare this Codex session's capability scope: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -5574,7 +5576,7 @@ assertRouteCurrent();
         assertCurrentHost('Shared-user capability isolation');
         // 受邀者目录里没有本机用户的全局说明；没有受邀者目录(旧接线)时仍按 fail-closed 检查。
         await assertNoCodexUserInstructions(sessionCodexHome);
-        const guestCapabilityConfig = await buildLocalCapabilityIsolationConfig({
+        const guestCapabilityConfig = await this.buildLocalCapabilityIsolationConfig(host, opts.workingDir, {
           skill: (skillPath, scope) => guestSkillAllowed!(skillPath, scope),
           mcpServer: (serverName) => hosted.mcpServers.includes(serverName),
         });
@@ -5608,6 +5610,13 @@ assertRouteCurrent();
       return out;
     };
     const readSessionMcpConfig = (): Record<string, unknown> => {
+      const client = opts[LOCAL_AGENT_CLIENT];
+      if (client) return {
+        [`mcp_servers.${client.mcpName ?? 'client'}.url`]: client.url,
+        [`mcp_servers.${client.mcpName ?? 'client'}.http_headers`]: { Authorization: `Bearer ${client.token}` },
+        [`mcp_servers.${client.mcpName ?? 'client'}.enabled`]: true,
+        [`mcp_servers.${client.mcpName ?? 'client'}.default_tools_approval_mode`]: 'approve',
+      };
       if (hosted) return readHostedMcpConfig();
       const config = host.getSessionMcpConfig(opts.sessionInstanceId, { vendorOptions: vo });
       if (opts.remoteHostId && opts.botRuntimeProfile?.mcpPolicy
@@ -5616,7 +5625,22 @@ assertRouteCurrent();
       }
       return config;
     };
-    let botMcpConfig: Record<string, unknown> = {};
+    let botMcpConfig: Record<string, unknown> = opts[LOCAL_AGENT_CLIENT] ? { 'features.apps': false } : {};
+    if (opts[LOCAL_AGENT_CLIENT]?.hostToolsOnly) {
+      botMcpConfig.model_catalog_json = localToolCatalog;
+      const features = await listCodexFeatures(cursor => host.request(Method.ExperimentalFeatureList, { cursor, limit: 100 }));
+      const infrastructure = new Set(['secret_auth_storage', 'enable_request_compression', 'system_proxy_fallback', 'content_item_kinds', 'compaction_image_budget']);
+      for (const feature of features) {
+        if (infrastructure.has(feature.name) || feature.stage === 'removed' || feature.stage === 'deprecated' && !feature.enabled) continue;
+        botMcpConfig[`features.${feature.name}`] = false;
+      }
+      Object.assign(botMcpConfig, { web_search: 'disabled', include_apply_patch_tool: false, project_doc_max_bytes: 0,
+        'features.shell_tool': false, 'features.unified_exec': false, 'features.shell_snapshot': false,
+        'features.view_image': false, 'features.code_mode': false, 'features.code_mode_only': false,
+        'features.js_repl': false, 'features.browser_use': false, 'features.computer_use': false,
+        'features.image_generation': false, 'features.multi_agent': false, 'features.multi_agent_v2': false,
+        'memories.generate_memories': false, 'memories.use_memories': false });
+    }
     if (!reviewMode && opts.botRuntimeProfile?.mcpPolicy) {
       try {
         const response = await host.request<{ config?: Record<string, unknown> }>(
@@ -5974,6 +5998,8 @@ assertRouteCurrent();
       if (descendantThreadId === threadId || descendantMcpThreadIds.has(descendantThreadId)) return;
       descendantMcpThreadIds.add(descendantThreadId);
       registerCodexMcpContext(descendantThreadId, 'descendant');
+      // Native descendants inherit the root tier. V2 rejects direct child
+      // settings updates; the trusted request exit also clamps stale tiers.
     };
     const unregisterDescendantCodexMcpContexts = (): void => {
       for (const descendantThreadId of descendantMcpThreadIds) {
@@ -6422,6 +6448,7 @@ assertRouteCurrent();
       cleanup: () => host.unsubscribeThread(detachedThreadId),
     });
     function currentApprovalConfig(): CodexPermissionConfig {
+      if (opts[LOCAL_AGENT_CLIENT]?.hostToolsOnly) return { approvalPolicy: 'never', sandbox: 'read-only' };
       if (reviewMode) {
         return { approvalPolicy: 'never', sandbox: 'read-only' };
       }
@@ -6452,7 +6479,12 @@ assertRouteCurrent();
     }
 
     let customProviderThreadConfig: Record<string, unknown> = {};
+    const currentCompactionPct = () => this.deps.resolveModelCompactionPct?.(
+      mutableProviderId, mutableCatalogModel ?? mutableModel,
+    ) ?? null;
     const currentContextLimit = (): number | null => {
+      // 任务级预算优先：本任务的工作窗口由用户显式选定，host 已收敛到目录上限内。
+      if (mutableContextWindowBudget !== null) return mutableContextWindowBudget;
       const limit = this.deps.resolveModelContextLimit?.(mutableProviderId, mutableCatalogModel ?? mutableModel);
       return typeof limit === 'number' && Number.isSafeInteger(limit) && limit > 0 ? limit : null;
     };
@@ -6468,6 +6500,7 @@ assertRouteCurrent();
     };
     let appliedContextLimit = currentContextLimit();
     activeTurnContextLimit = effectiveThreadContextWindow(appliedContextLimit);
+    activeTurnCompactionPct = currentCompactionPct() ?? 90;
 
     /** 设备托管：线程与每轮都选中任务所在电脑上的 exec-server 环境(工作目录与根都是那台电脑的路径)。 */
     function hostedEnvironmentParams(): { environments?: Array<Record<string, unknown>> } {
@@ -6479,6 +6512,47 @@ assertRouteCurrent();
           runtimeWorkspaceRoots: runtimeWorkspaceRoots(),
         }],
       };
+    }
+
+    /** 设备托管：把任务所在电脑的 exec-server 登记成执行环境(同一个 id 再登记会换成新连接)。 */
+    async function addHostedEnvironment(): Promise<void> {
+      if (!hosted || !hostedEnvironmentId) return;
+      assertCurrentHost('environment/add');
+      await host.request(Method.EnvironmentAdd, {
+        environmentId: hostedEnvironmentId,
+        execServerUrl: `${stripTrailingSlashes(hosted.tunnelUrl.replace(/^http/, 'ws'))}/ws/exec-server`,
+        authBearerToken: hosted.tunnelToken,
+      }, { timeoutMs: CRITICAL_THREAD_RPC_TIMEOUT_MS });
+      assertCurrentHost('environment/add');
+    }
+
+    /**
+     * 设备托管：执行环境首次握手失败(如 10 秒内没等到 initialize 回包)后，Codex 把这个环境记为失败，之后
+     * 每一轮都跳过它——模型能回答，却没有 Shell 与文件工具，链路恢复也不会自己重连(固定 Codex 0.159.2：
+     * 首次连接的结果只记一次)。下一轮开始前，隧道上已没有执行环境连接时问一次 Codex；环境已断开或已不在，
+     * 就按同一个 id 重新登记，这一轮 turn/start 带上的环境选择会换成新连接。连接还开着时不发任何请求，
+     * 正常发送路径不多一次往返。查询或重新登记失败只记日志，照常发送(不比原来更差)。
+     */
+    function repairHostedEnvironmentIfDisconnected(): Promise<void> | undefined {
+      if (!hosted || !hostedEnvironmentId) return undefined;
+      const openConnections = hosted.linkActivity?.().wsConnectionsOpen;
+      if (openConnections === undefined || openConnections > 0) return undefined;
+      return (async () => {
+        try {
+          const response = await host.request<{ status?: unknown; error?: unknown }>(
+            Method.EnvironmentStatus, { environmentId: hostedEnvironmentId },
+            { timeoutMs: HOSTED_ENVIRONMENT_STATUS_TIMEOUT_MS },
+          );
+          if (response.status !== 'disconnected' && response.status !== 'unknown') return;
+          log.warn('codex: hosted execution environment is not connected; registering it again', {
+            status: response.status,
+            ...(typeof response.error === 'string' ? { error: response.error.slice(0, 300) } : {}),
+          });
+          await addHostedEnvironment();
+        } catch (error) {
+          log.warn('codex: hosted execution environment check failed', { error: String(error) });
+        }
+      })();
     }
 
     /**
@@ -6590,18 +6664,23 @@ assertRouteCurrent();
         // Its host omits Cindy's MCP bridge, so a bare memory override would
         // create an invalid transport even though the entry is disabled.
         // 设备托管：只停用本机确实配置了的 cindy_memory(没有传输配置的空条目会让 Codex 拒绝配置)。
-        ...(!reviewMode && !makerMemoryEnabled && !opts.botRuntimeProfile
+        ...(!reviewMode && !opts[LOCAL_AGENT_CLIENT] && !makerMemoryEnabled && !opts.botRuntimeProfile
           && (!hosted || hostedLocalMcpNames.includes('cindy_memory'))
           ? { 'mcp_servers.cindy_memory.enabled': false }
           : {}),
-        // Configure the native window and its 90% compaction budget together.
-        // Native effective_context_window_percent independently reserves input headroom.
+        // Local custom-context hosts carry per-model budgets in their catalog.
+        // Global overrides hide the previous model's larger window from native
+        // downshift compaction. SSH and the separate host-tools-only catalog
+        // still need thread-scoped config. A changed
+        // explicit limit on this same live model uses the existing cold-resume
+        // refresh; switching models reloads the catalog and drops that override.
         ...(typeof threadContextWindow === 'number' && threadContextWindow > 0
+          && (!usesCustomContextHost || localToolCatalog || threadContextWindow !== initialCustomContextWindow)
           ? {
               model_context_window: Math.floor(threadContextWindow),
               model_auto_compact_token_limit: Math.max(
                 1,
-                Math.floor(threadContextWindow * 0.9),
+                Math.floor(threadContextWindow * ((currentCompactionPct() ?? 90) / 100)),
               ),
             }
           : {}),
@@ -6639,7 +6718,7 @@ assertRouteCurrent();
       // those handlers auto-accept non-forced actions in Auto mode.
       const turnApprovalConfig: CodexPermissionConfig = reviewMode
         ? { approvalPolicy: 'never', sandbox: 'read-only' }
-        : activeTurnPermissionPolicy
+        : activeTurnPermissionPolicy && mutablePermissionMode !== 'bypassPermissions'
           ? {
             approvalPolicy: 'untrusted',
             sandbox: 'read-only',
@@ -6656,7 +6735,7 @@ assertRouteCurrent();
       };
       if (
         currentWorkspacePermissionProfile() !== undefined &&
-        !activeTurnPermissionPolicy
+        (!activeTurnPermissionPolicy || mutablePermissionMode === 'bypassPermissions')
       ) {
         // The profile was selected on thread/start or thread/resume. Repeating
         // the selector here makes Codex 0.145.0 reload its base config (which
@@ -7069,7 +7148,7 @@ assertRouteCurrent();
         ...(sessionDynamicTools.length > 0 ? { dynamicTools: sessionDynamicTools } : {}),
         ...(threadModelProvider ? { modelProvider: threadModelProvider } : {}),
         ...(mutableModel && mutableModel !== 'gpt-5' ? { model: mutableModel } : {}),
-        ...(mutableServiceTier !== undefined ? { serviceTier: mutableServiceTier } : {}),
+        ...(serviceTierState.value !== undefined ? { serviceTier: serviceTierState.value } : {}),
         ...(developerInstructions && !useProxyChannel ? { developerInstructions } : {}),
       };
       acquireHostBindingLeaseIfNeeded();
@@ -7086,7 +7165,7 @@ assertRouteCurrent();
         });
       assertCurrentHost('thread/start');
       if (Object.hasOwn(resp, 'serviceTier')) {
-        mutableServiceTier = normalizeServiceTier(resp.serviceTier) ?? null;
+        serviceTierState.value = normalizeServiceTier(resp.serviceTier) ?? null;
       }
       if (mutableModel === 'gpt-5' && resp.model) {
         mutableModel = resp.model;
@@ -7112,7 +7191,7 @@ assertRouteCurrent();
         threadId,
         model: resp.model,
         modelProvider: codexThreadModelProviderId ?? null,
-        serviceTier: mutableServiceTier ?? null,
+        serviceTier: serviceTierState.value ?? null,
       });
     };
 
@@ -7129,31 +7208,34 @@ assertRouteCurrent();
      *   回带的 thread/settings/updated 通知会乱序到达, reconcile 出现中间态闪现 (实测过
      *   null→fast→default)。串行后 server 按序处理、通知按序回, 最终态一次到位。
      * - serviceTier 双 Option: 调用方传 'fast' (开) / null (清空); 不传该 key = 不变。
-     * - **失败吞错**: settings/update 失败绝不抛 — turn/start 携带仍是兜底, 会话不受
-     *   影响。server 回 ack 后真正状态经 thread/settings/updated 通知回带 (见 handlers)。
+     * - 只更新根线程，子线程由原生继承；V2 禁止直接更新子线程。
+     * - settings/update 失败通常只记录警告，后续 turn/start 与可信请求出口继续兜底。
+     *   仅在必须禁止 Fast 且没有请求代理时抛错，避免把未受保护的发送当作成功。
+     *   server 回 ack 后真正状态经 thread/settings/updated 通知回带 (见 handlers)。
      *
-     * 返回入队任务的 promise (链已 catch, 永不 reject), 调用方可 await 到本次发送完成。
+     * 返回本次入队任务的 promise；队列本身恢复后续任务，不吞必须执行的失败。
      */
     let settingsUpdateChain: Promise<void> = Promise.resolve();
-    const pushThreadSettings = (patch: Omit<ThreadSettingsUpdateParams, 'threadId'>): Promise<void> => {
+    const pushThreadSettings = (patch: Omit<ThreadSettingsUpdateParams, 'threadId'>, requireApplied = false): Promise<void> => {
       if (!threadId || closed) return Promise.resolve();
       const run = settingsUpdateChain.then(async () => {
         if (!threadId || closed) return; // 排到队头时再校验一次 (期间可能已 close)
         if (skipIfStaleHost('thread/settings/update')) return;
         try {
-          await host.request<ThreadSettingsUpdateResponse>(Method.ThreadSettingsUpdate, {
-            threadId,
-            ...patch,
-          });
+          const effectivePatch = opts.fastModePolicy?.isAllowed() === false ? { ...patch, serviceTier: null } : patch;
+          await host.request<ThreadSettingsUpdateResponse>(Method.ThreadSettingsUpdate, { threadId, ...effectivePatch });
         } catch (e) {
-          log.warn('thread/settings/update failed (turn/start carry remains fallback)', {
+          const mustApplyNative = requireApplied && !hostUsesCodexProxy;
+          log.warn('thread/settings/update failed', {
             threadId,
             patchKeys: Object.keys(patch),
+            mustApplyNative,
             error: e instanceof Error ? e.message : String(e),
           });
+          if (mustApplyNative) throw e;
         }
       });
-      settingsUpdateChain = run;
+      settingsUpdateChain = run.catch(() => undefined);
       return run;
     };
     if (hosted && hostedEnvironmentId) {
@@ -7181,13 +7263,7 @@ assertRouteCurrent();
         }
         assertCurrentHost('experimentalFeature/list');
       }
-      assertCurrentHost('environment/add');
-      await host.request(Method.EnvironmentAdd, {
-        environmentId: hostedEnvironmentId,
-        execServerUrl: `${stripTrailingSlashes(hosted.tunnelUrl.replace(/^http/, 'ws'))}/ws/exec-server`,
-        authBearerToken: hosted.tunnelToken,
-      }, { timeoutMs: CRITICAL_THREAD_RPC_TIMEOUT_MS });
-      assertCurrentHost('environment/add');
+      await addHostedEnvironment();
     }
     if (opts.resumeSessionId && isLikelyValidThreadId(opts.resumeSessionId)) {
       // Phase 3: thread/resume is the historical-session path. Only the exact
@@ -7208,7 +7284,7 @@ assertRouteCurrent();
         ...currentThreadWorkspaceConfig(),
         ...(threadModelProvider ? { modelProvider: threadModelProvider } : {}),
         ...(mutableModel && mutableModel !== 'gpt-5' ? { model: mutableModel } : {}),
-        ...(mutableServiceTier !== undefined ? { serviceTier: mutableServiceTier } : {}),
+        ...(serviceTierState.value !== undefined ? { serviceTier: serviceTierState.value } : {}),
         ...(shouldSendNativeDeveloperInstructions
           ? { developerInstructions }
           : {}),
@@ -7250,7 +7326,7 @@ assertRouteCurrent();
         }
         assertCurrentHost('thread/resume');
         if (Object.hasOwn(resp, 'serviceTier')) {
-          mutableServiceTier = normalizeServiceTier(resp.serviceTier) ?? null;
+          serviceTierState.value = normalizeServiceTier(resp.serviceTier) ?? null;
         }
         if (mutableModel === 'gpt-5' && resp.model) {
           mutableModel = resp.model;
@@ -7317,7 +7393,7 @@ assertRouteCurrent();
           threadId,
           model: resp.model,
           modelProvider: codexThreadModelProviderId ?? null,
-          serviceTier: mutableServiceTier ?? null,
+          serviceTier: serviceTierState.value ?? null,
         });
       } catch (e) {
         if (!startup.threadDispatched && (e instanceof CodexRouteSelectionChangedError || startup.signal.aborted)) throw e;
@@ -7526,7 +7602,7 @@ assertRouteCurrent();
             ...(!retainHistory && sessionDynamicTools.length > 0 ? { dynamicTools: sessionDynamicTools } : {}),
             ...(threadModelProvider ? { modelProvider: threadModelProvider } : {}),
             ...(mutableModel && mutableModel !== 'gpt-5' ? { model: mutableModel } : {}),
-            ...(mutableServiceTier !== undefined ? { serviceTier: mutableServiceTier } : {}),
+            ...(serviceTierState.value !== undefined ? { serviceTier: serviceTierState.value } : {}),
             ...(developerInstructions && !useProxyChannel ? { developerInstructions } : {}),
           }, options)),
           onLateResolve: async (lateResp) => {
@@ -7557,7 +7633,7 @@ assertRouteCurrent();
           Object.hasOwn(resp, 'serviceTier') &&
           replacementServiceTierGeneration === serviceTierMutationGeneration
         ) {
-          mutableServiceTier = normalizeServiceTier(resp.serviceTier) ?? null;
+          serviceTierState.value = normalizeServiceTier(resp.serviceTier) ?? null;
         }
         if (retainHistory && resp.modelProvider !== localSummaryProvider) {
           await unsubscribeDetachedThread(nextThreadId, 'summary fallback identity mismatch', false);
@@ -7597,7 +7673,7 @@ assertRouteCurrent();
             // setFastMode() updated the old thread while thread/start was
             // pending. turn/start still carries the current value; reapply the
             // sticky thread setting without blocking dispatch.
-            void pushThreadSettings({ serviceTier: mutableServiceTier ?? null });
+            void pushThreadSettings({ serviceTier: serviceTierState.value ?? null });
           }
         }
         if (hostUsesCodexProxy) {
@@ -7667,7 +7743,7 @@ assertRouteCurrent();
                 ...resumeThreadWorkspaceConfig,
                 ...(threadModelProvider ? { modelProvider: threadModelProvider } : {}),
                 ...(mutableModel && mutableModel !== 'gpt-5' ? { model: mutableModel } : {}),
-                ...(mutableServiceTier !== undefined ? { serviceTier: mutableServiceTier } : {}),
+                ...(serviceTierState.value !== undefined ? { serviceTier: serviceTierState.value } : {}),
               }, options),
             });
           } catch (e) {
@@ -7682,9 +7758,9 @@ assertRouteCurrent();
             Object.hasOwn(resp, 'serviceTier') &&
             resumeServiceTierGeneration === serviceTierMutationGeneration
           ) {
-            mutableServiceTier = normalizeServiceTier(resp.serviceTier) ?? null;
+            serviceTierState.value = normalizeServiceTier(resp.serviceTier) ?? null;
           } else if (resumeServiceTierGeneration !== serviceTierMutationGeneration) {
-            void pushThreadSettings({ serviceTier: mutableServiceTier ?? null });
+            void pushThreadSettings({ serviceTier: serviceTierState.value ?? null });
           }
           codexThreadModelProviderId = resp.modelProvider?.trim() || undefined;
           workspacePermissionProfileActive = 'permissions' in resumeThreadWorkspaceConfig;
@@ -7724,7 +7800,7 @@ assertRouteCurrent();
                 ...workspaceConfig,
                 ...(threadModelProvider ? { modelProvider: threadModelProvider } : {}),
                 ...(mutableModel && mutableModel !== 'gpt-5' ? { model: mutableModel } : {}),
-                ...(mutableServiceTier !== undefined ? { serviceTier: mutableServiceTier } : {}),
+                ...(serviceTierState.value !== undefined ? { serviceTier: serviceTierState.value } : {}),
                 ...(developerInstructions && !useProxyChannel ? { developerInstructions } : {}),
               }, options),
               onLateResolve: async () => {
@@ -7846,8 +7922,6 @@ assertRouteCurrent();
       reviewing?: boolean;
       turnId: string | null;
       itemId?: string;
-      /** 本轮来源/执行范围约束独立于 MCP 的逐次审批偏好。 */
-      turnPolicyForcePrompt?: boolean;
       /** Auto 审阅故障降级来的确认:系统收口不能当成用户点了拒绝。 */
       unavailableHandoff?: boolean;
       onSystemDenied?: (reason: string) => void;
@@ -8139,7 +8213,7 @@ assertRouteCurrent();
         // auto_review 负责；fallback 路由则由 user reviewer 把越界请求发回客户端，
         // 再由 Cindy reviewer 静默裁决。
         // MCP 的逐次审批标记不能覆盖用户选择的 Full access。
-        // 独立的本轮执行范围约束仍由 turn policy 决定。
+        // 主人运行中选择 Full access 后，本轮 IM 策略同样跟随当前权限。
         if (
           mutablePermissionMode === 'bypassPermissions' &&
           !turnPolicyForcePrompt
@@ -8199,11 +8273,6 @@ assertRouteCurrent();
           // await 期间经 setPermissionMode 的重赋值,仍视此处为 'auto';运行期确实可能已变。
           const modeAfterReview = mutablePermissionMode as PermissionMode;
           if (modeAfterReview === 'bypassPermissions') {
-            if (turnPolicyForcePrompt) {
-              denialReason = formatPermissionDenial('system', 'Permission mode changed; retry within the authorized turn scope.');
-              reportMcpDenial('system');
-              return 'decline';
-            }
             return 'accept';
           }
           if (modeAfterReview !== reviewPermissionMode) {
@@ -8222,9 +8291,9 @@ assertRouteCurrent();
             if (decision.unavailable) {
               autoReviewUnavailableNotice.notify();
               unavailableHandoff = true;
-              if (approvalRequest.kind === 'permission') {
-                approvalRequest = annotatePermissionRequestForUnavailableReview(approvalRequest);
-              }
+            }
+            if (approvalRequest.kind === 'permission') {
+              approvalRequest = annotatePermissionRequestForAutoReview(approvalRequest, decision);
             }
             forcePrompt = true;
           }
@@ -8243,7 +8312,6 @@ assertRouteCurrent();
             settled: false,
             turnId,
             ...(opts?.itemId ? { itemId: opts.itemId } : {}),
-            turnPolicyForcePrompt,
             ...(unavailableHandoff ? { unavailableHandoff: true } : {}),
             onSystemDenied: (reason) => reportMcpDenial('system', reason, false),
           };
@@ -8309,15 +8377,14 @@ assertRouteCurrent();
         if (entry.settled || (preserveReviewing && entry.reviewing)) continue;
         entry.settled = true;
         pendingApprovals.delete(requestId);
-        const effectiveResolveAs = resolveAs === 'allow' && entry.turnPolicyForcePrompt ? 'deny' : resolveAs;
-        if (effectiveResolveAs === 'deny') entry.onSystemDenied?.(reason);
-        if (effectiveResolveAs === 'deny' && entry.unavailableHandoff && entry.kind !== 'mcpServerElicitation') {
+        if (resolveAs === 'deny') entry.onSystemDenied?.(reason);
+        if (resolveAs === 'deny' && entry.unavailableHandoff && entry.kind !== 'mcpServerElicitation') {
           autoReviewConfirmUndeliveredNotice.notify();
         }
-        entry.resolve(effectiveResolveAs === 'allow' ? 'accept' : 'decline', reason);
+        entry.resolve(resolveAs === 'allow' ? 'accept' : 'decline', reason);
         eventQueue.push({
           type: 'interaction_dismissed',
-          data: { requestId, reason, resolvedAs: effectiveResolveAs },
+          data: { requestId, reason, resolvedAs: resolveAs },
           source: 'codex',
         });
       }
@@ -8639,7 +8706,7 @@ assertRouteCurrent();
         }
       }
 
-      resetCodexGenerationTiming(translatorRt);
+      resetCodexGenerationTiming(translatorRt, true);
       turnDiffSnapshots.clear();
       translatorRt.samplingSegments.clear();
       proposedPlanText = null;
@@ -8813,7 +8880,7 @@ assertRouteCurrent();
         const stalledTurnGeneration = reconnectStallTurnGeneration;
         const allowPendingTurnStart = !isTurnInFlight;
         const stalledMessage =
-          `Codex app-server has been reconnecting for ${Math.round(CODEX_RECONNECT_STALL_TIMEOUT_MS / 1000)}s ` +
+          `The model connection has been retrying for ${Math.round(CODEX_RECONNECT_STALL_TIMEOUT_MS / 1000)}s ` +
           'without making progress; the turn was interrupted automatically. ' +
           'You can send the next message to continue.';
         const emitStalled = (reason: string, message: string): void => {
@@ -11098,7 +11165,8 @@ assertRouteCurrent();
       const realTurnUsageSegments = usageTracker.getTurnUsageSegments();
       finalizeCodexGenerationTurn(translatorRt, turn.id);
       translatorRt.tokenSpeed.stop();
-      const generationDurationMs = codexGenerationDurationMs(translatorRt);
+      const generationDurationMs = translatorRt.tokenSpeed.isSegmentComplete()
+        ? codexGenerationDurationMs(translatorRt) : undefined;
       const codexDoneUsage = {
         promptTokens: realTurnUsage.input,
         completionTokens: realTurnUsage.output,
@@ -11140,8 +11208,8 @@ assertRouteCurrent();
         startedAt: turn.startedAt ?? null,
         completedAt: turn.completedAt ?? null,
         durationMs: turn.durationMs ?? null,
-        serviceTier: mutableServiceTier ?? null,
-        fastMode: fastModeFromServiceTier(mutableServiceTier),
+        serviceTier: serviceTierState.value ?? null,
+        fastMode: fastModeFromServiceTier(serviceTierState.value),
         // 本 turn 增量 (来自最近一次 thread/tokenUsage/updated 的 last)
         inputTokens: lastTurnTokenUsage?.inputTokens ?? null,
         cachedInputTokens: lastTurnTokenUsage?.cachedInputTokens ?? null,
@@ -11323,13 +11391,7 @@ assertRouteCurrent();
           type: 'status',
           data: {
             status: 'Done',
-            ...attachLiveGeneration(endSnap, {
-              tokenSpeed: translatorRt.generationTimingReliable ? translatorRt.tokenSpeed.snapshot() : undefined,
-              outputTokens: realTurnUsage.output,
-              durationMs: translatorRt.generationOutputDurationMs,
-              openStartedAt: null,
-              reliable: translatorRt.generationTimingReliable,
-            }),
+            ...liveUsageSnapshot(),
             isRunning: false,
           },
           source: 'codex',
@@ -12316,8 +12378,8 @@ assertRouteCurrent();
           model: mutableModel,
           effort: mutableEffort,
           permissionMode: mutablePermissionMode,
-          serviceTier: mutableServiceTier ?? null,
-          fastMode: fastModeFromServiceTier(mutableServiceTier),
+          serviceTier: serviceTierState.value ?? null,
+          fastMode: fastModeFromServiceTier(serviceTierState.value),
         });
       },
       tokenUsageUpdated: (params) => {
@@ -12377,22 +12439,23 @@ assertRouteCurrent();
               inputTokens: totalInput,
               outputTokens: last.outputTokens ?? 0,
               cacheReadTokens: cached,
-            }) ?? ((turnServiceTier !== undefined ? turnServiceTier : mutableServiceTier) === 'ultrafast'
+            }) ?? ((turnServiceTier !== undefined ? turnServiceTier : serviceTierState.value) === 'ultrafast'
               ? 'ultrafast'
-              : fastModeFromServiceTier(turnServiceTier !== undefined ? turnServiceTier : mutableServiceTier)
+              : fastModeFromServiceTier(turnServiceTier !== undefined ? turnServiceTier : serviceTierState.value)
                 ? 'priority'
                 : 'standard'),
           });
           // Input/cache-only segments still belong in the ledger, but cannot
           // pair already reported output with a later generation denominator.
           if (last.outputTokens > 0) {
+            translatorRt.generationOutputTokens += last.outputTokens;
             translatorRt.generationOutputDurationMs = sampleGenerationDuration(
               translatorRt.generationDurationMs,
               translatorRt.generationStartedAt,
             );
             if (translatorRt.generationTimingReliable) {
               translatorRt.tokenSpeed.recordUsage(
-                usageTracker.getTurnUsage().output,
+                translatorRt.generationOutputTokens,
                 translatorRt.generationOutputDurationMs,
               );
             } else {
@@ -12752,9 +12815,9 @@ assertRouteCurrent();
         // 时 server 会把它降级, 这里第一时间感知, getFastMode() 立刻反映正确值, 不必等
         // 某个 turn 的响应推断。通知恒带完整 ThreadSettings, 故 serviceTier 总是 present。
         const s = params.threadSettings;
-        const before = mutableServiceTier ?? null;
+        const before = serviceTierState.value ?? null;
         const beforeModel = mutableModel;
-        mutableServiceTier = normalizeServiceTier(s.serviceTier) ?? null;
+        serviceTierState.value = normalizeServiceTier(s.serviceTier) ?? null;
         // 只对齐 wire 值: server 会把请求 id 规范化(`gpt-5.4` → `gpt-5.4-codex`),那个变体
         // 目录里没有。**刻意不动 mutableCatalogModel** —— 否则窗口上限会因为查不到目录条目
         // 而停止收敛(见该变量注释)。
@@ -12765,12 +12828,12 @@ assertRouteCurrent();
         // ReasoningEffort 的 'none' 不属于 Effort; 排除后其余值都是合法 Effort, 无需 cast。
         // A server default must not replace an explicit no-effort session choice.
         if (mutableEffort && s.effort && s.effort !== 'none') mutableEffort = s.effort;
-        if (before !== (mutableServiceTier ?? null)) {
+        if (before !== (serviceTierState.value ?? null)) {
           log.debug('thread/settings/updated reconciled serviceTier', {
             threadId: params.threadId,
             from: before,
-            to: mutableServiceTier ?? null,
-            fastMode: fastModeFromServiceTier(mutableServiceTier),
+            to: serviceTierState.value ?? null,
+            fastMode: fastModeFromServiceTier(serviceTierState.value),
           });
         }
       },
@@ -12793,6 +12856,12 @@ assertRouteCurrent();
         // The completed review carries the actionable denial/timeout details. Keep the
         // warning for diagnostics to avoid rendering a duplicate error card.
         log.warn('Codex Guardian warning', { threadId: params.threadId, message: params.message });
+      },
+      warning: (params) => {
+        if (params.message.startsWith(CODEX_HTTPS_FALLBACK_WARNING_PREFIX)) {
+          log.info('codex fell back to HTTPS transport; reconnect deadline cleared', { threadId });
+          clearReconnectStall();
+        }
       },
       error: (params) => {
         // buffered turn 的 error (含终态) 同样进队列等对账 (greptile R11 P1 +
@@ -13179,7 +13248,11 @@ assertRouteCurrent();
         }
         if (
           sendOpts.turnPermissionPolicy &&
-          mutablePermissionMode === 'bypassPermissions'
+          mutablePermissionMode === 'bypassPermissions' &&
+          // Internal continuations belong to the turn the owner just took over.
+          // New externally supplied policy turns still undergo normal admission.
+          !(sendOpts as CodexInternalSendOptions)[CODEX_INTERNAL_CONTINUATION] &&
+          !(sendOpts as CodexInternalSendOptions)[CODEX_INTERACTION_CONTINUATION]
         ) {
           throw new TurnPermissionPolicyUnsupportedError(
             'codex',
@@ -13233,12 +13306,13 @@ assertRouteCurrent();
         // 不再影响判定, 也不会再被别的 turn(含被 Stop 的旧 send 的孤儿)污染。
         const mySendGen = ++sendGeneration;
         isTurnStartPending = true;
+        if (!isContinuation) translatorRt.tokenSpeed.reset();
         usageTracker.beginTurn();
         log.debug('send ▶ user message', {
           model: mutableModel,
           effort: mutableEffort,
           permissionMode: mutablePermissionMode,
-          serviceTier: mutableServiceTier ?? null,
+          serviceTier: serviceTierState.value ?? null,
           threadId,
           logTitle: sendOpts?.logTitle,
         });
@@ -13276,6 +13350,8 @@ assertRouteCurrent();
           if (contextRefresh) await contextRefresh;
           const profileRefresh = ensureWorkspacePermissionProfileForNextTurn(sendOpts?.signal);
           if (profileRefresh) await profileRefresh;
+          const environmentRepair = repairHostedEnvironmentIfDisconnected();
+          if (environmentRepair) await environmentRepair;
           turnWorkspaceConfig = currentTurnWorkspaceConfig();
           // A stale-daemon retry must hydrate the exact thread-level profile
           // that matches this turn, not mutable settings changed while the
@@ -13375,13 +13451,14 @@ assertRouteCurrent();
           // (v2.rs:5801-5803 turn/start 的 summary 会 override server config)
           summary: 'auto',
           ...(mutableModel && mutableModel !== 'gpt-5' ? { model: mutableModel } : {}),
-          ...(mutableServiceTier !== undefined ? { serviceTier: mutableServiceTier } : {}),
+          ...(serviceTierState.value !== undefined ? { serviceTier: serviceTierState.value } : {}),
           ...(collaborationMode ? { collaborationMode } : {}),
         };
         // 这一 turn 的用量按这里发出去的 (provider, model) 归属上下文窗口 —— 之后 setModel
         // 立即改这两个值也不会串到还在产出的本 turn (见 activeTurnModel / capContextWindow)。
         activeTurnModel = mutableCatalogModel;
         activeTurnContextLimit = effectiveThreadContextWindow(appliedContextLimit);
+        activeTurnCompactionPct = currentCompactionPct() ?? 90;
         activeTurnProviderId = mutableProviderId;
         const markTurnConfigAccepted = (): void => {
           threadMayHaveRollout = true;
@@ -13512,11 +13589,11 @@ assertRouteCurrent();
               if (startEntry) startEntry.serviceTier = acceptedServiceTier;
               const origin = turnOriginByTurnId.get(resp.turn.id);
               if (origin) origin.serviceTier = acceptedServiceTier;
-              mutableServiceTier = acceptedServiceTier;
+              serviceTierState.value = acceptedServiceTier;
               log.debug('turn/start response serviceTier', {
                 turnId: resp.turn.id,
-                serviceTier: mutableServiceTier,
-                fastMode: fastModeFromServiceTier(mutableServiceTier),
+                serviceTier: serviceTierState.value,
+                fastMode: fastModeFromServiceTier(serviceTierState.value),
                 note: 'serviceTier calibrated before buffered turn replay',
               });
             }
@@ -13782,7 +13859,7 @@ assertRouteCurrent();
                 ...turnThreadWorkspaceConfig,
                 ...(threadModelProvider ? { modelProvider: threadModelProvider } : {}),
                 ...(resumeModel && resumeModel !== 'gpt-5' ? { model: resumeModel } : {}),
-                ...(mutableServiceTier !== undefined ? { serviceTier: mutableServiceTier } : {}),
+                ...(serviceTierState.value !== undefined ? { serviceTier: serviceTierState.value } : {}),
                 ...(developerInstructions && !useProxyChannel ? { developerInstructions } : {}),
               };
               const resumeResp = await host.request<ThreadResumeResponse>(Method.ThreadResume, resumeParams, {
@@ -13799,9 +13876,9 @@ assertRouteCurrent();
                 Object.hasOwn(resumeResp, 'serviceTier') &&
                 resumeServiceTierGeneration === serviceTierMutationGeneration
               ) {
-                mutableServiceTier = normalizeServiceTier(resumeResp.serviceTier) ?? null;
+                serviceTierState.value = normalizeServiceTier(resumeResp.serviceTier) ?? null;
               } else if (resumeServiceTierGeneration !== serviceTierMutationGeneration) {
-                void pushThreadSettings({ serviceTier: mutableServiceTier ?? null });
+                void pushThreadSettings({ serviceTier: serviceTierState.value ?? null });
               }
               turnParams.effort = clampEffortForCodex(mutableModel, mutableEffort);
               if (mutableModel && mutableModel !== 'gpt-5') {
@@ -13813,9 +13890,10 @@ assertRouteCurrent();
               // 窗口归属必须跟着改写走, 否则查不到目录条目、沿用 app-server 的基础模型窗口。
               activeTurnModel = mutableCatalogModel;
               activeTurnContextLimit = effectiveThreadContextWindow(appliedContextLimit);
+              activeTurnCompactionPct = currentCompactionPct() ?? 90;
               activeTurnProviderId = mutableProviderId;
-              if (mutableServiceTier !== undefined) {
-                turnParams.serviceTier = mutableServiceTier ?? null;
+              if (serviceTierState.value !== undefined) {
+                turnParams.serviceTier = serviceTierState.value ?? null;
               } else {
                 delete turnParams.serviceTier;
               }
@@ -14289,7 +14367,7 @@ assertRouteCurrent();
         const model = activeTurnModel ?? mutableModel;
         const reportedWindow = lastNativeContextWindow;
         const contextLimit = activeTurnContextLimit;
-        const compactRatio = 0.9;
+        const compactRatio = activeTurnCompactionPct / 100;
         try {
           const response = await host.request<{ config?: Record<string, unknown> }>(
             Method.ConfigRead, { includeLayers: false, cwd: opts.workingDir }, { timeoutMs: 5_000 },
@@ -14325,8 +14403,14 @@ assertRouteCurrent();
       requiresModelSwitchRebuild: modelSwitchRequiresRebuild,
 
       // ── Phase 3: 运行时切换 (下一 turn 才生效, 内部已是 mutable 闭包) ──
-      async setModel(newModel: string, setOpts?: { providerId?: string | null }) {
+      async setModel(
+        newModel: string,
+        setOpts?: { providerId?: string | null; contextWindowBudget?: number | null },
+      ) {
         if (reviewMode) return;
+        if (setOpts?.contextWindowBudget !== undefined) {
+          mutableContextWindowBudget = setOpts.contextWindowBudget;
+        }
         if (await modelSwitchRequiresRebuild(newModel, setOpts)) {
           const error = new Error(
             'Codex model switch requires rebuilding the current session handle',
@@ -14556,18 +14640,19 @@ assertRouteCurrent();
       },
 
       async setFastMode(enabled: boolean | 'ultrafast') {
-        if (reviewMode) return;
+        if (reviewMode && opts.fastModePolicy?.isAllowed() !== false) return;
+        if (opts.fastModePolicy?.isAllowed() === false) enabled = false;
         // Compare exact tiers; undefined/null/default all mean standard.
-        if (fastModeFromServiceTier(mutableServiceTier) === enabled) return;
+        if (opts.fastModePolicy?.isAllowed() !== false && fastModeFromServiceTier(serviceTierState.value) === enabled) return;
         const next: ServiceTier | null = enabled === 'ultrafast' ? 'ultrafast' : enabled ? 'fast' : null;
-        log.debug('setFastMode', { from: mutableServiceTier ?? null, to: next });
+        log.debug('setFastMode', { from: serviceTierState.value ?? null, to: next });
         serviceTierMutationGeneration += 1;
-        mutableServiceTier = next;
+        serviceTierState.value = next;
         // thread 已启动 → 立即经 thread/settings/update 生效 (serviceTier 双 Option:
         // 'fast'=开 / null=清空 standard); 未启动则由首个 thread/start 携带。server 端
         // 若因模型不支持 fast 而降级, 会经 thread/settings/updated 通知回带, handlers
-        // 里把 mutableServiceTier 对齐到权威值。失败时 turn/start 透传仍是兜底。
-        await pushThreadSettings({ serviceTier: next });
+        // 里把 serviceTierState.value 对齐到权威值。失败时 turn/start 透传仍是兜底。
+        await pushThreadSettings({ serviceTier: next }, opts.fastModePolicy?.isAllowed() === false);
       },
 
       async setVendorOptions(patch: Record<string, unknown>) {
@@ -14584,7 +14669,7 @@ assertRouteCurrent();
       },
 
       getFastMode() {
-        return fastModeFromServiceTier(mutableServiceTier);
+        return fastModeFromServiceTier(serviceTierState.value);
       },
 
       async previewRewindFiles() {
@@ -14698,8 +14783,18 @@ assertRouteCurrent();
             lastTurnId,
             ...(rollbackMethodRemoved || supportsCodexForkExcludeTurns(initResp.userAgent) ? { excludeTurns: true } : {}),
             ...(opts.workingDir ? { cwd: opts.workingDir } : {}),
+            // Native fork reloads the host defaults rather than inheriting the
+            // source thread's overrides. Reapply the task's execution environment,
+            // MCP routes and capability isolation before the new runtime starts.
+            ...currentThreadWorkspaceConfig(),
+            ...(threadModelProvider ? { modelProvider: threadModelProvider } : {}),
+            ...(mutableModel && mutableModel !== 'gpt-5' ? { model: mutableModel } : {}),
+            ...(serviceTierState.value !== undefined ? { serviceTier: serviceTierState.value } : {}),
+            ...(developerInstructions && !useProxyChannel ? { developerInstructions } : {}),
           };
-          const forkResp = await host.request<ThreadForkResponse>(Method.ThreadFork, forkParams);
+          const forkResp = await withMcpDiscoveryContext(() => host.request<ThreadForkResponse>(
+            Method.ThreadFork, forkParams, criticalThreadRpcOptions(),
+          ));
           replacementThread = forkResp.thread;
         }
         const nextThreadId = replacementThread.id || previousThreadId;
@@ -15000,6 +15095,8 @@ assertRouteCurrent();
     });
     try {
       const guestCodexHome = opts.hostedGuestHome ? path.join(opts.hostedGuestHome, 'codex') : undefined;
+      // 受邀者的 fork 只能走分享的供应商：没有供应商时不退回成普通 host(那会用上本机用户的登录)。
+      if (guestCodexHome && !opts.providerId) throw new Error('shared-provider Codex fork requires the shared provider');
       const forkStorage = guestCodexHome
         ? { historyHome: guestCodexHome, sqliteHome: guestCodexHome }
         : await this.deps.resolveCodexThreadStorage?.(opts.sourceSdkSessionId);
@@ -15033,7 +15130,15 @@ assertRouteCurrent();
               ...(forkAccountId ? { providerId: forkAccountId } : {}),
               ...(forkSqliteHome ? { sqliteHome: forkSqliteHome } : {}),
               ...(forkStorage ? { historyHome: forkStorage.historyHome } : {}),
-              ...(guestCodexHome && opts.providerId ? { deviceHostedGuestProviderId: opts.providerId } : {}),
+              // 受邀者的 fork 同样要有独占的、按会话收窄的 proxy。fork 只做 thread/fork 与 rollback、
+              // 不跑 turn：会话 id 用这次 fork 独有、不登记的 key，受邀者守门因此拒绝它经分享供应商发出的
+              // 任何请求，不会借到源任务或其他受邀者的授权。
+              ...(guestCodexHome && opts.providerId ? {
+                deviceHostedGuestProviderId: opts.providerId,
+                deviceHostedGuestSessionId: forkBaseHostKey,
+                deviceHostedGuestModelIds: opts.model ? [opts.model] : [],
+                nativeStorageOnly: true,
+              } : {}),
               routeIsCurrent: selection.isCurrent,
               routeSignal: forkRouteSignal,
               ...(selection.policy === 'isolated' ? { localAuthPolicy: selection.policy } : {}),
@@ -15080,6 +15185,22 @@ assertRouteCurrent();
             const usedNativeForkAnchor = Boolean(
               lastTurnId && !opts.stripEncryptedReasoning && supportsCodexNativeTurnFork(initResp.userAgent),
             );
+            let guestForkConfig: Record<string, unknown> | undefined;
+            if (guestCodexHome) {
+              // Fork starts a native runtime even without a turn. It must not
+              // initialize the provider's MCP or connectors while copying history;
+              // the child receives its consumer routes when startSession resumes it.
+              await assertNoCodexUserInstructions(forkCodexHome);
+              const features = await listCodexFeatures(cursor => host.request(
+                Method.ExperimentalFeatureList, { cursor, limit: 100 },
+                { timeoutMs: CRITICAL_THREAD_RPC_TIMEOUT_MS },
+              ));
+              guestForkConfig = {
+                ...await this.buildLocalCapabilityIsolationConfig(host, opts.workingDir ?? guestCodexHome),
+                ...CODEX_DEVICE_HOSTED_GUEST_THREAD_CONFIG,
+                ...codexGuestFeatureOverrides(features),
+              };
+            }
             const params: ThreadForkParams = {
               threadId: opts.sourceSdkSessionId,
               ...(preparedSourcePath ? { path: preparedSourcePath } : {}),
@@ -15090,6 +15211,7 @@ assertRouteCurrent();
               // 一次性 host 的隔离仍兜住故障半径。
               ...(supportsCodexForkExcludeTurns(initResp.userAgent) ? { excludeTurns: true } : {}),
               ...(opts.workingDir ? { cwd: opts.workingDir } : {}),
+              ...(guestForkConfig ? { config: guestForkConfig } : {}),
             };
             // Once dispatched, a lost response may still mean a child was allocated.
             stage = 'thread-fork';

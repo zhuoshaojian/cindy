@@ -12,6 +12,8 @@ export interface AppearanceOverrides {
   codeFamily?: string;
   uiSize?: number;
   codeSize?: number;
+  terminalFamily?: string;
+  terminalSize?: number;
   windowZoom?: number;
   wallpaperId?: WallpaperId;
   wallpaperOverlay?: number;
@@ -40,6 +42,8 @@ export interface AppearanceSettings {
   codeFamily: string;
   uiSize: number;
   codeSize: number;
+  terminalFamily: string;
+  terminalSize: number;
   windowZoom: number;
   wallpaperId: WallpaperId;
   wallpaperOverlay: number;
@@ -51,11 +55,17 @@ export interface AppearanceSettings {
   customWallpaperUrl?: string;
 }
 
+/** Keep the terminal's existing platform fallbacks independent of code fonts. */
+export const DEFAULT_TERMINAL_FONT_FAMILY =
+  '"SF Mono", Menlo, Monaco, "Cascadia Code", "Courier New", monospace';
+
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   uiFamily: '',
   codeFamily: '',
   uiSize: DEFAULT_FONT_SIZES.uiSize,
   codeSize: DEFAULT_FONT_SIZES.codeSize,
+  terminalFamily: '',
+  terminalSize: 13,
   windowZoom: 1,
   wallpaperId: 'none',
   wallpaperOverlay: 0.2,
@@ -66,6 +76,7 @@ export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
 export const APPEARANCE_LIMITS = {
   uiSize: { min: 12, max: 24 },
   codeSize: { min: 10, max: 24 },
+  terminalSize: { min: 10, max: 24 },
   windowZoom: { min: 0.5, max: 3, step: 0.1 },
   wallpaperOverlay: { min: 0, max: 1, step: 0.05 },
   wallpaperVisibility: { min: 0, max: 1, step: 0.01 },
@@ -161,7 +172,7 @@ const MAX_APPEARANCE_FONT_FAMILY_LENGTH = 256;
 
 /** 持久 override 与 Host 工具共用严格边界；旧 UI 的夹取与取整仍由 normalize 负责。 */
 export function isValidAppearanceSetting(key: string, value: unknown): value is string | number {
-  if (key === 'uiFamily' || key === 'codeFamily') {
+  if (key === 'uiFamily' || key === 'codeFamily' || key === 'terminalFamily') {
     return typeof value === 'string' && value.length <= MAX_APPEARANCE_FONT_FAMILY_LENGTH
       && !/[\x00-\x1f]/.test(value);
   }
@@ -171,7 +182,7 @@ export function isValidAppearanceSetting(key: string, value: unknown): value is 
     const limits = APPEARANCE_LIMITS[key];
     return typeof value === 'number' && Number.isFinite(value) && value >= limits.min && value <= limits.max;
   }
-  if (key !== 'uiSize' && key !== 'codeSize' && key !== 'windowZoom') return false;
+  if (key !== 'uiSize' && key !== 'codeSize' && key !== 'terminalSize' && key !== 'windowZoom') return false;
   const limits = APPEARANCE_LIMITS[key];
   return typeof value === 'number' && Number.isFinite(value) && value >= limits.min && value <= limits.max
     && (key === 'windowZoom' || Number.isInteger(value));
@@ -192,6 +203,18 @@ export function clampAppearanceCodeSize(
     value,
     APPEARANCE_LIMITS.codeSize.min,
     APPEARANCE_LIMITS.codeSize.max,
+    fallback,
+  );
+}
+
+export function clampAppearanceTerminalSize(
+  value: number,
+  fallback = DEFAULT_APPEARANCE_SETTINGS.terminalSize,
+): number {
+  return clampInteger(
+    value,
+    APPEARANCE_LIMITS.terminalSize.min,
+    APPEARANCE_LIMITS.terminalSize.max,
     fallback,
   );
 }
@@ -217,6 +240,7 @@ export function normalizeAppearanceSettings(raw: unknown): AppearanceSettings {
   return {
     uiFamily: normalizeFamily(value.uiFamily),
     codeFamily: normalizeFamily(value.codeFamily),
+    terminalFamily: normalizeFamily(value.terminalFamily),
     uiSize:
       typeof value.uiSize === 'number'
         ? clampAppearanceUiSize(value.uiSize)
@@ -225,6 +249,10 @@ export function normalizeAppearanceSettings(raw: unknown): AppearanceSettings {
       typeof value.codeSize === 'number'
         ? clampAppearanceCodeSize(value.codeSize)
         : DEFAULT_APPEARANCE_SETTINGS.codeSize,
+    terminalSize:
+      typeof value.terminalSize === 'number'
+        ? clampAppearanceTerminalSize(value.terminalSize)
+        : DEFAULT_APPEARANCE_SETTINGS.terminalSize,
     windowZoom:
       typeof value.windowZoom === 'number'
         ? clampAppearanceWindowZoom(value.windowZoom)

@@ -15,7 +15,7 @@ const targets = {
     'appendCloudPluginOauthPrompt(composeHostPrompt(codexSystemPrompt), getInstanceConfig() !== null)',
   ],
   'apps/desktop/src/main/maker-host/pi-host.ts': [
-    'appendCloudPluginOauthPrompt(composePiSystemPrompt(hostSystemPrompt, piSystemPrompt), getInstanceConfig() !== null)',
+    'appendCloudPluginOauthPrompt(composePiSystemPrompt(`${hostSystemPrompt.trim()}\\n\\n${businessOwnershipPrompt.trim()}`, piSystemPrompt), getInstanceConfig() !== null)',
   ],
 };
 

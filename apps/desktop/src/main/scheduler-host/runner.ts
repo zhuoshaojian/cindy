@@ -1,5 +1,6 @@
-import { beginQuietScheduledOutput, hidesScheduledTranscript } from './silent-output.js';
+import { beginQuietScheduledOutput, hidesScheduledTranscript, hasVisibleScheduledOutput, isQuietScheduledOutput } from './silent-output.js';
 import { untrustedJsonBlock } from '../../shared/untrustedPrompt.js';
+import { BUILTIN_ROUTINE_SCHEDULE_PREFIX, routineInstructionFromPrompt } from '../../shared/botAutonomy.js';
 import {
   captureDataOwnerBroadcastScope,
   isDataOwnerBroadcastScopeCurrent,
@@ -23,12 +24,8 @@ import {
  * 一次 fire 的工作流：
  *   1. effort 白名单校验 — 防止 user-input 把非法 effort 透传给 maker.createSession
  *      （Phase 2 mapper 没有运行时校验，runner 是最后一道关卡）。
- *   2. heartbeat 模式（schedule.targetSessionId 存在）：并行查
- *        a) maker.getSessionMeta → 拿 sdkSessionId 做 SDK resume
- *        b) desktop sessions 表的 status 列 → 判断是否 archived/deleted
- *      命中兜底 → scheduler.pause(scheduleId) + notify failure + throw
- *      （maker-core SessionMeta 已删 status 字段——archived 是 desktop 产品语义，
- *       存在 sessions.status enum，必须直查；详见 plan 文件 §「关键事实 #3」）
+ *   2. 绑定普通任务时，先按用户发送入口恢复已归档任务，再执行前置检查。
+ *      沿用原 sdkSessionId 恢复上下文；删除/丢失目标与 Bot 生命周期仍按各自规则处理。
  *   3. workingDir：useWorktree=true 走 workdir-resolver 建 ephemeral worktree
  *      （绝不手动注册清理，maker-host:116-122 onClose 会自动清）
  *   4. maker.createSession（heartbeat 模式不传 title，让现有 row 标题保留）
@@ -61,7 +58,6 @@ import type {
   Effort,
   PermissionMode,
   Session,
-  TurnContinuationState,
 } from '@cindy/maker-core';
 import { clampEffortToSupported } from '@cindy/model-providers';
 import {
@@ -123,6 +119,7 @@ import { backfillSessionMeta } from './runners/_shared';
 import { buildSkipResultText, executePreRunHook, formatPreRunHookFailure } from './pre-run-hook';
 import { beginHeadlessGhostSetupTurn } from '../mcp-integrations/ghostSetupInteractionSurface.js';
 import { terminalErrorText } from '../im/shared/turnRetryNotice.js';
+import { isManagedScheduledTarget, restoreScheduledTarget } from './restore-target';
 
 const ALLOWED_EFFORT = new Set<string>([
   'minimal',
@@ -223,6 +220,8 @@ function defaultPermissionModeForSchedule(): PermissionMode {
  * 降级)时回退直发 + 顺延的旧行为。
  */
 export interface SchedulerQueueDeps {
+  /** Host-local human activity, including retries that preserve send-time sorting. */
+  getLastUserActionAt?(sessionId: string): number | null;
   /** 目标会话当前是否忙(turn 运行中 / 队列有积压 / 凭证切换等待中)。 */
   isSessionBusy(sessionId: string): boolean;
   /**
@@ -273,7 +272,7 @@ export interface MakerScheduleRunnerDeps {
   notifier: Notifier;
   logger: Logger;
   readAutoReviewHistory?: (sessionId: string) => Promise<AutoReviewHistoryMessage[]>;
-  beforeDispatchUserTurn?: (sessionId: string) => void | Promise<void>;
+  beforeDispatchUserTurn?: (sessionId: string, signal?: AbortSignal) => void | Promise<void>;
   onUndispatchedUserTurn?: (sessionId: string) => void;
   /** Saved quota waits deduplicate by schedule even when each fire creates a new task. */
   findUsageLimitWait?: (scheduleId: string) => Promise<string | null>;
@@ -285,11 +284,18 @@ export interface MakerScheduleRunnerDeps {
     sessionId: string,
     signal?: AbortSignal,
     selection?: ScheduledModelSelection,
+    scheduledModelOverride?: boolean,
   ) => Promise<(() => void) | ScheduledModelSelectionLease>;
-  preserveModelPreferences?: (sessionId: string) => Promise<() => Promise<void>>;
+  prepareModelPreferences?: (sessionId: string, override: boolean) => Promise<void>;
   onModelDispatched?: (sessionId: string, clientId: string) => void;
-  /** Resolve the same provider-specific snapshot for fresh explicit choices. */
-  resolveModelSelection?: (selection: ScheduledModelSelection) => Promise<ScheduledModelSelection>;
+  /**
+   * Resolve the same provider-specific snapshot for fresh explicit choices. With
+   * agentDeviceId the snapshot comes from that computer's authorized catalog.
+   */
+  resolveModelSelection?: (
+    selection: ScheduledModelSelection,
+    location?: { agentDeviceId: string },
+  ) => Promise<ScheduledModelSelection>;
   /** Apply Pi's route and context-window transaction while the send lock is held. */
   applyPiModelSelectionUnderLock?: (
     sessionId: string,
@@ -488,6 +494,26 @@ export class MakerScheduleRunner implements ScheduleRunner {
       return { kind: 'pass' };
     }
     return this.deps.checkModelRoute!(agent, model, providerId);
+  }
+
+  /** Re-read the execution computer's catalog after dispatch preparation. */
+  private async assertRemoteDispatchRoute(
+    agentDeviceId: string | null | undefined,
+    agentKind: AgentKind,
+    model: string,
+    providerId: string | null,
+  ): Promise<void> {
+    if (!agentDeviceId) return;
+    try {
+      if (!this.deps.resolveModelSelection) throw new Error('Scheduled model selection is not available');
+      await this.deps.resolveModelSelection({
+        agentDeviceId, agentKind, model, providerId, effort: null, fastMode: false,
+      }, { agentDeviceId });
+    } catch (error) {
+      throw new QueuedRouteDisabledError(
+        `schedule remote route unavailable before dispatch: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private async retireHeartbeat(
@@ -752,12 +778,8 @@ export class MakerScheduleRunner implements ScheduleRunner {
       closeQuietOutput?.();
       holder.releaseAgentSwitchLock?.();
       holder.releaseAgentSwitchLock = undefined;
-      try {
-        await holder.restoreModelPreferences?.();
-      } catch (error) {
-        // The durable baseline remains authoritative; the next input retries before sending.
-        this.deps.logger.warn?.('[runner] scheduled model restoration deferred', error);
-      }
+      // Owner preferences already project from the durable baseline. Leave the
+      // native context intact until an actual next send chooses its target model.
       await this.clearSchedulerRunContext(holder);
       holder.headlessGhostSetupTurn?.close();
       if (
@@ -805,13 +827,17 @@ export class MakerScheduleRunner implements ScheduleRunner {
       throw new Error(errMsg);
     }
 
-    // Explicit retirement is checked before hooks: a broken external check must not
-    // keep an archived task's heartbeat alive. Persistent automations still rebind;
-    // bot routines retain their service-owned canonical-session lifecycle.
-    if (schedule.source !== 'bot' && schedule.targetSessionId && !schedule.persistentSession) {
+    // A scheduled message restores its ordinary target just like user input.
+    // Do this before hooks/model selection, while keeping deleted-target behavior
+    // and service-owned Bot lifecycle separate.
+    if (schedule.source !== 'bot' && schedule.targetSessionId) {
       const target = await getSessionRowSnapshot(schedule.targetSessionId);
-      if (target?.status === 'archived' || target?.status === 'deleted') {
+      if (target && !schedule.persistentSession && (target.status === 'deleted'
+        || (target.status === 'archived' && isManagedScheduledTarget(target)))) {
         return this.retireHeartbeat(schedule, ctx, target.status);
+      }
+      if (target && target.status !== 'deleted') {
+        await restoreScheduledTarget(schedule.targetSessionId, target, ctx.signal);
       }
     }
 
@@ -937,6 +963,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     // 持续会话当前选定的来源(供应商)id —— schedule.providerId 留空时沿用它
     // （与 model 留空沿用 meta.model 对称）。取自 sessions.provider_id 快照,null=未选。
     let heartbeatProviderId: string | null = null;
+    let heartbeatAgentDeviceId: string | undefined;
     // Fire-local catalog snapshot. Keep the saved preferences untouched, but never
     // re-read their stale effort/Fast after the host has resolved the actual route.
     let resolvedSelection: ScheduledModelSelection | undefined;
@@ -952,6 +979,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
         schedule.modelAgentKind && schedule.model?.trim()
           ? {
               agentKind: schedule.modelAgentKind,
+              agentDeviceId: schedule.modelAgentDeviceId === undefined ? undefined : schedule.modelAgentDeviceId || null,
               model: schedule.model,
               providerId: schedule.providerId?.trim() || null,
               effort: (schedule.effort as Effort | undefined) ?? null,
@@ -967,21 +995,14 @@ export class MakerScheduleRunner implements ScheduleRunner {
       try {
         const lease = await (selection
           ? this.deps.acquirePendingAgentSwitch?.(sessionId, ctx.signal, selection)
+          : schedule.model?.trim()
+          ? this.deps.acquirePendingAgentSwitch?.(sessionId, ctx.signal, undefined, true)
           : this.deps.acquirePendingAgentSwitch?.(sessionId, ctx.signal));
         holder.releaseAgentSwitchLock = typeof lease === 'function' ? lease : lease?.release;
-        if (typeof lease !== 'function') holder.restoreModelPreferences = lease?.restore;
         if (selection) {
           if (!lease || typeof lease === 'function')
             throw new Error('Scheduled model selection was not resolved');
           resolvedSelection = lease.selection;
-          schedule = {
-            ...schedule,
-            agentKind: resolvedSelection.agentKind,
-            model: resolvedSelection.model,
-            providerId: resolvedSelection.providerId ?? undefined,
-            effort: resolvedSelection.effort ?? undefined,
-            fastMode: resolvedSelection.fastMode,
-          };
         }
       } catch (error) {
         if (error instanceof ScheduledModelSelectionBusyError) {
@@ -998,12 +1019,16 @@ export class MakerScheduleRunner implements ScheduleRunner {
       if (archived) {
         holder.releaseAgentSwitchLock?.();
         holder.releaseAgentSwitchLock = undefined;
-        // persistentSession=true：自我续命。清空死的 targetSessionId,本次 fire 走新建分支,
-        // session 创建成功后 4.7.1 会重新绑定到新 sessionId。这样用户即便手动归档/删除
-        // 了之前持续会话的 session,自动化也不会卡死,而是无感开新的继续跑。
+        // The user archived again during preparation. Consume this occurrence;
+        // do not undo that newer action or pause the recurring automation.
+        if (row?.status === 'archived' && schedule.source !== 'bot' && !isManagedScheduledTarget(row)) {
+          return { sessionId, skipped: true, resultText: 'Scheduled target archived during preparation' };
+        }
+        // 持续任务的目标已删除/丢失时重新绑定；Bot 保留原有服务侧生命周期。
+        // 普通已归档任务已在入口恢复，不因归档创建替代任务。
         if (schedule.persistentSession && this.scheduler) {
           this.deps.logger.info?.(
-            `[runner] persistent session ${sessionId} archived; auto-rebinding`,
+            `[runner] persistent session ${sessionId} unavailable; auto-rebinding`,
           );
           try {
             await this.scheduler.update(schedule.id, { targetSessionId: undefined });
@@ -1011,6 +1036,9 @@ export class MakerScheduleRunner implements ScheduleRunner {
             this.deps.logger.warn?.('[runner] persistent rebind clear failed', err);
           }
           isHeartbeat = false;
+          // The replacement belongs to the schedule's saved location. Discard the
+          // old target's catalog snapshot and resolve the original preferences there.
+          resolvedSelection = undefined;
           sessionId = randomUUID();
           // resumeSessionId / heartbeatWorkingDir / heartbeatModel 仍是 undefined,
           // 下方 workingDir 解析自然走 schedule.workingDir + schedule.useWorktree 分支
@@ -1031,17 +1059,33 @@ export class MakerScheduleRunner implements ScheduleRunner {
           throw new Error(errMsg);
         }
       } else {
-        // B1 活跃礼让:最近有人往这个 session 发过输入(userSendAt 在窗口内)且
+        if (resolvedSelection) {
+          schedule = {
+            ...schedule,
+            agentKind: resolvedSelection.agentKind,
+            model: resolvedSelection.model,
+            providerId: resolvedSelection.providerId ?? undefined,
+            effort: resolvedSelection.effort ?? undefined,
+            fastMode: resolvedSelection.fastMode,
+          };
+        }
+        // B1 活跃礼让:最近有人发送或手动恢复这个 session，且
         // session 正跑 turn → 本轮不抢,顺延。两条件都满足才让:仅"刚发过"
         // 但 turn 已结束属正常 heartbeat 时机;仅"在跑"但非最近有输入多半是上轮
-        // 心跳没跑完,交给 B2 的撞忙顺延。零新增查询(复用已取的 row.userSendAt
-        // + 内存 tracker)。
+        // 心跳没跑完,沿用下方撞忙处理。零新增查询(复用 row.userSendAt
+        // + coordinator 的真人操作时间与 turn tracker)。
         // 注:userSendAt 现在也被 scheduler 自身 fire bump(见 onAccepted),所以窗口内
         // 命中可能来自上一次自动 fire 而非真人。这只会让 B1 更保守——但唯一效果是"正在
         // 跑 turn 时顺延",而正在跑 turn 的 send 本就会被 B2(SESSION_RUNNING)顺延,两者
         // 落点一致,无功能回退,仅 telemetry reason 偏"user-active"。
+        // Retry/Continue preserve userSendAt for list ordering. The coordinator
+        // separately records human takeover; retain the DB fallback for direct sends.
+        const lastUserActionAt = Math.max(
+          row?.userSendAt ?? 0,
+          this.deps.schedulerQueue?.getLastUserActionAt?.(sessionId) ?? 0,
+        );
         const recentlyUserDriven =
-          row?.userSendAt != null && Date.now() - row.userSendAt < ACTIVE_YIELD_WINDOW_MS;
+          lastUserActionAt > 0 && Date.now() - lastUserActionAt < ACTIVE_YIELD_WINDOW_MS;
         if (recentlyUserDriven && isSessionInTurn(sessionId) && this.canDefer(schedule, ctx)) {
           holder.releaseAgentSwitchLock?.();
           holder.releaseAgentSwitchLock = undefined;
@@ -1094,8 +1138,8 @@ export class MakerScheduleRunner implements ScheduleRunner {
             providerId: row?.providerId ?? null,
           });
         }
-        if (!holder.restoreModelPreferences && hasScheduledModelOverride(schedule)) {
-          holder.restoreModelPreferences = await this.deps.preserveModelPreferences?.(sessionId);
+        if (!resolvedSelection && hasScheduledModelOverride(schedule)) {
+          await this.deps.prepareModelPreferences?.(sessionId, true);
         }
         resumeSessionId = meta?.sdkSessionId;
         heartbeatWorkingDir = meta?.workDir;
@@ -1104,6 +1148,9 @@ export class MakerScheduleRunner implements ScheduleRunner {
         heartbeatAgentKind = meta?.agentKind;
         heartbeatFastMode = meta?.fastMode;
         heartbeatProviderId = row?.providerId ?? null;
+        // A resumed/rebuilt task keeps its current location, including relocation
+        // since the automation was saved. SSH is a separate execution path.
+        heartbeatAgentDeviceId = !row.remoteHostId ? row.agentDeviceId || undefined : undefined;
         // A cold heartbeat is still the owner's existing task. Never upgrade it
         // to the independent-schedule default merely because its runtime was closed.
         heartbeatPermissions = routinePermissionSnapshot(undefined, {
@@ -1181,11 +1228,19 @@ export class MakerScheduleRunner implements ScheduleRunner {
     const explicitProviderId = schedule.providerId?.trim() ? schedule.providerId.trim() : null;
     const defaultRouteProviderId = explicitProviderId ?? (isHeartbeat ? heartbeatProviderId : null);
     const followsNewTaskDefault = !rawModel?.trim();
+    // 新建任务的 Agent 在另一台电脑运行:模型与来源属于那台的已授权目录,本机的默认路由、
+    // 停用轴与能力表都不适用,统一交给 resolveModelSelection 按那台目录解析。绑定的任务
+    // 仍存在时运行位置跟随它(heartbeat 分支由 acquirePendingAgentSwitch 按任务所在位置解析)。
+    const freshAgentDeviceId = isHeartbeat ? null
+      : (schedule.modelAgentDeviceId ?? schedule.agentDeviceId)?.trim() || null;
+    if (freshAgentDeviceId && followsNewTaskDefault) {
+      throw new Error('schedule route unavailable: a remote agent location requires an explicit model');
+    }
     // Fresh Claude schedules must freeze the same provider rail the UI would use for this model.
     // Leaving providerId null delegates credential selection to the legacy auth fallback, which can
     // silently choose the Cindy gateway even when the only usable source is an Anthropic subscription.
     const shouldMaterializeFreshClaudeProvider =
-      !isHeartbeat && effectiveAgentKind === 'claude-code' && !explicitProviderId;
+      !isHeartbeat && !freshAgentDeviceId && effectiveAgentKind === 'claude-code' && !explicitProviderId;
     let dynamicDefaultRoute: {
       model: string;
       providerId: string | null;
@@ -1243,11 +1298,15 @@ export class MakerScheduleRunner implements ScheduleRunner {
       (isHeartbeat ? heartbeatProviderId : null) ??
       dynamicDefaultRoute?.providerId ??
       null;
+    // Remote Agent routes use that device's authorized catalog, never local credentials.
+    const agentDeviceId = resolvedSelection?.agentDeviceId !== undefined
+      ? resolvedSelection.agentDeviceId
+      : (isHeartbeat ? heartbeatAgentDeviceId : freshAgentDeviceId) || null;
     // 停用轴准入(PR #744 review):每次 fire 都是新的付费调用,不属于「运行中的会话
     // 不打断」豁免 —— 保存过的路由被用户停用后,本次 run 必须以明确错误失败(run 历史
     // 可见),不能继续经停用路由扣费;隐式默认落点被停用而有启用替代拷贝时改路由过去。
     let reroutedProviderId: string | null = null;
-    if (this.deps.checkModelRoute) {
+    if (this.deps.checkModelRoute && !agentDeviceId) {
       const verdict = await this.checkRouteFor(isHeartbeat ? sessionId : undefined, effectiveAgentKind, model, createProviderId);
       if (verdict.kind === 'reject') {
         throw new Error(
@@ -1259,16 +1318,20 @@ export class MakerScheduleRunner implements ScheduleRunner {
         reroutedProviderId = verdict.providerId;
       }
     }
-    if (!isHeartbeat && schedule.modelAgentKind && !resolvedSelection) {
+    if (!isHeartbeat && (schedule.modelAgentKind || freshAgentDeviceId) && !resolvedSelection) {
       if (!this.deps.resolveModelSelection)
         throw new Error('Scheduled model selection is not available');
-      resolvedSelection = await this.deps.resolveModelSelection({
+      const selection: ScheduledModelSelection = {
         agentKind: effectiveAgentKind,
+        agentDeviceId,
         model,
         providerId: createProviderId,
         effort: (schedule.effort as Effort | undefined) ?? null,
         fastMode: fastMode ?? false,
-      });
+      };
+      resolvedSelection = freshAgentDeviceId
+        ? await this.deps.resolveModelSelection(selection, { agentDeviceId: freshAgentDeviceId })
+        : await this.deps.resolveModelSelection(selection);
       createProviderId = resolvedSelection.providerId;
       fastMode = resolvedSelection.fastMode;
       schedule = {
@@ -1292,7 +1355,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     }
     let reconciledEffort = resolvedSelection
       ? (resolvedSelection.effort ?? undefined)
-      : this.reconcileEffortForModel(effectiveAgentKind, model, schedule.effort, schedule.id);
+      : this.reconcileEffortForModel(effectiveAgentKind, model, schedule.effort || heartbeatEffort, schedule.id);
     // 隐式改道后的来源级 reconcile(PR #744 review 第二十七轮):上面的 clamp 用的是
     // merged capability,分辨不出来源差异 —— 改道后的落地拷贝 effort 支持可能更窄、
     // 可能不支持 Fast,原样透传会被上游拒。按 (verdict.providerId, model) 的拷贝重查:
@@ -1338,7 +1401,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
         reroutedProviderId ??
         materializedDefaultProviderId ??
         currentProviderId;
-      const credentialSwitchInput = liveSession
+      const credentialSwitchInput = liveSession && !agentDeviceId
         ? {
             agentKind: liveSession.agentKind,
             remoteHostId: liveSession.remoteHostId,
@@ -1457,7 +1520,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
         });
       }
     }
-    if (isHeartbeat && effectiveAgentKind === 'pi' && !reusedLiveSession && resumeSessionId) {
+    if (!agentDeviceId && isHeartbeat && effectiveAgentKind === 'pi' && !reusedLiveSession && resumeSessionId) {
       if (!this.deps.applyPiModelSelectionUnderLock) {
         throw new Error('Scheduled Pi model selection is not available');
       }
@@ -1481,6 +1544,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     const createSessionOpts = {
       id: sessionId,
       agentKind: effectiveAgentKind,
+      ...(agentDeviceId ? { agentDeviceId } : {}),
       workingDir,
       model,
       effort: reconciledEffort,
@@ -1535,7 +1599,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       getSessionProvider(session.id) ??
       heartbeatProviderId ??
       null;
-    const mustSyncReusedPiRoute = reusedLiveSession && effectiveAgentKind === 'pi';
+    const mustSyncReusedPiRoute = !resolvedSelection && reusedLiveSession && effectiveAgentKind === 'pi';
     let modelSwitchApplied = true;
     if ((heartbeatModelChanged && effectiveAgentKind !== 'pi') || mustSyncReusedPiRoute) {
       try {
@@ -1607,7 +1671,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     // runtimeModel===model 且未走 follow(desiredEffort===schedule.effort)时直接复用上方
     // createSession 已算好的 reconciledEffort,不重复 lookup / 不重复打 reconcile 日志。
     const runtimeReconciledEffort =
-      runtimeModel === model && desiredEffort === schedule.effort
+      resolvedSelection || (runtimeModel === model && desiredEffort === schedule.effort)
         ? reconciledEffort
         : this.reconcileEffortForModel(
             effectiveAgentKind,
@@ -1626,9 +1690,8 @@ export class MakerScheduleRunner implements ScheduleRunner {
       } catch (err) {
         // setEffort 失败时是否跳过落库,取决于它是不是本次「唯一生效通道」:
         //  · 复用会话:createSession 忽略 opts,setEffort 是唯一通道;
-        //  · 冷 resume / fresh 但 follow-effort:createSession 收到的是 reconciledEffort(基于
-        //    schedule.effort,follow 时为空 → undefined),真正要落的 runtimeReconciledEffort 是沿用
-        //    并 clamp 后的值,与 createSession 拿到的不同 → 也只能靠 setEffort 落地。
+        //  · 冷 resume / fresh 的后续路由校准与初始化档位不同:只能靠 setEffort 应用新档。
+        //    follow-effort 已在 createSession 沿用并 clamp，初始化已应用的同档无需再次成功。
         // 这两种情况失败 = 没生效,必须跳过落库让下次 fire 重试;否则 DB 记了没生效的档、下次判定
         // "已同步"不再重试(PR #479 review「Skip persisting followed effort when fresh sync fails」)。
         // 仅当 fresh 且要落的档 == createSession 已应用的档时,setEffort 只是幂等兜底,失败可照常落库。
@@ -1718,6 +1781,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
         // heartbeat / 冷 resume 与本轮真实凭证/endpoint 才不会漂移。心跳只在默认模型
         // 同轮落库成功时写(模型与来源成对);其余心跳留空不写,保留绑定会话自己的 provider_id。
         providerId:
+          resolvedSelection?.providerId ??
           explicitProviderId ??
           (!isHeartbeat || (heartbeatModelChanged && modelSwitchApplied)
             ? materializedDefaultProviderId
@@ -1795,7 +1859,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
 
     // Resolve Pi's last provider change before listener, abort and handoff
     // state bind to the Session instance. The transaction may retire it.
-    if (effectiveAgentKind === 'pi' && this.deps.checkModelRoute) {
+    if (!agentDeviceId && effectiveAgentKind === 'pi' && this.deps.checkModelRoute) {
       const currentProviderId = getSessionProvider(session.id);
       const verdict = await this.checkRouteFor(session.id, 'pi', runtimeModel, currentProviderId);
       if (verdict.kind === 'reject') {
@@ -1903,7 +1967,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       // 凭证切换 / createSession / 模型同步 / 交接准备等多个长 await,期间路由可能
       // 刚被停用 —— 按**实际将运行的路由**(runtimeModel + 会话此刻的来源)再判一次,
       // reject 即失败收口,不发出这次新的付费调用。
-      if (this.deps.checkModelRoute) {
+      if (!agentDeviceId && this.deps.checkModelRoute) {
         const dispatchProviderId = getSessionProvider(session.id);
         const verdict = await this.checkRouteFor(
           session.id,
@@ -1967,23 +2031,35 @@ export class MakerScheduleRunner implements ScheduleRunner {
       }
       const sendResult = await session.send(outgoingMessage as never, {
         origin,
-        ...(schedule.targetSessionId || schedule.source === 'bot'
+        ...(isHeartbeat || schedule.source === 'bot' || agentDeviceId
           ? {
               resolveAutoReviewUserIntent: async () => {
-                const intent = restoreAutoReviewUserIntent(
-                  (await this.deps.readAutoReviewHistory?.(session.id).catch(() => [])) ?? [],
-                );
-                const current = await this.readRoutinePermissions(session.id, session);
-                const expected = routinePermissions ?? heartbeatPermissions;
-                if (
-                  !current ||
-                  current.permissionMode !== expected?.permissionMode ||
-                  current.planMode !== expected?.planMode
-                ) {
-                  throw new RoutineDispatchDeferredError(
-                    'Heartbeat modes changed during preparation',
-                  );
+                // A teammate routine is judged by the instruction it runs, not by the
+                // owner's unrelated chat history in the teammate's main task.
+                const intent = schedule.source === 'bot'
+                  ? routineInstructionFromPrompt(schedule.prompt)
+                  : isHeartbeat ? restoreAutoReviewUserIntent(
+                    (await this.deps.readAutoReviewHistory?.(session.id).catch(() => [])) ?? [],
+                  ) : undefined;
+                if (isHeartbeat || schedule.source === 'bot') {
+                  const current = await this.readRoutinePermissions(session.id, session);
+                  const expected = routinePermissions ?? heartbeatPermissions;
+                  if (
+                    !current ||
+                    current.permissionMode !== expected?.permissionMode ||
+                    current.planMode !== expected?.planMode
+                  ) {
+                    throw new RoutineDispatchDeferredError(
+                      'Heartbeat modes changed during preparation',
+                    );
+                  }
                 }
+                // Session invokes this after accepted preparation and the vision
+                // bridge, immediately before its synchronous dispatch boundary.
+                await this.assertRemoteDispatchRoute(
+                  session.agentDeviceId ?? agentDeviceId, effectiveAgentKind, runtimeModel,
+                  getSessionProvider(session.id),
+                );
                 return intent;
               },
             }
@@ -2004,7 +2080,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
           }
         },
         planMode: routinePermissions?.planMode ?? heartbeatPermissions?.planMode ?? false,
-        onAccepted: async () => {
+        onAccepted: async (signal) => {
           // createSession 之后到真正 dispatch 之间仍会 await 模型切换、baseline
           // 等准备工作。复用 desktop session 时不能在这些准备阶段把用户正在跑的
           // turn 误标成 headless；只在本轮 send 真正跨过接受边界后 acquire。
@@ -2045,7 +2121,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
             }
           }
           if (this.deps.beforeDispatchUserTurn) {
-            await this.deps.beforeDispatchUserTurn(session.id);
+            await this.deps.beforeDispatchUserTurn(session.id, signal);
             baselineStarted = true;
           }
           if (ctx.canDispatch && !ctx.canDispatch()) {
@@ -2056,11 +2132,8 @@ export class MakerScheduleRunner implements ScheduleRunner {
             });
             throw new RoutineDispatchDeferredError('Routine revision changed before dispatch');
           }
-          // bump userSendAt:侧栏排序主键已切到 userSendAt ?? updatedAt,自动化任务
-          // fire 属"这个会话有了新一轮输入",与用户按下发送同权重,让 fire 出来的会话
-          // 即时冒到列表顶(否则已被用户发过消息、userSendAt 非空的绑定会话会被冻结在
-          // 旧时刻顶不上来)。fire-and-forget:失败只 warn,不阻塞本轮 run —— 它只是排序
-          // 元数据,落库失败最多让本次 fire 的会话晚一拍冒头,不影响 agent 执行。
+          // 保留 scheduler 的既有 userSendAt 写入；该入口同时推进列表 lastActivityAt。
+          // userSendAt 的历史口径清理另行处理，不改变活跃礼让判据。
           // 用 ctx.firedAt 对齐本轮 run.firedAt,顺延重试时也稳定。
           void touchUserSendInDb(session.id, ctx.firedAt).catch((err) => {
             this.deps.logger.warn?.('[runner] touchUserSend failed', {
@@ -2117,6 +2190,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       // the exact-message soft rewind; do not roll back ambiguous send errors.
       if (
         (err instanceof RoutineDispatchDeferredError ||
+          err instanceof QueuedRouteDisabledError ||
           err instanceof ScheduledDispatchStoppedError) &&
         acceptedMessageClientId
       ) {
@@ -2466,8 +2540,20 @@ export class MakerScheduleRunner implements ScheduleRunner {
           : schedule.prompt,
       origin,
       onPreparing: async () => {
-        if (schedule.targetSessionId && hasScheduledModelOverride(schedule) && this.deps.preserveModelPreferences) {
-          holder.restoreModelPreferences = await this.deps.preserveModelPreferences?.(sessionId);
+        this.assertQueuedModelSelection(this.deps.maker.getSession(sessionId), routingBaseline.resolvedSelection);
+        if (schedule.targetSessionId && this.deps.prepareModelPreferences) {
+          const override = hasScheduledModelOverride(schedule);
+          await this.deps.prepareModelPreferences(sessionId, override);
+          if (!override) {
+            // The previous automation can have left its native route in place
+            // while this item waited. Use the restored owner route at dispatch.
+            const meta = await this.deps.maker.getSessionMeta(sessionId);
+            routingBaseline = {
+              ...routingBaseline, model: meta?.model, agentKind: meta?.agentKind,
+              effort: meta?.effort, fastMode: meta?.fastMode,
+              providerId: getSessionProvider(sessionId) ?? null,
+            };
+          }
         }
         const preparingLive = this.deps.maker.getSession(sessionId);
         if ((preparingLive?.agentKind ?? routingBaseline.agentKind ?? schedule.agentKind) !== 'pi') return;
@@ -2899,6 +2985,20 @@ export class MakerScheduleRunner implements ScheduleRunner {
     return { sessionId, skipped: true, resultText: error.message };
   }
 
+  private assertQueuedModelSelection(
+    live: ReturnType<Maker['getSession']>,
+    selection: ScheduledModelSelection | undefined,
+  ): void {
+    if (!selection) return;
+    // Provider/model IDs are only unique within an Agent location. Check the
+    // actual runtime at both queue boundaries, after pending user switches.
+    if (!live || live.agentKind !== selection.agentKind ||
+      (live.agentDeviceId ?? null) !== (selection.agentDeviceId ?? null) ||
+      live.model !== selection.model || getSessionProvider(live.id) !== selection.providerId) {
+      throw new QueuedRouteDisabledError('Scheduled model route changed before queued dispatch');
+    }
+  }
+
   /**
    * 排队派发时刻的路由热同步:schedule 显式设置的 model / effort / 来源(供应商)
    * 优先于绑定会话当前值(与直发路径 4.4.1/4.4.2 同语义);留空沿用会话当前值。
@@ -2923,7 +3023,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     const explicitProviderId = schedule.providerId?.trim() || null;
     const routeProviderId = explicitProviderId ?? currentProviderId;
     let providerId = routeProviderId;
-    if (this.deps.checkModelRoute) {
+    if (!live?.agentDeviceId && this.deps.checkModelRoute) {
       const verdict = await this.checkRouteFor(sessionId, 'pi', model, routeProviderId);
       if (verdict.kind === 'reject') {
         throw new QueuedRouteDisabledError(
@@ -2939,6 +3039,9 @@ export class MakerScheduleRunner implements ScheduleRunner {
       resolved.providerId !== providerId)) {
       throw new QueuedRouteDisabledError('Scheduled model route changed before queued dispatch');
     }
+    // The explicit profile already went through the ordinary runtime transaction.
+    // Reapplying via the local Pi path would use the automation host's catalog.
+    if (resolved) return { model, providerId };
     if (!this.deps.applyPiModelSelectionUnderLock) {
       throw new QueuedPiRouteSyncError('Scheduled Pi model selection is not available');
     }
@@ -2965,6 +3068,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     },
     preparedPiRoute: { model: string; providerId: string | null } | null = null,
   ): Promise<void> {
+    this.assertQueuedModelSelection(live, baseline.resolvedSelection);
     const explicitModel = schedule.model?.trim() ? schedule.model : undefined;
     const targetModel =
       explicitModel ??
@@ -2981,7 +3085,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     // 「保持 live 路由继续派发」不行:这次排队心跳本身就是一次新的付费调用,目标
     // 路由(常等于 live 当前路由)已被停用时照发等于继续经停用路由扣费。
     let applyProviderId = explicitProviderId;
-    if (this.deps.checkModelRoute) {
+    if (!live.agentDeviceId && this.deps.checkModelRoute) {
       // 裁决对象 = 本轮实际将使用的来源:schedule 显式配置优先,否则会话当前存的
       // 来源(它同样是显式路由,provider-route 不查停用标志)—— 只传
       // explicitProviderId 会在「schedule 未指定来源 + 会话当前来源已被停用」时
@@ -3000,6 +3104,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     }
     const nextProviderId = applyProviderId ?? currentProviderId;
     const resolvedSelection = baseline.resolvedSelection;
+    const remoteAgent = Boolean(live.agentDeviceId);
     if (
       resolvedSelection &&
       (live.agentKind !== resolvedSelection.agentKind ||
@@ -3009,7 +3114,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       throw new QueuedRouteDisabledError('Scheduled model route changed before queued dispatch');
     }
     if (
-      crossesCodexAppliedCustomProviderIdentity({
+      !remoteAgent && crossesCodexAppliedCustomProviderIdentity({
         agentKind: live.agentKind,
         remoteHostId: live.remoteHostId,
         currentCodexProxyActive: live.codexProxyActive,
@@ -3023,7 +3128,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       );
     }
     if (
-      isCodexThreadModelProviderIdentityMismatch({
+      !remoteAgent && isCodexThreadModelProviderIdentityMismatch({
         agentKind: live.agentKind,
         remoteHostId: live.remoteHostId,
         currentProviderId,
@@ -3040,7 +3145,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       );
     }
     if (
-      live.agentKind !== 'pi' &&
+      !remoteAgent && live.agentKind !== 'pi' &&
       shouldCloseSessionForCredentialSwitch({
         agentKind: live.agentKind,
         remoteHostId: live.remoteHostId,
@@ -3086,7 +3191,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       return;
     }
     if (
-      live.agentKind !== 'pi' &&
+      !remoteAgent && live.agentKind !== 'pi' &&
       (await live.requiresModelSwitchRebuild?.(targetModel, { providerId: nextProviderId })) ===
       true
     ) {
@@ -3287,7 +3392,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     // Save a canonical reply missing from the normal text-event persistence path,
     // including done-only replacements of a partial stream. Matching replies need no extra row.
     const missingFinalReply =
-      !hidesScheduledTranscript(schedule) &&
+      !(hidesScheduledTranscript(schedule) && !hasVisibleScheduledOutput(ctx.runId)) &&
       !finalTextMatchesStream &&
       finalRun.status === 'success' &&
       !!assistantText.trim();
@@ -3318,7 +3423,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       if (!silenced) ctx.onRunnerNotified?.(finalRun.status === 'success' ? 'success' : 'failure');
       const ownerScope = captureDataOwnerBroadcastScope();
       if (
-        (hidesScheduledTranscript(schedule) || missingFinalReply) &&
+        ((hidesScheduledTranscript(schedule) && !hasVisibleScheduledOutput(ctx.runId)) || missingFinalReply) &&
         finalRun.status === 'success' &&
         assistantText.trim()
       ) {
@@ -3395,6 +3500,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
     const sessionId = initialSession.id;
     let assistantText = '';
     let finalTextMatchesStream = false;
+    let streamContainsHiddenText = false;
     // A non-empty full-text snapshot (`isFullText`, e.g. a completed Codex or
     // Pi item) is already a sealed transcript row; deltas that follow it start a
     // new message. A block final without `isFullText` (claude-code) may still
@@ -3514,18 +3620,30 @@ export class MakerScheduleRunner implements ScheduleRunner {
               // (Codex commentary before its empty answer item, an empty item
               // without phase, or a repeated empty item) is never replayed,
               // regardless of the event shape that carried it (#5220, #5277).
-              if (!assistantTextSealed) assistantText = '';
+              if (!assistantTextSealed) {
+                assistantText = '';
+                streamContainsHiddenText = false;
+              }
               return;
             }
-            if (data.text.trim()) finalTextMatchesStream = true;
+            const hidden = !!data.text.trim()
+              && isQuietScheduledOutput({ ...ev, turnOrigin: options.origin });
             if (data.isFinal) {
               assistantText = data.text;
               assistantTextSealed = data.isFullText === true;
+              streamContainsHiddenText = hidden;
             } else {
-              if (assistantTextSealed) assistantText = '';
+              if (assistantTextSealed) {
+                assistantText = '';
+                streamContainsHiddenText = false;
+              }
               assistantTextSealed = false;
               assistantText += data.text;
+              streamContainsHiddenText ||= hidden;
             }
+            // Raw provider text may span the quiet/visible boundary. A visible
+            // fallback tail does not prove that the hidden prefix was persisted.
+            if (data.text.trim()) finalTextMatchesStream = !streamContainsHiddenText;
           }
           return;
         }
@@ -3539,6 +3657,12 @@ export class MakerScheduleRunner implements ScheduleRunner {
           // 边界是本 run 的 auto-resume claim。旧 turn 的 done 即使迟到也不能提前
           // 收口，恢复 turn 跨过 pre-vendor 边界时 claim 会先被清除。
           if (isCurrentAutoResumePending()) return;
+          const terminalOutcome = ev.data as { status?: unknown; cancelled?: boolean } | null;
+          const terminalStatus = terminalOutcome?.cancelled === true ? 'cancelled' : terminalOutcome?.status;
+          if (['cancelled', 'aborted', 'interrupted', 'failed'].includes(String(terminalStatus))) {
+            fail(new Error(`Scheduled turn ended with status: ${terminalStatus}`));
+            return;
+          }
           // silent-stop:上游空内容消息静默收尾,main 守卫会在 1.5s 后自动续跑
           // (或弹耗尽横幅)。不 finish——等续跑 turn 的 done 或守卫 settle 通知。
           // settle 通知覆盖守卫决策为非续跑的所有路径(skip/exhausted/send 失败),
@@ -3552,8 +3676,8 @@ export class MakerScheduleRunner implements ScheduleRunner {
               : (owner.beginTurnContinuationWait?.(continuationId) ?? null);
           if (continuationState === 'cancelled') {
             // Provider already observed an explicit stop/teardown. Session
-            // gets a separate ordered boundary; this run can settle now.
-            finish();
+            // gets a separate ordered boundary; this run did not complete.
+            fail(new Error('Scheduled turn continuation was cancelled'));
             return;
           }
           if (continuationState === 'awaiting' || continuationState === 'active') {
@@ -3570,7 +3694,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
                 }
                 pendingContinuationUnsub?.();
                 pendingContinuationUnsub = undefined;
-                finish();
+                fail(new Error('Scheduled turn continuation was cancelled'));
               },
             );
             this.deps.logger.info?.(
@@ -3727,7 +3851,10 @@ export class MakerScheduleRunner implements ScheduleRunner {
 }
 
 function buildScheduledRunPrompt(schedule: Schedule, ctx: FireContext, checkOutput = ''): string {
-  return `${schedule.prompt}${checkOutput}${buildScheduledRunContextInstruction(schedule, ctx)}${
+  const routineWait = schedule.source === 'bot' && schedule.recurring
+    ? '\n\n[Routine checkpoint] For recurring checks with another trigger scheduled, inspect the current state and finish this run once actionable work is handled. If only external progress is pending, leave a concise checkpoint (identifiers, current state and next check) in the final result; do not keep this run alive with repeated sleep/poll calls. A later trigger may start with fresh context: when prior progress is needed, retrieve the previous result from the existing routine or schedule run history instead of assuming it is in this conversation. Complete one-time assignments and preserve explicit instructions requiring continuous observation or a delivery deadline.'
+    : '';
+  return `${schedule.prompt}${checkOutput}${buildScheduledRunContextInstruction(schedule, ctx)}${routineWait}${
     schedule.silentWhenIdle ? buildSilentRunInstruction(schedule.source === 'bot') : ''
   }`;
 }
@@ -3772,7 +3899,16 @@ function buildScheduledRunContextInstruction(
     `firedAtUtc: ${new Date(ctx.firedAt).toISOString()}`,
     `firedAtInScheduleTimezone: ${firedAtInScheduleTimezone}`,
     'These timestamps identify when this run was triggered, not when a queued run started processing. Use the task instructions to determine the requested time range.',
+    ...buildTeammateTurnAuthorityLine(schedule),
   ].join('\n');
+}
+
+/** Teammate routines state who the run speaks for; the host enforces the same boundary. */
+function buildTeammateTurnAuthorityLine(schedule: Pick<Schedule, 'id' | 'source'>): string[] {
+  if (schedule.source !== 'bot') return [];
+  return schedule.id.startsWith(BUILTIN_ROUTINE_SCHEDULE_PREFIX)
+    ? ['turnAuthority: autonomous. The host started this run; the owner did not ask for it. You may read, keep Todos, notify the owner and continue or re-route tasks already handed to you. Other changes to the owner\'s tasks need the owner\'s request: propose them in a Todo or notification instead.']
+    : ['turnAuthority: entrusted. This run carries out the standing instructions the owner set for this routine; stay within them.'];
 }
 
 function buildScheduleRefLine(schedule: Pick<Schedule, 'id' | 'name'>): string[] {
@@ -3841,7 +3977,6 @@ interface EphemeralSessionHolder {
   keepAlive?: boolean;
   /** heartbeat direct-send route lock; released immediately after Session.send settles. */
   releaseAgentSwitchLock?: () => void;
-  restoreModelPreferences?: () => Promise<void>;
   /** unique ownership generation for the session-level scheduler run context. */
   schedulerRunContextOwner?: SchedulerRunContextOwner;
 }

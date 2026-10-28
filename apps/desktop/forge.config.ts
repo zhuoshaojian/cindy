@@ -145,6 +145,9 @@ const NATIVE_RUNTIME_DEPS = [
   '@protobufjs/pool',
   '@protobufjs/utf8',
   'long',
+  // turndown keeps this require in the bundled browser recipes. Ship its
+  // dependency-free DOM implementation so packaged startup can resolve it.
+  '@mixmark-io/domino',
   // @parcel/watcher: file-browser 用的 OS 原生 watcher。N-API 模块, 无需
   // electron-rebuild, 但平台特定子包 (@parcel/watcher-{platform}-{arch})
   // 必须跟主包一起进包, 否则运行时 require('@parcel/watcher') 找不到 .node。
@@ -1980,6 +1983,19 @@ const config: ForgeConfig = {
       buildWindowsGamepadHelper(platform, arch);
       buildWindowsAtomicRenameHelper(platform, arch);
       buildWindowsTaskbarAddon(platform, arch);
+      if (platform === 'darwin') {
+        const trackpadBuild = spawnSync(
+          process.execPath,
+          [
+            path.join(__dirname, 'native/trackpad/build.mjs'),
+            path.join(__dirname, 'resources/tools/trackpad/cindy-trackpad.node'),
+            arch,
+          ],
+          { stdio: 'inherit' },
+        );
+        if (trackpadBuild.error || trackpadBuild.status !== 0)
+          throw new Error('Native trackpad build failed');
+      }
       buildMacVoiceInputModifierShortcutListener(platform, arch);
       buildMacAgentIslandHelper(platform, arch);
       buildMacComputerPermissionGuideHelper(platform, arch);

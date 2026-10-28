@@ -28,9 +28,10 @@ for (const file of files) {
     engines++;
     const body = getter.body.getText(ast).slice(1, -1);
     const host = read('maker-host/host-system-prompt.md');
+    const ownership = read('maker-host/business-ownership-prompt.md');
     const harness = read(`maker-host/${engine === 'Claude' ? 'claude' : engine.toLowerCase()}-system-prompt.md`);
-    const originalPrompt = engine === 'Pi' ? compose(host, harness) : compose(host, read('maker-host/skill-source-precedence-prompt.md'), harness);
-    const evaluate = cloud => new Function('appendCloudSettingsPrompt', 'appendCloudPluginOauthPrompt', 'getInstanceConfig', 'composeHostPrompt', 'composePiSystemPrompt', 'hostSystemPrompt', 'claudeSystemPrompt', 'codexSystemPrompt', 'piSystemPrompt', body)(appendCloudSettingsPrompt, (s,c) => c ? s+'\n\n'+prefix : s, () => cloud ? {} : null, p => compose(host, read('maker-host/skill-source-precedence-prompt.md'), p), compose, host, harness, harness, harness);
+    const originalPrompt = engine === 'Pi' ? compose(host, ownership, harness) : compose(host, ownership, read('maker-host/skill-source-precedence-prompt.md'), harness);
+    const evaluate = cloud => new Function('appendCloudSettingsPrompt', 'appendCloudPluginOauthPrompt', 'getInstanceConfig', 'composeHostPrompt', 'composePiSystemPrompt', 'hostSystemPrompt', 'claudeSystemPrompt', 'codexSystemPrompt', 'piSystemPrompt', 'businessOwnershipPrompt', body)(appendCloudSettingsPrompt, (s,c) => c ? s+'\n\n'+prefix : s, () => cloud ? {} : null, p => compose(host, ownership, read('maker-host/skill-source-precedence-prompt.md'), p), compose, host, harness, harness, harness, ownership);
     test(`${engine}: actual transformed getter preserves non-cloud bytes`, () => assert.equal(evaluate(false), originalPrompt));
     test(`${engine}: actual transformed getter appends one stable cloud suffix`, () => {
       assert.equal(evaluate(true), `${originalPrompt}\n\n${prefix}\n\n${settingsPrompt}`);

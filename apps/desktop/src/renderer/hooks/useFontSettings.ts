@@ -19,6 +19,7 @@ import {
   APPEARANCE_LIMITS,
   DEFAULT_APPEARANCE_SETTINGS,
   clampAppearanceCodeSize,
+  clampAppearanceTerminalSize,
   clampAppearanceUiSize,
   normalizeAppearanceSettings,
   type AppearanceSettings,
@@ -31,19 +32,29 @@ export interface FontSettings {
   codeSize: number;
 }
 
-interface FontSettingsContextValue extends FontSettings {
+interface ConfigurableFontSettings extends FontSettings {
+  terminalFamily: string;
+  terminalSize: number;
+}
+
+interface FontSettingsContextValue extends ConfigurableFontSettings {
   setUiFamily: (family: string) => void;
   setCodeFamily: (family: string) => void;
   setUiSize: (size: number) => void;
   setCodeSize: (size: number) => void;
+  setTerminalFamily: (family: string) => void;
+  setTerminalSize: (size: number) => void;
   resetUiFamily: () => void;
   resetCodeFamily: () => void;
   resetUiSize: () => void;
   resetCodeSize: () => void;
+  resetTerminalFamily: () => void;
+  resetTerminalSize: () => void;
 }
 
 export const DEFAULT_UI_FONT_SIZE = DEFAULT_APPEARANCE_SETTINGS.uiSize;
 export const DEFAULT_CODE_FONT_SIZE = DEFAULT_APPEARANCE_SETTINGS.codeSize;
+export const DEFAULT_TERMINAL_FONT_SIZE = DEFAULT_APPEARANCE_SETTINGS.terminalSize;
 const MIN_UI_FONT_SIZE = APPEARANCE_LIMITS.uiSize.min;
 const MIN_FONT_SIZE = APPEARANCE_LIMITS.codeSize.min;
 const MAX_FONT_SIZE = APPEARANCE_LIMITS.codeSize.max;
@@ -123,16 +134,30 @@ export function applyFontSettings(settings: FontSettings): void {
 }
 
 export function FontSettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<FontSettings>(getInitialFontSettings);
+  const [settings, setSettings] = useState<ConfigurableFontSettings>(() => {
+    const initial = getInitialAppearanceSettings();
+    return {
+      uiFamily: initial.uiFamily,
+      codeFamily: initial.codeFamily,
+      uiSize: initial.uiSize,
+      codeSize: initial.codeSize,
+      terminalFamily: initial.terminalFamily,
+      terminalSize: initial.terminalSize,
+    };
+  });
   const settingsRef = useRef(settings);
   const confirmedSettingsRef = useRef(settings);
-  const pendingWritesRef = useRef<Array<{ id: number; patch: Partial<FontSettings> }>>([]);
+  const pendingWritesRef = useRef<Array<{ id: number; patch: Partial<ConfigurableFontSettings> }>>(
+    [],
+  );
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const nextRequestIdRef = useRef(0);
 
+  const { uiFamily, codeFamily, uiSize, codeSize } = settings;
   useEffect(() => {
-    applyFontSettings(settings);
-  }, [settings]);
+    // Terminal appearance is applied to xterm only, never to the global UI/code tokens.
+    applyFontSettings({ uiFamily, codeFamily, uiSize, codeSize });
+  }, [uiFamily, codeFamily, uiSize, codeSize]);
 
   useEffect(() => {
     const bridge = getBridge();
@@ -144,6 +169,8 @@ export function FontSettingsProvider({ children }: { children: ReactNode }) {
         codeFamily: normalized.codeFamily,
         uiSize: normalized.uiSize,
         codeSize: normalized.codeSize,
+        terminalFamily: normalized.terminalFamily,
+        terminalSize: normalized.terminalSize,
       };
       confirmedSettingsRef.current = confirmed;
       const optimistic = pendingWritesRef.current.reduce(
@@ -155,7 +182,7 @@ export function FontSettingsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const patch = useCallback((next: Partial<FontSettings>, clear?: Array<keyof FontSettings>) => {
+  const patch = useCallback((next: Partial<ConfigurableFontSettings>, clear?: Array<keyof ConfigurableFontSettings>) => {
     const previous = settingsRef.current;
     const merged = { ...previous, ...next };
     const bridge = getBridge();
@@ -213,6 +240,19 @@ export function FontSettingsProvider({ children }: { children: ReactNode }) {
     (size: number) => patch({ codeSize: clampAppearanceCodeSize(size) }),
     [patch],
   );
+  const setTerminalFamily = useCallback(
+    (family: string) => patch({ terminalFamily: normalizeFamily(family) }),
+    [patch],
+  );
+  const setTerminalSize = useCallback(
+    (size: number) => patch({ terminalSize: clampAppearanceTerminalSize(size) }),
+    [patch],
+  );
+  const resetTerminalFamily = useCallback(() => patch({ terminalFamily: '' }, ['terminalFamily']), [patch]);
+  const resetTerminalSize = useCallback(
+    () => patch({ terminalSize: DEFAULT_TERMINAL_FONT_SIZE }, ['terminalSize']),
+    [patch],
+  );
   const resetUiFamily = useCallback(() => patch({ uiFamily: '' }, ['uiFamily']), [patch]);
   const resetCodeFamily = useCallback(() => patch({ codeFamily: '' }, ['codeFamily']), [patch]);
   const resetUiSize = useCallback(() => patch({ uiSize: DEFAULT_UI_FONT_SIZE }, ['uiSize']), [patch]);
@@ -225,18 +265,26 @@ export function FontSettingsProvider({ children }: { children: ReactNode }) {
       setCodeFamily,
       setUiSize,
       setCodeSize,
+      setTerminalFamily,
+      setTerminalSize,
       resetUiFamily,
       resetCodeFamily,
       resetUiSize,
       resetCodeSize,
+      resetTerminalFamily,
+      resetTerminalSize,
     }),
     [
       resetCodeFamily,
       resetCodeSize,
+      resetTerminalFamily,
+      resetTerminalSize,
       resetUiFamily,
       resetUiSize,
       setCodeFamily,
       setCodeSize,
+      setTerminalFamily,
+      setTerminalSize,
       setUiFamily,
       setUiSize,
       settings,

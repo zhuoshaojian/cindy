@@ -24,7 +24,6 @@ import type {
 } from '@/../shared/voiceConversation';
 import {
   normalizeVoiceConversationSelection,
-  resolveSpeechSpeed,
   voiceModelKey,
 } from '@/../shared/voiceConversation';
 import { referenceSpeechVoices } from '@/../shared/speechVoices';
@@ -32,17 +31,28 @@ import { PcmSpeechPlayer } from './PcmSpeechPlayer';
 import { VoicePreviewController } from './VoicePreviewController';
 import { SpeechVoicePicker } from './SpeechVoicePicker';
 import { resolveVoiceConfiguration } from './voiceConfiguration';
+import { useBotSettingsTarget } from '../useBotSettingsTarget';
+
+/** Stands in for the preview service when samples cannot be played from this window. */
+const PREVIEW_UNAVAILABLE = {
+  preview: () => Promise.reject(new Error('preview_unavailable')),
+  readPreview: () => Promise.reject(new Error('preview_unavailable')),
+  stopPreview: () => Promise.resolve(),
+};
 
 type Props = {
   botId: string;
   sessionId?: string;
   beforeLeaveRef?: { current: (() => Promise<boolean>) | null };
-  onOpenProviders(): void;
+  /** Opens this computer's provider settings; absent for a teammate on another computer. */
+  onOpenProviders?(): void;
 };
 
 /** Per-companion settings. Opening this page never starts ASR or submits a message. */
 export function CompanionVoiceSettings(props: Props) {
   const { t } = useTranslation();
+  const target = useBotSettingsTarget();
+  const voiceApi = target.voice;
   const sentencePlaybackId = useId();
   const session = useSyncExternalStore(
     useCallback(
@@ -68,6 +78,9 @@ export function CompanionVoiceSettings(props: Props) {
   const [catalogError, setCatalogError] = useState(false);
   const [preference, setPreference] = useState<VoiceConversationSelection | null>(null);
   const [voice, setVoice] = useState<string>();
+  // Only an explicit model switch may fill an empty voice from its catalog.
+  // Opening, refreshing or resetting settings must not save inferred defaults.
+  const [autoSelectVoice, setAutoSelectVoice] = useState(false);
   const [speed, setSpeed] = useState<number>();
   const [speedNotice, setSpeedNotice] = useState<number>();
   const [customized, setCustomized] = useState(false);
@@ -93,15 +106,18 @@ export function CompanionVoiceSettings(props: Props) {
   const speedLabel = (value: number) =>
     t('bots.voiceMode.speedValue', { speed: value.toFixed(2).replace(/0$/, '') });
   const validModel = !!selectedModel;
+  // Keep the saved current value readable, without offering other hidden routes
+  // or silently choosing one when there is no saved preference.
+  const pickerModels = models.filter((model) => model.pickerVisible !== false || model === selectedModel);
   const preview = useMemo(
     () =>
       new VoicePreviewController({
-        api: window.electronAPI.voiceConversation,
+        api: voiceApi.previewApi ?? PREVIEW_UNAVAILABLE,
         botId: props.botId,
         sessionId: props.sessionId ?? '',
         player: () => new PcmSpeechPlayer(() => undefined),
       }),
-    [props.botId, props.sessionId],
+    [props.botId, props.sessionId, voiceApi],
   );
   const refreshVersion = useRef(0);
   const preferenceVersion = useRef(0);
@@ -111,16 +127,15 @@ export function CompanionVoiceSettings(props: Props) {
     setCatalogError(false);
     try {
       // A Gateway refresh failure must not hide usable local BYOK connections.
-      if (fetchCatalog)
-        await window.electronAPI.maker.refreshBuiltinProviderModels('xd').catch(() => undefined);
-      const next = await window.electronAPI.voiceConversation.models();
+      if (fetchCatalog) await voiceApi.refreshCatalog?.().catch(() => undefined);
+      const next = await voiceApi.models();
       if (version === refreshVersion.current) setModels(next);
     } catch {
       if (version === refreshVersion.current) setCatalogError(true);
     } finally {
       if (version === refreshVersion.current) setLoading(false);
     }
-  }, []);
+  }, [voiceApi]);
 
   const loadPreference = useCallback(() => {
     const version = ++preferenceVersion.current;
@@ -128,6 +143,7 @@ export function CompanionVoiceSettings(props: Props) {
     setPreferenceError(false);
     setPreference(null);
     setVoice(undefined);
+    setAutoSelectVoice(false);
     setSpeed(undefined);
     setSpeedNotice(undefined);
     setCustomized(false);
@@ -135,7 +151,7 @@ export function CompanionVoiceSettings(props: Props) {
     setSaving(false);
     dirty.current = false;
     pendingSave.current = null;
-    void window.electronAPI.voiceConversation
+    void voiceApi
       .preference(props.botId)
       .then((result) => {
         if (version !== preferenceVersion.current) return;
@@ -147,7 +163,7 @@ export function CompanionVoiceSettings(props: Props) {
       .catch(() => {
         if (version === preferenceVersion.current) setPreferenceError(true);
       });
-  }, [props.botId]);
+  }, [props.botId, voiceApi]);
 
   useEffect(() => {
     void refresh();
@@ -169,6 +185,7 @@ export function CompanionVoiceSettings(props: Props) {
         ++refreshVersion.current;
         ++preferenceVersion.current;
         setPreferenceOwner(undefined);
+        setAutoSelectVoice(false);
         void preview.stop();
       }
     });
@@ -191,10 +208,11 @@ export function CompanionVoiceSettings(props: Props) {
       playback?: boolean | null,
     ): Promise<boolean> => {
       if (pendingSave.current) return pendingSave.current;
+      if (next !== undefined) setAutoSelectVoice(false);
       const version = preferenceVersion.current;
       setSaving(true);
       setPreferenceError(false);
-      const api = window.electronAPI.voiceConversation;
+      const api = voiceApi;
       const operation =
         playback === undefined
           ? api.setPreference(props.botId, next)
@@ -227,7 +245,7 @@ export function CompanionVoiceSettings(props: Props) {
       pendingSave.current = pending;
       return pending;
     },
-    [props.botId],
+    [props.botId, voiceApi],
   );
   useEffect(() => {
     const ref = props.beforeLeaveRef;
@@ -248,15 +266,14 @@ export function CompanionVoiceSettings(props: Props) {
   }, [props.beforeLeaveRef, persist, ready, selection, protocol, preview]);
   const carrySpeed = (next: VoiceConversationSelection): VoiceConversationSelection => {
     const previousSpeed = speed ?? preference?.speed;
-    const nextProtocol = resolveVoiceConfiguration(models, next).protocol;
-    const nextSpeed = resolveSpeechSpeed(next.modelId, nextProtocol, previousSpeed);
+    const nextSpeed = resolveVoiceConfiguration(models, next, undefined, previousSpeed).speed;
     setSpeed(undefined);
     setSpeedNotice(previousSpeed !== nextSpeed ? (nextSpeed ?? 1) : undefined);
     return { ...next, ...(nextSpeed !== undefined ? { speed: nextSpeed } : {}) };
   };
   const chooseModel = (key: string) => {
     const model = models.find((item) => voiceModelKey(item) === key);
-    if (!model) return;
+    if (!model || (preference && voiceModelKey(preference) === key && selectedVoice)) return;
     const next = carrySpeed({
       providerId: model.providerId,
       agent: model.agent,
@@ -269,6 +286,7 @@ export function CompanionVoiceSettings(props: Props) {
     setCustomized(true);
     setPreference(next);
     setVoice(next.voice);
+    setAutoSelectVoice(!next.voice);
     if (
       normalizeVoiceConversationSelection(next) &&
       resolveVoiceConfiguration(models, next).protocol
@@ -278,7 +296,7 @@ export function CompanionVoiceSettings(props: Props) {
 
   // Keep unavailable controls out of the empty state, including while its first
   // catalog request is pending. This only changes presentation, not saved preferences.
-  if (models.length === 0) {
+  if (pickerModels.length === 0) {
     return (
       <div className="space-y-4 pt-3">
         {loading ? (
@@ -311,9 +329,15 @@ export function CompanionVoiceSettings(props: Props) {
             <p className="text-12 leading-relaxed text-[var(--text-secondary)]">
               {t('bots.voiceMode.noModelsSetupHint')}
             </p>
-            <Button variant="secondary" size="sm" compact onClick={props.onOpenProviders}>
-              {t('bots.voiceMode.openProviders')}
-            </Button>
+            {props.onOpenProviders ? (
+              <Button variant="secondary" size="sm" compact onClick={props.onOpenProviders}>
+                {t('bots.voiceMode.openProviders')}
+              </Button>
+            ) : (
+              <p className="text-12 leading-relaxed text-[var(--text-secondary)]">
+                {t('bots.remoteSettings.finishOnHost', { device: target.deviceName })}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -336,7 +360,7 @@ export function CompanionVoiceSettings(props: Props) {
                 {...control}
                 label={t('bots.voiceMode.model')}
                 value={selectedModel ? voiceModelKey(selectedModel) : ''}
-                options={models.map((model) => ({
+                options={pickerModels.map((model) => ({
                   value: voiceModelKey(model),
                   label: [
                     model.name,
@@ -349,7 +373,7 @@ export function CompanionVoiceSettings(props: Props) {
                     .join(' · '),
                 }))}
                 onValueChange={chooseModel}
-                disabled={loading || !ready || saving || models.length === 0}
+                disabled={loading || !ready || saving || pickerModels.length === 0}
                 className="flex-1"
               />
               <Button
@@ -434,11 +458,13 @@ export function CompanionVoiceSettings(props: Props) {
           }}
           protocol={protocol}
           voice={selectedVoice}
+          autoSelectFirstVoice={autoSelectVoice}
           speed={effectiveSpeed}
           disabled={!ready || saving || blocked}
-          previewDisabled={!ready || saving || blocked || !props.sessionId}
+          previewDisabled={!ready || saving || blocked || !props.sessionId || !voiceApi.previewApi}
           preview={preview}
           onChange={(value, save) => {
+            setAutoSelectVoice(false);
             dirty.current = true;
             setVoice(value);
             const next = normalizeVoiceConversationSelection({
@@ -447,7 +473,7 @@ export function CompanionVoiceSettings(props: Props) {
               modelId: selectedModel.id,
               protocol: protocolOverride,
               voice: value,
-              speed: resolveSpeechSpeed(selectedModel.id, protocol, speed ?? preference?.speed),
+              speed: effectiveSpeed,
             });
             if (save && next && validModel && protocol) void persist(next);
           }}
@@ -505,12 +531,12 @@ export function CompanionVoiceSettings(props: Props) {
           ) : null}
         </SpeechVoicePicker>
       ) : null}
-      {dirty.current && (!selection || !protocol) ? (
+      {!voiceApi.previewApi ? (
+        // Samples play through the speakers of the computer the page runs on.
         <p className="text-12 text-[var(--text-secondary)]">
-          {t('bots.voiceMode.incompleteSettings')}
+          {t('bots.remoteSettings.finishOnHost', { device: target.deviceName })}
         </p>
-      ) : null}
-      {!props.sessionId ? (
+      ) : !props.sessionId ? (
         <p className="text-12 text-[var(--text-secondary)]">
           {t('bots.voiceMode.previewNeedsChat')}
         </p>

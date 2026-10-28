@@ -220,6 +220,13 @@ function AgentVersionRow({
 }) {
   const { t, i18n } = useTranslation();
   const { confirm } = useConfirmDialog();
+  const [preparing, setPreparing] = useState(false);
+  const preparingRef = useRef(false);
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   const stateRef = useRef(state);
   stateRef.current = state;
   const currentVersion = state.version ? extractSemver(state.version) : null;
@@ -231,15 +238,17 @@ function AgentVersionRow({
   const canUpdate = () => {
     const next = stateRef.current;
     return Boolean(
-      !next.checking &&
-      next.updateAvailable &&
-      next.version &&
-      next.latestVersion &&
-      extractSemver(next.version) &&
-      extractSemver(next.latestVersion),
+      active.current && !next.checking &&
+        next.updateAvailable &&
+        next.version &&
+        next.latestVersion &&
+        extractSemver(next.version) &&
+        extractSemver(next.latestVersion),
     );
   };
-  const status = state.checking
+  const status = preparing
+    ? t('settings.about.piKernel.download')
+    : state.checking
     ? t('settings.about.harnessChecking')
     : state.checkFailed
       ? t('settings.about.harnessCheckFailed')
@@ -248,7 +257,21 @@ function AgentVersionRow({
         : '';
 
   const handleUpdate = async () => {
-    if (!canUpdate() || !currentVersion || !latestVersion) return;
+    if (preparingRef.current || !canUpdate() || !currentVersion || !latestVersion) return;
+    const targetVersion = stateRef.current.latestVersion;
+    if (!targetVersion) return;
+    preparingRef.current = true;
+    setPreparing(true);
+    try {
+      await window.electronAPI.prepareHarnessUpdate(kind, targetVersion);
+    } catch {
+      toast.error(t('settings.about.harnessUpdateFailed'));
+      return;
+    } finally {
+      preparingRef.current = false;
+      if (active.current) setPreparing(false);
+    }
+    if (!canUpdate() || stateRef.current.latestVersion !== targetVersion) return;
     const confirmed = await confirm({
       title: t('settings.about.harnessUpdateTitle', { name }),
       description: t('settings.about.harnessUpdateDescription', {
@@ -285,7 +308,7 @@ function AgentVersionRow({
     if (!canUpdate()) return;
 
     try {
-      await window.electronAPI.relaunchForHarnessUpdate(kind);
+      await window.electronAPI.relaunchForHarnessUpdate(kind, targetVersion);
     } catch {
       toast.error(t('settings.about.harnessUpdateFailed'));
     }
@@ -297,20 +320,16 @@ function AgentVersionRow({
       manageLabel={t('settings.about.harnessManage', { name })}
       version={renderVersion(state, t)}
       status={status}
-      pending={state.checking}
+      pending={state.checking || preparing}
     >
       <HarnessVersionMenuItem
         label={t('settings.about.harnessUpdateButton', { name })}
         version={latestVersion}
-        disabled={!updateAvailable || state.checking}
+        disabled={!updateAvailable || state.checking || preparing}
         onSelect={() => void handleUpdate()}
       />
       <DropdownMenuSeparator />
-      <DropdownMenuItem
-        className={HARNESS_MENU_ITEM_CLASS}
-        disabled={state.checking}
-        onSelect={onCheck}
-      >
+      <DropdownMenuItem className={HARNESS_MENU_ITEM_CLASS} disabled={state.checking || preparing} onSelect={onCheck}>
         {state.checking ? t('settings.about.harnessChecking') : t('settings.about.harnessCheck')}
       </DropdownMenuItem>
       {state.checkedAt && (
@@ -480,7 +499,7 @@ function SocialLinksPanel() {
             </span>
             <ExternalLink
               aria-hidden
-              className="shrink-0 text-[var(--settings-section-sublabel)] opacity-65 transition-opacity duration-[var(--motion-fast,150ms)] group-hover:opacity-100"
+              className="shrink-0 text-[var(--text-tertiary)] transition-colors duration-[var(--motion-fast,150ms)] group-hover:text-[var(--settings-section-sublabel)]"
               size={13}
               strokeWidth={1.7}
             />
@@ -544,7 +563,7 @@ export function AutoUpdateToggleRow() {
           >
             {t('settings.about.autoUpdateLabel')}
           </span>
-          <p className="text-12 leading-[1.4] text-[var(--settings-section-sublabel)] opacity-70">
+          <p className="text-12 leading-[1.4] text-[var(--text-secondary)]">
             {t('settings.about.linuxUpdateDescription')}
           </p>
         </div>
@@ -592,7 +611,7 @@ export function AutoUpdateToggleRow() {
           >
             {t('settings.about.autoUpdateLabel')}
           </span>
-          <p className="text-12 leading-[1.4] text-[var(--settings-section-sublabel)] opacity-70">
+          <p className="text-12 leading-[1.4] text-[var(--text-secondary)]">
             {t('settings.about.autoUpdateDescription')}
           </p>
         </div>
@@ -671,7 +690,7 @@ function AnalyticsToggleRow() {
           >
             {t('settings.about.analyticsLabel')}
           </span>
-          <p className="text-12 leading-[1.4] text-[var(--settings-section-sublabel)] opacity-70">
+          <p className="text-12 leading-[1.4] text-[var(--text-secondary)]">
             {t('settings.about.analyticsDescription')}
           </p>
         </div>
@@ -730,7 +749,7 @@ function DebugLogToggleRow() {
           aria-label={t('settings.about.debugLogLabel')}
         />
       </div>
-      <p className="text-12 leading-[1.4] text-[var(--settings-section-sublabel)] opacity-70 pr-12">
+      <p className="text-12 leading-[1.4] text-[var(--text-secondary)] pr-12">
         {t('settings.about.debugLogDescription')}
       </p>
     </div>
@@ -824,7 +843,7 @@ export function CrashAutoUploadToggleView({
           >
             {t('settings.about.logUpload.crashAutoLabel')}
           </span>
-          <p className="text-12 leading-[1.4] text-[var(--settings-section-sublabel)] opacity-70">
+          <p className="text-12 leading-[1.4] text-[var(--text-secondary)]">
             {t('settings.about.logUpload.crashAutoDescription')}
           </p>
         </div>
@@ -864,7 +883,7 @@ function InfoRow({
         className={cn(
           'truncate text-13 font-medium',
           dim
-            ? 'text-[var(--settings-section-sublabel)] opacity-70'
+            ? 'text-[var(--text-secondary)]'
             : 'text-[var(--settings-section-title)]',
         )}
       >
