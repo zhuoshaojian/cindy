@@ -61,7 +61,7 @@ export function inspectDynamicSettingsCollections(options: CollectionInspectionO
     collections.modelVisibility = { status: 'value', entries: visibility, total: visibilityKeys.size, complete: visibilityKeys.size === visibility.length };
     collections.modelEngines = complete(Object.entries(state.value.engines).map(([key, value]) => entry(key, { agent: harness(value.agent) })));
     collections.modelFavorites = complete(state.value.favorites.items.map(value => {
-      const result = entry(value.uid, { agent: harness(value.agent), effort: value.effort ?? null, fast: value.fast === true }, 'unknown');
+      const result = entry(value.uid, { agent: harness(value.agent), effort: value.effort ?? null, fast: value.fast === true || value.fast === 'ultrafast' }, 'unknown');
       if (value.effort !== undefined && !isImDefaultEffort(value.effort)) result.fields.effort = { status: 'private' };
       return result;
     }));
@@ -104,11 +104,11 @@ export function inspectDynamicSettingsCollections(options: CollectionInspectionO
     const history = state.value._history;
     validateNewTaskPreferenceHistory(history);
     const entries: ReadonlyCollectionEntry[] = [];
-    const add = (key: string, model: string, memory: { lastModel?: string; effortByModel: Record<string, string>; fastByModel: Record<string, boolean>; thinkingByModel?: Record<string, boolean> }) => {
+    const add = (key: string, model: string, memory: { lastModel?: string; effortByModel: Record<string, string>; fastByModel: Record<string, boolean | 'ultrafast'>; thinkingByModel?: Record<string, boolean> }) => {
       const values: Record<string, unknown> = { lastSelected: memory.lastModel === model };
       // 空 effort 是领域允许的「未指定」，只省略此叶子，不丢弃其它调档或整集合。
       if (Object.hasOwn(memory.effortByModel, model) && memory.effortByModel[model] !== '') values.effort = memory.effortByModel[model];
-      if (Object.hasOwn(memory.fastByModel, model)) values.fast = memory.fastByModel[model];
+      if (Object.hasOwn(memory.fastByModel, model)) values.fast = memory.fastByModel[model] !== false;
       if (Object.hasOwn(memory.thinkingByModel ?? {}, model)) values.thinking = memory.thinkingByModel![model];
       const result = entry(key, values, 'unknown');
       if ('effort' in values && !isImDefaultEffort(values.effort)) result.fields.effort = { status: 'private' };
@@ -180,7 +180,7 @@ export function inspectDynamicSettingsCollections(options: CollectionInspectionO
     collections.pluginErrandPrefs = complete(Object.entries(state.value.errand).map(([key, value]) => {
       const result = entry(key, {
         harness: harness(value.agentKind), modelConfigured: Boolean(value.model), providerConfigured: Boolean(value.providerId), effort: value.effort ?? null,
-        fastMode: value.fastMode ?? null, permissionMode: value.permissionMode ?? null, workingDirConfigured: Boolean(value.workingDir),
+        fastMode: value.fastMode === 'ultrafast' ? true : value.fastMode ?? null, permissionMode: value.permissionMode ?? null, workingDirConfigured: Boolean(value.workingDir),
       });
       for (const [field, persisted] of Object.entries({ harness: 'agentKind', modelConfigured: 'model', providerConfigured: 'providerId', effort: 'effort', fastMode: 'fastMode', permissionMode: 'permissionMode', workingDirConfigured: 'workingDir' })) {
         const inspected = result.fields[field];

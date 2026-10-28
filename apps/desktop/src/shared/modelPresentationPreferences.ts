@@ -20,7 +20,7 @@ export interface ModelFavoriteConfig {
   modelId: string;
   agent: ModelEngine;
   effort?: FavoriteEffort;
-  fast?: true;
+  fast?: true | 'ultrafast';
 }
 export interface ModelFavoriteItem extends ModelFavoriteConfig {
   uid: string;
@@ -28,7 +28,7 @@ export interface ModelFavoriteItem extends ModelFavoriteConfig {
 export interface ModelFavoritePatch {
   agent?: ModelEngine;
   effort?: FavoriteEffort | null;
-  fast?: boolean;
+  fast?: boolean | 'ultrafast';
 }
 export interface ModelFavoritesState {
   uidSeq: number;
@@ -190,7 +190,7 @@ function config(value: unknown): asserts value is ModelFavoriteConfig {
     !text(value.modelId) ||
     !isModelPresentationEngine(value.agent) ||
     (value.effort !== undefined && !effort(value.effort)) ||
-    (value.fast !== undefined && value.fast !== true)
+    (value.fast !== undefined && value.fast !== true && value.fast !== 'ultrafast')
   )
     invalid();
 }
@@ -245,7 +245,7 @@ export function normalizeModelFavoriteConfig(raw: ModelFavoriteConfig): ModelFav
     modelId: raw.modelId.trim(),
     agent: raw.agent,
     ...(effort(raw.effort) ? { effort: raw.effort } : {}),
-    ...(raw.fast === true ? { fast: true } : {}),
+    ...(raw.fast === true || raw.fast === 'ultrafast' ? { fast: raw.fast } : {}),
   };
 }
 export function modelFavoriteIdentity(value: ModelFavoriteConfig): string {
@@ -254,7 +254,7 @@ export function modelFavoriteIdentity(value: ModelFavoriteConfig): string {
     value.modelId,
     value.agent,
     value.effort ?? '',
-    value.fast === true,
+    value.fast ?? false,
   ]);
 }
 export function validateModelPresentationOperation(
@@ -295,7 +295,7 @@ export function validateModelPresentationOperation(
         (raw.patch.effort !== undefined &&
           raw.patch.effort !== null &&
           !effort(raw.patch.effort)) ||
-        (raw.patch.fast !== undefined && typeof raw.patch.fast !== 'boolean')
+        (raw.patch.fast !== undefined && typeof raw.patch.fast !== 'boolean' && raw.patch.fast !== 'ultrafast')
       )
         invalid();
       return;
@@ -440,7 +440,7 @@ export function applyModelPresentationOperation(
         else delete item.effort;
       }
       if (op.patch.fast !== undefined) {
-        if (op.patch.fast) item.fast = true;
+        if (op.patch.fast) item.fast = op.patch.fast;
         else delete item.fast;
       }
       break;

@@ -11,6 +11,7 @@ release checks. Ordinary desktop builds do not enable these overlays.
 
 | Material | Purpose |
 | --- | --- |
+| [Upstream 0.1.115 alignment](UPSTREAM-0115.md) | Current client merge, compatibility decisions and local verification scope |
 | [SOURCE-BUILD.md](SOURCE-BUILD.md), [0.1.113 instance acceptance](ACCEPTANCE-0113-20261022.md) | Complete source-build entry and the separate tested-instance result |
 | [cloud.29 identity acceptance](ACCEPTANCE-IDENTITY-20261027.md) | CI delivery, owner-only upgrade, real logout/account-mutation rejection and login-bridge test limits |
 | [Clipboard and recovery follow-up](ACCEPTANCE-CLIPBOARD-RECOVERY-20261020.md) | R7 source-build and Mac clipboard acceptance, rollout results, and explicit phone-test limits |

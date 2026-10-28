@@ -10,7 +10,7 @@ export interface PreferenceVendorHistory {
 export interface ProviderPreferenceHistory {
   lastModel: string;
   effortByModel: Record<string, string>;
-  fastByModel: Record<string, boolean>;
+  fastByModel: Record<string, boolean | 'ultrafast'>;
   thinkingByModel: Record<string, boolean>;
 }
 export interface NewTaskPreferenceHistory {
@@ -20,7 +20,7 @@ export interface NewTaskPreferenceHistory {
   defaultTupleCustomized: boolean;
   defaultTupleSelectionCustomized: boolean;
   effortByModel: Record<string, string>;
-  fastModeByModel: Record<string, boolean>;
+  fastModeByModel: Record<string, boolean | 'ultrafast'>;
   worktreeEnabled: boolean;
   worktreePreferenceCustomized: boolean;
   providerModelMemory: Record<string, ProviderPreferenceHistory>;
@@ -29,9 +29,9 @@ const vendors = ['cc', 'codex', 'pi'];
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown): v is string => typeof v === 'string' && v.length <= 256 && !/[\x00-\x1f]/.test(v);
 function fields(v: Record<string, unknown>, keys: string[]) { if (Object.keys(v).some(k => !keys.includes(k))) throw new Error('INVALID_PREFERENCE_HISTORY'); }
-function dictionary(v: unknown, boolean: boolean): void {
+function dictionary(v: unknown, boolean: boolean, speed = false): void {
   if (!object(v) || Object.keys(v).length > 512) throw new Error('INVALID_PREFERENCE_HISTORY');
-  for (const [k, value] of Object.entries(v)) if (!text(k) || (boolean ? typeof value !== 'boolean' : !text(value))) throw new Error('INVALID_PREFERENCE_HISTORY');
+  for (const [k, value] of Object.entries(v)) if (!text(k) || (boolean ? typeof value !== 'boolean' && !(speed && value === 'ultrafast') : !text(value))) throw new Error('INVALID_PREFERENCE_HISTORY');
 }
 /** No task text, paths, attachments, device ids or writable directories cross this boundary. */
 export function validateNewTaskPreferenceHistory(raw: unknown): asserts raw is NewTaskPreferenceHistory {
@@ -50,12 +50,12 @@ export function validateNewTaskPreferenceHistory(raw: unknown): asserts raw is N
     if (pref.planMode !== undefined && typeof pref.planMode !== 'boolean') throw new Error('INVALID_PREFERENCE_HISTORY');
   }
   if (Object.values(raw.modelChosenByVendor).some(v => typeof v !== 'boolean')) throw new Error('INVALID_PREFERENCE_HISTORY');
-  dictionary(raw.effortByModel, false); dictionary(raw.fastModeByModel, true);
+  dictionary(raw.effortByModel, false); dictionary(raw.fastModeByModel, true, true);
   if (!object(raw.providerModelMemory) || Object.keys(raw.providerModelMemory).length > 128) throw new Error('INVALID_PREFERENCE_HISTORY');
   for (const [key, memory] of Object.entries(raw.providerModelMemory)) {
     if (!text(key) || !/^(claude-code|codex|pi):.+$/.test(key) || !object(memory)) throw new Error('INVALID_PREFERENCE_HISTORY');
     fields(memory, ['lastModel', 'effortByModel', 'fastByModel', 'thinkingByModel']);
     if (!text(memory.lastModel)) throw new Error('INVALID_PREFERENCE_HISTORY');
-    dictionary(memory.effortByModel, false); dictionary(memory.fastByModel, true); dictionary(memory.thinkingByModel, true);
+    dictionary(memory.effortByModel, false); dictionary(memory.fastByModel, true, true); dictionary(memory.thinkingByModel, true);
   }
 }

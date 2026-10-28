@@ -31,7 +31,7 @@ export function projectSettingsSnapshot(snapshot: HostSettingsSnapshot, publicId
   if (next.status === 'ready') {
     const fields: Extract<SettingsSnapshotDomains['newTaskDefaults'], { status: 'supported' }>['fields'] = {
       harness: field(next.value.harness, customized(next, 'harness')),
-      fast: field(next.value.fast, customized(next, 'fast')),
+      fast: field(next.value.fast !== false, customized(next, 'fast')),
       thinking: field(next.value.thinking, customized(next, 'thinking')),
       worktree: field(next.value.worktree, customized(next, 'worktree')),
       plan: field(next.value.planMode, customized(next, 'planMode')),

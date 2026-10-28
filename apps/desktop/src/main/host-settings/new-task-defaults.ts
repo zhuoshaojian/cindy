@@ -1,3 +1,5 @@
+import { resolveDraftEffectiveProviderId } from '../../shared/draftModelCalibration.js';
+import { isModelVisible, type ProviderView } from '@cindy/model-providers';
 import { createLogger } from '../logger.js';
 import { createOverrideSettingsFile, type OverrideSettingsCommitOptions, type OverrideSettingsMutation } from '../maker-host/override-settings-file.js';
 import { normalizeHostSettingsChange, type NewTaskDefaultSettings, type HostSettingState, type SettingsOwnerStamp } from '../../shared/hostSettings.js';
@@ -168,10 +170,20 @@ function overridesFromHistory(history: NewTaskPreferenceHistory, previous?: Stor
 /** 控制端只传偏好字段；Host 在当前 owner 的锁内写入，无本机窗口也可完成。 */
 export async function applyHostRemoteDraftPreference(pref: {
   agent: NewTaskDefaultSettings['harness']; providerId: string; modelId: string; active: boolean;
-  markModelChoice?: boolean; effort?: string; fast?: boolean; thinking?: boolean;
+  markModelChoice?: boolean; effort?: string; fast?: boolean | 'ultrafast'; thinking?: boolean; taskProviderId?: string;
 }): Promise<void> {
   const owner = currentSettingsOwner();
   if (!owner) throw new HostSettingsError('OWNER_CHANGED');
+  let providers: ProviderView[] = [];
+  let getModelVisibilityOverride: (agent: NewTaskDefaultSettings['harness'], providerId: string, modelId: string) => boolean | undefined = () => undefined;
+  if (pref.active && pref.taskProviderId && pref.markModelChoice !== false) {
+    const visibility = await import('../maker-host/model-visibility-mirror.js');
+    await visibility.waitForModelVisibilityMirror();
+    getModelVisibilityOverride = visibility.getModelVisibilityOverride;
+    const { getDesktopProviderService } = await import('../maker-host/createDesktopProviderService.js');
+    providers = await getDesktopProviderService({ allowSideEffects: false }).listProviders({ allowSideEffects: false, includeMediaReadiness: false });
+    assertSettingsOwner(owner);
+  }
   await store.commitAtomic(state => {
     const value = state.value;
     const vendor = value.harness === 'claude-code' ? 'cc' : value.harness;
@@ -196,11 +208,20 @@ export async function applyHostRemoteDraftPreference(pref: {
         history.providerModelMemory[activeKey] = activeMemory;
       }
     }
-    if (pref.active && pref.markModelChoice !== false) {
-      history.vendor = targetVendor;
+    const saved = history.lastByVendor[targetVendor];
+    const taskSwitch = pref.active && !!pref.taskProviderId && pref.markModelChoice !== false;
+    const defaultProviderId = taskSwitch && saved ? resolveDraftEffectiveProviderId({
+      providers, agent: pref.agent, model: saved.model, providerId: saved.providerId,
+      chosenByUser: history.modelChosenByVendor[targetVendor] === true,
+      isModelEnabled: (agent, providerId, model) => isModelVisible(getModelVisibilityOverride(agent, providerId, model.id), model.defaultEnabled),
+    }) ?? saved.providerId : null;
+    const applySelection = pref.active && pref.markModelChoice !== false
+      && (!taskSwitch || defaultProviderId === pref.taskProviderId);
+    if (applySelection) {
+      if (!taskSwitch) history.vendor = targetVendor;
       history.defaultTupleCustomized = true; history.defaultTupleSelectionCustomized = true;
       history.modelChosenByVendor[targetVendor] = true;
-      history.lastByVendor[targetVendor] = { ...history.lastByVendor[targetVendor], model: pref.modelId, providerId: pref.providerId || null,
+      history.lastByVendor[targetVendor] = { ...history.lastByVendor[targetVendor], model: pref.modelId, providerId: taskSwitch ? (saved?.providerId ? pref.taskProviderId! : null) : pref.providerId || null,
         effort: pref.effort ?? history.lastByVendor[targetVendor]?.effort ?? '' };
     } else if (pref.active && targetVendor === vendor && value.modelId === pref.modelId && pref.effort !== undefined) {
       history.lastByVendor[vendor]!.effort = pref.effort;

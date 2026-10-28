@@ -151,6 +151,19 @@ describe('model and IM settings native persistence', () => {
     await updateHostSettings(caller, await request('visionBridge', { clear: ['targetModels'] }));
     expect(isTargetModelsCustomized()).toBe(false);
   });
+  it('preserves the upstream speed tier when the legacy cloud editor round-trips its Fast switch', async () => {
+    const dir = path.join(context.root, 'owners', 'test-first'); fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'host-model-presentation-preferences.json');
+    const preferences = emptyModelPresentationPreferences();
+    preferences.favorites = { uidSeq: 2, seeded: true, items: [{ uid: 'fav-1', agent: 'codex', providerId: route.providerId, modelId: route.modelId, effort: 'low', fast: 'ultrafast' }] };
+    fs.writeFileSync(file, JSON.stringify({ _initialized: true, preferences }));
+    expect(await getHostSettings(caller, 'modelFavorites')).toMatchObject({ status: 'ready', value: { entries: [{ fast: true }] } });
+    const target = { ...route, harness: 'codex', effort: 'low', fast: true };
+    expect(await updateHostSettings(caller, await request('modelFavorites', { set: { entries: [target] } }))).toMatchObject({ saved: true });
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).preferences.favorites.items[0]).toMatchObject({ uid: 'fav-1', fast: 'ultrafast' });
+    expect(await updateHostSettings(caller, await request('modelFavorites', { set: { entries: [{ ...target, fast: false }] } }))).toMatchObject({ saved: true });
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).preferences.favorites.items[0].fast).toBeUndefined();
+  });
   it('edits model preference axes independently and keeps native favorite identities', async () => {
     const dir = path.join(context.root, 'owners', 'test-first'); fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'host-model-presentation-preferences.json');

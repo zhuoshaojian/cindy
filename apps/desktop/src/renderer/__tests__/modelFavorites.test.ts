@@ -36,6 +36,18 @@ const reopen = async () => {
   await start();
 };
 describe('收藏配置副本 · Host 正本', () => {
+  it('keeps fast and ultrafast as distinct durable favorites across reconnect and edits', async () => {
+    await start();
+    const fast = await favorites.addModelFavorite({ ...config, agent: 'codex', fast: true });
+    const ultra = await favorites.addModelFavorite({ ...config, agent: 'codex', fast: 'ultrafast' });
+    expect(fast).not.toBe(ultra);
+    await reopen();
+    expect(favorites.getModelFavorite(ultra)?.fast).toBe('ultrafast');
+    await favorites.updateModelFavorite(fast, { fast: 'ultrafast' });
+    expect(favorites.getModelFavorite(fast)?.fast).toBe('ultrafast');
+    await favorites.updateModelFavorite(ultra, { fast: false });
+    expect(favorites.getModelFavorite(ultra)?.fast).toBeUndefined();
+  });
   it('默认空列表，不预置推荐', async () => {
     await start();
     expect(favorites.listModelFavorites()).toEqual([]);

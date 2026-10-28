@@ -21,6 +21,9 @@ import { inspectNewTaskDefaults, commitNewTaskDefaults, readNewTaskPreferenceHis
 import { installHostNewMakerDefaultsSource } from '../cache';
 import { getRemoteNewMakerDefaults, getWorkerDefaultsFromNewMaker, syncNewMakerDraftCache, getSelectedNewMakerRoute } from '../../maker-host/newMakerDefaultsCache';
 
+vi.mock('../../maker-host/createDesktopProviderService.js', () => ({ getDesktopProviderService: () => ({ listProviders: async () => [] }) }));
+vi.mock('../../maker-host/model-visibility-mirror.js', () => ({ waitForModelVisibilityMirror: async () => {}, getModelVisibilityOverride: () => undefined }));
+
 const stamp = () => ({ dataOwnerId: host.owner, ownerGeneration: host.generation });
 const recommendation = { harness: 'codex' as const, providerId: 'connected', modelId: 'recommended', effort: 'medium', fast: false, thinking: true, worktree: false, planMode: false };
 function revision() { const state = inspectNewTaskDefaults(); if (state.status !== 'ready') throw new Error('fixture unreadable'); return state.revision; }
@@ -46,6 +49,22 @@ afterEach(() => {
 });
 
 describe('Host 新任务默认值迁移与真源', () => {
+  it('retains upstream ultrafast through Host persistence, reopen and remote cache projection', async () => {
+    await commitNewTaskDefaults({ set: { harness: 'codex', providerId: 'chosen', modelId: 'saved', fast: 'ultrafast' } });
+    expect(inspectNewTaskDefaults()).toMatchObject({ value: { fast: 'ultrafast' } });
+    expect(readNewTaskPreferenceHistory()?.fastModeByModel.saved).toBe('ultrafast');
+    expect(getRemoteNewMakerDefaults('codex')).toMatchObject({ fastMode: 'ultrafast' });
+    await applyHostRemoteDraftPreference({ agent: 'codex', providerId: 'chosen', modelId: 'saved', active: true, markModelChoice: false, fast: false });
+    expect(inspectNewTaskDefaults()).toMatchObject({ value: { fast: false } });
+  });
+  it('keeps the default source when an existing task changes model on another source', async () => {
+    await saveNewTaskPreferenceHistory(legacy(), stamp(), revision(), true);
+    await applyHostRemoteDraftPreference({ agent: 'codex', providerId: 'other', taskProviderId: 'other', modelId: 'task-model', active: true, effort: 'low', fast: 'ultrafast' });
+    expect(inspectNewTaskDefaults()).toMatchObject({ value: { providerId: 'chosen', modelId: 'saved', fast: true } });
+    expect(readNewTaskPreferenceHistory()?.providerModelMemory['codex:other'].fastByModel['task-model']).toBe('ultrafast');
+    await applyHostRemoteDraftPreference({ agent: 'codex', providerId: 'chosen', taskProviderId: 'chosen', modelId: 'next-model', active: true, effort: 'low' });
+    expect(inspectNewTaskDefaults()).toMatchObject({ value: { providerId: 'chosen', modelId: 'next-model' } });
+  });
   it('纯读不创建配置；没有当前 owner 的推荐时保持空模型而不是 Opus', () => {
     expect(inspectNewTaskDefaults()).toMatchObject({ status: 'ready', value: recommendation });
     expect(fs.readdirSync(host.root)).toEqual([]);

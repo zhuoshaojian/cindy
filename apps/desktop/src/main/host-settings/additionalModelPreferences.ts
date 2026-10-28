@@ -25,7 +25,7 @@ const publicHarness = (engine: string) => engine === 'cc' ? 'claude-code' : engi
 function presentationValues(domain: ModelPreferenceDomain, prefs: ModelPresentationPreferences): Values {
   if (domain === 'modelVisibility') return { entries: Object.entries(prefs.visibility.overrides).map(([key, enabled]) => ({ ...parseTarget(key), enabled })) } as Values;
   if (domain === 'modelEngines') return { entries: Object.entries(prefs.engines).map(([key, value]) => ({ ...parseTarget(key, false), harness: publicHarness(value.agent) })) } as Values;
-  return { entries: prefs.favorites.items.map(item => ({ harness: publicHarness(item.agent), providerId: item.providerId, modelId: item.modelId, effort: item.effort ?? null, fast: item.fast === true })) };
+  return { entries: prefs.favorites.items.map(item => ({ harness: publicHarness(item.agent), providerId: item.providerId, modelId: item.modelId, effort: item.effort ?? null, fast: item.fast === true || item.fast === 'ultrafast' })) };
 }
 function ready(domain: ModelPreferenceDomain, revision: string, value: Values): State & { status: 'ready' } {
   additionalSettingsSchemas[domain].parse(value);
@@ -126,6 +126,9 @@ export async function commitModelPreferences(domain: ModelPreferenceDomain, chan
       for (const item of entries) {
         const config: ModelFavoriteConfig = { providerId: item.providerId, modelId: item.modelId, agent: item.harness === 'claude-code' ? 'cc' : item.harness,
           ...(item.effort ? { effort: item.effort } : {}), ...(item.fast ? { fast: true } : {}) };
+        // The legacy settings editor only has an enabled switch. Retain the exact tier
+        // when it sends back an unchanged enabled entry. Native favorites carry all tiers.
+        if (item.fast && previous.some(old => old.providerId === config.providerId && old.modelId === config.modelId && old.agent === config.agent && old.effort === config.effort && old.fast === 'ultrafast')) config.fast = 'ultrafast';
         const same = previous.find(old => old.providerId === config.providerId && old.modelId === config.modelId && old.agent === config.agent && old.effort === config.effort && old.fast === config.fast);
         if (same) current.favorites.items.push(same);
         else current = applyModelPresentationOperation(current, { kind: 'favorite-add', config }).value;

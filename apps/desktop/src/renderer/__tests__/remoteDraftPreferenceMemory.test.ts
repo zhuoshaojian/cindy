@@ -37,6 +37,13 @@ const selection = {
 };
 
 describe('remote picker → host-owned persistent new-task preference', () => {
+  it('a remote existing-task model switch preserves another default source and speed memory', async () => {
+    const h = await host();
+    h.apply(selection);
+    h.apply({ ...selection, taskProviderId: 'other', providerId: 'other', modelId: 'task-model', fast: 'ultrafast' });
+    expect(h.draft.getDraft().lastByVendor.codex).toMatchObject({ model: 'chosen-model', providerId: 'xd' });
+    expect(h.memory.getProviderModelFast('codex', 'other', 'task-model')).toBe('ultrafast');
+  });
   it('remembers model, source and engine after closing the draft and restarting the host', async () => {
     let h = await host();
     h.apply(selection);

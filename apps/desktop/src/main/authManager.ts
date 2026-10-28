@@ -99,6 +99,7 @@ import {
 import { resolveLoginScenarioFetch } from '@cindy/auth-client/fixtures';
 
 import { createLogger } from './logger';
+import { requestErrorMessage } from './requestErrorMessage';
 import { AuthOwnerChangeShellGate } from './authOwnerChangeShellGate';
 import {
   isGhostSkillProjectionBoundaryStableForOwner,
@@ -465,6 +466,9 @@ function createAuthClient(
     clientType: 'desktop',
     locale: getResolvedMainLocale(),
     fetch: scenarioFetch ?? (async (input, init) => net.fetch(input, init as RequestInit)),
+    onRequestError: (apiPath, status, error) => {
+      log.warn('auth request failed', apiPath, { realm, status }, requestErrorMessage(error));
+    },
   });
 }
 
@@ -1660,7 +1664,10 @@ async function commitDesktopRefreshCredentials(
       }
     },
     { waitWhileBusyAfterRotation: true },
-  );
+  ).catch((error) => {
+    log.warn('refresh credential save failed', { realm }, requestErrorMessage(error));
+    throw error;
+  });
 }
 
 /**
@@ -2294,7 +2301,10 @@ async function apiFetch<T>(
     const retryAt = response.status === 429 ? retryAfterDeadline(response) : undefined;
     let data: T;
     try { data = (await response.json()) as T; }
-    catch { return { ok: false, status: response.status, data: null as T, retryAt }; }
+    catch (error) {
+      log.warn('auth response read failed', apiPath, { status: response.status }, requestErrorMessage(error));
+      return { ok: false, status: response.status, data: null as T, retryAt };
+    }
     const errorCode = (data as AuthErrorResponse | null)?.error?.code;
     if (response.status === 401 && errorCode === 'ACCOUNT_UNAVAILABLE' && currentUser) {
       // Internal auth-server calls (profile/feature flags/refresh) do not pass
@@ -2303,7 +2313,8 @@ async function apiFetch<T>(
     }
     return { ok: response.ok, status: response.status, data,
       ...(retryAt !== undefined ? { retryAt } : {}) };
-  } catch {
+  } catch (error) {
+    log.warn('auth request failed', apiPath, requestErrorMessage(error));
     return { ok: false, status: 0, data: null as T };
   } finally {
     if (timer !== undefined) clearTimeout(timer);

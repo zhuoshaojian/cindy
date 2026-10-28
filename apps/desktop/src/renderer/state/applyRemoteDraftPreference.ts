@@ -1,7 +1,12 @@
+import { getCachedProvidersSnapshot } from '@/lib/providersSnapshotStore';
+import { resolveDraftEffectiveProviderId } from '@/lib/draftModelCalibration';
+import { isModelEnabled } from './modelVisibilityPrefs';
 import type { AgentKind } from '@/hooks/useAgentCapabilities';
 import type { Effort } from '@/lib/userPreferences.types';
 import {
   patchVendorPrefs,
+  patchVendorPrefsFromTaskModelSwitch,
+  getDraft,
   patchVendorPrefsPreservingModelChoice,
   setEffortForModel,
   setFastModeForModel,
@@ -22,7 +27,8 @@ export interface RemoteDraftPreference {
   active: boolean;
   markModelChoice?: boolean;
   effort?: string;
-  fast?: boolean;
+  fast?: boolean | 'ultrafast';
+  taskProviderId?: string;
   thinking?: boolean;
 }
 
@@ -36,9 +42,19 @@ export function applyRemoteDraftPreference({
   fast,
   thinking,
   markModelChoice,
+  taskProviderId,
 }: RemoteDraftPreference): void {
   const vendor = agent === 'claude-code' ? 'cc' : agent;
-  if (active) {
+  if (active && taskProviderId && markModelChoice !== false) {
+    patchVendorPrefsFromTaskModelSwitch(vendor, {
+      model: modelId, providerId: providerId || null,
+      ...(effort !== undefined ? { effort: effort as Effort } : {}),
+    }, taskProviderId, prefs => resolveDraftEffectiveProviderId({
+      providers: getCachedProvidersSnapshot()?.providers ?? [], agent,
+      model: prefs.model, providerId: prefs.providerId,
+      chosenByUser: getDraft().modelChosenByVendor[vendor] === true, isModelEnabled,
+    }));
+  } else if (active) {
     if (markModelChoice !== false) switchVendor(vendor);
     const patch =
       markModelChoice === false ? patchVendorPrefsPreservingModelChoice : patchVendorPrefs;

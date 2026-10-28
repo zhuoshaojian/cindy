@@ -10,7 +10,7 @@ export interface NewTaskDefaultSettings {
   providerId: string | null;
   modelId: string | null;
   effort: string | null;
-  fast: boolean;
+  fast: boolean | 'ultrafast';
   thinking: boolean;
   worktree: boolean;
   planMode: boolean;
@@ -73,7 +73,7 @@ export interface HostSettingsReceipt {
 
 /** Stable capability directory, not a claim that every category is writable. */
 export const HOST_SETTINGS_CATALOG = [
-  { domain: 'newTaskDefaults', access: 'write', scope: 'owner', applies: 'next_task', fields: { harness: 'claude-code | codex | pi', providerId: 'available provider id', modelId: 'available model id', effort: 'supported effort or null for explicit automatic', fast: 'boolean', thinking: 'boolean', worktree: 'boolean', planMode: 'boolean' } },
+  { domain: 'newTaskDefaults', access: 'write', scope: 'owner', applies: 'next_task', fields: { harness: 'claude-code | codex | pi', providerId: 'available provider id', modelId: 'available model id', effort: 'supported effort or null for explicit automatic', fast: 'boolean | ultrafast', thinking: 'boolean', worktree: 'boolean', planMode: 'boolean' } },
   { domain: 'personalization', access: 'write', scope: 'owner', applies: 'next_agent_start', fields: { userPrompt: 'string, at most 8000 characters; body read requires human consent' } },
   { domain: 'databaseWarning', access: 'write', scope: 'profile', applies: 'immediate', fields: { thresholdGiB: 'number 1..1024', disabled: 'boolean' } },
   { domain: 'appearance', access: 'write', scope: 'profile', applies: 'host_desktop_only', fields: { uiFamily: 'string <=256 characters', codeFamily: 'string <=256 characters', uiSize: 'integer 12..24', codeSize: 'integer 10..24', windowZoom: 'number 0.5..3, step 0.1' } },
@@ -136,7 +136,7 @@ export function normalizeHostSettingsChange(raw: unknown): HostSettingsChange {
         if (value !== null && (typeof value !== 'string' || !effortValues.includes(value))) throw new Error('INVALID_SETTINGS_CHANGE');
         set[key] = value;
       } else {
-        if (typeof value !== 'boolean') throw new Error('INVALID_SETTINGS_CHANGE');
+        if (typeof value !== 'boolean' && !(key === 'fast' && value === 'ultrafast')) throw new Error('INVALID_SETTINGS_CHANGE');
         set[key] = value;
       }
     } else if (domain === 'databaseWarning') {

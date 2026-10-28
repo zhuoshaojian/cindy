@@ -154,7 +154,7 @@ export function useProviderShareFavorites(
       const item = { ...before, ...patch };
       await accessHostModelFavorites(owner.dataOwnerId, {
         kind: 'update', expected: before,
-        item: { ...item, effort: item.effort ?? undefined, fast: item.fast ? true : undefined },
+        item: { ...item, effort: item.effort ?? undefined, fast: item.fast || undefined },
       }, assertCurrent);
     },
     remove: async (uid) => {

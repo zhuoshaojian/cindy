@@ -58,6 +58,7 @@ export async function validateSettingsModelSelection(value: NewTaskDefaultSettin
     || !isModelVisible(getModelVisibilityOverride(value.harness, provider.id, model.id), model.defaultEnabled)) throw new HostSettingsError('MODEL_UNAVAILABLE');
   if (value.effort !== null && !model.efforts.some(e => e === value.effort)) throw new HostSettingsError('EFFORT_UNSUPPORTED');
   if (value.fast && model.supportsFastMode !== true) throw new HostSettingsError('FAST_UNSUPPORTED');
+  if (value.fast === 'ultrafast' && (value.harness !== 'codex' || model.supportsUltrafastMode !== true)) throw new HostSettingsError('FAST_UNSUPPORTED');
   if (!value.thinking && model.thinkingToggle !== true) throw new HostSettingsError('THINKING_UNSUPPORTED');
   assertCurrent();
 }

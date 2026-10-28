@@ -52,7 +52,7 @@ export function inspectPreferenceSettingsForSnapshot(platform: NodeJS.Platform, 
       const customized = domain === 'personalization' ? state.isCustomized : state.customizedKeys.includes(key);
       const value = domain === 'appearance' && leaf.endsWith('Customized')
         ? customized : (state.value as Record<string, unknown>)[key];
-      fields[id] = inspectedValue(value, customized ? 'override' : 'default');
+      fields[id] = inspectedValue(id === 'newTaskDefaults.fast' && value === 'ultrafast' ? true : value, customized ? 'override' : 'default');
     }
   }
   let desktop: DesktopPreferencesSnapshot;

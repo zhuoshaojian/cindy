@@ -19,6 +19,16 @@ function snapshot(): HostSettingsSnapshot {
 }
 
 describe('设置快照白名单投影', () => {
+  it('projects ultrafast as enabled on the unchanged boolean CIS wire', () => {
+    const input = snapshot();
+    if (input.newTaskDefaults.status !== 'ready') throw new Error('fixture');
+    input.newTaskDefaults.value.fast = 'ultrafast';
+    const output = projectSettingsSnapshot(input);
+    expect(settingsSnapshotDomainsSchema.safeParse(output).success).toBe(true);
+    expect(output.newTaskDefaults).toMatchObject({ fields: { fast: { value: true } } });
+    expect(input.newTaskDefaults.value.fast).toBe('ultrafast');
+  });
+
   it('映射名称、作用域和显式 false 的来源，不把保存值说成运行时状态', () => {
     const result = projectSettingsSnapshot(snapshot());
     expect(settingsSnapshotDomainsSchema.safeParse(result).success).toBe(true);

@@ -47,7 +47,7 @@ function projectFieldValue(id: SettingsSnapshotFieldId, value: unknown, ids: Set
       const route = object(item);
       return { harness: route.harness === 'claude' ? 'claude-code' : route.harness,
         model: reference(route.model, ids.models), provider: reference(route.providerId, ids.providers),
-        effort: route.effort === '' ? null : route.effort, fastMode: route.fastMode };
+        effort: route.effort === '' ? null : route.effort, fastMode: route.fastMode === 'ultrafast' ? true : route.fastMode };
     });
   }
   if ((id === 'visionBridge.primary' || id === 'visionBridge.fallback') && value !== null) {

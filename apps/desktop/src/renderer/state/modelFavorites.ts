@@ -58,7 +58,7 @@ export async function updateModelFavorite(
   const normalized = { ...patch };
   if ('effort' in patch && !(EFFORT_VALUES as readonly unknown[]).includes(patch.effort))
     normalized.effort = null;
-  if ('fast' in patch && patch.fast !== undefined) normalized.fast = patch.fast === true;
+  if ('fast' in patch && patch.fast !== undefined) normalized.fast = patch.fast;
   return !!(await commitHostModelPresentation({ kind: 'favorite-update', uid, patch: normalized }));
 }
 export async function removeModelFavorite(uid: string): Promise<boolean> {
@@ -115,7 +115,7 @@ export async function accessHostModelFavorites(
     ? { kind: 'favorite-add', config: normalizeModelFavoriteConfig(op.item)! }
     : op.kind === 'remove' ? { kind: 'favorite-remove', uid: op.expected.uid }
     : { kind: 'favorite-update', uid: op.expected.uid, patch: {
-      agent: op.item.agent, effort: op.item.effort ?? null, fast: !!op.item.fast,
+      agent: op.item.agent, effort: op.item.effort ?? null, fast: op.item.fast ?? false,
     } }, guard);
   assertOwner();
   if (!receipt || receipt.snapshot.status !== 'ready') throw new Error('Favorite changed or save failed');
