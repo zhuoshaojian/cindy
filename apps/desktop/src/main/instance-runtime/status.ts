@@ -15,6 +15,7 @@ export function buildInstanceStatus(
   now: number,
   stopping = false,
   oauthIdentity?: PluginOauthPublicIdentity,
+  authRecovery?: { version: 1; state: 'login-required' | 'ready' | 'pending' },
 ) {
   const ready = Object.values(readiness).every(Boolean);
   return {
@@ -22,6 +23,7 @@ export function buildInstanceStatus(
     instanceId: config.deviceId,
     phase: stopping ? "stopping" : ready ? "ready" : "starting",
     heartbeatAtMs: now,
+    ...(authRecovery ? { authRecovery } : {}),
     ...(ready && !stopping && oauthIdentity ? {oauthIdentity} : {}),
     readiness: Object.fromEntries(
       Object.entries(readiness).map(([component, passed]) => [
@@ -43,6 +45,7 @@ export function startInstanceStatus(
   read: () => InstanceReadiness,
   onFailure: () => void,
   readOauthIdentity: () => PluginOauthPublicIdentity | undefined | Promise<PluginOauthPublicIdentity | undefined> = () => undefined,
+  readAuthRecovery: () => { version: 1; state: 'login-required' | 'ready' | 'pending' } | undefined = () => undefined,
 ): () => void {
   let epoch = 0;
   let inflight = false;
@@ -61,7 +64,7 @@ export function startInstanceStatus(
       fs.writeFileSync(
         temporary,
         JSON.stringify(
-          buildInstanceStatus(config, read(), Date.now(), stopping, oauthIdentity),
+          buildInstanceStatus(config, read(), Date.now(), stopping, oauthIdentity, readAuthRecovery()),
         ),
         { flag: "wx", mode: 0o600 },
       );

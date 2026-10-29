@@ -211,12 +211,14 @@ test('atomic writer keeps health/OAuth contract, private permissions and stopped
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'cloud-activity-')); t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const file=path.join(root,'status.json'); const gate=deferred(); let collect=()=>setup().reader.read(); let failures=0;
   const stop=startCloudStatus({config:{deviceId:'test-device',statusFile:file},read:()=>({auth:true}),
-    readOauthIdentity:()=>({public:'unchanged'}),build,onFailure:()=>failures++,collect:()=>collect(),intervalMs:15});
+    readOauthIdentity:()=>({public:'unchanged'}),readAuthRecovery:()=>({version:1,state:'ready'}),
+    build:(...args)=>({...build(...args),authRecovery:args[5]}),onFailure:()=>failures++,collect:()=>collect(),intervalMs:15});
   t.after(stop);
   await new Promise(r=>setTimeout(r,5));
   const first=JSON.parse(fs.readFileSync(file));
   assert.equal(first.phase,'ready'); assert.equal(first.cloudActivity.state,'idle');
   assert.deepEqual(first.oauthIdentity,{public:'unchanged'}); assert.equal(fs.statSync(file).mode & 0o777,0o600);
+  assert.deepEqual(first.authRecovery,{version:1,state:'ready'});
   collect=()=>gate.promise; await new Promise(r=>setTimeout(r,20)); stop();
   gate.resolve(await setup().reader.read()); await new Promise(r=>setImmediate(r));
   assert.equal(JSON.parse(fs.readFileSync(file)).phase,'stopping'); assert.equal(failures,0);

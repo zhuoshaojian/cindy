@@ -19,6 +19,9 @@ const quitFaults = [
 ];
 const quitCompleted = "      log.info('runQuitDisposers completed');\n      noteQuitDisposersCompleted();\n";
 const entries = {
+  // Owner credential handoff is a remote control operation. Count the whole
+  // commit so maintenance cannot seal halfway through canonical persistence.
+  'apps/desktop/src/main/authManager.ts': { recoverManagedInstanceLogin: ['remote-input', false] },
   'apps/desktop/src/main/maker-ipc/agent-input-coordinator.ts': {
     enqueue: ['agent-input', false], reserveNextInput: ['agent-input', false], compact: ['agent-input', false],
     steer: ['agent-input', false], steerControlInput: ['agent-input', false], retryLastError: ['agent-input', false],

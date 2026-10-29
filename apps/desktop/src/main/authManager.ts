@@ -4573,6 +4573,19 @@ export async function updateServerProfile(
 
 let managedAuthFlight: Promise<void> | null = null;
 
+/** Only the Pod-local CIS control calls this; never exposed through account IPC. */
+export async function recoverManagedInstanceLogin(requestId: string, refreshToken: string): Promise<void> {
+  if (!getInstanceConfig()) throw new Error('INSTANCE_NOT_CONFIGURED');
+  if (managedAuthFlight) await managedAuthFlight.catch(() => undefined);
+  if (managedAuthFlight) throw new Error('INSTANCE_RECOVERY_BUSY');
+  managedAuthFlight = (async () => {
+    const managed = getInstanceSession(authServerUrl(AUTH_REGION), AUTH_REGION, hasNoPersistedAuthCredentials);
+    const pair = await managed.recover(requestId, refreshToken);
+    await completeLogin({ status: 'ok', ...pair });
+  })().finally(() => { managedAuthFlight = null; });
+  return managedAuthFlight;
+}
+
 function authenticateManagedInstance(): Promise<void> {
   if (managedAuthFlight) return managedAuthFlight;
   managedAuthFlight = (async () => {

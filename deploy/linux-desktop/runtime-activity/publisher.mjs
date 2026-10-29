@@ -42,7 +42,7 @@ export async function readMaintenanceActivity() {
 }
 
 /** Separate health heartbeat from async collection; late writes cannot undo stopping. */
-export function startCloudStatus({ config, read, onFailure, readOauthIdentity, build,
+export function startCloudStatus({ config, read, onFailure, readOauthIdentity, readAuthRecovery = () => undefined, build,
   collect = readCloudActivity, now = Date.now, intervalMs = 5_000 }) {
   let stopped = false;
   let writing = false;
@@ -65,7 +65,7 @@ export function startCloudStatus({ config, read, onFailure, readOauthIdentity, b
       const oauthIdentity = await readOauthIdentity();
       if (stopped || generation !== sequence) return;
       const at = now();
-      const status = build(config, read(), at, false, oauthIdentity);
+      const status = build(config, read(), at, false, oauthIdentity, readAuthRecovery());
       if (status.phase === 'ready' && (activity.cloudActivity.state === 'unknown' || activity.isCurrent())) {
         status.idle = activity.idle;
         status.cloudActivity = activity.cloudActivity;
@@ -81,7 +81,7 @@ export function startCloudStatus({ config, read, onFailure, readOauthIdentity, b
     stopped = true; sequence++;
     clearInterval(timer);
     reader?.stop();
-    try { publish(build(config, read(), now(), true, undefined)); }
+    try { publish(build(config, read(), now(), true, undefined, readAuthRecovery())); }
     catch { onFailure(); }
   };
 }

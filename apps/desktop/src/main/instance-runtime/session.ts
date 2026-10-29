@@ -13,6 +13,9 @@ export type InstanceRecord = InstanceIdentity & {
   authBaseUrl: string;
   bootstrapDigest: string;
   refreshToken: string;
+  /** Non-secret receipt for an owner-authorized reauthentication. */
+  recoveryRequestId?: string;
+  recoveryCredentialDigest?: string;
 };
 
 export interface InstanceSessionDependencies {
@@ -193,6 +196,57 @@ export class InstanceSession {
     return flight;
   }
 
+  needsLogin(): boolean { return this.blocked; }
+
+  recovered(requestId: string, credential?: string): boolean {
+    if (this.pending || !this.isReady(this.acceptedPair?.accessToken ?? null)) return false;
+    const record = this.readRecord();
+    return record?.recoveryRequestId === requestId && (credential === undefined
+      || record.recoveryCredentialDigest === createHash('sha256').update(credential).digest('hex'));
+  }
+
+  /** CIS supplies a newly authorized, same-device resource credential. Never
+   * import account credentials or overwrite the profile from another process.
+   * The normal auth manager must acknowledge the durable pair before success. */
+  recover(requestId: string, refreshToken: string): Promise<AuthTokenPair> {
+    if (this.flight) return Promise.reject(new Error("INSTANCE_RECOVERY_BUSY"));
+    const flight = this.recoverOnce(requestId, refreshToken).finally(() => { this.flight = null; });
+    this.flight = flight;
+    return flight;
+  }
+
+  private async recoverOnce(requestId: string, token: string): Promise<AuthTokenPair> {
+    if (this.protocol !== "resource-v1" || !/^[A-Za-z0-9_-]{16,128}$/.test(requestId)
+      || !isResourceRefreshToken(token)) throw new Error("INSTANCE_RECOVERY_REJECTED");
+    this.dependencies.store.preflight();
+    const previous = this.readRecord();
+    if (!previous) throw new Error("INSTANCE_CANONICAL_REQUIRED");
+    const digest = createHash("sha256").update(token).digest("hex");
+    if (previous.recoveryRequestId === requestId) {
+      if (previous.recoveryCredentialDigest !== digest) throw new Error("INSTANCE_RECOVERY_REJECTED");
+      // A lost transport reply or restart resumes the canonical rotated token,
+      // never spends the incoming refresh token a second time.
+      return this.rotateOnce();
+    }
+    if (this.pending?.record.recoveryRequestId === requestId) {
+      if (this.pending.record.recoveryCredentialDigest !== digest) throw new Error("INSTANCE_RECOVERY_REJECTED");
+      return this.rotateOnce();
+    }
+    if (this.pending || this.isReady(this.acceptedPair?.accessToken ?? null))
+      throw new Error("INSTANCE_RECOVERY_NOT_REQUIRED");
+    const pair = await this.dependencies.exchange(token);
+    const identity = this.validatePair(pair);
+    this.acceptedPair = null;
+    this.pending = { pair, record: { ...identity, deviceId: previous.deviceId,
+      membershipId: previous.membershipId, authBaseUrl: previous.authBaseUrl,
+      bootstrapDigest: previous.bootstrapDigest, refreshToken: pair.refreshToken,
+      recoveryRequestId: requestId, recoveryCredentialDigest: digest } };
+    this.blocked = false;
+    this.storeHealthy = false;
+    this.dirty = true;
+    return this.rotateOnce();
+  }
+
   private validatePair(pair: AuthTokenPair): InstanceIdentity {
     const dependencies = this.dependencies;
     if (this.protocol === "resource-v1") {
@@ -315,6 +369,8 @@ export class InstanceSession {
           authBaseUrl: dependencies.authBaseUrl,
           bootstrapDigest: digest,
           refreshToken: pair.refreshToken,
+          ...(previous?.recoveryRequestId ? { recoveryRequestId: previous.recoveryRequestId,
+            recoveryCredentialDigest: previous.recoveryCredentialDigest } : {}),
         },
       };
       this.dirty = true;

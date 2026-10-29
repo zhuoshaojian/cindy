@@ -87,3 +87,6 @@ export function instanceDurableObservation() {
 }
 
 export function instanceAuthRealm() { return sessionRegion; }
+
+export function instanceLoginRequired() { return session?.needsLogin() ?? false; }
+export function instanceLoginRecovered(requestId: string, credential: string) { return session?.recovered(requestId, credential) ?? false; }

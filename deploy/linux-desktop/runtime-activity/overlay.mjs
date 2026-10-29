@@ -59,10 +59,10 @@ ${code}`;
     const matches = ast.statements.filter(n => ts.isFunctionDeclaration(n) && n.name?.text === 'startInstanceStatus');
     assert.equal(matches.length, 1, 'Cloud status writer signature changed');
     const method = matches[0];
-    assert.deepEqual(method.parameters.map(p => p.name.getText(ast)), ['config', 'read', 'onFailure', 'readOauthIdentity']);
+    assert.deepEqual(method.parameters.map(p => p.name.getText(ast)), ['config', 'read', 'onFailure', 'readOauthIdentity', 'readAuthRecovery']);
     assert.ok(method.body && method.body.getText(ast).includes('write(true)'), 'Cloud status shutdown changed');
     const offset = method.body.getStart(ast), end = method.body.end;
-    code = `import { startCloudStatus } from '${virtualId}';\n${code.slice(0, offset)}{\n  return startCloudStatus({ config, read, onFailure, readOauthIdentity, build: buildInstanceStatus });\n}${code.slice(end)}`;
+    code = `import { startCloudStatus } from '${virtualId}';\n${code.slice(0, offset)}{\n  return startCloudStatus({ config, read, onFailure, readOauthIdentity, readAuthRecovery, build: buildInstanceStatus });\n}${code.slice(end)}`;
   } else if (relative === coordinator) {
     code = once(code, '  collectQueuedPayloadTexts(): string[] {', `  readCloudInputCounts() {
     let active = 0, queued = 0, interactions = 0;

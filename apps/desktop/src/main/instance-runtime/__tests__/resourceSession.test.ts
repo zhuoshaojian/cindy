@@ -78,6 +78,45 @@ function fixture() {
 }
 
 describe("explicit deployed resource-only contract", () => {
+  // Regression: a denied canonical refresh permanently blocked the instance.
+  // Tier unit: exercise the real session writer/publication boundary, including
+  // a lost write and replay; no previous test supplied a fresh owner grant.
+  it("recovers a rejected canonical session, retains a failed write, and resumes from the rotated credential", async () => {
+    const h = fixture();
+    h.session.acknowledge(await h.session.rotate());
+    h.dependencies.exchange.mockRejectedValueOnce(new AuthApiError('ACCOUNT_UNAVAILABLE', 401, 'Rejected'));
+    await expect(h.session.rotate()).rejects.toThrow();
+    expect(h.session.needsLogin()).toBe(true);
+    const request = 'recovery_request_0001';
+    h.dependencies.store.write.mockImplementationOnce(() => { throw new Error('disk unavailable'); });
+    await expect(h.session.recover(request, refreshToken(90))).rejects.toThrow('disk unavailable');
+    expect(h.session.recovered(request)).toBe(false);
+    const beforeRetry = h.dependencies.exchange.mock.calls.length;
+    const restored = await h.session.recover(request, refreshToken(90));
+    expect(h.dependencies.exchange).toHaveBeenCalledTimes(beforeRetry);
+    expect(h.session.recovered(request)).toBe(false);
+    h.session.acknowledge(restored);
+    expect(h.session.recovered(request)).toBe(true);
+    expect(h.session.needsLogin()).toBe(false);
+    const restart = h.restart();
+    const resumed = await restart.recover(request, refreshToken(90));
+    expect(h.dependencies.exchange).toHaveBeenLastCalledWith(restored.refreshToken);
+    restart.acknowledge(resumed);
+    expect(restart.recovered(request)).toBe(true);
+    await expect(restart.recover(request, refreshToken(91))).rejects.toThrow('INSTANCE_RECOVERY_REJECTED');
+  });
+
+  it("preserves the original identity and credential when the recovery grant belongs to another device", async () => {
+    const h = fixture();
+    h.session.acknowledge(await h.session.rotate());
+    h.dependencies.exchange.mockRejectedValueOnce(new AuthApiError('REJECTED', 401, 'Rejected'));
+    await expect(h.session.rotate()).rejects.toThrow();
+    const original = structuredClone(h.dependencies.store.read());
+    h.dependencies.exchange.mockResolvedValueOnce(pair(9, { device: 'other-device' }));
+    await expect(h.session.recover('recovery_request_0002', refreshToken(90))).rejects.toThrow('INSTANCE_TOKEN_BINDING_REJECTED');
+    expect(h.dependencies.store.read()).toEqual(original);
+    expect(h.session.needsLogin()).toBe(true);
+  });
   it("accepts only the configured issuer and follows the actual token lifetime", () => {
     expect(() =>
       validateResourcePair(pair(), config, authBaseUrl, now),

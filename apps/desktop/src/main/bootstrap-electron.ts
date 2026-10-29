@@ -616,7 +616,8 @@ import {
 import { initHeartbeatService } from './heartbeatService';
 import { getInstanceConfig } from './instance-runtime/config.js';
 import { startProfileTelemetry } from './instance-runtime/profile-telemetry.js';
-import { instanceAuthReady, instanceDurableObservation, instanceAuthRealm } from './instance-runtime/host.js';
+import { instanceAuthReady, instanceDurableObservation, instanceAuthRealm, instanceLoginRequired, instanceLoginRecovered } from './instance-runtime/host.js';
+import { startAuthRecoveryControl } from './instance-runtime/auth-recovery.js';
 import { startInstanceStatus } from './instance-runtime/status.js';
 import { publishedPluginOauthIdentity } from './plugin-oauth/runtime.js';
 import { startCloudSettingsSnapshotPublisher } from './host-settings/snapshotRuntime.js';
@@ -10023,7 +10024,12 @@ app.on('ready', async () => {
       maker: getMakerIfReady() !== null,
       deviceLink: getDeviceLinkStatus() === 'online',
     });
-    const stopStatus = startInstanceStatus(instance, readInstanceReadiness, () => createLogger('instance-runtime').warn('runtime status unavailable'), publishedPluginOauthIdentity);
+    const stopRecovery = instance.authProtocol === 'resource-v1' ? await startAuthRecoveryControl({ identity: instance,
+      recover: input => authManager.recoverManagedInstanceLogin(input.requestId, input.refreshToken),
+      recovered: input => instanceLoginRecovered(input.requestId, input.refreshToken) }) : undefined;
+    if (stopRecovery) app.once('before-quit', stopRecovery);
+    const stopStatus = startInstanceStatus(instance, readInstanceReadiness, () => createLogger('instance-runtime').warn('runtime status unavailable'), publishedPluginOauthIdentity,
+      stopRecovery ? () => ({ version: 1, state: instanceLoginRequired() ? 'login-required' : readInstanceReadiness().auth ? 'ready' : 'pending' }) : undefined);
     const stopProfileTelemetry = startProfileTelemetry({ deviceId: instance.deviceId, membershipId: instance.membershipId, realm: instanceAuthRealm, read: readInstanceReadiness, readAuth: instanceDurableObservation, onFailure: () => createLogger('instance-runtime').warn('profile observation unavailable') });
     const stopSettingsSnapshot = startCloudSettingsSnapshotPublisher();
     const stopSettingsWeb = startCloudSettingsWebTransport();
