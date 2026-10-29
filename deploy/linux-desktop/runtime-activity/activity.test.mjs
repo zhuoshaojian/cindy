@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createActivityReader, taskProbes, nextScheduleWake, inputActivityBlockers } from './activity.mjs';
+import { createActivityReader, taskProbes, nextScheduleWake, inputActivityBlockers, readSchedulerActivity } from './activity.mjs';
 import { startCloudStatus } from './publisher.mjs';
+import { maintenanceActivitySample } from '../runtime-maintenance/gate.mjs';
 
 function setup(overrides = {}) {
   const state = { now: 1_000_000, owner: 'owner-a:epoch-1', ready: true, invoke: false };
@@ -76,6 +77,82 @@ test('missing future schedule time is not silently discarded', () => {
   assert.throws(()=>nextScheduleWake([{status:'active',manual:false,nextFireAt:NaN}]));
   assert.equal(nextScheduleWake([{status:'paused',manual:false},{status:'active',manual:true}]),null);
   assert.equal(nextScheduleWake([{status:'active',manual:false,nextFireAt:10},{status:'active',manual:false,nextFireAt:20}]),10);
+});
+// Unit regression: an automatic claim clears nextFireAt for the whole run.
+// Existing tests covered malformed schedules, not this legitimate busy state;
+// unknown=1 made CIS fail its post-release observation after 15 seconds.
+test('a long automatic run stays known busy while its claimed wake is empty', async () => {
+  const s = setup();
+  s.sources.anySchedulerRunRunning = async () => true;
+  Object.assign(s.schedule, { inFlight: 1, automaticInFlightScheduleIds: ['claimed'],
+    schedules: [{ id: 'claimed', status: 'active', manual: false }] });
+  for (const elapsed of [0, 16_000, 64_000]) {
+    s.state.now = 1_000_000 + elapsed;
+    const observation = await s.reader.read();
+    const sample = maintenanceActivitySample({ ...observation, inputCounts: s.inputs });
+    assert.equal(observation.cloudActivity.state, 'busy');
+    assert.equal(sample.unknown, 0);
+    assert.ok(sample.active > 0, 'executing work must still block a new upgrade');
+    assert.equal(sample.nextWakeAtMs, null);
+    assert.ok(!JSON.stringify(observation).includes('claimed'), 'schedule IDs stay inside the collector');
+  }
+  s.sources.anySchedulerRunRunning = async () => false;
+  Object.assign(s.schedule, { inFlight: 0, automaticInFlightScheduleIds: [],
+    schedules: [{ id: 'claimed', status: 'active', manual: false, nextFireAt: s.state.now + 300_000 }] });
+  assert.equal((await s.reader.read()).cloudActivity.state, 'idle');
+});
+test('an executing schedule cannot hide an unrelated missing or malformed wake', async () => {
+  const s = setup();
+  s.schedule.inFlight = 1;
+  s.schedule.automaticInFlightScheduleIds = ['claimed'];
+  for (const [id, nextFireAt] of [['other', undefined], ['claimed', NaN], ['claimed', -1], ['claimed', 'later']]) {
+    s.schedule.schedules = [{ id, status: 'active', manual: false, nextFireAt }];
+    assert.equal((await s.reader.read()).cloudActivity.state, 'unknown');
+  }
+  for (const nextFireAt of [null, undefined]) {
+    s.schedule.schedules = [{ id: 'claimed', status: 'active', manual: false, nextFireAt },
+      { id: 'future', status: 'active', manual: false, nextFireAt: s.state.now + 60_000 }];
+    const observation = await s.reader.read();
+    assert.equal(observation.cloudActivity.state, 'busy');
+    assert.equal(observation.idle.nextWakeAtMs, s.state.now + 60_000);
+  }
+});
+// Same unit regression, through the real scheduler adapter: before/after snapshots
+// were previously absent, so a finish during listActive could lose claim evidence.
+test('scheduler snapshots retain automatic claims across the asynchronous schedule read', async () => {
+  for (const direction of ['finishes', 'starts', 'manual']) {
+    const pending = deferred();
+    const attempt = { scheduleId: 'claimed', source: direction === 'manual' ? 'run-now' : 'automatic' };
+    const idle = { inFlight: 0, inFlightRuns: [], waitingSchedules: [] };
+    const busy = { inFlight: 1, inFlightRuns: [attempt], waitingSchedules: [] };
+    let snapshot = direction === 'starts' ? idle : busy;
+    const scheduler = { getRuntimeSnapshot: () => snapshot };
+    const storage = { listActive: () => pending.promise };
+    const reading = readSchedulerActivity(() => scheduler, () => storage);
+    snapshot = direction === 'finishes' ? idle : busy;
+    pending.resolve([{ id: 'claimed', status: 'active', manual: false }]);
+    const schedule = await reading;
+    assert.equal(schedule.inFlight, 1);
+    const s = setup({ readScheduler: async () => schedule });
+    const observation = await s.reader.read();
+    assert.equal(observation.cloudActivity.state, direction === 'manual' ? 'unknown' : 'busy');
+  }
+});
+test('scheduler replacement and malformed runtime claims remain unknown', async () => {
+  for (const mode of ['replacement', 'missing-runs', 'count-mismatch', 'missing-id', 'invalid-source']) {
+    const snapshot = { inFlight: 1, inFlightRuns: [{ scheduleId: 'claimed', source: 'automatic' }], waitingSchedules: [] };
+    if (mode === 'missing-runs') delete snapshot.inFlightRuns;
+    if (mode === 'count-mismatch') snapshot.inFlight = 0;
+    if (mode === 'missing-id') delete snapshot.inFlightRuns[0].scheduleId;
+    if (mode === 'invalid-source') snapshot.inFlightRuns[0].source = 'unrecognized';
+    let scheduler = { getRuntimeSnapshot: () => snapshot };
+    const storage = { listActive: async () => {
+      if (mode === 'replacement') scheduler = { getRuntimeSnapshot: () => snapshot };
+      return [{ id: 'claimed', status: 'active', manual: false }];
+    } };
+    const s = setup({ readScheduler: () => readSchedulerActivity(() => scheduler, () => storage) });
+    assert.equal((await s.reader.read()).cloudActivity.state, 'unknown');
+  }
 });
 test('new work during async reads is captured by the second synchronous sample', async () => {
   const gate=deferred(); const s=setup();

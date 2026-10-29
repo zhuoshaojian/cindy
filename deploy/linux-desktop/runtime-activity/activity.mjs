@@ -30,17 +30,48 @@ export function readTaskProbes(sources) {
   return blockers;
 }
 
-/** Strictly validate schedule metadata; an absent next time is not "no wake". */
-export function nextScheduleWake(schedules) {
+/** A claimed automatic fire has no next wake until it finishes. Only a matching
+ * live attempt explains that absence; an orphaned/malformed schedule stays unknown. */
+export function nextScheduleWake(schedules, automaticInFlightScheduleIds = []) {
   if (!Array.isArray(schedules)) throw new Error('schedule metadata unavailable');
+  if (!Array.isArray(automaticInFlightScheduleIds)
+    || automaticInFlightScheduleIds.some(id => typeof id !== 'string' || !id)) throw new Error('invalid running schedules');
+  const claimed = new Set(automaticInFlightScheduleIds);
   let earliest = null;
   for (const item of schedules) {
     if (!item || typeof item.status !== 'string' || typeof item.manual !== 'boolean') throw new Error('invalid schedule');
     if (item.status !== 'active' || item.manual) continue;
+    if (item.nextFireAt == null && claimed.has(item.id)) continue;
     if (!validTime(item.nextFireAt)) throw new Error('schedule time unavailable');
     earliest = earliest === null ? item.nextFireAt : Math.min(earliest, item.nextFireAt);
   }
   return earliest;
+}
+
+/** Retain attempts on both sides of the async DB read: a run can finish and
+ * replan while listActive is returning its previously claimed (empty) wake. */
+export async function readSchedulerActivity(getScheduler, getStorage) {
+  const scheduler = getScheduler(), storage = getStorage();
+  if (!scheduler || !storage) throw new Error('cloud scheduler not ready');
+  const before = scheduler.getRuntimeSnapshot();
+  const schedules = await storage.listActive();
+  if (scheduler !== getScheduler() || storage !== getStorage()) throw new Error('cloud scheduler changed');
+  const after = scheduler.getRuntimeSnapshot();
+  const claimed = new Set();
+  for (const snapshot of [before, after]) {
+    if (!validCount(snapshot?.inFlight) || !Array.isArray(snapshot.inFlightRuns)
+      || snapshot.inFlightRuns.length !== snapshot.inFlight || !Array.isArray(snapshot.waitingSchedules))
+      throw new Error('invalid scheduler runtime');
+    for (const run of snapshot.inFlightRuns) {
+      if (typeof run?.scheduleId !== 'string' || !run.scheduleId || !['automatic', 'run-now'].includes(run.source))
+        throw new Error('invalid scheduler attempt');
+      if (run.source === 'automatic') claimed.add(run.scheduleId);
+    }
+  }
+  return { inFlight: Math.max(before.inFlight, after.inFlight),
+    waiting: Math.max(before.waitingSchedules.length, after.waitingSchedules.length),
+    automaticInFlightScheduleIds: [...claimed],
+    schedules: schedules.map(s => ({ id: s.id, status: s.status, manual: s.manual, nextFireAt: s.nextFireAt })) };
 }
 
 /** Count metadata only; never serialize queued prompts or interaction contents. */
@@ -129,7 +160,7 @@ export function createActivityReader({ resolveSources, readContext, readInput, r
           if (!validCount(schedule?.inFlight) || !validCount(schedule?.waiting)) throw new Error('invalid scheduler metadata');
           if (schedule.inFlight) blockers.push('scheduler-in-flight');
           if (schedule.waiting) blockers.push('scheduler-waiting');
-          nextWakeAtMs = nextScheduleWake(schedule.schedules);
+          nextWakeAtMs = nextScheduleWake(schedule.schedules, schedule.automaticInFlightScheduleIds);
           if (nextWakeAtMs !== null && nextWakeAtMs <= now() + 120_000) blockers.push('scheduler-next-wake');
         } catch { blockers.push('scheduler-unknown'); }
         // Detect work arriving while asynchronous metadata reads were in progress.

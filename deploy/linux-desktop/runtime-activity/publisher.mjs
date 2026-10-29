@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createActivityReader } from './activity.mjs';
+import { createActivityReader, readSchedulerActivity } from './activity.mjs';
+
+export { readSchedulerActivity };
 
 let sourcesFactory;
 let dependencies;

@@ -20,7 +20,7 @@ export function transformCloudActivitySource(code, relative) {
   if (!targets.includes(relative)) return null;
   assert.ok(!code.includes('/* cloud-task-activity */'), 'Cloud activity overlay applied twice');
   if (relative === bootstrap) {
-    code = `import { cloudActivitySources, configureCloudActivity } from '${virtualId}';
+    code = `import { cloudActivitySources, configureCloudActivity, readSchedulerActivity } from '${virtualId}';
 import { readCloudInputActivity } from './maker-ipc/register.js';
 import { getCurrentDbClientSnapshot as cloudActivityDbSnapshot } from './localDb/client/current.js';
 import { isHumanDesktopInputActive, isAgentDesktopInputActive } from './remote-desktop/inputOwnership.js';
@@ -50,17 +50,7 @@ ${code}`;
       },
       readInput: readCloudInputActivity,
       remoteInvokeBusy: () => hasInFlightRemoteInvokes() || isHumanDesktopInputActive() || isAgentDesktopInputActive(),
-      readScheduler: async () => {
-        const scheduler = getSchedulerIfInitialized();
-        const storage = getScheduleStorageIfInitialized();
-        if (!scheduler || !storage) throw new Error('cloud scheduler not ready');
-        const schedules = await storage.listActive();
-        if (scheduler !== getSchedulerIfInitialized() || storage !== getScheduleStorageIfInitialized())
-          throw new Error('cloud scheduler changed');
-        const runtime = scheduler.getRuntimeSnapshot();
-        return { inFlight: runtime.inFlight, waiting: runtime.waitingSchedules.length,
-          schedules: schedules.map(s => ({ status: s.status, manual: s.manual, nextFireAt: s.nextFireAt })) };
-      },
+      readScheduler: () => readSchedulerActivity(getSchedulerIfInitialized, getScheduleStorageIfInitialized),
     });
     const stopStatus = startInstanceStatus(`);
   } else if (relative === status) {
