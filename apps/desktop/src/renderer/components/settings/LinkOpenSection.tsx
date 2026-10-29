@@ -54,6 +54,32 @@ function LinkOpenPreferenceRow({ kind }: { kind: LinkOpenKind }) {
   }, [resetPreference, t]);
 
   return (
+    <LinkOpenPreferenceRowView
+      kind={kind}
+      preference={preference}
+      isCustomized={isCustomized}
+      onReset={onReset}
+      onChange={setPreference}
+    />
+  );
+}
+
+type LinkOpenControl = {
+  preference: LinkOpenPreference;
+  isCustomized: boolean;
+  onReset(): Promise<void>;
+  onChange(next: LinkOpenPreference): void;
+};
+function LinkOpenPreferenceRowView({
+  kind,
+  preference,
+  isCustomized,
+  onReset,
+  onChange,
+  disabled = false,
+}: LinkOpenControl & { kind: LinkOpenKind; disabled?: boolean }) {
+  const { t } = useTranslation();
+  return (
     <div className={ROW_CLASS}>
       <div className="flex min-w-0 flex-col gap-1">
         <p className={ROW_LABEL_CLASS} style={{ letterSpacing: '0.12px' }}>
@@ -63,11 +89,16 @@ function LinkOpenPreferenceRow({ kind }: { kind: LinkOpenKind }) {
       </div>
 
       <div className="cindy-segmented-row-actions">
-        <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
+        <DefaultOverrideControls
+          isCustomized={isCustomized}
+          onReset={onReset}
+          disabled={disabled}
+        />
         <SegmentedControl
           aria-label={t(`settings.linkOpen.${kind}.ariaLabel`)}
           value={preference}
-          onValueChange={setPreference}
+          onValueChange={onChange}
+          disabled={disabled}
           options={OPTIONS.map((opt) => ({ value: opt.value, label: t(opt.labelKey) }))}
         />
       </div>
@@ -76,6 +107,34 @@ function LinkOpenPreferenceRow({ kind }: { kind: LinkOpenKind }) {
 }
 
 export function LinkOpenSection() {
+  return (
+    <LinkOpenSectionFrame>
+      <LinkOpenPreferenceRow kind="web" />
+      <div className={DIVIDER_CLASS} />
+      <LinkOpenPreferenceRow kind="local" />
+    </LinkOpenSectionFrame>
+  );
+}
+
+export function LinkOpenSectionView({
+  web,
+  local,
+  disabled,
+}: {
+  web: LinkOpenControl;
+  local: LinkOpenControl;
+  disabled?: boolean;
+}) {
+  return (
+    <LinkOpenSectionFrame>
+      <LinkOpenPreferenceRowView kind="web" {...web} disabled={disabled} />
+      <div className={DIVIDER_CLASS} />
+      <LinkOpenPreferenceRowView kind="local" {...local} disabled={disabled} />
+    </LinkOpenSectionFrame>
+  );
+}
+
+function LinkOpenSectionFrame({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
 
   return (
@@ -89,11 +148,7 @@ export function LinkOpenSection() {
         </p>
       </div>
 
-      <div className={CARD_CLASS}>
-        <LinkOpenPreferenceRow kind="web" />
-        <div className={DIVIDER_CLASS} />
-        <LinkOpenPreferenceRow kind="local" />
-      </div>
+      <div className={CARD_CLASS}>{children}</div>
     </div>
   );
 }

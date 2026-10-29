@@ -27,7 +27,6 @@ import { MessageNavRailCell } from './MessageNavRailCell';
 import { SilentEncryptedRetryCell } from './SilentEncryptedRetryCell';
 
 export function TipsSection() {
-  const { t } = useTranslation();
   const { mode } = useAuth();
   const { enabled: recommendationEnabled, setEnabled: setRecommendationEnabled } =
     usePromptRecommendationPreference();
@@ -41,35 +40,10 @@ export function TipsSection() {
 
   return (
     <TipsSectionView>
-      {/* 输入框推荐提示词:turn 结束后自动预测用户下一步输入 */}
-      <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
-        <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-              'bg-[var(--settings-input-bg)]',
-            )}
-          >
-            <Sparkles size={18} className="text-[var(--settings-section-title)]" />
-          </div>
-          <div className="flex flex-col gap-[8px]">
-            <p
-              id="settings-search-settings-promptRecommendation-label"
-              className="text-14 font-medium leading-none text-[var(--settings-section-title)]"
-            >
-              {t('settings.promptRecommendation.label')}
-            </p>
-            <p className="text-12 leading-[1.4] text-[var(--settings-section-desc)]">
-              {t('settings.promptRecommendation.description')}
-            </p>
-          </div>
-        </div>
-        <Switch
-          checked={recommendationEnabled}
-          onCheckedChange={handleRecommendationToggle}
-          aria-label={t('settings.promptRecommendation.toggleAria')}
-        />
-      </div>
+      <PromptRecommendationCellView
+        enabled={recommendationEnabled}
+        onChange={handleRecommendationToggle}
+      />
       <SilentEncryptedRetryCell />
       {mode !== 'local' ? <ChatEmbeddingCell /> : null}
       <MessageNavRailCell />
@@ -103,6 +77,49 @@ export function TipsSectionView({ children }: { children: React.ReactNode }) {
       >
         {children}
       </div>
+    </div>
+  );
+}
+
+export function PromptRecommendationCellView({
+  enabled,
+  onChange,
+  disabled = false,
+}: {
+  enabled: boolean;
+  onChange(next: boolean): void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+            'bg-[var(--settings-input-bg)]',
+          )}
+        >
+          <Sparkles size={18} className="text-[var(--settings-section-title)]" />
+        </div>
+        <div className="flex flex-col gap-[8px]">
+          <p
+            id="settings-search-settings-promptRecommendation-label"
+            className="text-14 font-medium leading-none text-[var(--settings-section-title)]"
+          >
+            {t('settings.promptRecommendation.label')}
+          </p>
+          <p className="text-12 leading-[1.4] text-[var(--settings-section-desc)]">
+            {t('settings.promptRecommendation.description')}
+          </p>
+        </div>
+      </div>
+      <Switch
+        checked={enabled}
+        onCheckedChange={onChange}
+        disabled={disabled}
+        aria-label={t('settings.promptRecommendation.toggleAria')}
+      />
     </div>
   );
 }

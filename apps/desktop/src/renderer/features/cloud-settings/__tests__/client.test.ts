@@ -3,8 +3,8 @@ import { createCloudSettingsClient } from '../client';
 import { fixture } from '../../../../main/cloud-settings-client/__tests__/fixture';
 const cleanups: Array<() => void> = [];
 afterEach(() => cleanups.splice(0).forEach((f) => f()));
-function setup() {
-  const f = fixture();
+function setup(desktop?: Parameters<typeof fixture>[0]) {
+  const f = fixture(desktop);
   cleanups.push(f.stop);
   let owner = true;
   const bridge = f.bridge();
@@ -161,4 +161,56 @@ it('keeps the same request ID after a lost upgrade response, without automatic r
   f.revokeUi();
   await expect(f.client.upgrade!()).rejects.toThrow('SCOPE_CHANGED');
   expect(f.bridge.instanceUpgrade).toHaveBeenCalledTimes(2);
+});
+
+it('round-trips cloud-only desktop preferences through the real Main bridge and existing wire validators', async () => {
+  const f = setup({
+    domain: 'desktopChat',
+    defaults: {
+      composerSendShortcut: 'enter',
+      webLinkOpenPreference: 'external',
+      localLinkOpenPreference: 'sidebar',
+      streamFadePreference: 'on',
+      promptRecommendationEnabled: true,
+      messageNavRailEnabled: true,
+    },
+  });
+  expect((await f.client.connect()).domains).toEqual(['desktopChat']);
+  const [state] = await f.client.read(['desktopChat']);
+  const edited = await f.client.save(state, {
+    webLinkOpenPreference: 'sidebar',
+    messageNavRailEnabled: false,
+  });
+  const reset = await f.client.save(edited.state, {}, ['webLinkOpenPreference']);
+  expect(reset.state.value).toMatchObject({
+    webLinkOpenPreference: 'external',
+    messageNavRailEnabled: false,
+    localLinkOpenPreference: 'sidebar',
+  });
+  expect(reset.state.customizedKeys).toEqual(['messageNavRailEnabled']);
+  f.revokeUi();
+  const count = f.request.mock.calls.length;
+  await expect(
+    f.client.save(reset.state, { composerSendShortcut: 'modifier-enter' }),
+  ).rejects.toThrow('SCOPE_CHANGED');
+  expect(f.request).toHaveBeenCalledTimes(count);
+});
+
+it('reads and changes the cloud locale without altering other desktop fields', async () => {
+  const f = setup({
+    domain: 'desktopGeneral',
+    defaults: {
+      locale: 'zh-CN',
+      theme: 'dark',
+      themeFamilyId: 'default',
+      sidebarPinnedMode: 'text',
+      sidebarMainMode: 'text',
+      ghostPanelRestoreMode: 'bubble',
+    },
+  });
+  const [state] = await f.client.read(['desktopGeneral']);
+  const saved = await f.client.save(state, { locale: 'ja' });
+  expect(saved.state.value).toMatchObject({ locale: 'ja', theme: 'dark' });
+  await expect(f.client.save(saved.state, { locale: 'unknown-language' })).rejects.toThrow();
+  expect(f.history.filter((c) => c.kind === 'update')).toHaveLength(1);
 });

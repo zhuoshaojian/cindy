@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { CloudSettingsPanel } from '../CloudSettingsView';
 import { createTrialCloudSettingsClient } from '../trial';
 import { SETTINGS_SEARCH_ENTRIES } from '@/components/settings/settingsSearchCatalog';
 import { cloudSearchEntryAllowed } from '../search';
+import type { CloudSettingsClient } from '../client';
 import { CLOUD_SETTINGS_DOMAINS } from '../../../../shared/cloudSettings';
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
@@ -27,7 +28,7 @@ vi.stubGlobal(
   },
 );
 afterEach(cleanup);
-function setup() {
+function setup(configure?: (client: CloudSettingsClient) => void) {
   Object.assign(window, {
     electronAPI: new Proxy(
       {},
@@ -39,6 +40,7 @@ function setup() {
     ),
   });
   const client = createTrialCloudSettingsClient();
+  configure?.(client);
   const save = vi.spyOn(client, 'save');
   render(<CloudSettingsPanel name="Cloud trial" client={client} online trial onBack={vi.fn()} />);
   fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.personalization' }));
@@ -135,15 +137,150 @@ describe('shared native cloud settings', () => {
     expect(switches[3].matches(':disabled')).toBe(true);
     expect(save.mock.calls[0][1]).toEqual({ maker: false });
   });
-  it('uses native slider keyboard interaction and debounce without local IPC', async () => {
-    const { save } = setup();
-    const slider = await screen.findByRole('slider', {
-      name: 'settings.compaction.card.sliderAria',
+  it('removes obsolete global compaction controls and reads only current domains', async () => {
+    let read: MockInstance<CloudSettingsClient['read']>;
+    setup((client) => {
+      read = vi.spyOn(client, 'read');
     });
-    fireEvent.keyDown(slider, { key: 'ArrowLeft' });
-    fireEvent.keyDown(slider, { key: 'ArrowLeft' });
+    await screen.findByText('settings.memory.title');
+    expect(screen.queryByText('settings.compaction.title')).toBeNull();
+    expect(read!.mock.calls.flat(2)).not.toContain('claudeCompaction');
+    expect(read!.mock.calls.flat(2)).not.toContain('piCompaction');
+  });
+  it('keeps contacts usable when only device sync is unavailable', async () => {
+    const { save } = setup((client) => {
+      const read = client.read;
+      client.read = async (domains) =>
+        (await read(domains)).map((s) =>
+          s.domain === 'contactsSync'
+            ? { domain: s.domain, status: 'unavailable', revision: null }
+            : s,
+        );
+    });
+    const enabled = await screen.findByRole('switch', {
+      name: 'settings.contacts.enable.toggleAria',
+    });
+    await ready(enabled);
+    expect(
+      screen
+        .getByRole('switch', { name: 'settings.contacts.sync.toggleAria' })
+        .matches(':disabled'),
+    ).toBe(true);
+    expect(screen.getByText('cloudSettings.settingUnavailable')).toBeTruthy();
+    fireEvent.click(enabled);
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    expect(save.mock.calls[0][1]).toEqual({ claudeCodeAutoCompactPct: 88 });
+    expect(save.mock.calls[0][0].domain).toBe('contacts');
+    expect(save.mock.calls[0][1]).toEqual({ enabled: true });
+  });
+  it('shows an unavailable saved shell instead of an empty selection without changing it', async () => {
+    const { save } = setup((client) => {
+      const read = client.read;
+      client.read = async (domains) =>
+        (await read(domains)).map((s) =>
+          s.domain === 'terminal'
+            ? {
+                ...s,
+                value: { defaultShellPref: 'fish' },
+                customizedKeys: ['defaultShellPref'],
+                isCustomized: true,
+              }
+            : s,
+        );
+    });
+    const shell = await screen.findByRole('combobox', {
+      name: 'settings.terminalShell.card.selectAria',
+    });
+    await ready(shell);
+    expect(shell.textContent).toContain('settings.terminalShell.unavailable');
+    expect(save).not.toHaveBeenCalled();
+  });
+  it('saves and resets link preferences independently through the cloud adapter', async () => {
+    const { save } = setup();
+    const links = await screen.findByRole('radiogroup', {
+      name: 'settings.linkOpen.web.ariaLabel',
+    });
+    const sidebar = within(links).getByRole('radio', { name: 'settings.linkOpen.options.sidebar' });
+    await ready(sidebar);
+    fireEvent.click(sidebar);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    await ready(sidebar);
+    expect(save.mock.calls[0][0].domain).toBe('desktopChat');
+    expect(save.mock.calls[0][1]).toEqual({ webLinkOpenPreference: 'sidebar' });
+    const section = document.querySelector('#settings-search-target-personalization-link-open')!;
+    fireEvent.click(
+      within(section as HTMLElement).getByRole('button', { name: 'settings.defaults.restore' }),
+    );
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save.mock.calls[1].slice(1)).toEqual([{}, ['webLinkOpenPreference']]);
+    await ready(sidebar);
+    expect((await save.mock.results[1].value).state.value.localLinkOpenPreference).toBe('sidebar');
+  });
+  it('uses target Linux shortcut semantics and writes only the remote composer field', async () => {
+    const { save } = setup();
+    await general();
+    const toggle = screen.getByRole('switch', { name: 'settings.composer.sendShortcut.ariaLabel' });
+    await ready(toggle);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0].domain).toBe('desktopChat');
+    expect(save.mock.calls[0][1]).toEqual({ composerSendShortcut: 'modifier-enter' });
+    await ready(toggle);
+    fireEvent.click(
+      within(document.querySelector('#settings-composer')!).getByRole('button', {
+        name: 'settings.defaults.restore',
+      }),
+    );
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save.mock.calls[1].slice(1)).toEqual([{}, ['composerSendShortcut']]);
+  });
+  it('keeps controls and their search entries absent when the cloud does not advertise desktop preferences', async () => {
+    setup((client) => {
+      const connect = client.connect;
+      client.connect = async () => {
+        const cap = await connect();
+        return {
+          ...cap,
+          domains: cap.domains.filter((d) => d !== 'desktopChat' && d !== 'desktopGeneral'),
+        };
+      };
+    });
+    await screen.findByText('settings.memory.title');
+    expect(screen.queryByText('settings.linkOpen.title')).toBeNull();
+    expect(screen.queryByText('settings.promptRecommendation.label')).toBeNull();
+    await general();
+    expect(screen.queryByText('settings.composer.title')).toBeNull();
+    expect(screen.queryByText('settings.language.title')).toBeNull();
+  });
+  it('removes cached controls when the cloud withdraws a capability', async () => {
+    let supported = true;
+    const { save } = setup((client) => {
+      const connect = client.connect;
+      client.connect = async () => {
+        const cap = await connect();
+        return { ...cap, domains: cap.domains.filter((d) => supported || d !== 'desktopChat') };
+      };
+    });
+    await screen.findByText('settings.linkOpen.title');
+    supported = false;
+    fireEvent.click(screen.getByRole('button', { name: 'cloudSettings.reload' }));
+    await waitFor(() => expect(screen.queryByText('settings.linkOpen.title')).toBeNull());
+    expect(save).not.toHaveBeenCalled();
+  });
+  it('filters automation search by the individual capability', () => {
+    for (const [id, domain] of [
+      ['settings.computerUse.browser.title', 'browserTools'],
+      ['settings.computerUse.directControl.title', 'computerTools'],
+    ] as const) {
+      const entry = SETTINGS_SEARCH_ENTRIES.find((e) => e.id === id)!;
+      expect(cloudSearchEntryAllowed(entry, [domain], false)).toBe(true);
+      expect(
+        cloudSearchEntryAllowed(
+          entry,
+          [domain === 'browserTools' ? 'computerTools' : 'browserTools'],
+          false,
+        ),
+      ).toBe(false);
+    }
   });
   it('uses native search and filters unsupported local-only entries without removing navigation', async () => {
     setup();
@@ -157,12 +294,10 @@ describe('shared native cloud settings', () => {
       cloudSearchEntryAllowed(e, [...CLOUD_SETTINGS_DOMAINS], false),
     );
     expect(allowed.some((e) => e.id === 'settings.agentResource.preset')).toBe(true);
+    for (const id of ['general.language', 'general.composer', 'personalization.linkOpen'])
+      expect(allowed.some((e) => e.id === id)).toBe(true);
     for (const denied of [
       'general.appearance',
-      'general.language',
-      'general.composer',
-      'personalization.linkOpen',
-      'settings.promptRecommendation.label',
       'settings.computerUse.android.title',
       'settings.about.storage.cleanupLabel',
     ])

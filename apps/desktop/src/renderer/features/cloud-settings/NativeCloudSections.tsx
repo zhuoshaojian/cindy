@@ -3,13 +3,18 @@ import { useTranslation } from 'react-i18next';
 import { toast } from '@/lib/toast';
 import { AgentResourceSectionView } from '@/components/settings/AgentResourceSection';
 import { CollaborationSectionView } from '@/components/settings/CollaborationSection';
-import { CompactionSectionView } from '@/components/settings/CompactionSection';
 import { MemorySectionView } from '@/components/settings/MemorySection';
 import { GitSafetySectionView } from '@/components/settings/GitSafetySection';
 import { TerminalShellSectionView } from '@/components/settings/TerminalShellSection';
 import { SilentEncryptedRetryCellView } from '@/components/settings/SilentEncryptedRetryCell';
 import { ChatEmbeddingCellView } from '@/components/settings/ChatEmbeddingCell';
-import { TipsSectionView } from '@/components/settings/TipsSection';
+import { TipsSectionView, PromptRecommendationCellView } from '@/components/settings/TipsSection';
+import { MessageNavRailCellView } from '@/components/settings/MessageNavRailCell';
+import { LinkOpenSectionView } from '@/components/settings/LinkOpenSection';
+import { ComposerSendShortcutSectionView } from '@/components/settings/ComposerSendShortcutSection';
+import { LanguageSectionView } from '@/components/settings/LanguageSection';
+import type { LocalePreference } from '@/i18n';
+import { SETTINGS_CARD_CLASS } from '@/components/settings/settingsRowClasses';
 import { LspBetaCellView } from '@/components/settings/LspBetaCell';
 import { BuiltinToolsSectionView } from '@/components/settings/BuiltinToolsSection';
 import {
@@ -47,7 +52,10 @@ const section = (id: string, content: ReactNode) => (
     id={id}
     key={id}
     className={
-      id.includes('general') || id === 'settings-collaboration' || id === 'settings-agent-resource'
+      id.includes('general') ||
+      id === 'settings-composer' ||
+      id === 'settings-collaboration' ||
+      id === 'settings-agent-resource'
         ? 'py-[18px]'
         : 'pb-[18px]'
     }
@@ -115,73 +123,6 @@ function Resource({
         await commit(presets[id]);
       }}
       reset={() => void commit({}, Object.keys(state.defaults ?? {}))}
-    />
-  );
-}
-function Compaction({
-  states,
-  save,
-  changed,
-  disabled,
-}: Pick<Props, 'states' | 'save' | 'changed' | 'disabled'>) {
-  const [preview, setPreview] = useState<
-    Partial<Record<'claudeCompaction' | 'piCompaction', number>>
-  >({});
-  const timers = useRef<
-    Partial<Record<'claudeCompaction' | 'piCompaction', ReturnType<typeof setTimeout>>>
-  >({});
-  const { t } = useTranslation();
-  const current = useRef({ save });
-  current.current = { save };
-  useEffect(
-    () => () => {
-      Object.values(timers.current).forEach(clearTimeout);
-    },
-    [],
-  );
-  const control = (domain: 'claudeCompaction' | 'piCompaction', field: string) => {
-    const state = states[domain]!;
-    return {
-      pct: preview[domain] ?? num(state, field),
-      defaultPct: Number(state.defaults?.[field]),
-      isCustomized: !!state.isCustomized,
-      setPct(next: number) {
-        if (disabled) return;
-        setPreview((p) => ({ ...p, [domain]: next }));
-        changed(domain, true);
-        clearTimeout(timers.current[domain]);
-        timers.current[domain] = setTimeout(() => {
-          void current.current
-            .save(state, { [field]: next })
-            .then(() => {
-              setPreview((p) => {
-                const n = { ...p };
-                delete n[domain];
-                return n;
-              });
-              changed(domain, false);
-            })
-            .catch(() => toast.error(t('hostSettings.saveFailed')));
-        }, 300);
-      },
-      async resetPct() {
-        clearTimeout(timers.current[domain]);
-        const saved = await save(state, {}, [field]);
-        setPreview((p) => {
-          const n = { ...p };
-          delete n[domain];
-          return n;
-        });
-        changed(domain, false);
-        return num(saved, field);
-      },
-    };
-  };
-  return (
-    <CompactionSectionView
-      disabled={disabled}
-      claude={control('claudeCompaction', 'claudeCodeAutoCompactPct')}
-      pi={control('piCompaction', 'piAutoCompactPct')}
     />
   );
 }
@@ -269,9 +210,39 @@ export function NativeCloudSections(props: Props) {
   const reset = (d: CloudSettingsDomain) => attempt(d, {}, Object.keys(states[d]?.defaults ?? {}));
   const s = (d: CloudSettingsDomain) => states[d]!;
   const c = (d: CloudSettingsDomain) => !!s(d).isCustomized;
+  const chatCustomized = (key: string) => s('desktopChat').customizedKeys?.includes(key) ?? false;
+  const linkControl = (key: 'webLinkOpenPreference' | 'localLinkOpenPreference') => ({
+    preference: s('desktopChat').value?.[key] as 'external' | 'sidebar',
+    isCustomized: chatCustomized(key),
+    onChange: (next: 'external' | 'sidebar') => void attempt('desktopChat', { [key]: next }),
+    onReset: () => attempt('desktopChat', {}, [key]),
+  });
   if (tab === 'general')
     return (
       <>
+        {ready('desktopGeneral') &&
+          section(
+            'settings-search-target-general-language',
+            <LanguageSectionView
+              locale={s('desktopGeneral').value?.locale as LocalePreference}
+              disabled={disabled}
+              onChange={(locale) => void attempt('desktopGeneral', { locale })}
+            />,
+          )}
+        {ready('desktopChat') &&
+          section(
+            'settings-composer',
+            <ComposerSendShortcutSectionView
+              preference={
+                s('desktopChat').value?.composerSendShortcut as 'enter' | 'modifier-enter'
+              }
+              isCustomized={chatCustomized('composerSendShortcut')}
+              shortcut="Ctrl+Enter"
+              disabled={disabled}
+              onChange={(next) => void attempt('desktopChat', { composerSendShortcut: next })}
+              onReset={() => attempt('desktopChat', {}, ['composerSendShortcut'])}
+            />,
+          )}
         {ready('collaboration') &&
           section(
             'settings-collaboration',
@@ -307,11 +278,13 @@ export function NativeCloudSections(props: Props) {
               <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
                 {t('settings.experimental.title')}
               </h2>
-              <LspBetaCellView
-                enabled={bool(s('lsp'), 'enabled')}
-                pending={disabled}
-                handleToggle={(next) => attempt('lsp', { enabled: next })}
-              />
+              <div className={SETTINGS_CARD_CLASS}>
+                <LspBetaCellView
+                  enabled={bool(s('lsp'), 'enabled')}
+                  pending={disabled}
+                  handleToggle={(next) => attempt('lsp', { enabled: next })}
+                />
+              </div>
             </div>,
           )}
       </>
@@ -368,7 +341,6 @@ export function NativeCloudSections(props: Props) {
             />,
           )}
         {ready('contacts') &&
-          ready('contactsSync') &&
           section(
             'settings-contacts',
             <ContactsSectionView
@@ -378,11 +350,19 @@ export function NativeCloudSections(props: Props) {
               statsLine=""
               pendingCount={0}
               syncStatus={{
-                available: true,
-                enabled: bool(s('contactsSync'), 'deviceSyncEnabled'),
+                available: !!ready('contactsSync'),
+                enabled: !!ready('contactsSync') && bool(s('contactsSync'), 'deviceSyncEnabled'),
               }}
               syncPending={disabled}
-              syncSummary=""
+              syncSummary={
+                ready('contactsSync')
+                  ? ''
+                  : t(
+                      states.contactsSync?.status === 'unreadable'
+                        ? 'cloudSettings.readFailed'
+                        : 'cloudSettings.settingUnavailable',
+                    )
+              }
               handleToggle={(next) => attempt('contacts', { enabled: next })}
               handleSyncToggle={(next) => attempt('contactsSync', { deviceSyncEnabled: next })}
               handleSyncNow={undefined}
@@ -391,9 +371,6 @@ export function NativeCloudSections(props: Props) {
               manager={null}
             />,
           )}
-        {ready('claudeCompaction') &&
-          ready('piCompaction') &&
-          section('settings-search-target-personalization-compaction', <Compaction {...props} />)}
         {ready('terminal') &&
           section(
             'settings-search-target-personalization-terminal-shell',
@@ -415,13 +392,38 @@ export function NativeCloudSections(props: Props) {
               onChange={(next) => void attempt('terminal', { defaultShellPref: next })}
               onReset={() => reset('terminal')}
               autoLabel={t('settings.terminalShell.auto')}
-              unavailablePref={null}
+              unavailablePref={
+                s('terminal').value?.defaultShellPref !== 'auto' &&
+                !(s('terminal').choices?.defaultShellPref ?? []).some(
+                  (choice) => choice.value === s('terminal').value?.defaultShellPref,
+                )
+                  ? (s('terminal').value?.defaultShellPref as ShellId)
+                  : null
+              }
             />,
           )}
-        {(ready('silentEncryptedRetry') || ready('chatEmbedding')) &&
+        {ready('desktopChat') &&
+          section(
+            'settings-search-target-personalization-link-open',
+            <LinkOpenSectionView
+              web={linkControl('webLinkOpenPreference')}
+              local={linkControl('localLinkOpenPreference')}
+              disabled={disabled}
+            />,
+          )}
+        {(ready('silentEncryptedRetry') || ready('chatEmbedding') || ready('desktopChat')) &&
           section(
             'settings-search-target-personalization-tips',
             <TipsSectionView>
+              {ready('desktopChat') && (
+                <PromptRecommendationCellView
+                  enabled={bool(s('desktopChat'), 'promptRecommendationEnabled')}
+                  disabled={disabled}
+                  onChange={(next) =>
+                    void attempt('desktopChat', { promptRecommendationEnabled: next })
+                  }
+                />
+              )}
               {ready('silentEncryptedRetry') && (
                 <SilentEncryptedRetryCellView
                   enabled={bool(s('silentEncryptedRetry'), 'enabled')}
@@ -430,7 +432,7 @@ export function NativeCloudSections(props: Props) {
                   handleToggle={(next) => attempt('silentEncryptedRetry', { enabled: next })}
                   handleReset={() => reset('silentEncryptedRetry')}
                 />
-              )}{' '}
+              )}
               {ready('chatEmbedding') && (
                 <ChatEmbeddingCellView
                   enabled={bool(s('chatEmbedding'), 'enabled')}
@@ -438,6 +440,15 @@ export function NativeCloudSections(props: Props) {
                   pending={disabled}
                   handleToggle={(next) => attempt('chatEmbedding', { enabled: next })}
                   handleReset={() => reset('chatEmbedding')}
+                />
+              )}
+              {ready('desktopChat') && (
+                <MessageNavRailCellView
+                  enabled={bool(s('desktopChat'), 'messageNavRailEnabled')}
+                  isCustomized={chatCustomized('messageNavRailEnabled')}
+                  disabled={disabled}
+                  onChange={(next) => void attempt('desktopChat', { messageNavRailEnabled: next })}
+                  onReset={() => attempt('desktopChat', {}, ['messageNavRailEnabled'])}
                 />
               )}
             </TipsSectionView>,

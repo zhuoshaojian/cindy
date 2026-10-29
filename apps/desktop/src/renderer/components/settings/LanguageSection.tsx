@@ -7,6 +7,7 @@
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown } from 'lucide-react';
 import { SelectParts as Select } from '@/components/ui/select';
+import '@/components/ui/segmented-control.css';
 
 import { cn } from '@/lib/utils';
 import { useLocale } from '@/hooks/useLocale';
@@ -20,9 +21,20 @@ const LANGUAGE_OPTIONS: ReadonlyArray<LocalePreference> = [
 ];
 
 export function LanguageSection() {
-  const { t } = useTranslation();
   const { locale, setLocale } = useLocale();
+  return <LanguageSectionView locale={locale} onChange={setLocale} />;
+}
 
+export function LanguageSectionView({
+  locale,
+  onChange,
+  disabled = false,
+}: {
+  locale: LocalePreference;
+  onChange(next: LocalePreference): void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-[14px]">
       <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
@@ -31,7 +43,7 @@ export function LanguageSection() {
 
       <div
         className={cn(
-          'flex flex-row items-center justify-between gap-6 rounded-xl px-4 py-4',
+          'cindy-segmented-row rounded-xl px-4 py-4',
           'bg-[var(--settings-theme-card-bg)]',
           'border border-[var(--settings-theme-card-border)]',
         )}
@@ -48,7 +60,11 @@ export function LanguageSection() {
           </p>
         </div>
 
-        <Select.Root value={locale} onValueChange={(value) => setLocale(value as LocalePreference)}>
+        <Select.Root
+          value={locale}
+          onValueChange={(value) => onChange(value as LocalePreference)}
+          disabled={disabled}
+        >
           <Select.Trigger
             aria-label={t('settings.language.ariaLabel')}
             className={cn(

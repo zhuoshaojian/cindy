@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useLocation, useNavigate, useSearchParams, useOutletContext } from 'react-router-dom';
+import {
+  Navigate,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+  useOutletContext,
+} from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Cloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
+import { TAB_IDS } from '@/lib/tabLabels';
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar';
 import { SettingsSidebarNav } from '@/components/settings/SettingsSidebarNav';
 import { resolveSettingsSearchEntry } from '@/components/settings/settingsSearchCatalog';
@@ -31,7 +38,7 @@ import { CloudProviderAuthorization } from './CloudProviderAuthorization';
 import { NativeCloudSections } from './NativeCloudSections';
 import { cloudSearchEntryAllowed } from './search';
 import type { SettingsSearchEntry } from '@/components/settings/settingsSearchTypes';
-const groups = Object.keys(CLOUD_SETTINGS_GROUPS) as CloudSettingsTab[];
+const groups = TAB_IDS.filter((tab): tab is CloudSettingsTab => tab in CLOUD_SETTINGS_GROUPS);
 const card =
   'rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
 export function CloudSettingsPanel({
@@ -116,7 +123,11 @@ export function CloudSettingsPanel({
         setBotAuthorization(cap.botAuthorization === 1);
         setPluginAuthorization(cap.pluginAuthorization === 1);
         setStates((before) => ({
-          ...before,
+          ...Object.fromEntries(
+            Object.entries(before).filter(([domain]) =>
+              cap.domains.includes(domain as CloudSettingsDomain),
+            ),
+          ),
           ...Object.fromEntries(values.map((state) => [state.domain, state])),
         }));
       })
@@ -229,7 +240,11 @@ export function CloudSettingsPanel({
         ? botAuthorization && entry.id === 'im-bot'
         : entry.tab === 'ghosts'
           ? pluginAuthorization && entry.id === 'ghosts'
-          : cloudSearchEntryAllowed(entry, domains, trial);
+          : cloudSearchEntryAllowed(
+              entry,
+              domains.filter((domain) => !states[domain] || states[domain]?.status === 'ready'),
+              trial,
+            );
   useSettingsSectionTarget(
     searchNavigation.entry?.targetId ?? null,
     scrollRef,

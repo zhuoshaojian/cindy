@@ -19,6 +19,32 @@ export function MessageNavRailCell() {
   const { enabled, isCustomized, setEnabled, resetPreference } = useMessageNavRailPreference();
 
   return (
+    <MessageNavRailCellView
+      enabled={enabled}
+      isCustomized={isCustomized}
+      onChange={setEnabled}
+      onReset={async () => {
+        if (!(await resetPreference())) toast.error(t('hostSettings.saveFailed'));
+      }}
+    />
+  );
+}
+
+export function MessageNavRailCellView({
+  enabled,
+  isCustomized,
+  disabled = false,
+  onChange,
+  onReset,
+}: {
+  enabled: boolean;
+  isCustomized: boolean;
+  disabled?: boolean;
+  onChange(next: boolean): void;
+  onReset(): Promise<void>;
+}) {
+  const { t } = useTranslation();
+  return (
     <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
       <div className="flex items-center gap-3">
         <div
@@ -39,12 +65,15 @@ export function MessageNavRailCell() {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <DefaultOverrideControls isCustomized={isCustomized} onReset={async () => {
-          if (!await resetPreference()) toast.error(t('hostSettings.saveFailed'));
-        }} />
+        <DefaultOverrideControls
+          isCustomized={isCustomized}
+          onReset={onReset}
+          disabled={disabled}
+        />
         <Switch
           checked={enabled}
-          onCheckedChange={setEnabled}
+          onCheckedChange={onChange}
+          disabled={disabled}
           aria-label={t('settings.messageNavRail.toggleAria')}
         />
       </div>

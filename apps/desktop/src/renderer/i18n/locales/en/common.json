@@ -17895,7 +17895,8 @@
   "cloudSettings": {
     "title": "Cloud Settings",
     "search": "Search Cloud Settings",
-    "cloudOnly": "Only settings available on the cloud instance are shown. Appearance, keyboard shortcuts and local devices remain in local settings.",
+    "cloudOnly": "Uses the same interface as local settings and shows settings supported by this cloud instance. Changes apply only to the cloud instance.",
+    "settingUnavailable": "This setting is currently unavailable on this cloud instance.",
     "onlyTarget": "Applies only to this cloud instance",
     "choose": "Choose the cloud instance to configure.",
     "open": "Open Settings",

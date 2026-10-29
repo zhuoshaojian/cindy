@@ -1,15 +1,53 @@
 # 原生云实例设置与隔离 Dev 客户端
 
-本分支已合入上游 `v0.1.113`。本文记录截至 2026-10-27 的实现与验收边界。
+本分支已合入上游 `v0.1.119`。本文记录截至 2026-10-29 的实现与验收边界。
 工作分支包含原生设置、隔离 Dev 发行包和 Linux 运行时修复；安装包和云镜像是两个独立产物，
 云镜像使用 `source-freeze.json` 指定的完整客户端提交，不能把分支 HEAD 视为已经部署。
 镜像构建入口、候选交付与本人实例升级记录见本仓
 [`deploy/linux-desktop/README.md`](../deploy/linux-desktop/README.md)。
 
-配套服务端使用 [`zhuoshaojian/cindy-server` 的 `feat/cloud-settings-readonly`](https://github.com/zhuoshaojian/cindy-server/tree/feat/cloud-settings-readonly)，
+配套服务端使用 [`zhuoshaojian/cindy-server` 的 `fix/cis-maintenance-concurrency`](https://github.com/zhuoshaojian/cindy-server/tree/fix/cis-maintenance-concurrency)，
 本分支为 [`zhuoshaojian/cindy` 的 `feat/cloud-settings-native-client`](https://github.com/zhuoshaojian/cindy/tree/feat/cloud-settings-native-client)。
 云实例镜像已接入 fork 专属 self-hosted runner 的构建、发布及 ACS 缓存流水线，见
 [`交付说明`](../deploy/linux-desktop/delivery/README.md)。分支提交不等于客户端安装包或云镜像已部署。
+
+## 与本机设置的一致性
+
+以当前本机设置为基准：同一功能复用同一原生展示组件、分组、文案及保存/恢复默认交互。
+菜单顺序直接取本机 `TAB_IDS` 的受支持子集。云端目标标识常驻；取值、候选项、默认值和
+写入始终来自选中的云实例，不能以本机 profile 或模型目录填充远端配置。
+
+2026-10-29 本轮对齐：
+
+- 通用新增云端显示语言和发送快捷键；Linux 目标显示 `Ctrl+Enter`，不采用控制端 Mac 的按键名称。
+- 个性化新增链接打开方式、输入推荐和提问导航条，复用本机组件。链接的两行各自恢复默认，
+  不清空 `desktopChat` 中其他覆盖项。云端显示语言只影响云桌面，不改变控制端语言。
+- 智能通讯录与设备同步分别判断可用性，同步不可用不再隐藏通讯录开关；终端保留不可用的
+  已选 Shell 提示，候选仍来自云端探测，不用本机已安装 Shell 代替。
+- 移除已退出本机设置页、且不再影响新模型压缩策略的 Claude/Pi 全局压缩阈值。
+  不删除云端旧配置文件，不把过时阈值当作模型级配置。
+- 搜索按实际功能和能力过滤；能力撤回后丢弃该域的缓存展示，打开页面或切换分类不写入配置。
+
+继续沿用现有 `settingsWeb` 的 `desktopGeneral` / `desktopChat` 字段及修订号、操作回执、
+账号与目标校验，没有新增服务端接口或改变 wire 字段语义。仅在远端声明该能力且返回有效状态
+时显示控件。没有能力的旧 runtime 保持原行为，本轮不需要 CIS 或云镜像部署。
+
+以下差异必须区分原因，不能统称为“云端不支持”：
+
+| 差异 | 当前边界 |
+| --- | --- |
+| 退出登录、增加/切换云端账号、云端应用内自更新 | 托管实例策略禁止；更新由 CIS 管理，普通本机客户端仍保留原功能 |
+| 本机麦克风、系统权限、Agent Island 等 | 取决于目标平台和运行环境，不能把控制端硬件设置呈现为云端设置 |
+| 用户提示词正文、Git 三档模式 | 现有远端读协议分别只返回定制状态、旧布尔值；不能猜测正文/模式。试用演示不代表真实接入 |
+| 子代理/辅助模型/视觉桥接、模型级压缩、外观等其余原生配置 | 属于待对齐的原生远端适配，不代表云端没有能力。模型目录必须来自目标实例；不以旧全局压缩开关替代模型设置 |
+| 通讯录管理/立即同步、工作目录级工具等操作 | 当前原生云面板没有完整操作接入；不显示会调用本机接口的假入口 |
+
+验证使用真实原生组件和 Main 桥接的内存 CIS fixture：按字段写入/清除、非法值拒绝、
+账号切换失效、缺失能力、未知 Shell 和本机 IPC 禁用均有回归。页面场景见
+`apps/desktop/scripts/fixtures/cloud-settings/`，覆盖深浅色、多语言、窄窗口与下拉展开。
+2026-10-29 定向回归共 375 项通过；Desktop 类型检查通过。页面矩阵为 4 个场景 ×
+深浅色 × 5 种语言，共 40 组，另核对菜单等宽和窄窗口文字宽度。
+这类隔离验证不等于真实云端保存验收，也不代表新安装包或云镜像已经发布。
 
 ## 接入路径与身份
 

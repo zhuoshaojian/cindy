@@ -4,11 +4,18 @@ import { createCloudSettingsService, type CloudClientCaller } from '../service';
 import { cloudSettingsClientHandlers } from '../ipc';
 import { CloudClientError, type CloudClientIdentity } from '../transport';
 import { createSettingsManagement, type ManagementExecution } from '../../host-settings/management';
+import { additionalSettingsSchemas } from '../../../shared/settingsEditableCatalog';
+import type { CloudSettingsState } from '../../../shared/cloudSettings';
 import type { CloudSettingsRendererApi } from '../../../shared/cloudSettingsClient';
 import type { SettingsWebCommand, SettingsWebResult } from '../../../shared/settingsWeb';
 
 /** In-memory CIS candidate envelope + existing management engine; no live service. */
-export function fixture() {
+export function fixture(desktop?: {
+  domain: 'desktopGeneral' | 'desktopChat';
+  defaults: NonNullable<CloudSettingsState['defaults']>;
+}) {
+  let desktopValue = { ...desktop?.defaults };
+  let desktopKeys: string[] = [];
   let identity: CloudClientIdentity | null = {
     key: 'owner-a:realm-cn:1',
     generation: 1,
@@ -50,14 +57,14 @@ export function fixture() {
   const state = (): SettingsWebResult => ({
     ok: true,
     settings: {
-      domain: 'memory',
+      domain: desktop?.domain ?? 'memory',
       status: 'ready',
       revision,
       operationId: randomUUID(),
-      value: { maker: value, claudeCode: true, codex: true, pi: true },
-      defaults: { maker: true, claudeCode: true, codex: true, pi: true },
-      isCustomized: !value,
-      customizedKeys: value ? [] : ['maker'],
+      value: desktop ? desktopValue : { maker: value, claudeCode: true, codex: true, pi: true },
+      defaults: desktop?.defaults ?? { maker: true, claudeCode: true, codex: true, pi: true },
+      isCustomized: desktop ? desktopKeys.length > 0 : !value,
+      customizedKeys: desktop ? desktopKeys : value ? [] : ['maker'],
     },
   });
   const request = vi.fn(
@@ -80,7 +87,7 @@ export function fixture() {
           instanceId: 'instance-a',
           deviceId: 'cloud-a',
           runtimeId,
-          domains: ['memory', 'personalization', 'gitSafety', 'shortcuts'],
+          domains: [desktop?.domain ?? 'memory', 'personalization', 'gitSafety', 'shortcuts'],
           readBatch: true,
           managementV1: true,
           resultWait: true,
@@ -104,7 +111,7 @@ export function fixture() {
       else if (command.kind === 'readBatch')
         result = {
           ok: true,
-          entries: [{ domain: 'memory', result: state() as never }],
+          entries: [{ domain: desktop?.domain ?? 'memory', result: state() as never }],
           remainingDomains: [],
         };
       else if (command.kind === 'receipt')
@@ -113,6 +120,21 @@ export function fixture() {
         if (command.change.expectedRevision !== revision) result = { ok: false, code: 'CONFLICT' };
         else {
           const change = command.change;
+          if (desktop) {
+            desktopKeys = [
+              ...new Set([
+                ...desktopKeys.filter((key) => !change.clear?.includes(key)),
+                ...Object.keys(change.set ?? {}),
+              ]),
+            ];
+            desktopValue = additionalSettingsSchemas[desktop.domain].parse({
+              ...desktopValue,
+              ...Object.fromEntries(
+                (change.clear ?? []).map((key) => [key, desktop.defaults[key]]),
+              ),
+              ...change.set,
+            });
+          }
           value = change.clear?.includes('maker')
             ? true
             : ((change.set as { maker?: boolean }).maker ?? value);

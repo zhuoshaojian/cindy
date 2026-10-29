@@ -1,23 +1,22 @@
 import { z } from 'zod';
 import { settingsWebReadResultSchema } from './settingsWeb.js';
 
-/** Cloud execution settings, deliberately independent of the local settings menu.
- * New domains require an explicit review of the consumer and the native control.
- * The scalar catalog excludes credentials, desktop preferences and CIS lifecycle
- * operations. Authorization uses existing settingsManagement actions. */
+/** Native cloud settings reuse the local menu and presentation components.
+ * Project only domains with compatible remote state and native controllers;
+ * never fill remote fields from this computer's settings or provider catalog.
+ * Authorization and lifecycle operations use their existing dedicated commands. */
 // UI projection only. Remote commands use settingsWeb/settingsManagement.
 export const CLOUD_SETTINGS_GROUPS = {
-  general: ['collaboration', 'agentResource', 'gitSafety', 'lsp'],
+  general: ['desktopGeneral', 'desktopChat', 'collaboration', 'agentResource', 'gitSafety', 'lsp'],
   personalization: [
     'personalization',
     'memory',
-    'claudeCompaction',
-    'piCompaction',
     'contacts',
     'contactsSync',
     'chatEmbedding',
     'silentEncryptedRetry',
     'terminal',
+    'desktopChat',
   ],
   providers: [],
   'im-bot': [],
@@ -28,7 +27,7 @@ export const CLOUD_SETTINGS_GROUPS = {
   about: ['diagnostics'],
 } as const;
 export type CloudSettingsTab = keyof typeof CLOUD_SETTINGS_GROUPS;
-export const CLOUD_SETTINGS_DOMAINS = Object.values(CLOUD_SETTINGS_GROUPS).flat();
+export const CLOUD_SETTINGS_DOMAINS = [...new Set(Object.values(CLOUD_SETTINGS_GROUPS).flat())];
 export type CloudSettingsDomain = (typeof CLOUD_SETTINGS_DOMAINS)[number];
 export const cloudSettingsDomainSchema = z.enum(
   CLOUD_SETTINGS_DOMAINS as [CloudSettingsDomain, ...CloudSettingsDomain[]],
