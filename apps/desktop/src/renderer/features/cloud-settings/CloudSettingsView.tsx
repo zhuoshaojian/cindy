@@ -30,6 +30,7 @@ import {
 } from '../../../shared/cloudSettings';
 import { createCloudSettingsClient, type CloudSettingsClient } from './client';
 import { CloudInstanceSection } from './CloudInstanceSection';
+import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
 import { CloudImSettings } from './CloudImSettings';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
@@ -521,12 +522,9 @@ function AuthorizedCloudSettingsView() {
   const device = candidates.find((item) => item.deviceId === selected);
   const owner = getDataOwnerGeneration();
   const scope = JSON.stringify([dataOwnerId, owner.generation, selected]);
-  const current = useRef({ scope, online: false });
-  current.current = {
-    scope,
-    // CIS verifies ownership; settings no longer depend on device-link control permission.
-    online: !!device?.online,
-  };
+  const current = useRef({ scope });
+  current.current = { scope };
+  const [availability, setAvailability] = useState<{ scope: string; view?: CloudInstanceView }>();
   const client = useMemo(
     () =>
       selected
@@ -537,6 +535,43 @@ function AuthorizedCloudSettingsView() {
         : undefined,
     [scope],
   );
+  useEffect(() => {
+    if (!client?.instance) return;
+    let disposed = false;
+    let inFlight = false;
+    const refresh = async () => {
+      if (disposed || inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      try {
+        const view = await client.instance!();
+        if (!disposed && current.current.scope === scope)
+          setAvailability({ scope, view: view.deviceId === selected ? view : undefined });
+      } catch {
+        if (!disposed && current.current.scope === scope) setAvailability({ scope });
+      } finally {
+        inFlight = false;
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 30_000);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [client, scope, selected, device?.online]);
+  const instance = availability?.scope === scope ? availability.view : undefined;
+  // Settings use CIS, not the local relay. A stopped/revoked relay can have an
+  // empty device directory even while the owned cloud runtime is healthy.
+  // Reads and writes still pass Main/CIS ownership and runtime checks.
+  const online = client?.instance
+    ? !!instance?.ready && instance.desiredState === 'running' && !instance.loginRequired
+    : !!device?.online;
   const returnTo: unknown = location.state?.returnTo;
   const back = () =>
     navigate(
@@ -551,9 +586,15 @@ function AuthorizedCloudSettingsView() {
     return (
       <CloudSettingsPanel
         key={scope}
-        name={device?.name ?? t('cloudSettings.instance.title')}
+        name={
+          device?.name ??
+          instance?.name ??
+          (instance
+            ? t('cloudSettings.onboarding.defaultName', { number: instance.nameSequence })
+            : t('cloudSettings.instance.title'))
+        }
         client={client}
-        online={current.current.online}
+        online={online}
         onBack={back}
         focusMaintenance={params.get('section') === 'maintenance'}
       />
