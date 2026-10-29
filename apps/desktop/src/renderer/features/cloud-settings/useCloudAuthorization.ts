@@ -10,6 +10,10 @@ export const supportedActions = (item: ManagementItem) =>
   item.actions.filter(
     (a) => ['authorize', 'disconnect'].includes(a.intent) && a.fields.length === 0,
   );
+export const supportedBotActions = (item: ManagementItem) =>
+  item.actions.filter((action) =>
+    ['authorize', 'connect', 'reconnect', 'disconnect'].includes(action.intent),
+  );
 
 export interface CloudAuthorizationProps {
   client: CloudSettingsClient;
@@ -73,10 +77,14 @@ export function useCloudAuthorization(
           throw new Error('INVALID_PAGE');
         values.push(...result.items);
         if (result.nextOffset === undefined) {
-          const visible = values.filter((item) => supportedActions(item).length);
+          // A connection form or a read-only state is still a real IM channel.
+          // Filtering by OAuth buttons hid every unconfigured personal bot.
+          const visible =
+            section === 'bots' ? values : values.filter((item) => supportedActions(item).length);
           if (new Set(visible.map((item) => item.id)).size !== visible.length)
             throw new Error('INVALID_PAGE');
           setItems(visible);
+          setFailure(undefined);
           setSelected((old) => (visible.some((item) => item.id === old) ? old : visible[0]?.id));
           return;
         }
@@ -102,7 +110,7 @@ export function useCloudAuthorization(
   useEffect(() => {
     setCallback('');
   }, [selected, operation?.operationId, operation?.phase]);
-  const run = async (item: ManagementItem, action: Action) => {
+  const run = async (item: ManagementItem, action: Action, values: Record<string, string> = {}) => {
     if (!current() || pending.current || activeOperation(operationRef.current) || !client.manage)
       return;
     if (action.expiresAt <= Date.now()) {
@@ -131,10 +139,11 @@ export function useCloudAuthorization(
       setOperation(operationRef.current);
       setFailure(undefined);
       try {
-        accept(
-          await client.manage({ operation: 'run', actionId: action.id, operationId, values: {} }),
+        const next = accept(
+          await client.manage({ operation: 'run', actionId: action.id, operationId, values }),
           operationId,
         );
+        if (!activeOperation(next)) await load();
       } catch {
         if (current()) {
           // Keep the operation ID: checking its status is safe, rerunning login is not.

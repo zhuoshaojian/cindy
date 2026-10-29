@@ -34,7 +34,7 @@ export default {
   viewport: { width: 1040, height: 800 },
   real: 'CloudSettingsPanel, NativeCloudSections and shared native settings views, sidebar and search',
   notCovered:
-    'Uses in-memory cloud state. No real CIS, login, credentials or runtime changes; no authorization panels.',
+    'Uses in-memory cloud state. No real CIS, login, credentials or runtime changes; bot forms use synthetic tickets, without real authorization or credential persistence.',
   stubs: {
     'src/renderer/components/settings/settingsSearchCatalog': catalog,
     'src/renderer/contexts/AuthContext':
@@ -44,6 +44,7 @@ export default {
       'export function getVoiceInputWorkletUrl(){return "http://cindy-ui.test/unused-worklet.js";}',
   },
   cases: {
+    bots: { about: 'All six personal bot channels and credential forms', data: { bots: true } },
     default: { about: 'Cloud language and Linux send shortcut reuse native settings' },
     personalization: {
       about: 'Cloud links, tips and reset controls reuse native settings',
@@ -62,7 +63,18 @@ export default {
     await page.locator('#settings-search-target-general-language [role="combobox"]').waitFor();
   },
   async check(page, ui) {
-    if (ui.data.personalization) {
+    if (ui.data.bots) {
+      await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
+      for (const channel of ['wechat', 'wecom', 'feishu', 'dingtalk', 'discord', 'telegram'])
+        await page.getByText(await ui.t(`settings.${channel}Bot.title`), { exact: true }).waitFor();
+      await ui.capture('all-channels');
+      await page.getByText(await ui.t('settings.feishuBot.title'), { exact: true }).click();
+      await page.getByLabel(await ui.t('settings.feishuBot.appIdLabel'), { exact: true }).waitFor();
+      await page
+        .getByLabel(await ui.t('settings.feishuBot.appSecretLabel'), { exact: true })
+        .scrollIntoViewIfNeeded();
+      await ui.capture('feishu-form');
+    } else if (ui.data.personalization) {
       await page
         .getByRole('tab', { name: await ui.t('settings.tabs.personalization'), exact: true })
         .click();

@@ -9,7 +9,7 @@ if (!crypto.randomUUID) {
   crypto.randomUUID = () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`;
 }
 
-function Fixture({ unavailable }: { unavailable: boolean }) {
+function Fixture({ unavailable, bots }: { unavailable: boolean; bots: boolean }) {
   const client = useMemo(() => {
     const client = createTrialCloudSettingsClient();
     // No authorization service is exercised by this display fixture.
@@ -17,7 +17,7 @@ function Fixture({ unavailable }: { unavailable: boolean }) {
     client.connect = async () => ({
       ...(await connect()),
       providerAuthorization: undefined,
-      botAuthorization: undefined,
+      botAuthorization: bots ? 1 : undefined,
       pluginAuthorization: undefined,
       mcpAuthorization: undefined,
     });
@@ -38,7 +38,7 @@ function Fixture({ unavailable }: { unavailable: boolean }) {
         );
     }
     return client;
-  }, [unavailable]);
+  }, [unavailable, bots]);
   return <CloudSettingsPanel name="Cloud example" client={client} online trial onBack={() => {}} />;
 }
 
@@ -48,5 +48,7 @@ mountPage({
     maker: new Proxy({}, { get: (_, name) => forbid(`maker.${String(name)}`) }),
     hostSettings: { update: forbid('hostSettings.update'), get: forbid('hostSettings.get') },
   },
-  render: (ctx) => <Fixture unavailable={ctx.data.unavailable === true} />,
+  render: (ctx) => (
+    <Fixture unavailable={ctx.data.unavailable === true} bots={ctx.data.bots === true} />
+  ),
 });

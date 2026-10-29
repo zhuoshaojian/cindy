@@ -3,10 +3,11 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { ImChannelSettingsCard } from '@/components/settings/ImChannelSettingsCard';
 import { OAuthBrowserLink, OAuthDeviceCodeCard } from '@/components/settings/OAuthDeviceCodeCard';
+import { CloudBotConnectionForm, cloudBotActionLabel } from './CloudBotConnectionForm';
 import { GroupTip } from '@/components/settings/ImBotSection';
 import {
   useCloudAuthorization,
-  supportedActions,
+  supportedBotActions,
   type CloudAuthorizationProps,
 } from './useCloudAuthorization';
 
@@ -30,7 +31,11 @@ export function CloudBotAuthorization(props: CloudAuthorizationProps) {
   const [expanded, setExpanded] = useState<Record<string, string | null>>({});
   const disabled = !props.online || requesting || loading;
   const label = (id: string, fallback: string) =>
-    id === 'bot:wechat' ? t('settings.wechatBot.title') : fallback;
+    ['wechat', 'wecom', 'feishu', 'dingtalk', 'discord', 'telegram'].includes(
+      id.replace(/^bot:/, ''),
+    )
+      ? t(`settings.${id.slice(4)}Bot.title`)
+      : fallback;
   return (
     <section className="flex flex-col gap-6" aria-label={t('settings.tabs.imBot')}>
       <div className="flex items-start justify-between gap-3">
@@ -66,10 +71,18 @@ export function CloudBotAuthorization(props: CloudAuthorizationProps) {
             {entries.map((item) => {
               const own = operationItem === item.id;
               const connected = item.status === 'connected';
-              const actions = supportedActions(item);
+              const actions = supportedBotActions(item);
               const toggleAction = actions.find(
                 (action) => action.intent === (connected ? 'disconnect' : 'authorize'),
               );
+              const form = actions.find((action) => action.fields.length > 0);
+              const personal = item.group === 'management.personalBots' && item.id !== 'bot:wechat';
+              const statusKey =
+                item.status === 'connected'
+                  ? 'connected'
+                  : item.status === 'disconnected'
+                    ? 'needsConfig'
+                    : item.status;
               return (
                 <ImChannelSettingsCard
                   key={item.id}
@@ -87,9 +100,11 @@ export function CloudBotAuthorization(props: CloudAuthorizationProps) {
                       }}
                     >
                       {t(
-                        connected
-                          ? 'cloudSettings.authConnected'
-                          : 'cloudSettings.authDisconnected',
+                        personal
+                          ? `settings.${item.id.slice(4)}Bot.status.${statusKey}`
+                          : connected
+                            ? 'cloudSettings.authConnected'
+                            : 'cloudSettings.authDisconnected',
                       )}
                     </span>
                   }
@@ -101,21 +116,23 @@ export function CloudBotAuthorization(props: CloudAuthorizationProps) {
                     }))
                   }
                   headerAction={
-                    <Switch
-                      checked={connected}
-                      aria-label={label(item.id, item.label)}
-                      disabled={
-                        disabled ||
-                        (busy && !own) ||
-                        (own && operation?.phase === 'unknown') ||
-                        (!toggleAction && !busy)
-                      }
-                      onCheckedChange={() => {
-                        setExpanded((old) => ({ ...old, [group]: item.id }));
-                        if (own && busy) void operate('cancel');
-                        else if (toggleAction) void run(item, toggleAction);
-                      }}
-                    />
+                    personal ? undefined : (
+                      <Switch
+                        checked={connected}
+                        aria-label={label(item.id, item.label)}
+                        disabled={
+                          disabled ||
+                          (busy && !own) ||
+                          (own && operation?.phase === 'unknown') ||
+                          (!toggleAction && !busy)
+                        }
+                        onCheckedChange={() => {
+                          setExpanded((old) => ({ ...old, [group]: item.id }));
+                          if (own && busy) void operate('cancel');
+                          else if (toggleAction) void run(item, toggleAction);
+                        }}
+                      />
+                    )
                   }
                 >
                   {own && operation && (
@@ -137,6 +154,18 @@ export function CloudBotAuthorization(props: CloudAuthorizationProps) {
                     ) : (
                       <OAuthBrowserLink url={prompt.url} onOpen={open} />
                     ))}
+                  {form &&
+                    props.online &&
+                    props.active &&
+                    !(own && (busy || operation?.phase === 'unknown')) && (
+                      <CloudBotConnectionForm
+                        key={`${item.id}:${form.id}`}
+                        item={item}
+                        action={form}
+                        disabled={disabled || busy}
+                        submit={(values) => run(item, form, values)}
+                      />
+                    )}
                   <div className="flex flex-wrap gap-2">
                     {own && (busy || operation?.phase === 'unknown') ? (
                       <>
@@ -160,21 +189,19 @@ export function CloudBotAuthorization(props: CloudAuthorizationProps) {
                         </Button>
                       </>
                     ) : (
-                      actions.map((action) => (
-                        <Button
-                          key={action.id}
-                          variant="secondary"
-                          size="md"
-                          disabled={disabled || busy}
-                          onClick={() => void run(item, action)}
-                        >
-                          {t(
-                            action.intent === 'disconnect'
-                              ? 'settings.providers.button.disconnect'
-                              : 'settings.providers.button.authorize',
-                          )}
-                        </Button>
-                      ))
+                      actions
+                        .filter((action) => !action.fields.length)
+                        .map((action) => (
+                          <Button
+                            key={action.id}
+                            variant="secondary"
+                            size="md"
+                            disabled={disabled || busy}
+                            onClick={() => void run(item, action)}
+                          >
+                            {t(cloudBotActionLabel(item, action))}
+                          </Button>
+                        ))
                     )}
                     {own && prompt && props.trial && (
                       <Button variant="secondary" size="md" onClick={() => void operate('respond')}>

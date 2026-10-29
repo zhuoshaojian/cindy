@@ -2,6 +2,7 @@ import type {
   ManagementCommand,
   ManagementItem,
   ManagementResult,
+  ManagementField,
 } from '../../../shared/settingsManagement';
 
 /** DEV-only in-memory authorization. No external URLs or provider IPC are invoked. */
@@ -17,7 +18,43 @@ export function createTrialAuthorization() {
       kind: 'browser' as const,
     })),
     { section: 'bots', id: 'wechat', label: 'WeChat', kind: 'browser' as const },
+    ...(['wecom', 'feishu', 'dingtalk', 'discord', 'telegram'] as const).map((id) => ({
+      section: 'bots',
+      id,
+      label: id,
+      kind: 'browser' as const,
+    })),
   ];
+  const fields = (id: string): ManagementField[] => {
+    const names: Record<string, string[]> = {
+      wecom: ['botId', 'secret'],
+      feishu: ['appId', 'appSecret'],
+      dingtalk: ['appKey', 'appSecret'],
+      discord: ['token', 'ownerUserId'],
+      telegram: ['token', 'ownerUserId'],
+    };
+    const result: ManagementField[] = (names[id] ?? []).map((name) => ({
+      name,
+      label: name,
+      kind: ['token', 'secret', 'appSecret'].includes(name) ? 'password' : 'text',
+      required: true,
+      maxLength: 512,
+    }));
+    if (id === 'feishu')
+      result.push({
+        name: 'service',
+        label: 'service',
+        kind: 'select',
+        required: true,
+        maxLength: 512,
+        value: 'feishu',
+        options: [
+          { value: 'feishu', label: 'Feishu' },
+          { value: 'lark', label: 'Lark' },
+        ],
+      });
+    return result;
+  };
   const connected = new Set<string>();
   const tickets = new Map<string, { id: string; disconnect: boolean }>();
   const operations = new Map<
@@ -45,9 +82,13 @@ export function createTrialAuthorization() {
             actions: [
               {
                 id: actionId,
-                intent: connected.has(id) ? 'disconnect' : 'authorize',
+                intent: connected.has(id)
+                  ? 'disconnect'
+                  : fields(id).length
+                    ? 'connect'
+                    : 'authorize',
                 label: 'Trial',
-                fields: [],
+                fields: connected.has(id) ? [] : fields(id),
                 expiresAt: Date.now() + 300_000,
               },
             ],
@@ -63,11 +104,13 @@ export function createTrialAuthorization() {
       tickets.delete(command.actionId);
       const definition = definitions.find((d) => d.id === ticket.id)!;
       if (ticket.disconnect) connected.delete(ticket.id);
+      const direct = fields(ticket.id).length > 0;
+      if (direct && !ticket.disconnect) connected.add(ticket.id);
       const view: Extract<ManagementResult, { kind: 'operation' }> = {
         kind: 'operation',
         operationId: command.operationId,
-        phase: ticket.disconnect ? 'succeeded' : 'waiting',
-        ...(!ticket.disconnect
+        phase: ticket.disconnect || direct ? 'succeeded' : 'waiting',
+        ...(!ticket.disconnect && !direct
           ? {
               prompt: {
                 kind: definition.kind,
