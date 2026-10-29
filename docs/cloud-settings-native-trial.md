@@ -78,23 +78,59 @@ CIS 与 runtime 配套交付；服务端修正在 fork 的 `fix/cloud-settings-p
 已目检简中飞书表单。新增回归覆盖未配置渠道、只读行、凭据提交与清空；先复现旧过滤遗漏
 再验证修复。本表明确保留待适配项，不能称为“全部配置已经一致”。
 
-### 安装包与真实保存验收进度
+### 安装包与真实保存验收（2026-10-30）
 
-本轮源码提交 `97463b77832c9f8788eaf305185f4f286148203d` 已打包为
-`0.1.119-dev.cloud.20261029.1`（macOS arm64）。从干净源码导出，锁文件依赖安装、原生
-扩展重建、五个应用 bundle 的隔离标识、ad-hoc 签名及 DMG 挂载后内容比对通过。
-已替换本机独立 Cloud Dev 包，保留其 profile；正式版应用 ASAR 哈希未变，未合并主干。
-DMG SHA-256：`b39648932953ba91e94fc422ab515abb2084d6551844464a0b2341ca081a1d39`。
-安装包未做 Apple 公证。
+源码 `432cb9e44e9260a3219df06022a59b2017b97c4a` 已打包并安装为
+`0.1.119-dev.cloud.20261030.2`（macOS arm64）。干净源码导出、Git LFS 资产哈希、锁文件
+依赖安装、原生扩展和五个 bundle 的隔离标识已核验；正式版应用 ASAR 未变，未合并主干。
 
-本人实例真实只读查询返回 10 条 IM 记录：6 种个人渠道、3 种官方渠道，另加 1 个 Slack
-工作区绑定；完整分页已读完，未修改连接或凭据。目标偏好实际持久化到
-`host-desktop-preferences.json`，不是 SQL 表，验收须检查文件内容与新会话回读。
+通过该安装包的真实页面，在本人云实例执行了两项可逆变更：发送快捷键 `enter → modifier-enter`、
+回复动效 `on → off`。UI 保存后，新建 CIS 设置会话读到新值，云端
+`host-desktop-preferences.json` 只读核验一致；退出并重新启动 Dev 后，两项值和自定义标记仍在。
+随后从 UI 逐项恢复默认，override 清除、revision 及整个云偏好文件哈希均恢复到基线。
+本机 Dev 偏好文件哈希始终不变；云 Pod 未替换，重启计数为 0，保持 ready。
+这是安装包 DOM 操作经过真实 Main/CIS 的验收，不是物理鼠标或 DeviceLink E2E。
 
-当前新包首次启动仍等待 macOS 钥匙串授权（`SecKeychainItemCopyContent`）。**真实新包
-保存、关闭重开后的回读、云端持久化值与恢复原配置尚未执行，不能记为通过。**
-收到授权后仅在本人实例继续；其他云实例不变。没有为了测试机器人表单而使用假密钥
-覆盖现有连接，也没有把合成连接测试当作真实第三方登录验收。
+本轮没有修改其他实例、机器人凭据或任务；两项通过不代表全配置对齐。IM 记录此前真实读取为
+10 条（6 类个人、3 类官方，另加 1 个 Slack 工作区），本轮没有做 IM 模型或群组真实写入。
+相应 CIS/runtime 合同扩展仍按[逐项台账](cloud-settings-parity.md)的交付顺序处理。
+
+修复的定向测试为 356 通过 / 25 文件，Desktop 类型检查通过；相对上一源码提交的双主题
+UI 检查 14/14 通过。全量 `check:test-hygiene` 仍报既有未修改文件的 15 项违规，未扩大基线或
+降低门禁；不把这些结果称为完整 CI 通过。
+
+### Dev 签名与钥匙串
+
+此前 Dev 使用 ad-hoc 签名，designated requirement 绑定本次二进制的 `cdhash`，重包后会变化。
+固定 bundle ID 和 userData 并不足以保持钥匙串授权。macOS 钥匙串按签名要求追踪应用身份，
+见 [Apple TN2206](https://developer.apple.com/library/archive/technotes/tn2206/_index.html)。
+
+持续使用的 Cloud Dev 应复用同一个签名证书，保持独立 bundle ID、profile 和 safeStorage 名称。
+本机已使用独立 Dev 自签身份重新签署 `.2`，没有修改 ASAR 或登录数据、没有调整全局证书信任。
+这仍不是 Developer ID 公证发行包；分享正式测试包时应使用团队批准的签名与公证流程。
+签名工具仅接受隔离 Dev 的暂存副本，缺少固定证书时失败，不回退临时签名：
+
+```sh
+node apps/desktop/scripts/ci/sign-cloud-dev-local.mjs \
+  --app /path/to/staging/Cindy\ Cloud\ Dev\ CN.app \
+  --keychain /path/to/dev-signing.keychain-db \
+  --identity <persistent-certificate-SHA1>
+```
+
+证书只初始化一次，私钥和钥匙串密码放仓库外私有存储；后续沿用，不随构建生成。工具不改
+凭据条目 ACL，不更换服务名，不把凭据降级成明文，也不签运行中的 `/Applications` 应用。
+旧 ad-hoc 身份切换到固定身份时仍需系统授权一次；“允许”通常仅本次，“始终允许”才持久记住。
+
+隔离原生钥匙串测试禁止弹窗，确认不同二进制使用同一证书可以读取上一构建创建的合成条目；
+相同 identifier 换成 ad-hoc 签名读取被拒绝。真实 Dev 本次“允许”后主界面和登录态正常；
+用户准备休息，未继续重启，**真实 Dev 跨重包后免提示尚未验收**。
+
+### 尚未收尾的入口问题
+
+主页云实例设备分组仍依赖 DeviceLink 目录，本机 relay 为 `device-removed/stopped` 时会消失。
+配置页按 CIS 判定可用性只修复了页面加载，不能据此宣称主页入口也已修复。后续应分别核对
+本机身份、目标云实例、账号准入和伙伴主力电脑；不伪造远端在线，不自动重新注册或接管伙伴。
+账号伙伴本来就跨设备共享，主页出现云端伙伴本身不是本地 Dev 变成云实例的证据。
 
 ### CIS 可用性与本机中继分离
 
