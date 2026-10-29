@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { settingsWebReadResultSchema } from './settingsWeb.js';
+import { settingsEditableValueSchema } from './settingsEditableCatalog.js';
+import { SETTINGS_WEB_MAX_CHOICES, settingsWebReadResultSchema } from './settingsWeb.js';
 
 /** Native cloud settings reuse the local menu and presentation components.
  * Project only domains with compatible remote state and native controllers;
@@ -7,7 +8,8 @@ import { settingsWebReadResultSchema } from './settingsWeb.js';
  * Authorization and lifecycle operations use their existing dedicated commands. */
 // UI projection only. Remote commands use settingsWeb/settingsManagement.
 export const CLOUD_SETTINGS_GROUPS = {
-  general: ['desktopGeneral', 'desktopChat', 'collaboration', 'agentResource', 'gitSafety', 'lsp'],
+  general: ['desktopGeneral', 'desktopChat', 'desktopNotifications', 'collaboration', 'agentResource', 'gitSafety', 'lsp'],
+  appearance: ['desktopChat'],
   personalization: [
     'personalization',
     'memory',
@@ -19,7 +21,7 @@ export const CLOUD_SETTINGS_GROUPS = {
     'desktopChat',
   ],
   providers: [],
-  'im-bot': [],
+  'im-bot': ['imFeishu', 'imDiscord', 'imWechat', 'imTelegram', 'imDingtalk', 'imWecom', 'telegramBehavior', 'telegramGroups'],
   ghosts: [],
   'builtin-tools': ['builtinTools'],
   'computer-use': ['browserTools', 'computerTools'],
@@ -47,7 +49,7 @@ export interface CloudSettingsCapabilities {
 }
 const values = z.record(
   z.string(),
-  z.union([z.string().max(8000), z.number().finite(), z.boolean(), z.null()]),
+  settingsEditableValueSchema,
 );
 export const cloudSettingsStateSchema = z
   .object({
@@ -62,7 +64,7 @@ export const cloudSettingsStateSchema = z
     choices: z
       .record(
         z.string(),
-        z.array(z.object({ value: z.string(), label: z.string().max(512) }).strict()).max(64),
+        z.array(z.object({ value: settingsEditableValueSchema, label: z.string().max(512), efforts: z.array(z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])).max(7).optional(), supportsFast: z.boolean().optional() }).strict()).max(SETTINGS_WEB_MAX_CHOICES),
       )
       .optional(),
   })

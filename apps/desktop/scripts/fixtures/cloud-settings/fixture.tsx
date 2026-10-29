@@ -2,6 +2,23 @@ import { useMemo } from 'react';
 import { mountPage, forbid } from '../../ui-page/harness';
 import { CloudSettingsPanel } from '../../../src/renderer/features/cloud-settings/CloudSettingsView';
 import { createTrialCloudSettingsClient } from '../../../src/renderer/features/cloud-settings/trial';
+import { BUNDLED_CATALOG } from '@cindy/model-providers';
+
+const targetModel = {
+  id: 'fixture-model',
+  name: 'Cloud model',
+  contextWindow: 200000,
+  efforts: ['low', 'high'],
+  defaultEffort: 'high',
+};
+const targetProvider = {
+  ...BUNDLED_CATALOG.providers.find((p) => p.id === 'anthropic')!,
+  id: 'fixture-provider',
+  name: 'Cloud provider',
+  connected: true,
+  agents: ['claude-code'],
+  models: { 'claude-code': [targetModel] },
+};
 
 // Fixture-only IDs: the isolated HTTP origin has no secure-context randomUUID.
 if (!crypto.randomUUID) {
@@ -47,6 +64,25 @@ mountPage({
   host: {
     maker: new Proxy({}, { get: (_, name) => forbid(`maker.${String(name)}`) }),
     hostSettings: { update: forbid('hostSettings.update'), get: forbid('hostSettings.get') },
+    // Read-only target catalog for the real native picker. Local maker writes
+    // remain forbidden; this is synthetic UI data, not DeviceLink acceptance.
+    deviceLink: {
+      invoke: async (deviceId: string, channel: string) => {
+        if (deviceId !== 'cloud-settings-trial') throw Error('Wrong fixture target');
+        if (channel === 'maker:provider:list') return { providers: [targetProvider] };
+        if (channel === 'maker:get-capabilities')
+          return {
+            availableModels: [{ ...targetModel, displayName: targetModel.name }],
+            effortLevels: [
+              { id: 'low', displayName: 'Low' },
+              { id: 'high', displayName: 'High' },
+            ],
+            permissionModes: [{ id: 'auto', displayName: 'Auto' }],
+            hasFastMode: false,
+          };
+        return forbid(`deviceLink.${channel}`)();
+      },
+    },
   },
   render: (ctx) => (
     <Fixture unavailable={ctx.data.unavailable === true} bots={ctx.data.bots === true} />

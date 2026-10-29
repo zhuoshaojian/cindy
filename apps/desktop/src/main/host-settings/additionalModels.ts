@@ -126,6 +126,7 @@ export async function validateModelSettingsChange(domain: ModelSettingsDomain, c
       const match = (candidate: SettingsEditableValue) => settingsValuesEqual(candidate, item);
       if (previous.some(match)) continue;
       if ((domain === 'botModelChain' || isImSettingsDomain(domain) || isModelPreferenceDomain(domain)) && typeof item === 'object' && item && !Array.isArray(item)) {
+        if (isImSettingsDomain(domain) && item.modelId === '' && item.providerId === null) continue;
         const selectedRoute = choices[key]!.find(option => (domain === 'botModelChain' ? ['harness', 'providerId', 'model'] : domain === 'modelAccess' || isImSettingsDomain(domain) ? ['providerId', 'modelId'] : ['harness', 'providerId', 'modelId']).every(part =>
           (option.value as Values)[part] === item[part]));
         if (!selectedRoute) throw new HostSettingsError('MODEL_UNAVAILABLE');

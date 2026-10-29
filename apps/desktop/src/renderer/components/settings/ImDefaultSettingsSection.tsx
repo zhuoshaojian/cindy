@@ -12,7 +12,7 @@ import {
   isModelSelectableForNewRoute,
 } from '@cindy/model-providers';
 import { MessageSquare, AlertTriangle } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ModelSelector } from '@/components/new-chat/ModelSelector';
@@ -317,6 +317,93 @@ export function ImDefaultSettingsSection({
   };
 
   return (
+    <ImDefaultSettingsSectionView
+      settings={settings}
+      channel={channel}
+      descriptionChannel={descriptionChannel}
+      embedded={embedded}
+      pending={pending}
+      reset={reset}
+      automaticModel={automaticModel}
+      activeModel={activeSettings.model}
+      turnPolicyWarning={turnPolicyWarning}
+      modeUnsupportedAfterSwitch={modeUnsupportedAfterSwitch}
+      useAutomatic={() =>
+        persist({ agentKind: IM_DEFAULT_SETTINGS.agentKind, agents: IM_DEFAULT_SETTINGS.agents })
+      }
+      onGroupPermissionChange={(groupPermissionMode) => persist({ groupPermissionMode })}
+      modelPicker={
+        <ModelSelector
+          remoteAgent={{ devices: sharedDevices.devices, selectedDeviceId: agentDeviceId }}
+          fastModeConfigurable={false}
+          unifiedAgents={pickerAgents}
+          onUnifiedSelect={({ engine, modelId, providerId, effort, agentDevice }) => {
+            const agentKind = agentKindOfVendor(engine);
+            return persist({
+              agentKind,
+              ...buildAgentSettingsPatch(agentKind, {
+                ...settings.agents[agentKind],
+                model: modelId,
+                providerId,
+                agentDeviceId: agentDevice?.deviceId ?? null,
+                effort: isImDefaultEffort(effort) ? effort : resolveEffort(agentKind, modelId, ''),
+              }),
+            });
+          }}
+          modelId={activeSettings.model}
+          effort={activeSettings.effort}
+          onModelChange={(modelId) => changeModel(modelId)}
+          onEffortChange={changeEffort}
+          vendorKey={vendorKeyFor(settings.agentKind)}
+          currentProviderId={activeSettings.providerId}
+          onProviderChange={(providerId, modelId, reconciledEffort) => {
+            changeModel(modelId ?? activeSettings.model, providerId, reconciledEffort);
+          }}
+          switching={pending}
+          triggerVariant="field"
+          popoverSide="bottom"
+        />
+      }
+    />
+  );
+}
+
+/** Shared local/cloud presentation; it never reads local settings or credentials. */
+export function ImDefaultSettingsSectionView({
+  settings,
+  channel,
+  descriptionChannel = channel,
+  embedded = false,
+  pending,
+  deviceId,
+  reset,
+  automaticModel,
+  activeModel,
+  modelPicker,
+  useAutomatic,
+  onGroupPermissionChange,
+  turnPolicyWarning = null,
+  modeUnsupportedAfterSwitch = false,
+  showAutomaticUnavailable = true,
+}: {
+  settings: Pick<ImDefaultSettingsState, 'agentKind' | 'groupPermissionMode' | 'isCustomized'>;
+  channel?: ImDefaultSettingsChannel;
+  descriptionChannel?: ImDefaultSettingsChannel;
+  embedded?: boolean;
+  pending: boolean;
+  deviceId?: string;
+  reset(): unknown;
+  automaticModel: boolean;
+  activeModel: string;
+  modelPicker: ReactNode;
+  useAutomatic(): unknown;
+  onGroupPermissionChange(mode: ImDefaultSettingsState['groupPermissionMode']): unknown;
+  turnPolicyWarning?: 'agent' | 'mode' | null;
+  modeUnsupportedAfterSwitch?: boolean;
+  showAutomaticUnavailable?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
     <section
       className={cn(
         'flex flex-col gap-[18px]',
@@ -365,58 +452,17 @@ export function ImDefaultSettingsSection({
               )}
             </span>
             {!automaticModel && (
-              <Button
-                size="sm"
-                tone="quiet"
-                disabled={pending}
-                onClick={() =>
-                  void persist({
-                    agentKind: IM_DEFAULT_SETTINGS.agentKind,
-                    agents: IM_DEFAULT_SETTINGS.agents,
-                  })
-                }
-              >
+              <Button size="sm" tone="quiet" disabled={pending} onClick={() => void useAutomatic()}>
                 {t('settings.imBot.defaults.useAutomatic')}
               </Button>
             )}
           </div>
-          {automaticModel && !activeSettings.model && (
+          {automaticModel && !activeModel && showAutomaticUnavailable && (
             <p className="text-12 text-[var(--text-secondary)]">
               {t('settings.imBot.defaults.automaticUnavailable')}
             </p>
           )}
-          <ModelSelector
-            remoteAgent={{ devices: sharedDevices.devices, selectedDeviceId: agentDeviceId }}
-            fastModeConfigurable={false}
-            unifiedAgents={pickerAgents}
-            onUnifiedSelect={({ engine, modelId, providerId, effort, agentDevice }) => {
-              const agentKind = agentKindOfVendor(engine);
-              return persist({
-                agentKind,
-                ...buildAgentSettingsPatch(agentKind, {
-                  ...settings.agents[agentKind],
-                  model: modelId,
-                  providerId,
-                  agentDeviceId: agentDevice?.deviceId ?? null,
-                  effort: isImDefaultEffort(effort)
-                    ? effort
-                    : resolveEffort(agentKind, modelId, ''),
-                }),
-              });
-            }}
-            modelId={activeSettings.model}
-            effort={activeSettings.effort}
-            onModelChange={(modelId) => changeModel(modelId)}
-            onEffortChange={changeEffort}
-            vendorKey={vendorKeyFor(settings.agentKind)}
-            currentProviderId={activeSettings.providerId}
-            onProviderChange={(providerId, modelId, reconciledEffort) => {
-              changeModel(modelId ?? activeSettings.model, providerId, reconciledEffort);
-            }}
-            switching={pending}
-            triggerVariant="field"
-            popoverSide="bottom"
-          />
+          {modelPicker}
         </div>
       </div>
 
@@ -431,6 +477,7 @@ export function ImDefaultSettingsSection({
             {t('settings.imBot.defaults.groupPermissionLabel')}
           </span>
           <PermissionSelector
+            deviceId={deviceId}
             permissionMode={settings.groupPermissionMode}
             vendorKey={vendorKeyFor(settings.agentKind)}
             triggerVariant="field"
@@ -438,7 +485,7 @@ export function ImDefaultSettingsSection({
             ariaContext={t('settings.imBot.defaults.groupPermissionLabel')}
             onPermissionModeChange={(mode) => {
               if (isImDefaultPermissionMode(mode)) {
-                void persist({ groupPermissionMode: mode });
+                void onGroupPermissionChange(mode);
               }
             }}
           />

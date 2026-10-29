@@ -23,7 +23,7 @@ export const IM_SETTINGS_DOMAINS = ['imGlobal', 'imFeishu', 'imSlack', 'imDiscor
 export type ImSettingsDomain = typeof IM_SETTINGS_DOMAINS[number];
 export function isImSettingsDomain(domain: string): domain is ImSettingsDomain { return IM_SETTINGS_DOMAINS.includes(domain as ImSettingsDomain); }
 const permission = z.enum(['ask', 'default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']);
-const imRoute = backend.extend({ providerId: routeId.nullable(), effort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']) });
+const imRoute = backend.extend({ modelId: z.union([z.literal(''), routeId]), providerId: routeId.nullable(), effort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']) }).refine(route => route.modelId !== '' || route.providerId === null, 'automatic routes have no fixed provider');
 const imSettings = z.object({ agentKind: z.enum(['claude-code', 'codex', 'pi']), permissionMode: permission, claudeCode: imRoute, codex: imRoute, pi: imRoute }).strict();
 export const MODEL_PREFERENCE_DOMAINS = ['modelVisibility', 'modelEngines', 'modelFavorites', 'modelContext', 'modelAccess', 'providerNames', 'modelPrices'] as const;
 export type ModelPreferenceDomain = typeof MODEL_PREFERENCE_DOMAINS[number];

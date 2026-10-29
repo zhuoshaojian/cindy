@@ -464,3 +464,10 @@ bot 身份按入站使用的稳定 ID 校验；Discord 取 gateway application i
 - 呈现大脑：`apps/desktop/src/main/im/shared/turnPresenter.ts`
 - 呈现能力契约：`packages/lizi-im/src/telegram/presentationCapabilities.ts`
 - 任务 / 对话 / 消息的用词：`docs/product-rules/task-and-conversation-naming.md`
+
+### 原生云设置入口（2026-10-30）
+
+个人 Telegram 的引用、表情和群激活模式与本地共用展示组件，经目标 CIS settingsWeb
+保存；未在发现列表中的已保存群也保留。官方 Telegram 仍走独立 Hook 绑定，不能通过
+个人行为域修改。官方行为/群组的原生云设置适配尚未完成，不将个人入口记为双侧完成。
+完整设置差异与真实验收边界见 [云设置对照](../cloud-settings-parity.md)。

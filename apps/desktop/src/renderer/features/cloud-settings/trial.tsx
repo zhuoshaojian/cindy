@@ -6,6 +6,10 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CloudSettingsPanel } from './CloudSettingsView';
 import type { CloudSettingsClient } from './client';
+import {
+  IM_SETTINGS_DOMAINS,
+  type SettingsEditableValue,
+} from '../../../shared/settingsEditableCatalog';
 import { settingsWebUpdateSchema } from '../../../shared/settingsWeb';
 import {
   CLOUD_SETTINGS_DOMAINS,
@@ -21,7 +25,31 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
     runtimeId: crypto.randomUUID(),
     ownerGeneration: 1,
   };
-  const defaults: Record<CloudSettingsDomain, Record<string, string | number | boolean>> = {
+  const defaults: Record<CloudSettingsDomain, Record<string, SettingsEditableValue>> = {
+    ...(Object.fromEntries(
+      IM_SETTINGS_DOMAINS.map((domain) => [
+        domain,
+        {
+          agentKind: 'claude-code',
+          permissionMode: 'auto',
+          claudeCode: { providerId: null, modelId: '', effort: 'high' },
+          codex: { providerId: null, modelId: '', effort: 'high' },
+          pi: { providerId: null, modelId: '', effort: 'high' },
+          ...(domain === 'imFeishu' ? { groupPermissionMode: 'auto' } : {}),
+        },
+      ]),
+    ) as unknown as Record<
+      'imFeishu' | 'imDiscord' | 'imWechat' | 'imTelegram' | 'imDingtalk' | 'imWecom',
+      Record<string, SettingsEditableValue>
+    >),
+    telegramBehavior: { emojiReactions: 'minimal', replyQuoteGroup: 'first', replyQuoteDm: 'off' },
+    telegramGroups: { always: [] },
+    desktopNotifications: {
+      notificationsEnabled: true,
+      feishuNotificationsEnabled: false,
+      swallowActivationClick: false,
+      networkDebugEnabled: false,
+    },
     agentResource: {
       maxConcurrentCommands: 4,
       processPriority: 'normal',
@@ -67,7 +95,7 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
     diagnostics: { crashAutoUploadEnabled: true },
   };
   const states = new Map<CloudSettingsDomain, CloudSettingsState>(
-    CLOUD_SETTINGS_DOMAINS.map((domain) => [
+    CLOUD_SETTINGS_DOMAINS.map<[CloudSettingsDomain, CloudSettingsState]>((domain) => [
       domain,
       {
         domain,
@@ -78,17 +106,28 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
         defaults: defaults[domain],
         isCustomized: false,
         customizedKeys: [],
-        ...(domain === 'terminal'
-          ? {
-              choices: {
-                defaultShellPref: [
-                  { value: 'auto', label: 'Auto' },
-                  { value: 'bash', label: 'Bash' },
-                  { value: 'sh', label: 'sh' },
-                ],
+        choices: (() => {
+          const choices: NonNullable<CloudSettingsState['choices']> = {};
+          if (domain.startsWith('im')) {
+            choices.agentKind = ['claude-code', 'codex'].map((value) => ({ value, label: value }));
+            choices.claudeCode = [
+              {
+                value: { providerId: 'fixture-provider', modelId: 'fixture-model', effort: 'high' },
+                label: 'Cloud model',
+                efforts: ['low', 'high'],
               },
-            }
-          : {}),
+            ];
+          }
+          if (domain === 'telegramGroups')
+            choices.always = [{ value: '-100123', label: 'Cloud group' }];
+          if (domain === 'terminal')
+            choices.defaultShellPref = [
+              { value: 'auto', label: 'Auto' },
+              { value: 'bash', label: 'Bash' },
+              { value: 'sh', label: 'sh' },
+            ];
+          return Object.keys(choices).length ? choices : undefined;
+        })(),
       },
     ]),
   );

@@ -31,6 +31,7 @@ import {
 import { createCloudSettingsClient, type CloudSettingsClient } from './client';
 import { CloudInstanceSection } from './CloudInstanceSection';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
+import { CloudImSettings } from './CloudImSettings';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
 import { CloudMcpAuthorization } from './CloudMcpAuthorization';
 import { CloudPluginAuthorization } from './CloudPluginAuthorization';
@@ -72,6 +73,7 @@ export function CloudSettingsPanel({
   const [botAuthorization, setBotAuthorization] = useState(false);
   const [pluginAuthorization, setPluginAuthorization] = useState(false);
   const [providerAuthorization, setProviderAuthorization] = useState(false);
+  const [deviceId, setDeviceId] = useState('');
   const [cpuCount, setCpuCount] = useState<number | undefined>();
   const [states, setStates] = useState<Partial<Record<CloudSettingsDomain, CloudSettingsState>>>(
     {},
@@ -118,6 +120,7 @@ export function CloudSettingsPanel({
         fresh.current = true;
         setDomains(cap.domains);
         setCpuCount(cap.cpuCount);
+        setDeviceId(cap.deviceId);
         setProviderAuthorization(cap.providerAuthorization === 1);
         setMcpAuthorization(cap.mcpAuthorization === 1);
         setBotAuthorization(cap.botAuthorization === 1);
@@ -357,6 +360,16 @@ export function CloudSettingsPanel({
                     {t(`cloudSettings.${failure}`)}
                   </div>
                 )}
+                {!failure &&
+                  !loading &&
+                  activeDomains.some((d) => states[d]?.status === 'unreadable') && (
+                    <p
+                      role="alert"
+                      className="py-[18px] text-13 text-[var(--settings-section-desc)]"
+                    >
+                      {t('cloudSettings.readFailed')}
+                    </p>
+                  )}
                 <span
                   className={
                     result === 'hostSettings.savedApplyFailed'
@@ -410,6 +423,15 @@ export function CloudSettingsPanel({
                     {group === 'im-bot' ? (
                       botAuthorization && (
                         <CloudBotAuthorization
+                          settings={(itemId) => (
+                            <CloudImSettings
+                              itemId={itemId}
+                              deviceId={deviceId}
+                              states={states}
+                              disabled={!online || loading || writing || !!failure || tab !== group}
+                              save={save}
+                            />
+                          )}
                           client={client}
                           name={name}
                           online={online}

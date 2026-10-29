@@ -144,7 +144,22 @@ export function createCloudSettingsClient(
     const responses = await call(() => bridge.read({ handle: session!.handle, domains }));
     if (responses.length !== domains.length) throw new Error('CLOUD_SETTINGS_INVALID_RESPONSE');
     return responses.map((raw, index) => {
-      const r = result(raw);
+      const parsed = settingsWebResultSchema.parse(raw);
+      if (
+        !parsed.ok &&
+        [
+          'SETTINGS_REQUEST_FAILED',
+          'SETTINGS_RESPONSE_TOO_LARGE',
+          'MODEL_CATALOG_TOO_LARGE',
+          'UNREADABLE',
+        ].includes(parsed.code)
+      )
+        return cloudSettingsStateSchema.parse({
+          domain: domains[index],
+          status: 'unreadable',
+          revision: null,
+        });
+      const r = result(parsed);
       if (!r.ok || !('settings' in r) || r.settings.domain !== domains[index])
         throw new Error('CLOUD_SETTINGS_INVALID_RESPONSE');
       return cloudSettingsStateSchema.parse(r.settings);

@@ -288,7 +288,7 @@ describe('shared native cloud settings', () => {
     const search = screen.getByRole('combobox', { name: 'settings.search.ariaLabel' });
     fireEvent.change(search, { target: { value: 'shortcuts' } });
     expect(screen.queryAllByRole('option')).toHaveLength(0);
-    expect(screen.getAllByRole('tab')).toHaveLength(9);
+    expect(screen.getByRole('tab', { name: 'settings.tabs.appearance' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'settings.tabs.providers' })).toBeTruthy();
     const allowed = SETTINGS_SEARCH_ENTRIES.filter((e) =>
       cloudSearchEntryAllowed(e, [...CLOUD_SETTINGS_DOMAINS], false),
@@ -312,4 +312,28 @@ describe('shared native cloud settings', () => {
     }
     expect(save).not.toHaveBeenCalled();
   });
+});
+
+// Regression: shared controls must persist only their own target field, then remove that override.
+it('saves target notifications and stream fade without changing unrelated cloud fields', async () => {
+  const { client, save } = setup();
+  await general();
+  const notifications = screen.getByRole('switch', {
+    name: 'settings.notifications.sessionDoneAria',
+  });
+  await ready(notifications);
+  fireEvent.click(notifications);
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save.mock.calls[0][1]).toEqual({ notificationsEnabled: false });
+  fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.appearance' }));
+  const fade = await screen.findByRole('switch', { name: 'settings.streamFade.toggleAria' });
+  await ready(fade);
+  fireEvent.click(fade);
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  await ready(fade);
+  fireEvent.click(screen.getByRole('button', { name: 'settings.defaults.restore' }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(3));
+  const [chat] = await client.read(['desktopChat']);
+  expect(chat.customizedKeys).toEqual([]);
+  expect(chat.value).toMatchObject({ streamFadePreference: 'on', composerSendShortcut: 'enter' });
 });

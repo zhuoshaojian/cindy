@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CloudBotAuthorization } from '../CloudBotAuthorization';
 import { createTrialCloudSettingsClient } from '../trial';
@@ -116,4 +116,96 @@ it('shows all personal channels and submits credentials only to the selected clo
   expect(screen.queryByLabelText('settings.telegramBot.tokenLabel')).toBeNull();
   view.rerender(<CloudBotAuthorization {...props} online={false} />);
   expect(screen.queryByLabelText('settings.telegramBot.tokenLabel')).toBeNull();
+});
+
+// The new controller must never save model or group settings to this computer or
+// to an official hook. Mock only the heavy picker, keep the native view/controller.
+const pickers = vi.hoisted(() => ({ model: null as any, permission: null as any }));
+vi.mock('@/components/new-chat/ModelSelector', () => ({
+  ModelSelector: (props: any) => {
+    pickers.model = props;
+    return <span>Target model picker</span>;
+  },
+}));
+vi.mock('@/components/new-chat/PermissionSelector', () => ({
+  PermissionSelector: (props: any) => {
+    pickers.permission = props;
+    return <span>Target permission picker</span>;
+  },
+}));
+import { CloudImSettings } from '../CloudImSettings';
+it('saves an admitted target route, rejects a local-only route and resets only that channel', async () => {
+  const client = createTrialCloudSettingsClient();
+  const [state] = await client.read(['imFeishu']);
+  const save = vi.fn(async (s, set, clear) => (await client.save(s, set, clear)).state);
+  const props = { itemId: 'bot:feishu', deviceId: 'cloud-target', disabled: false, save };
+  const view = render(<CloudImSettings {...props} states={{ imFeishu: state }} />);
+  expect(pickers.model.deviceId).toBe('cloud-target');
+  expect(pickers.permission.deviceId).toBe('cloud-target');
+  expect(
+    pickers.model.onUnifiedSelect({
+      engine: 'cc',
+      modelId: 'local-only',
+      providerId: 'local',
+      effort: 'high',
+    }),
+  ).toBe(false);
+  expect(save).not.toHaveBeenCalled();
+  await pickers.model.onUnifiedSelect({
+    engine: 'cc',
+    modelId: 'fixture-model',
+    providerId: 'fixture-provider',
+    effort: 'low',
+  });
+  const [saved] = await client.read(['imFeishu']);
+  expect(saved.value?.claudeCode).toEqual({
+    modelId: 'fixture-model',
+    providerId: 'fixture-provider',
+    effort: 'low',
+  });
+  expect(save.mock.calls[0][1]).toEqual({
+    agentKind: 'claude-code',
+    claudeCode: saved.value?.claudeCode,
+  });
+  view.rerender(<CloudImSettings {...props} states={{ imFeishu: saved }} />);
+  fireEvent.click(screen.getByRole('button', { name: 'settings.imBot.defaults.useAutomatic' }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  const [automatic] = await client.read(['imFeishu']);
+  expect(automatic.value?.claudeCode).toEqual({ modelId: '', providerId: null, effort: 'high' });
+  view.rerender(<CloudImSettings {...props} states={{ imFeishu: automatic }} />);
+  fireEvent.click(screen.getByRole('button', { name: 'settings.defaults.restore' }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(3));
+  expect(save.mock.calls[2][2]).toEqual(Object.keys(state.defaults!));
+  expect((await client.read(['imFeishu']))[0].customizedKeys).toEqual([]);
+});
+it('keeps missing saved Telegram groups and never applies personal groups to official hooks', async () => {
+  const client = createTrialCloudSettingsClient();
+  const [state] = await client.read(['telegramGroups']);
+  state.value = { always: ['-999'] };
+  state.isCustomized = true;
+  state.customizedKeys = ['always'];
+  const save = vi.fn(async (_s: unknown, _set: Record<string, unknown>) => state);
+  const props = {
+    deviceId: 'cloud-target',
+    states: { telegramGroups: state },
+    disabled: false,
+    save,
+  };
+  const view = render(<CloudImSettings {...props} itemId="bot:official:telegram" />);
+  expect(screen.queryByText('Cloud group')).toBeNull();
+  view.rerender(<CloudImSettings {...props} itemId="bot:telegram" />);
+  const group = screen.getByRole('radiogroup', {
+    name: 'Cloud group · settings.telegramBot.groups.title',
+  });
+  fireEvent.click(
+    within(group).getByRole('radio', { name: 'settings.telegramBot.groups.mode.always' }),
+  );
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save.mock.calls[0][1]).toEqual({ always: ['-999', '-100123'] });
+  view.rerender(<CloudImSettings {...props} disabled itemId="bot:telegram" />);
+  expect(
+    within(group)
+      .getByRole('radio', { name: 'settings.telegramBot.groups.mode.mention' })
+      .matches(':disabled'),
+  ).toBe(true);
 });

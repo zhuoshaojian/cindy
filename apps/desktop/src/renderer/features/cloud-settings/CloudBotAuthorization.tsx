@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { ImChannelSettingsCard } from '@/components/settings/ImChannelSettingsCard';
@@ -12,7 +12,9 @@ import {
 } from './useCloudAuthorization';
 
 /** Same accordion and group layout as local IM settings; only cloud tickets are executed. */
-export function CloudBotAuthorization(props: CloudAuthorizationProps) {
+export function CloudBotAuthorization(
+  props: CloudAuthorizationProps & { settings?(itemId: string): ReactNode },
+) {
   const {
     t,
     items,
@@ -209,6 +211,7 @@ export function CloudBotAuthorization(props: CloudAuthorizationProps) {
                       </Button>
                     )}
                   </div>
+                  {props.settings?.(item.id)}
                 </ImChannelSettingsCard>
               );
             })}

@@ -44,6 +44,14 @@ export default {
       'export function getVoiceInputWorkletUrl(){return "http://cindy-ui.test/unused-worklet.js";}',
   },
   cases: {
+    'im-preferences': {
+      about: 'Target IM defaults and personal Telegram group controls',
+      data: { bots: true, imPreferences: true },
+    },
+    appearance: {
+      about: 'Cloud reply animation override and per-field reset',
+      data: { appearance: true },
+    },
     bots: { about: 'All six personal bot channels and credential forms', data: { bots: true } },
     default: { about: 'Cloud language and Linux send shortcut reuse native settings' },
     personalization: {
@@ -63,7 +71,49 @@ export default {
     await page.locator('#settings-search-target-general-language [role="combobox"]').waitFor();
   },
   async check(page, ui) {
-    if (ui.data.bots) {
+    if (ui.data.appearance) {
+      await page
+        .getByRole('tab', { name: await ui.t('settings.tabs.appearance'), exact: true })
+        .click();
+      const toggle = page.getByRole('switch', {
+        name: await ui.t('settings.streamFade.toggleAria'),
+      });
+      await toggle.click();
+      assert.equal(await toggle.getAttribute('aria-checked'), 'false');
+      await ui.capture('fade-disabled');
+      await page
+        .getByRole('button', { name: await ui.t('settings.defaults.restore'), exact: true })
+        .click();
+      assert.equal(await toggle.getAttribute('aria-checked'), 'true');
+      await ui.capture('fade-default');
+    } else if (ui.data.imPreferences) {
+      await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
+      await page.getByText(await ui.t('settings.telegramBot.title'), { exact: true }).click();
+      const defaults = page.getByRole('region', {
+        name: await ui.t('settings.imBot.defaults.title'),
+      });
+      await defaults.scrollIntoViewIfNeeded();
+      await ui.capture('im-default-model');
+      const group = page.getByRole('radiogroup', {
+        name: `Cloud group · ${await ui.t('settings.telegramBot.groups.title')}`,
+      });
+      await group
+        .getByRole('radio', {
+          name: await ui.t('settings.telegramBot.groups.mode.always'),
+          exact: true,
+        })
+        .click();
+      assert.equal(
+        await group
+          .getByRole('radio', {
+            name: await ui.t('settings.telegramBot.groups.mode.always'),
+            exact: true,
+          })
+          .getAttribute('aria-checked'),
+        'true',
+      );
+      await ui.capture('telegram-group-always');
+    } else if (ui.data.bots) {
       await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
       for (const channel of ['wechat', 'wecom', 'feishu', 'dingtalk', 'discord', 'telegram'])
         await page.getByText(await ui.t(`settings.${channel}Bot.title`), { exact: true }).waitFor();

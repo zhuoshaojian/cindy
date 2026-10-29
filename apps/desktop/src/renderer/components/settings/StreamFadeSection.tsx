@@ -21,7 +21,31 @@ import { DefaultOverrideControls } from './DefaultOverrideControls';
 export function StreamFadeSection() {
   const { t } = useTranslation();
   const { preference, setPreference, isCustomized, resetPreference } = useStreamFadePreference();
-  const enabled = preference === 'on';
+  return (
+    <StreamFadeSectionView
+      enabled={preference === 'on'}
+      isCustomized={isCustomized}
+      onChange={(next) => setPreference(next ? 'on' : 'off')}
+      onReset={async () => {
+        if (await resetPreference()) toast.success(t('settings.defaults.restored'));
+        else toast.error(t('hostSettings.saveFailed'));
+      }}
+    />
+  );
+}
+
+export function StreamFadeSectionView({
+  enabled,
+  isCustomized,
+  onChange,
+  onReset,
+}: {
+  enabled: boolean;
+  isCustomized: boolean;
+  onChange(value: boolean): void;
+  onReset(): Promise<void>;
+}) {
+  const { t } = useTranslation();
 
   return (
     <div className="flex flex-col gap-[14px]">
@@ -49,13 +73,10 @@ export function StreamFadeSection() {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <DefaultOverrideControls isCustomized={isCustomized} onReset={async () => {
-            if (await resetPreference()) toast.success(t('settings.defaults.restored'));
-            else toast.error(t('hostSettings.saveFailed'));
-          }} />
+          <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
           <Switch
             checked={enabled}
-            onCheckedChange={(next) => setPreference(next ? 'on' : 'off')}
+            onCheckedChange={onChange}
             aria-label={t('settings.streamFade.toggleAria')}
           />
         </div>

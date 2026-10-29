@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/lib/toast';
+import { NotificationSectionView } from '@/components/settings/NotificationSection';
+import { StreamFadeSectionView } from '@/components/settings/StreamFadeSection';
 import { AgentResourceSectionView } from '@/components/settings/AgentResourceSection';
 import { CollaborationSectionView } from '@/components/settings/CollaborationSection';
 import { MemorySectionView } from '@/components/settings/MemorySection';
@@ -217,6 +219,20 @@ export function NativeCloudSections(props: Props) {
     onChange: (next: 'external' | 'sidebar') => void attempt('desktopChat', { [key]: next }),
     onReset: () => attempt('desktopChat', {}, [key]),
   });
+  if (tab === 'appearance')
+    return ready('desktopChat')
+      ? section(
+          'settings-search-target-appearance-stream-fade',
+          <StreamFadeSectionView
+            enabled={s('desktopChat').value?.streamFadePreference === 'on'}
+            isCustomized={chatCustomized('streamFadePreference')}
+            onChange={(value) =>
+              void attempt('desktopChat', { streamFadePreference: value ? 'on' : 'off' })
+            }
+            onReset={() => attempt('desktopChat', {}, ['streamFadePreference'])}
+          />,
+        )
+      : null;
   if (tab === 'general')
     return (
       <>
@@ -227,6 +243,16 @@ export function NativeCloudSections(props: Props) {
               locale={s('desktopGeneral').value?.locale as LocalePreference}
               disabled={disabled}
               onChange={(locale) => void attempt('desktopGeneral', { locale })}
+            />,
+          )}
+        {ready('desktopNotifications') &&
+          section(
+            'settings-notifications',
+            <NotificationSectionView
+              enabled={bool(s('desktopNotifications'), 'notificationsEnabled')}
+              onChange={(notificationsEnabled) =>
+                void attempt('desktopNotifications', { notificationsEnabled })
+              }
             />,
           )}
         {ready('desktopChat') &&

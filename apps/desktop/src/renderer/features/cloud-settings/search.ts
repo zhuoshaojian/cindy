@@ -5,6 +5,7 @@ import {
   type CloudSettingsTab,
 } from '../../../shared/cloudSettings';
 const targetDomain: Record<string, CloudSettingsDomain> = {
+  'settings-notifications': 'desktopNotifications',
   'settings-collaboration': 'collaboration',
   'settings-agent-resource': 'agentResource',
   'settings-search-target-general-git-safety': 'gitSafety',
@@ -27,6 +28,11 @@ export function cloudSearchEntryAllowed(
   if ((entry.fallbackTargetId ?? entry.targetId) === 'settings-search-target-personalization-tips')
     return domains.some(
       (d) => d === 'desktopChat' || d === 'silentEncryptedRetry' || d === 'chatEmbedding',
+    );
+  if (entry.tab === 'appearance')
+    return (
+      domains.includes('desktopChat') &&
+      ['appearance', 'appearance.streamFade', 'settings.streamFade.label'].includes(entry.id)
     );
   if (entry.tab === 'storage')
     return (

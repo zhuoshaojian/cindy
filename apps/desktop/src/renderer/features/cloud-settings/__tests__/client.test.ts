@@ -21,6 +21,20 @@ function setup(desktop?: Parameters<typeof fixture>[0]) {
   };
 }
 describe('native CIS settings client using existing settingsWeb commands', () => {
+  // An oversized/failed domain used to hide unrelated settings in the same tab.
+  // Only a domain read failure may degrade; scope/auth errors must still escape.
+  it('contains domain read failures without swallowing ownership failures', async () => {
+    const f = setup();
+    f.bridge.read = vi.fn().mockResolvedValue([{ ok: false, code: 'MODEL_CATALOG_TOO_LARGE' }]);
+    expect(await f.client.read(['memory'])).toEqual([
+      { domain: 'memory', status: 'unreadable', revision: null },
+    ]);
+    f.bridge.read = vi
+      .fn()
+      .mockRejectedValue(Error('[CLOUD_SETTINGS_SCOPE_CHANGED] owner changed'));
+    await expect(f.client.read(['memory'])).rejects.toThrow('SCOPE_CHANGED');
+    expect(f.history).toEqual([]);
+  });
   it('uses the verified instance, existing capabilities and batch reads', async () => {
     const f = setup();
     const cap = await f.client.connect();

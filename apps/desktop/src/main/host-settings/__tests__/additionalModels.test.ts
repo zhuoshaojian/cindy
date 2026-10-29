@@ -44,11 +44,12 @@ vi.mock('../../ownerNamespaceMigration.js', () => ({ isLegacyOwnerNamespaceClaim
 import { configureHostSettingsApplication, getHostSettings, updateHostSettings } from '../index.js';
 import { normalizeHostSettingsChange, type HostSettingsDomain, type HostSettingsUpdate } from '../../../shared/hostSettings.js';
 import { modelSettingsChoices, readModelSettings, validateModelSettingsChange, commitModelSettings } from '../additionalModels.js';
+import { settingsWebReadResultSchema } from '../../../shared/settingsWeb.js';
 import { emptyModelPresentationPreferences } from '../../../shared/modelPresentationPreferences.js';
 import { readModelContextLimit } from '../../maker-host/model-context-limit-store.js';
 import { readModelDisableOverrides } from '../../maker-host/model-disable-store.js';
 import { readSubagentModelSettings } from '../../maker-host/subagent-model-settings-store.js';
-import { readImDefaultSettings } from '../../im/defaultSettingsStore.js';
+import { createHostImDefaultsStore, readImDefaultSettings } from '../../im/defaultSettingsStore.js';
 import { readVisionBridgeSettings, isTargetModelsCustomized } from '../../vision-bridge/vision-bridge-settings-store.js';
 import { nativePluginSettings } from '../additionalPlugins.js';
 import { configureAdditionalNativeOperations } from '../additionalRuntime.js';
@@ -64,6 +65,19 @@ async function request(domain: HostSettingsDomain, values: Pick<HostSettingsUpda
 beforeEach(() => { configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, appearance() {}, databaseWarning() {}, async validateNewTaskDefaults() {} }); context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-models-')); context.owner = 'first'; context.generation++; context.pending = false; context.connected = true; context.modelsPerAgent = 1; vi.clearAllMocks(); confirm.mockResolvedValue(true); });
 afterEach(() => fs.rmSync(context.root, { recursive: true, force: true }));
 describe('model and IM settings native persistence', () => {
+  // A saved remote-Agent route is not representable in this wire version. Reading
+  // it as a local route would silently clear agentDeviceId on the next edit (unit).
+  it('leaves saved cross-device IM routes untouched when the editor cannot represent them', async () => {
+    const store = createHostImDefaultsStore();
+    await store.commitAtomic({ set: { schemaVersion: 3, channels: { feishu: {
+      agents: { codex: { ...route, model: route.modelId, effort: 'high', agentDeviceId: 'other-device' } },
+    } } } });
+    const before = store.inspect();
+    expect(await getHostSettings(caller, 'imFeishu')).toMatchObject({ status: 'unavailable', revision: null });
+    expect(await getHostSettings(caller, 'imSlack')).toMatchObject({ status: 'ready' });
+    expect(store.inspect()).toEqual(before);
+    expect(readImDefaultSettings('feishu').agents.codex.agentDeviceId).toBe('other-device');
+  });
   it.each(['modelVisibility', 'modelEngines', 'modelFavorites', 'modelContext'] as const)(
     'keeps all 267 catalog routes in %s, including disconnected providers', async domain => {
       context.modelsPerAgent = 89;
@@ -196,4 +210,17 @@ describe('model and IM settings native persistence', () => {
     expect(await getHostSettings(caller, 'visionBridge')).toMatchObject({ status: 'unreadable' });
     expect(fs.readFileSync(file, 'utf8')).toBe(raw);
   });
+});
+
+// Native defaults use empty routes for automatic selection. Previously the real web
+// response validator rejected that read (unit); test the writer + real file as well.
+it('round-trips automatic IM defaults through the wire without pinning a model or another channel', async () => {
+  const before = await getHostSettings(caller, 'imFeishu');
+  expect(settingsWebReadResultSchema.safeParse({ ok: true, settings: { ...before, domain: 'imFeishu' } }).success).toBe(true);
+  await updateHostSettings(caller, await request('imFeishu', { set: { codex: { ...route, effort: 'low' } } }));
+  await updateHostSettings(caller, await request('imSlack', { set: { codex: { ...route, effort: 'low' } } }));
+  expect(await updateHostSettings(caller, await request('imFeishu', { set: { codex: { providerId: null, modelId: '', effort: 'high' } } }))).toMatchObject({ saved: true });
+  expect(readImDefaultSettings('feishu').agents.codex.model).toBe('');
+  expect(readImDefaultSettings('slack').agents.codex.model).toBe(route.modelId);
+  expect(() => normalizeHostSettingsChange({ domain: 'imFeishu', set: { codex: { providerId: 'fixed-provider', modelId: '', effort: 'high' } } })).toThrow();
 });

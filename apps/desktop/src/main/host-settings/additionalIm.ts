@@ -16,6 +16,12 @@ function project(domain: ImSettingsDomain, snapshot: ReturnType<ReturnType<typeo
   if (snapshot.status !== 'ready') return snapshot;
   const channel = channels[domain];
   const document = interpretHostImDefaults(snapshot.value), defaults = interpretHostImDefaults({});
+  const effective = channel ? document.channels[channel] : document.global;
+  // This wire version only describes routes executed on this Host. Do not turn
+  // a saved remote-Agent route into a local route by dropping its device binding.
+  if (Object.values(effective.agents).some(route => route.agentDeviceId)) {
+    return { status: 'unavailable', revision: null };
+  }
   const scope = channel ? record(record(snapshot.value.channels)[channel]) : record(snapshot.value.global);
   const pick = (value: ImDefaultSettings): Values => Object.fromEntries(Object.keys(additionalSettingsSchemas[domain].shape).map(key => {
     const agent = agents[key as keyof typeof agents];
@@ -26,7 +32,7 @@ function project(domain: ImSettingsDomain, snapshot: ReturnType<ReturnType<typeo
     const agent = agents[key as keyof typeof agents];
     return agent ? Object.hasOwn(record(scope.agents), agent) : Object.hasOwn(scope, key) || key === 'groupPermissionMode' && Object.hasOwn(scope, 'groupCtrPermissionMode');
   });
-  return { ...snapshot, value: pick(channel ? document.channels[channel] : document.global), defaults: pick(channel ? defaults.channels[channel] : defaults.global), customizedKeys, isCustomized: customizedKeys.length > 0 };
+  return { ...snapshot, value: pick(effective), defaults: pick(channel ? defaults.channels[channel] : defaults.global), customizedKeys, isCustomized: customizedKeys.length > 0 };
 }
 export function inspectImSettings(domain: ImSettingsDomain): State {
   try {
