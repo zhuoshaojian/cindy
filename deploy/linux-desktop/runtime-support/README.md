@@ -10,3 +10,13 @@ No previous Cindy image supplies executable build inputs.
 browser/CDP code while forwarding its unchanged arguments to the pinned Google
 Chrome. The slim base removes only the duplicate Chromium packages. Sandbox
 flags, private debugging pipes and authorization cleanup remain unchanged.
+
+The healthcheck has two modes. With no argument it requires a fresh status for
+this device, phase `ready` and all five components ready. Kubernetes startup
+uses `--startup`: it also accepts a fresh `starting` status with binaries/maker
+ready, explicit auth recovery `login-required`/`pending`, and a live owner-only
+recovery socket. It does not make readiness pass or grant access before login.
+Missing/stale status, stopping processes, broken initialization and missing or
+unsafe recovery sockets still fail. The startup failure budget is unchanged.
+Old images keep their strict check until upgraded; existing frozen CIS profiles
+require an exact startup-template approval in addition to the image approval.

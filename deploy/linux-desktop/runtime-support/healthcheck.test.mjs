@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
+import { checkHealth } from "./healthcheck.mjs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,5 +61,45 @@ test("CIS probe requires fresh, matching, complete readiness", () => {
     assert.equal(probe(null), 1);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Regression: a live runtime waiting for owner SSO must pass startup while
+// readiness remains false. The old CLI-only checks covered authenticated
+// readiness, not this startup state. Runtime-support integration tier; synthetic
+// status and a private local socket, no account/network credentials.
+test("startup accepts a live login receiver without making the instance ready", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cindy-health-startup-"));
+  fs.chmodSync(root, 0o700);
+  const socket = path.join(root, "control.sock");
+  const server = net.createServer(connection => connection.end());
+  await new Promise(resolve => server.listen(socket, resolve));
+  fs.chmodSync(socket, 0o600);
+  const now = Date.now();
+  const waiting = {version: 1, instanceId: "test-device", phase: "starting",
+    heartbeatAtMs: now, authRecovery: {version: 1, state: "login-required"},
+    readiness: {auth: "not-ready", database: "not-ready", deviceLink: "not-ready",
+      binaries: "ready", maker: "ready"}};
+  const options = {deviceId: "test-device", startup: true, now, socket};
+  try {
+    assert.equal(await checkHealth(waiting, options), true);
+    assert.equal(await checkHealth(waiting, {...options, startup: false}), false);
+    assert.equal(await checkHealth({...waiting, authRecovery: {version: 1, state: "pending"}}, options), true);
+    for (const patch of [
+      {heartbeatAtMs: now - 30001}, {heartbeatAtMs: now + 1},
+      {instanceId: "another-device"}, {phase: "stopping"}, {authRecovery: undefined},
+      {authRecovery: {version: 2, state: "login-required"}},
+      {authRecovery: {version: 1, state: "unknown"}},
+      {readiness: {...waiting.readiness, maker: "not-ready"}},
+      {readiness: {...waiting.readiness, binaries: "not-ready"}},
+    ]) assert.equal(await checkHealth({...waiting, ...patch}, options), false);
+    fs.chmodSync(socket, 0o666);
+    assert.equal(await checkHealth(waiting, options), false);
+    fs.chmodSync(socket, 0o600);
+    await new Promise(resolve => server.close(resolve));
+    assert.equal(await checkHealth(waiting, options), false);
+  } finally {
+    server.close();
+    fs.rmSync(root, {recursive: true, force: true});
   }
 });
