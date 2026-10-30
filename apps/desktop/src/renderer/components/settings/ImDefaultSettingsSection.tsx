@@ -368,6 +368,55 @@ export function ImDefaultSettingsSection({
   );
 }
 
+/** Native section frame shared by ready, loading and failed cloud reads. */
+export function ImDefaultSettingsSectionFrame({
+  descriptionChannel,
+  embedded = false,
+  controls,
+  children,
+}: {
+  descriptionChannel?: ImDefaultSettingsChannel;
+  embedded?: boolean;
+  controls?: ReactNode;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <section
+      className={cn(
+        'flex flex-col gap-[18px]',
+        embedded
+          ? 'py-1'
+          : [
+              'rounded-xl p-4',
+              'border border-[var(--settings-theme-card-border)]',
+              'bg-[var(--settings-theme-card-bg)]',
+            ],
+      )}
+      aria-label={t('settings.imBot.defaults.title')}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--settings-input-bg)]">
+            <MessageSquare size={18} className="text-[var(--settings-section-title)]" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-14 font-medium leading-none text-[var(--settings-section-title)]">
+              {t('settings.imBot.defaults.title')}
+            </h3>
+            <p className="mt-2 text-12 leading-[1.45] text-[var(--settings-section-desc)]">
+              {t(`settings.imBot.defaults.channelDescriptions.${descriptionChannel}`)}
+            </p>
+          </div>
+        </div>
+        {controls}
+      </div>
+
+      {children}
+    </section>
+  );
+}
+
 /** Shared local/cloud presentation; it never reads local settings or credentials. */
 export function ImDefaultSettingsSectionView({
   settings,
@@ -404,40 +453,17 @@ export function ImDefaultSettingsSectionView({
 }) {
   const { t } = useTranslation();
   return (
-    <section
-      className={cn(
-        'flex flex-col gap-[18px]',
-        embedded
-          ? 'py-1'
-          : [
-              'rounded-xl p-4',
-              'border border-[var(--settings-theme-card-border)]',
-              'bg-[var(--settings-theme-card-bg)]',
-            ],
-      )}
-      aria-label={t('settings.imBot.defaults.title')}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--settings-input-bg)]">
-            <MessageSquare size={18} className="text-[var(--settings-section-title)]" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-14 font-medium leading-none text-[var(--settings-section-title)]">
-              {t('settings.imBot.defaults.title')}
-            </h3>
-            <p className="mt-2 text-12 leading-[1.45] text-[var(--settings-section-desc)]">
-              {t(`settings.imBot.defaults.channelDescriptions.${descriptionChannel}`)}
-            </p>
-          </div>
-        </div>
+    <ImDefaultSettingsSectionFrame
+      descriptionChannel={descriptionChannel}
+      embedded={embedded}
+      controls={
         <DefaultOverrideControls
           isCustomized={settings.isCustomized}
           disabled={pending}
           onReset={() => void reset()}
         />
-      </div>
-
+      }
+    >
       <div>
         <div className="flex flex-col gap-2">
           <span className="text-12 font-medium text-[var(--text-secondary)]">
@@ -529,7 +555,7 @@ export function ImDefaultSettingsSectionView({
           </div>
         </div>
       )}
-    </section>
+    </ImDefaultSettingsSectionFrame>
   );
 }
 

@@ -8,7 +8,15 @@ import { SETTINGS_WEB_MAX_CHOICES, settingsWebReadResultSchema } from './setting
  * Authorization and lifecycle operations use their existing dedicated commands. */
 // UI projection only. Remote commands use settingsWeb/settingsManagement.
 export const CLOUD_SETTINGS_GROUPS = {
-  general: ['desktopGeneral', 'desktopChat', 'desktopNotifications', 'collaboration', 'agentResource', 'gitSafety', 'lsp'],
+  general: [
+    'desktopGeneral',
+    'desktopChat',
+    'desktopNotifications',
+    'collaboration',
+    'agentResource',
+    'gitSafety',
+    'lsp',
+  ],
   appearance: ['desktopChat'],
   personalization: [
     'personalization',
@@ -21,7 +29,16 @@ export const CLOUD_SETTINGS_GROUPS = {
     'desktopChat',
   ],
   providers: [],
-  'im-bot': ['imFeishu', 'imDiscord', 'imWechat', 'imTelegram', 'imDingtalk', 'imWecom', 'telegramBehavior', 'telegramGroups'],
+  'im-bot': [
+    'imFeishu',
+    'imDiscord',
+    'imWechat',
+    'imTelegram',
+    'imDingtalk',
+    'imWecom',
+    'telegramBehavior',
+    'telegramGroups',
+  ],
   ghosts: [],
   'builtin-tools': ['builtinTools'],
   'computer-use': ['browserTools', 'computerTools'],
@@ -47,14 +64,19 @@ export interface CloudSettingsCapabilities {
   cpuCount?: number;
   domains: CloudSettingsDomain[];
 }
-const values = z.record(
-  z.string(),
-  settingsEditableValueSchema,
-);
+const values = z.record(z.string(), settingsEditableValueSchema);
+// Presentation-only diagnostic: never forwarded as a Host setting or credential.
+export const cloudSettingsReadErrorCodeSchema = z.enum([
+  'SETTINGS_REQUEST_FAILED',
+  'SETTINGS_RESPONSE_TOO_LARGE',
+  'MODEL_CATALOG_TOO_LARGE',
+  'UNREADABLE',
+]);
 export const cloudSettingsStateSchema = z
   .object({
     domain: cloudSettingsDomainSchema,
     status: z.enum(['ready', 'unavailable', 'unreadable']),
+    readErrorCode: cloudSettingsReadErrorCodeSchema.optional(),
     revision: z.string().min(1).max(128).nullable(),
     operationId: z.string().uuid().optional(),
     value: values.optional(),
@@ -64,12 +86,28 @@ export const cloudSettingsStateSchema = z
     choices: z
       .record(
         z.string(),
-        z.array(z.object({ value: settingsEditableValueSchema, label: z.string().max(512), efforts: z.array(z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])).max(7).optional(), supportsFast: z.boolean().optional() }).strict()).max(SETTINGS_WEB_MAX_CHOICES),
+        z
+          .array(
+            z
+              .object({
+                value: settingsEditableValueSchema,
+                label: z.string().max(512),
+                efforts: z
+                  .array(z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']))
+                  .max(7)
+                  .optional(),
+                supportsFast: z.boolean().optional(),
+              })
+              .strict(),
+          )
+          .max(SETTINGS_WEB_MAX_CHOICES),
       )
       .optional(),
   })
   .strict()
-  .superRefine((state, ctx) => {
+  .superRefine(({ readErrorCode, ...state }, ctx) => {
+    if (readErrorCode && state.status !== 'unreadable')
+      ctx.addIssue({ code: 'custom', message: 'read error requires unreadable state' });
     // Reuse the existing business validator for every real cloud state. Only the
     // in-memory preview has a prompt body; it is never accepted by Main.
     if (state.domain !== 'personalization') {

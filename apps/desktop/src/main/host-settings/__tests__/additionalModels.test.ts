@@ -214,13 +214,13 @@ describe('model and IM settings native persistence', () => {
 
 // Native defaults use empty routes for automatic selection. Previously the real web
 // response validator rejected that read (unit); test the writer + real file as well.
-it('round-trips automatic IM defaults through the wire without pinning a model or another channel', async () => {
-  const before = await getHostSettings(caller, 'imFeishu');
-  expect(settingsWebReadResultSchema.safeParse({ ok: true, settings: { ...before, domain: 'imFeishu' } }).success).toBe(true);
-  await updateHostSettings(caller, await request('imFeishu', { set: { codex: { ...route, effort: 'low' } } }));
+it.each([['imFeishu', 'feishu'], ['imWechat', 'wechat'], ['imWecom', 'wecom'], ['imDingtalk', 'dingtalk'], ['imDiscord', 'discord'], ['imTelegram', 'telegram']] as const)('round-trips %s automatic defaults without pinning a model or another channel', async (domain, channel) => {
+  const before = await getHostSettings(caller, domain);
+  expect(settingsWebReadResultSchema.safeParse({ ok: true, settings: { ...before, domain } }).success).toBe(true);
+  await updateHostSettings(caller, await request(domain, { set: { codex: { ...route, effort: 'low' } } }));
   await updateHostSettings(caller, await request('imSlack', { set: { codex: { ...route, effort: 'low' } } }));
-  expect(await updateHostSettings(caller, await request('imFeishu', { set: { codex: { providerId: null, modelId: '', effort: 'high' } } }))).toMatchObject({ saved: true });
-  expect(readImDefaultSettings('feishu').agents.codex.model).toBe('');
+  expect(await updateHostSettings(caller, await request(domain, { set: { codex: { providerId: null, modelId: '', effort: 'high' } } }))).toMatchObject({ saved: true });
+  expect(readImDefaultSettings(channel).agents.codex.model).toBe('');
   expect(readImDefaultSettings('slack').agents.codex.model).toBe(route.modelId);
-  expect(() => normalizeHostSettingsChange({ domain: 'imFeishu', set: { codex: { providerId: 'fixed-provider', modelId: '', effort: 'high' } } })).toThrow();
+  expect(() => normalizeHostSettingsChange({ domain, set: { codex: { providerId: 'fixed-provider', modelId: '', effort: 'high' } } })).toThrow();
 });

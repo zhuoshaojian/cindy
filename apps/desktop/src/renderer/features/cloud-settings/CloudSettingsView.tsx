@@ -429,6 +429,11 @@ export function CloudSettingsPanel({
                               itemId={itemId}
                               deviceId={deviceId}
                               states={states}
+                              supportedDomains={domains}
+                              loading={loading}
+                              readFailed={!!failure || !online}
+                              retry={() => void reload()}
+                              retryDisabled={!online || loading || writing || tab !== group}
                               disabled={!online || loading || writing || !!failure || tab !== group}
                               save={save}
                             />

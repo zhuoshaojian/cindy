@@ -26,7 +26,15 @@ if (!crypto.randomUUID) {
   crypto.randomUUID = () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`;
 }
 
-function Fixture({ unavailable, bots }: { unavailable: boolean; bots: boolean }) {
+function Fixture({
+  unavailable,
+  bots,
+  imReadFailure,
+}: {
+  unavailable: boolean;
+  bots: boolean;
+  imReadFailure: boolean;
+}) {
   const client = useMemo(() => {
     const client = createTrialCloudSettingsClient();
     // No authorization service is exercised by this display fixture.
@@ -38,6 +46,25 @@ function Fixture({ unavailable, bots }: { unavailable: boolean; bots: boolean })
       pluginAuthorization: undefined,
       mcpAuthorization: undefined,
     });
+    if (imReadFailure) {
+      let failed = false;
+      const read = client.read;
+      client.read = async (domains) => {
+        const states = await read(domains);
+        if (failed || !domains.includes('imWechat')) return states;
+        failed = true;
+        return states.map((state) =>
+          state.domain.startsWith('im')
+            ? {
+                domain: state.domain,
+                status: 'unreadable',
+                revision: null,
+                readErrorCode: 'SETTINGS_REQUEST_FAILED',
+              }
+            : state,
+        );
+      };
+    }
     if (unavailable) {
       const read = client.read;
       client.read = async (domains) =>
@@ -55,7 +82,7 @@ function Fixture({ unavailable, bots }: { unavailable: boolean; bots: boolean })
         );
     }
     return client;
-  }, [unavailable, bots]);
+  }, [unavailable, bots, imReadFailure]);
   return <CloudSettingsPanel name="Cloud example" client={client} online trial onBack={() => {}} />;
 }
 
@@ -85,6 +112,10 @@ mountPage({
     },
   },
   render: (ctx) => (
-    <Fixture unavailable={ctx.data.unavailable === true} bots={ctx.data.bots === true} />
+    <Fixture
+      unavailable={ctx.data.unavailable === true}
+      bots={ctx.data.bots === true}
+      imReadFailure={ctx.data.imReadFailure === true}
+    />
   ),
 });

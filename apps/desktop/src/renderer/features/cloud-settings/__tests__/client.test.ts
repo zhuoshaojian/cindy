@@ -27,7 +27,7 @@ describe('native CIS settings client using existing settingsWeb commands', () =>
     const f = setup();
     f.bridge.read = vi.fn().mockResolvedValue([{ ok: false, code: 'MODEL_CATALOG_TOO_LARGE' }]);
     expect(await f.client.read(['memory'])).toEqual([
-      { domain: 'memory', status: 'unreadable', revision: null },
+      { domain: 'memory', status: 'unreadable', revision: null, readErrorCode: 'MODEL_CATALOG_TOO_LARGE' },
     ]);
     f.bridge.read = vi
       .fn()

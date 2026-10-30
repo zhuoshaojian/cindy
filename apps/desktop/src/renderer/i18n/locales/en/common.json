@@ -17893,6 +17893,10 @@
     }
   },
   "cloudSettings": {
+    "imReadFailed": "Could not load new conversation settings",
+    "imReadFailedHint": "The cloud instance did not return valid settings. Reload to try again. Editing is unavailable until they load; saved settings will not be overwritten.",
+    "imReadUnavailable": "The cloud instance is not providing these settings, so they cannot be edited here yet.",
+    "imReadTooLarge": "The settings or model list returned by the cloud instance is too large to load. Retry; if this continues, ask the administrator to check the cloud configuration.",
     "title": "Cloud Settings",
     "search": "Search Cloud Settings",
     "cloudOnly": "Uses the same interface as local settings and shows settings supported by this cloud instance. Changes apply only to the cloud instance.",

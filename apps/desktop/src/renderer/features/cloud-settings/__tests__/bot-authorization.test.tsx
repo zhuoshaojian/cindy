@@ -209,3 +209,32 @@ it('keeps missing saved Telegram groups and never applies personal groups to off
       .matches(':disabled'),
   ).toBe(true);
 });
+
+// Unit/jsdom: real shared section must survive per-domain read errors and retry.
+// Prior tests only covered ready snapshots; no local controller or credentials may be consulted.
+it.each([
+  ['wechat', 'imWechat'], ['wecom', 'imWecom'], ['feishu', 'imFeishu'],
+  ['dingtalk', 'imDingtalk'], ['discord', 'imDiscord'], ['telegram', 'imTelegram'],
+] as const)('retains %s new-conversation settings through loading, failure and retry', async (channel, domain) => {
+  const client = createTrialCloudSettingsClient();
+  const [ready] = await client.read([domain]);
+  const retry = vi.fn(), save = vi.fn();
+  const props = { itemId: `bot:${channel}`, deviceId: 'cloud-target', disabled: true,
+    loading: true, retry, retryDisabled: true, save };
+  const view = render(<CloudImSettings {...props} states={{}} />);
+  const section = screen.getByRole('region', { name: 'settings.imBot.defaults.title' });
+  expect(within(section).getByRole('status').textContent).toContain('settings.imBot.defaults.loading');
+  view.rerender(<CloudImSettings {...props} loading={false} retryDisabled={false}
+    states={{ [domain]: { domain, status: 'unreadable', revision: null, readErrorCode: 'SETTINGS_REQUEST_FAILED' } }} />);
+  expect(within(section).getByRole('alert').textContent).toContain('cloudSettings.imReadFailed');
+  expect(within(section).queryByText('Target model picker')).toBeNull();
+  fireEvent.click(within(section).getByRole('button', { name: 'cloudSettings.reload' }));
+  expect(retry).toHaveBeenCalledTimes(1);
+  view.rerender(<CloudImSettings {...props} states={{}} />);
+  expect(within(section).getByRole('status')).toBeTruthy();
+  view.rerender(<CloudImSettings {...props} loading={false} disabled={false} states={{ [domain]: ready }} />);
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.getByText('Target model picker')).toBeTruthy();
+  expect(pickers.model.deviceId).toBe('cloud-target');
+  expect(save).not.toHaveBeenCalled();
+});

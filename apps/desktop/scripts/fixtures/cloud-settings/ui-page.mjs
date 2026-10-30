@@ -44,6 +44,11 @@ export default {
       'export function getVoiceInputWorkletUrl(){return "http://cindy-ui.test/unused-worklet.js";}',
   },
   cases: {
+    'im-read-failure': {
+      about:
+        'Native new-conversation section remains visible on failed cloud reads and recovers after retry',
+      data: { bots: true, imReadFailure: true },
+    },
     'im-preferences': {
       about: 'Target IM defaults and personal Telegram group controls',
       data: { bots: true, imPreferences: true },
@@ -86,6 +91,23 @@ export default {
         .click();
       assert.equal(await toggle.getAttribute('aria-checked'), 'true');
       await ui.capture('fade-default');
+    } else if (ui.data.imReadFailure) {
+      await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
+      await page.getByText(await ui.t('settings.wechatBot.title'), { exact: true }).click();
+      const defaults = page.getByRole('region', {
+        name: await ui.t('settings.imBot.defaults.title'),
+      });
+      await defaults.getByRole('alert').waitFor();
+      await defaults.scrollIntoViewIfNeeded();
+      await ui.capture('im-read-failed');
+      await defaults
+        .getByRole('button', { name: await ui.t('cloudSettings.reload'), exact: true })
+        .click();
+      await defaults.getByRole('alert').waitFor({ state: 'hidden' });
+      await defaults
+        .getByText(await ui.t('settings.imBot.defaults.modelLabel'), { exact: true })
+        .waitFor();
+      await ui.capture('im-read-recovered');
     } else if (ui.data.imPreferences) {
       await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
       await page.getByText(await ui.t('settings.telegramBot.title'), { exact: true }).click();

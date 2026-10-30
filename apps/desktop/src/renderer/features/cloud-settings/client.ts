@@ -19,6 +19,7 @@ import {
 } from '../../../shared/settingsWeb';
 import {
   cloudSettingsStateSchema,
+  cloudSettingsReadErrorCodeSchema,
   CLOUD_SETTINGS_DOMAINS,
   type CloudSettingsCapabilities,
   type CloudSettingsDomain,
@@ -145,19 +146,12 @@ export function createCloudSettingsClient(
     if (responses.length !== domains.length) throw new Error('CLOUD_SETTINGS_INVALID_RESPONSE');
     return responses.map((raw, index) => {
       const parsed = settingsWebResultSchema.parse(raw);
-      if (
-        !parsed.ok &&
-        [
-          'SETTINGS_REQUEST_FAILED',
-          'SETTINGS_RESPONSE_TOO_LARGE',
-          'MODEL_CATALOG_TOO_LARGE',
-          'UNREADABLE',
-        ].includes(parsed.code)
-      )
+      if (!parsed.ok && cloudSettingsReadErrorCodeSchema.safeParse(parsed.code).success)
         return cloudSettingsStateSchema.parse({
           domain: domains[index],
           status: 'unreadable',
           revision: null,
+          readErrorCode: parsed.code,
         });
       const r = result(parsed);
       if (!r.ok || !('settings' in r) || r.settings.domain !== domains[index])
