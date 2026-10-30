@@ -26,6 +26,8 @@
 即使目标组仍是 root 也需要 `SETGID`。runner 本身继续 drop ALL。`GITHUB_SNI_FORWARD_IP` 为已验证的转发目标，
 `DNS_UPSTREAMS` 为逗号分隔的实际 DNS 服务器。`SNI_FORWARD_DOMAINS` 可显式增加已验证的
 镜像仓库等域名，默认仅包含 GitHub 域名，不设置 HTTP/HTTPS 代理变量。Pod 自定义 nameserver 指向 `127.0.0.1`。
+build Pod 显式包含 Docker 的 `production.cloudflare.docker.com` 与
+`production.cloudfront.docker.com` 下载域；遗漏重定向目标会使固定 digest 的 frontend 拉取超时。
 其他域名仍走 DNS 上游，GitHub TLS 仍由客户端端到端验证；这不是 HTTP 代理或集群 DNS
 配置。构建容器网络需独立检查，不能假定嵌套 Docker 自动继承 Pod DNS。
 

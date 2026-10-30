@@ -82,7 +82,7 @@ def job_manifest(config, state):
         runner['command'] = ['python3', '/bootstrap/preflight.py']
         runner['env'] = [{'name': 'DOCKER_HOST', 'value': 'unix:///ci/socket/docker.sock'}]
         runner['volumeMounts'].append(copy.deepcopy(bootstrap))
-        dns['env'][-1]['value'] += ',docker.io,production.cloudflare.docker.com,dl.google.com,snapshot.debian.org,artifacts.electronjs.org'
+        dns['env'][-1]['value'] += ',docker.io,production.cloudflare.docker.com,production.cloudfront.docker.com,dl.google.com,snapshot.debian.org,artifacts.electronjs.org'
         dns['env'].append(pod_ip)
         pod['containers'].append({
             'name': 'dind', 'image': config['dindImage'], 'command': ['sh', '/bootstrap/daemon.sh'],
