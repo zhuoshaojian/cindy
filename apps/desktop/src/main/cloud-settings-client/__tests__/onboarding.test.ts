@@ -31,6 +31,7 @@ function fixture() {
       latestReleaseTag: '0.1.108',
       upgrade: { state: 'idle' },
       loginRequired: true,
+      loginWakeSupported: false,
       ownership: {
         orgSlug: 'example' as string | null,
         membershipId: 'owner-a',
@@ -322,4 +323,15 @@ it('invalidating a caller cancels its capability without forwarding any account 
     attemptId,
     secret,
   );
+});
+
+it('browser continuation requests explicit wake only for a supported sleeping runtime', async () => {
+  const f = fixture();
+  f.target.status.desiredState = 'stopped';
+  f.target.status.loginWakeSupported = true;
+  f.setList([f.target]);
+  await f.api.initialize(f.caller, f.target.deviceId);
+  expect(
+    f.request.mock.calls.find((call) => call[1] === '/instance-login/api/attempts')?.[3],
+  ).toMatchObject({ instanceId: f.target.instanceId, wake: true });
 });

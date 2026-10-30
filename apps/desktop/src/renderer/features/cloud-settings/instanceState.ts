@@ -9,6 +9,13 @@ export const stableInstanceState = (view: CloudInstanceView) =>
     (view.desiredState === 'stopped' && ['stopped', 'missing'].includes(view.runtimeState)) ||
     view.runtimeState === 'error');
 
+// An unauthenticated runtime may be starting indefinitely until its owner signs in.
+// Keep sleep available, without permitting changes during maintenance or resizing.
+export const canChangeInstancePower = (view: CloudInstanceView) =>
+  stableInstanceState(view) ||
+  (view.loginRequired === true && view.desiredState === 'running' &&
+    !view.upgradeOperation?.active && !view.resourceChanging && view.upgradeState !== 'verifying');
+
 export const instanceStatus = (view: CloudInstanceView) =>
   view.upgradeOperation?.active || view.upgradeState === 'verifying'
     ? 'upgrading'

@@ -333,3 +333,42 @@ it('refreshes auxiliary login completion without navigating the client', async (
   f.unmount();
   expect(unsubscribe).toHaveBeenCalled();
 });
+
+
+it.each(Object.keys(resources) as Array<keyof typeof resources>)(
+  'retains sleeping authentication state and offers explicit wake-and-login in %s', async (lang) => {
+    const f = await setup([{ ...target, desiredState: 'stopped', loginWakeSupported: true }], lang);
+    await screen.findByText(resources[lang].cloudSettings.onboarding.asleepNeedsLogin);
+    const button = await screen.findByRole('button', { name: resources[lang].cloudSettings.onboarding.wakeAndLogin });
+    expect(f.api.instanceInitialize).not.toHaveBeenCalled();
+    expect(f.api.instancePower).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    await waitFor(() => expect(f.api.instanceInitialize).toHaveBeenCalledExactlyOnceWith({ deviceId: target.deviceId }));
+    expect(f.api.instancePower).not.toHaveBeenCalled();
+    expect(f.container.textContent).not.toContain('cloudSettings.');
+  },
+);
+it('allows sleep during login without claiming that the runtime is ready', async () => {
+  const f = await setup([target]);
+  fireEvent.click(await screen.findByRole('button', { name: '休眠' }));
+  await waitFor(() => expect(f.api.instancePower).toHaveBeenCalledExactlyOnceWith({ deviceId: target.deviceId, action: 'sleep' }));
+  expect(f.onOpen).not.toHaveBeenCalled();
+});
+it('does not permit authentication or power changes during maintenance', async () => {
+  const f = await setup([{ ...target, upgradeState: 'verifying' }]);
+  expect((await screen.findByRole('button', { name: '休眠' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(f.api.instancePower).not.toHaveBeenCalled();
+});
+
+it('sleep cancels the old login completion navigation without waking on a later ready notification', async () => {
+  const f = await setup([target]);
+  fireEvent.click(await screen.findByRole('button', { name: '登录云端 Cindy' }));
+  await screen.findByRole('button', { name: '重新打开登录页' });
+  fireEvent.click(screen.getByRole('button', { name: '休眠' }));
+  await waitFor(() => expect(f.api.instancePower).toHaveBeenCalledOnce());
+  f.api.instanceList.mockResolvedValue([{ ...target, loginRequired: false, ready: true, runtimeState: 'running' }]);
+  fireEvent.click(screen.getByRole('button', { name: zhCN.cloudSettings.reload }));
+  await screen.findByText(zhCN.cloudSettings.instance.state.running);
+  expect(f.onOpen).not.toHaveBeenCalled();
+  expect(f.api.instancePower).toHaveBeenCalledExactlyOnceWith({ deviceId: target.deviceId, action: 'sleep' });
+});

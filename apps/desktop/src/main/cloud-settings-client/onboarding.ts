@@ -196,6 +196,9 @@ export function createCloudInstanceOnboarding(deps: {
             attemptSchema,
             await call('/instance-login/api/attempts', 'POST', {
               instanceId: target.instanceId,
+              ...(target.status.desiredState === 'stopped' && target.status.loginWakeSupported
+                ? { wake: true }
+                : {}),
               ...(org ? { org } : {}),
             }),
           );

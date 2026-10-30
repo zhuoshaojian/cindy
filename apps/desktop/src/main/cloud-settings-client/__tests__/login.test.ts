@@ -31,6 +31,7 @@ function fixture(org: string | null = null) {
       latestReleaseTag: null,
       upgrade: { state: 'idle' },
       loginRequired: true,
+      loginWakeSupported: false,
       ownership: { orgSlug: org },
     },
   };
@@ -166,6 +167,28 @@ describe('native cloud login controller', () => {
       );
       f.setStatus({ status: 'ready' });
       expect((await f.service.poll(f.caller, v.handle)).complete).toBe(true);
+    },
+  );
+  it.each([true, false])(
+    'requests explicit wake only when stopped CIS advertises support (%s)',
+    async (supported) => {
+      const f = fixture('example');
+      f.target.status.desiredState = 'stopped';
+      f.target.status.loginWakeSupported = supported;
+      const view = await f.start();
+      expect(
+        f.request.mock.calls.filter((c) => c[1] === '/instance-login/api/attempts'),
+      ).toHaveLength(0);
+      await f.service.dispatch(f.caller, view.handle, { type: 'discover-sso-org', org: 'example' });
+      expect(
+        f.request.mock.calls.find((c) => c[1] === '/instance-login/api/attempts')?.[3],
+      ).toEqual({
+        instanceId: 'instance-a',
+        org: 'example',
+        connectionId: 'connection-a',
+        ...(supported ? { wake: true } : {}),
+      });
+      expect(f.target.deviceId).toBe(f.deviceId);
     },
   );
   it('keeps SSO enterprise discovery, direct browser launch and extra verification', async () => {

@@ -123,6 +123,9 @@ export function createCloudInstanceLogin(deps: CloudLoginDependencies) {
       'POST',
       {
         instanceId: s.target.instanceId,
+        ...(s.target.status.desiredState === 'stopped' && s.target.status.loginWakeSupported
+          ? { wake: true }
+          : {}),
         ...(org ? { org, connectionId } : {}),
       },
       AbortSignal.timeout(8000),

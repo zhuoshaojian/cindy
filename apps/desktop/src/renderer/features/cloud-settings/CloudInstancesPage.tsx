@@ -17,7 +17,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import type { CloudSettingsRendererApi } from '../../../shared/cloudSettingsClient';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
-import { stableInstanceState, instanceStatus } from './instanceState';
+import { stableInstanceState, instanceStatus, canChangeInstancePower } from './instanceState';
 
 export type CloudInstancesApi = Pick<
   CloudSettingsRendererApi,
@@ -167,14 +167,7 @@ export function CloudInstancesPage({
     }
   };
   const power = async (instance: CloudInstanceView, name: string) => {
-    if (
-      inFlight.current ||
-      powerRef.current ||
-      error ||
-      instance.loginRequired ||
-      !stableInstanceState(instance)
-    )
-      return;
+    if (inFlight.current || powerRef.current || error || !canChangeInstancePower(instance)) return;
     inFlight.current = true;
     setBusy(true);
     const action = instance.desiredState === 'stopped' ? 'wake' : 'sleep';
@@ -190,6 +183,10 @@ export function CloudInstancesPage({
       )
         return;
       if (!live.current) return;
+      if (action === 'sleep') {
+        if (openWhenReady.current === instance.deviceId) openWhenReady.current = undefined;
+        setWaiting((current) => current === instance.deviceId ? undefined : current);
+      }
       markPower({ deviceId: instance.deviceId, action, uncertain: false });
       await api.instancePower({ deviceId: instance.deviceId, action });
     } catch {
@@ -298,18 +295,35 @@ export function CloudInstancesPage({
                         ) : null}
                         <span>
                           {instance.loginRequired
-                            ? tr('needsLogin')
+                            ? tr(
+                                instance.desiredState === 'stopped'
+                                  ? 'asleepNeedsLogin'
+                                  : 'needsLogin',
+                              )
                             : t(`cloudSettings.instance.state.${state}`)}
                         </span>
                       </p>
                     </div>
                     {instance.loginRequired ? (
                       <Button
-                        disabled={busy || !!error}
+                        disabled={
+                          busy ||
+                          !!error ||
+                          !!powerPending ||
+                          !!instance.upgradeOperation?.active ||
+                          !!instance.resourceChanging ||
+                          instance.upgradeState === 'verifying'
+                        }
                         onClick={() => void act(false, instance.deviceId)}
                       >
                         <ExternalLink size={15} />
-                        {tr(waiting === instance.deviceId ? 'reopenLogin' : 'initialize')}
+                        {tr(
+                          instance.desiredState === 'stopped' && instance.loginWakeSupported
+                            ? 'wakeAndLogin'
+                            : waiting === instance.deviceId
+                              ? 'reopenLogin'
+                              : 'initialize',
+                        )}
                       </Button>
                     ) : (
                       <Button
@@ -322,68 +336,71 @@ export function CloudInstancesPage({
                       </Button>
                     )}
                   </div>
-                  {!instance.loginRequired && (
-                    <>
-                      <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="min-w-0">
-                          <dt className="text-12 text-[var(--settings-section-desc)]">
-                            {t('cloudSettings.instance.currentVersion')}
-                          </dt>
-                          <dd className="mt-1 break-all text-13 text-[var(--settings-section-title)]">
-                            {instance.version ?? t('cloudSettings.instance.unknown')}
-                          </dd>
-                        </div>
-                        <div className="min-w-0">
-                          <dt className="text-12 text-[var(--settings-section-desc)]">
-                            {t('cloudSettings.instance.availableVersion')}
-                          </dt>
-                          <dd className="mt-1 break-all text-13 text-[var(--settings-section-title)]">
-                            {instance.updateAvailable
-                              ? instance.latestVersion &&
-                                instance.latestVersion !== instance.version
-                                ? instance.latestVersion
-                                : t('cloudSettings.instance.revisionAvailable')
-                              : t(
-                                  `cloudSettings.instance.${instance.manualUpgrade || instance.latestVersion ? 'noUpdate' : 'unknown'}`,
-                                )}
-                          </dd>
-                        </div>
-                      </dl>
-                      <div className="mt-5 flex flex-wrap gap-2 border-t border-[var(--settings-theme-card-border)] pt-4">
-                        {onOpenDesktop && (
-                          <Button
-                            variant="secondary"
-                            compact
-                            disabled={
-                              busy ||
-                              !!pending ||
-                              !instance.ready ||
-                              instance.desiredState !== 'running' ||
-                              instance.upgradeState === 'verifying' ||
-                              !!instance.upgradeOperation?.active ||
-                              !canOpenDesktop?.(instance)
-                            }
-                            onClick={() => onOpenDesktop(instance)}
-                          >
-                            <Monitor size={14} />
-                            {t('remoteDesktop.title')}
-                          </Button>
-                        )}
+                  <>
+                    <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div className="min-w-0">
+                        <dt className="text-12 text-[var(--settings-section-desc)]">
+                          {t('cloudSettings.instance.currentVersion')}
+                        </dt>
+                        <dd className="mt-1 break-all text-13 text-[var(--settings-section-title)]">
+                          {instance.version ?? t('cloudSettings.instance.unknown')}
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-12 text-[var(--settings-section-desc)]">
+                          {t('cloudSettings.instance.availableVersion')}
+                        </dt>
+                        <dd className="mt-1 break-all text-13 text-[var(--settings-section-title)]">
+                          {instance.updateAvailable
+                            ? instance.latestVersion && instance.latestVersion !== instance.version
+                              ? instance.latestVersion
+                              : t('cloudSettings.instance.revisionAvailable')
+                            : t(
+                                `cloudSettings.instance.${instance.manualUpgrade || instance.latestVersion ? 'noUpdate' : 'unknown'}`,
+                              )}
+                        </dd>
+                      </div>
+                    </dl>
+                    <div className="mt-5 flex flex-wrap gap-2 border-t border-[var(--settings-theme-card-border)] pt-4">
+                      {onOpenDesktop && (
                         <Button
                           variant="secondary"
-                          tone="quiet"
                           compact
-                          onClick={() => onOpen(instance.deviceId, 'maintenance')}
+                          disabled={
+                            busy ||
+                            !!pending ||
+                            !instance.ready ||
+                            instance.desiredState !== 'running' ||
+                            instance.upgradeState === 'verifying' ||
+                            !!instance.upgradeOperation?.active ||
+                            !canOpenDesktop?.(instance)
+                          }
+                          onClick={() => onOpenDesktop(instance)}
                         >
-                          <CalendarClock size={14} />
-                          {t('cloudSettings.instance.updates')}
+                          <Monitor size={14} />
+                          {t('remoteDesktop.title')}
                         </Button>
+                      )}
+                      <Button
+                        variant="secondary"
+                        tone="quiet"
+                        compact
+                        onClick={() => onOpen(instance.deviceId, 'maintenance')}
+                      >
+                        <CalendarClock size={14} />
+                        {t('cloudSettings.instance.updates')}
+                      </Button>
+                      {!(
+                        instance.loginRequired &&
+                        instance.desiredState === 'stopped' &&
+                        instance.loginWakeSupported
+                      ) && (
                         <Button
                           variant="secondary"
                           tone="quiet"
                           compact
                           disabled={
-                            busy || !!powerPending || !!error || !stableInstanceState(instance)
+                            busy || !!powerPending || !!error || !canChangeInstancePower(instance)
                           }
                           onClick={() => void power(instance, name)}
                         >
@@ -396,22 +413,22 @@ export function CloudInstancesPage({
                             `cloudSettings.instance.${instance.desiredState === 'stopped' ? 'wake' : 'sleep'}`,
                           )}
                         </Button>
-                      </div>
-                      {pending && (
-                        <p
-                          role={pending.uncertain ? 'alert' : 'status'}
-                          className={`${description} mt-3`}
-                        >
-                          {t(
-                            `cloudSettings.instance.${pending.uncertain ? 'unconfirmed' : pending.action === 'wake' ? 'wakeSent' : 'sleepSent'}`,
-                          )}
-                        </p>
                       )}
-                    </>
-                  )}
+                    </div>
+                    {pending && (
+                      <p
+                        role={pending.uncertain ? 'alert' : 'status'}
+                        className={`${description} mt-3`}
+                      >
+                        {t(
+                          `cloudSettings.instance.${pending.uncertain ? 'unconfirmed' : pending.action === 'wake' ? 'wakeSent' : 'sleepSent'}`,
+                        )}
+                      </p>
+                    )}
+                  </>
                   {instance.loginRequired && (
                     <p className={`${description} mt-4`}>
-                      {tr(waiting === instance.deviceId ? 'waitingLogin' : 'loginDescription', {
+                      {tr(waiting === instance.deviceId ? 'waitingLogin' : instance.loginWakeSupported ? 'recoveryDescription' : 'loginDescription', {
                         name,
                       })}
                     </p>

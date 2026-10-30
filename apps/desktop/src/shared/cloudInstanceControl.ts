@@ -131,6 +131,7 @@ export const cloudInstanceViewSchema = z
     runtimeState: z.string().max(64),
     ready: z.boolean(),
     loginRequired: z.boolean().optional(),
+    loginWakeSupported: z.boolean().optional(),
     version: z.string().max(256).nullable(),
     imageId: z.string().max(64).nullable(),
     updateAvailable: z.boolean(),
