@@ -17,7 +17,7 @@ export const CLOUD_SETTINGS_GROUPS = {
     'gitSafety',
     'lsp',
   ],
-  appearance: ['desktopChat'],
+  appearance: ['desktopGeneral', 'appearance', 'desktopChat'],
   personalization: [
     'personalization',
     'memory',
@@ -40,10 +40,10 @@ export const CLOUD_SETTINGS_GROUPS = {
     'telegramGroups',
   ],
   ghosts: [],
-  'builtin-tools': ['builtinTools'],
-  'computer-use': ['browserTools', 'computerTools'],
+  'builtin-tools': ['builtinTools', 'browserTools'],
+  'computer-use': ['browserTools', 'browserBackend', 'computerTools', 'androidTools'],
   storage: ['databaseWarning'],
-  about: ['diagnostics'],
+  about: ['privacy', 'diagnostics'],
 } as const;
 export type CloudSettingsTab = keyof typeof CLOUD_SETTINGS_GROUPS;
 export const CLOUD_SETTINGS_DOMAINS = [...new Set(Object.values(CLOUD_SETTINGS_GROUPS).flat())];

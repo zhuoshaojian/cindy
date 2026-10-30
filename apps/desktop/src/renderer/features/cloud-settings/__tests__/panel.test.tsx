@@ -296,9 +296,20 @@ describe('shared native cloud settings', () => {
     expect(allowed.some((e) => e.id === 'settings.agentResource.preset')).toBe(true);
     for (const id of ['general.language', 'general.composer', 'personalization.linkOpen'])
       expect(allowed.some((e) => e.id === id)).toBe(true);
+    for (const id of [
+      'settings.computerUse.android.title',
+      'settings.appearance.themeLabel',
+      'settings.appearance.font.uiSize.label',
+      'settings.about.analyticsLabel',
+    ])
+      expect(allowed.some((e) => e.id === id)).toBe(true);
+    // Device setup, files and local-only terminal fonts are not target settings.
     for (const denied of [
       'general.appearance',
-      'settings.computerUse.android.title',
+      'settings.computerUse.android.adb.title',
+      'settings.appearance.wallpaper.title',
+      'settings.appearance.localThemes.title',
+      'settings.appearance.font.terminalFamily.label',
       'settings.about.storage.cleanupLabel',
     ])
       expect(allowed.some((e) => e.id === denied)).toBe(false);

@@ -66,6 +66,10 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
       sidebarMainMode: 'text',
       ghostPanelRestoreMode: 'bubble',
     },
+    appearance: { uiFamily: '', codeFamily: '', uiSize: 14, codeSize: 12, windowZoom: 1 },
+    privacy: { analyticsEnabled: true },
+    browserBackend: { kind: 'external' },
+    androidTools: { android: false },
     desktopChat: {
       composerSendShortcut: 'enter',
       webLinkOpenPreference: 'external',
@@ -120,6 +124,11 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
           }
           if (domain === 'telegramGroups')
             choices.always = [{ value: '-100123', label: 'Cloud group' }];
+          if (domain === 'desktopGeneral')
+            choices.themeFamilyId = [
+              { value: 'default', label: 'Classic' },
+              { value: 'cindy', label: 'Cindy' },
+            ];
           if (domain === 'terminal')
             choices.defaultShellPref = [
               { value: 'auto', label: 'Auto' },

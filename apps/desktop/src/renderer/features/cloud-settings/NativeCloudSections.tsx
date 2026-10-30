@@ -16,17 +16,32 @@ import { LinkOpenSectionView } from '@/components/settings/LinkOpenSection';
 import { ComposerSendShortcutSectionView } from '@/components/settings/ComposerSendShortcutSection';
 import { LanguageSectionView } from '@/components/settings/LanguageSection';
 import type { LocalePreference } from '@/i18n';
-import { SETTINGS_CARD_CLASS } from '@/components/settings/settingsRowClasses';
 import { LspBetaCellView } from '@/components/settings/LspBetaCell';
 import { BuiltinToolsSectionView } from '@/components/settings/BuiltinToolsSection';
 import {
+  AndroidAutomationHeader,
+  AutomationCard,
   BrowserAutomationHeader,
   ComputerAutomationHeader,
+  ComputerUseSectionHeader,
 } from '@/components/settings/ComputerUseSection';
-import { DatabaseWarningSettingsView } from '@/components/settings/StorageManagementCard';
-import { CrashAutoUploadToggleView } from '@/components/settings/AboutSection';
+import { BrowserBackendSubsection } from '@/components/settings/BrowserBackendSubsection';
+import {
+  DatabaseWarningSettingsView,
+  STORAGE_DATABASE_BODY_CLASS,
+  StorageDatabaseSection,
+  StorageSectionFrame,
+} from '@/components/settings/StorageManagementCard';
+import {
+  AboutSectionView,
+  AnalyticsToggleView,
+  CrashAutoUploadToggleView,
+  Divider as AboutDivider,
+} from '@/components/settings/AboutSection';
+import { ExperimentalSectionView } from '@/components/settings/ExperimentalSection';
 import { ContactsSectionView } from '@/components/settings/contacts/ContactsSection';
 import { UserPromptEditor } from '@/components/settings/UserPromptSection';
+import { CloudAppearanceSettings } from './CloudAppearanceSettings';
 import type { AvailableShell, ShellId } from '../../../shared/terminal-bridge';
 import type {
   CloudSettingsDomain,
@@ -49,24 +64,13 @@ type Props = {
 };
 const num = (s: CloudSettingsState, key: string) => Number(s.value?.[key]);
 const bool = (s: CloudSettingsState, key: string) => s.value?.[key] === true;
-const section = (id: string, content: ReactNode) => (
-  <section
-    id={id}
-    key={id}
-    className={
-      id.includes('general') ||
-      id === 'settings-composer' ||
-      id === 'settings-collaboration' ||
-      id === 'settings-agent-resource'
-        ? 'py-[18px]'
-        : 'pb-[18px]'
-    }
-  >
+// Section spacing mirrors SettingsView: General sections are py, the rest pb.
+const section = (id: string, content: ReactNode, className = 'pb-[18px]') => (
+  <section id={id} key={id} className={className}>
     {content}
   </section>
 );
-const box =
-  'flex flex-col overflow-hidden rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)]';
+const generalSection = (id: string, content: ReactNode) => section(id, content, 'py-[18px]');
 
 function Resource({
   state,
@@ -220,24 +224,39 @@ export function NativeCloudSections(props: Props) {
     onReset: () => attempt('desktopChat', {}, [key]),
   });
   if (tab === 'appearance')
-    return ready('desktopChat')
-      ? section(
-          'settings-search-target-appearance-stream-fade',
-          <StreamFadeSectionView
-            enabled={s('desktopChat').value?.streamFadePreference === 'on'}
-            isCustomized={chatCustomized('streamFadePreference')}
-            onChange={(value) =>
-              void attempt('desktopChat', { streamFadePreference: value ? 'on' : 'off' })
-            }
-            onReset={() => attempt('desktopChat', {}, ['streamFadePreference'])}
-          />,
-        )
-      : null;
+    return (
+      <>
+        {ready('desktopGeneral') && ready('appearance') && (
+          <section className="pb-[18px]" aria-label={t('settings.sections.appearance')}>
+            <CloudAppearanceSettings
+              general={s('desktopGeneral')}
+              appearance={s('appearance')}
+              disabled={disabled}
+              attempt={attempt}
+              changed={changed}
+            />
+          </section>
+        )}
+        {ready('desktopChat') &&
+          section(
+            'settings-search-target-appearance-stream-fade',
+            <StreamFadeSectionView
+              enabled={s('desktopChat').value?.streamFadePreference === 'on'}
+              isCustomized={chatCustomized('streamFadePreference')}
+              onChange={(value) =>
+                void attempt('desktopChat', { streamFadePreference: value ? 'on' : 'off' })
+              }
+              onReset={() => attempt('desktopChat', {}, ['streamFadePreference'])}
+            />,
+            'pt-[18px] pb-[18px]',
+          )}
+      </>
+    );
   if (tab === 'general')
     return (
       <>
         {ready('desktopGeneral') &&
-          section(
+          generalSection(
             'settings-search-target-general-language',
             <LanguageSectionView
               locale={s('desktopGeneral').value?.locale as LocalePreference}
@@ -246,7 +265,7 @@ export function NativeCloudSections(props: Props) {
             />,
           )}
         {ready('desktopNotifications') &&
-          section(
+          generalSection(
             'settings-notifications',
             <NotificationSectionView
               enabled={bool(s('desktopNotifications'), 'notificationsEnabled')}
@@ -256,7 +275,7 @@ export function NativeCloudSections(props: Props) {
             />,
           )}
         {ready('desktopChat') &&
-          section(
+          generalSection(
             'settings-composer',
             <ComposerSendShortcutSectionView
               preference={
@@ -270,7 +289,7 @@ export function NativeCloudSections(props: Props) {
             />,
           )}
         {ready('collaboration') &&
-          section(
+          generalSection(
             'settings-collaboration',
             <CollaborationSectionView
               settings={{
@@ -284,10 +303,10 @@ export function NativeCloudSections(props: Props) {
             />,
           )}
         {ready('agentResource') &&
-          section('settings-agent-resource', <Resource {...props} state={s('agentResource')} />)}
+          generalSection('settings-agent-resource', <Resource {...props} state={s('agentResource')} />)}
         {trial &&
           ready('gitSafety') &&
-          section(
+          generalSection(
             'settings-search-target-general-git-safety',
             <GitSafetySectionView
               mode={trialGitMode}
@@ -298,20 +317,23 @@ export function NativeCloudSections(props: Props) {
             />,
           )}
         {ready('lsp') &&
-          section(
+          generalSection(
             'settings-search-target-general-experimental',
-            <div className="flex flex-col gap-[14px]">
-              <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-                {t('settings.experimental.title')}
-              </h2>
-              <div className={SETTINGS_CARD_CLASS}>
-                <LspBetaCellView
-                  enabled={bool(s('lsp'), 'enabled')}
-                  pending={disabled}
-                  handleToggle={(next) => attempt('lsp', { enabled: next })}
-                />
-              </div>
-            </div>,
+            // The Beta update channel is not shown: CIS updates the instance image.
+            <ExperimentalSectionView
+              rows={[
+                {
+                  key: 'lsp',
+                  node: (
+                    <LspBetaCellView
+                      enabled={bool(s('lsp'), 'enabled')}
+                      pending={disabled}
+                      handleToggle={(next) => attempt('lsp', { enabled: next })}
+                    />
+                  ),
+                },
+              ]}
+            />,
           )}
       </>
     );
@@ -484,65 +506,146 @@ export function NativeCloudSections(props: Props) {
   if (tab === 'builtin-tools' && ready('builtinTools'))
     return (
       <BuiltinToolsSectionView
-        plugins={Object.entries(s('builtinTools').value ?? {}).map(([id, value]) => ({
+        plugins={[
+          // The browser tool is the same switch as browser automation; local lists it first.
+          ...(ready('browserTools')
+            ? [
+                {
+                  id: 'browser',
+                  value: s('browserTools').value?.browser,
+                  customized: s('browserTools').customizedKeys?.includes('browser'),
+                },
+              ]
+            : []),
+          ...Object.entries(s('builtinTools').value ?? {}).map(([id, value]) => ({
+            id,
+            value,
+            customized: s('builtinTools').customizedKeys?.includes(id),
+          })),
+        ].map(({ id, value, customized }) => ({
           id,
           name: id,
           description: '',
           effectiveEnabled: value === true,
-          userOverride: s('builtinTools').customizedKeys?.includes(id)
-            ? { enabled: value === true }
-            : null,
+          userOverride: customized ? { enabled: value === true } : null,
         }))}
-        pendingIds={new Set(disabled ? Object.keys(s('builtinTools').value ?? {}) : [])}
-        handleToggle={(id, next) => void attempt('builtinTools', { [id]: next })}
-        handleClearOverride={(id) => void attempt('builtinTools', {}, [id])}
+        pendingIds={
+          new Set(
+            disabled
+              ? ['browser', ...Object.keys(s('builtinTools').value ?? {})]
+              : [],
+          )
+        }
+        handleToggle={(id, next) =>
+          void (id === 'browser'
+            ? attempt('browserTools', { browser: next })
+            : attempt('builtinTools', { [id]: next }))
+        }
+        handleClearOverride={(id) =>
+          void (id === 'browser'
+            ? attempt('browserTools', {}, ['browser'])
+            : attempt('builtinTools', {}, [id]))
+        }
       />
     );
   if (tab === 'computer-use')
     return (
       <div className="flex flex-col gap-[14px]">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-            {t('settings.computerUse.title')}
-          </h2>
-          <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
-            {t('settings.computerUse.description')}
-          </p>
-        </div>
+        <ComputerUseSectionHeader />
         {ready('browserTools') && (
-          <div id="automation-browser" className={box}>
-            <BrowserAutomationHeader
-              checked={bool(s('browserTools'), 'browser')}
-              disabled={disabled}
-              onChange={(next) => void attempt('browserTools', { browser: next })}
-            />
-          </div>
+          <>
+            <AutomationCard id="automation-browser">
+              <BrowserAutomationHeader
+                checked={bool(s('browserTools'), 'browser')}
+                disabled={disabled}
+                onChange={(next) => void attempt('browserTools', { browser: next })}
+              />
+              {/* Real-profile reuse, Chrome detection and the login window act on the
+                  target computer's browser; they are not settings and stay local-only. */}
+              {ready('browserBackend') && (
+                <BrowserBackendSubsection
+                  active={String(s('browserBackend').value?.kind) as 'external' | 'rsb-webview'}
+                  pending={disabled}
+                  recovering={false}
+                  health={null}
+                  onSelect={(kind) => void attempt('browserBackend', { kind })}
+                  onRecover={() => undefined}
+                />
+              )}
+            </AutomationCard>
+            <p className="text-12 leading-[1.5] text-[var(--settings-section-desc)]">
+              {t('settings.computerUse.browser.toggleHint')}
+            </p>
+          </>
         )}
         {ready('computerTools') && (
-          <div id="automation-computer" className={box}>
-            <ComputerAutomationHeader
-              checked={bool(s('computerTools'), 'computer')}
-              disabled={disabled}
-              onChange={(next) => void attempt('computerTools', { computer: next })}
-            />
-          </div>
+          <>
+            <div aria-hidden="true" className="h-px bg-[var(--settings-theme-card-border)]" />
+            <AutomationCard id="automation-computer">
+              <ComputerAutomationHeader
+                checked={bool(s('computerTools'), 'computer')}
+                disabled={disabled}
+                onChange={(next) => void attempt('computerTools', { computer: next })}
+              />
+            </AutomationCard>
+          </>
+        )}
+        {ready('androidTools') && (
+          <>
+            <div aria-hidden="true" className="h-px bg-[var(--settings-theme-card-border)]" />
+            {/* ADB and device selection need the target's native setup flow. */}
+            <AutomationCard id="automation-android">
+              <AndroidAutomationHeader
+                checked={bool(s('androidTools'), 'android')}
+                disabled={disabled}
+                onChange={(next) => void attempt('androidTools', { android: next })}
+              />
+            </AutomationCard>
+            <p className="text-12 leading-[1.5] text-[var(--settings-section-desc)]">
+              {t('settings.computerUse.android.toggleHint')}
+            </p>
+          </>
         )}
       </div>
     );
   if (tab === 'storage' && ready('databaseWarning'))
-    return <Storage {...props} state={s('databaseWarning')} />;
-  if (tab === 'about' && ready('diagnostics'))
     return (
-      <div className={box}>
-        <CrashAutoUploadToggleView
-          customized={c('diagnostics')}
-          enabled={bool(s('diagnostics'), 'crashAutoUploadEnabled')}
-          disabled={disabled}
-          resetting={disabled}
-          handleToggle={(next) => attempt('diagnostics', { crashAutoUploadEnabled: next })}
-          handleReset={() => reset('diagnostics')}
-        />
-      </div>
+      <StorageSectionFrame>
+        <StorageDatabaseSection>
+          <div className={STORAGE_DATABASE_BODY_CLASS}>
+            <Storage {...props} state={s('databaseWarning')} />
+          </div>
+        </StorageDatabaseSection>
+      </StorageSectionFrame>
+    );
+  if (tab === 'about' && (ready('privacy') || ready('diagnostics')))
+    return (
+      <AboutSectionView
+        card={
+          <>
+            {ready('privacy') && (
+              <AnalyticsToggleView
+                customized={c('privacy')}
+                enabled={bool(s('privacy'), 'analyticsEnabled')}
+                disabled={disabled}
+                handleReset={() => attempt('privacy', {}, ['analyticsEnabled'])}
+                handleToggle={(next) => attempt('privacy', { analyticsEnabled: next })}
+              />
+            )}
+            {ready('privacy') && ready('diagnostics') && <AboutDivider />}
+            {ready('diagnostics') && (
+              <CrashAutoUploadToggleView
+                customized={c('diagnostics')}
+                enabled={bool(s('diagnostics'), 'crashAutoUploadEnabled')}
+                disabled={disabled}
+                resetting={disabled}
+                handleToggle={(next) => attempt('diagnostics', { crashAutoUploadEnabled: next })}
+                handleReset={() => reset('diagnostics')}
+              />
+            )}
+          </>
+        }
+      />
     );
   return null;
 }

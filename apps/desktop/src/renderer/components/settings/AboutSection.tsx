@@ -10,7 +10,7 @@
  * 卡片样式与 NotificationSection / FeishuBotSection 同级 (rounded-xl / Board border)。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 
@@ -347,25 +347,9 @@ export function AboutSection() {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-          {t('settings.about.title')}
-        </h2>
-        <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
-          {t('settings.about.description')}
-        </p>
-      </div>
-
-      {/* Info Card */}
-      <div
-        id="settings-search-settings-about-appVersionLabel"
-        className={cn(
-          'flex flex-col rounded-xl',
-          'bg-[var(--settings-theme-card-bg)]',
-          'border border-[var(--settings-theme-card-border)]',
-        )}
-      >
+    <AboutSectionView
+      card={
+        <>
         {CURRENT_CINDY_REGION === 'cn' && (
           <>
             <InfoRow
@@ -394,10 +378,43 @@ export function AboutSection() {
         </div>
         <Divider />
         <LegalLinksRows />
-      </div>
-
+        </>
+      }
+    >
       {/* 存储空间(媒体总仓占用 / 清理 / 体检) */}
       <SocialLinksPanel />
+    </AboutSectionView>
+  );
+}
+
+/** 关于页框架:页标题 + 信息卡片(card)+ 卡片下方内容(children)。云实例设置复用同一框架。 */
+export function AboutSectionView({ card, children }: { card: ReactNode; children?: ReactNode }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
+          {t('settings.about.title')}
+        </h2>
+        <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
+          {t('settings.about.description')}
+        </p>
+      </div>
+
+      {/* Info Card */}
+      <div
+        id="settings-search-settings-about-appVersionLabel"
+        className={cn(
+          'flex flex-col rounded-xl',
+          'bg-[var(--settings-theme-card-bg)]',
+          'border border-[var(--settings-theme-card-border)]',
+        )}
+      >
+        {card}
+      </div>
+
+      {children}
     </div>
   );
 }
@@ -681,6 +698,31 @@ function AnalyticsToggleRow() {
   };
 
   return (
+    <AnalyticsToggleView
+      customized={state.analyticsEnabledCustomized}
+      enabled={state.analyticsEnabled}
+      disabled={state.loading || saving}
+      handleReset={handleReset}
+      handleToggle={handleToggle}
+    />
+  );
+}
+
+export function AnalyticsToggleView({
+  customized,
+  enabled,
+  disabled,
+  handleReset,
+  handleToggle,
+}: {
+  customized: boolean;
+  enabled: boolean;
+  disabled: boolean;
+  handleReset: () => Promise<void>;
+  handleToggle: (next: boolean) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  return (
     <div className="flex flex-col gap-1.5 px-[18px] py-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
@@ -696,13 +738,13 @@ function AnalyticsToggleRow() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <DefaultOverrideControls
-            isCustomized={state.analyticsEnabledCustomized}
-            disabled={state.loading || saving}
+            isCustomized={customized}
+            disabled={disabled}
             onReset={handleReset}
           />
           <Switch
-            checked={state.analyticsEnabled}
-            disabled={state.loading || saving}
+            checked={enabled}
+            disabled={disabled}
             onCheckedChange={handleToggle}
             aria-label={t('settings.about.analyticsLabel')}
           />
@@ -893,7 +935,7 @@ function InfoRow({
   );
 }
 
-function Divider() {
+export function Divider() {
   return (
     <div
       aria-hidden

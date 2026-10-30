@@ -57,6 +57,11 @@ export default {
       about: 'Cloud reply animation override and per-field reset',
       data: { appearance: true },
     },
+    pages: {
+      about: 'Tools, automation, storage and about reuse the local page frames',
+      data: { pages: true },
+      viewport: { width: 1040, height: 900 },
+    },
     bots: { about: 'All six personal bot channels and credential forms', data: { bots: true } },
     default: { about: 'Cloud language and Linux send shortcut reuse native settings' },
     personalization: {
@@ -76,17 +81,39 @@ export default {
     await page.locator('#settings-search-target-general-language [role="combobox"]').waitFor();
   },
   async check(page, ui) {
+    if (ui.data.pages) {
+      for (const [tab, ready] of [
+        ['settings.tabs.builtinTools', 'settings.builtinTools.plugins.browser.name'],
+        ['settings.tabs.computerUse', 'settings.computerUse.android.title'],
+        ['settings.tabs.storage', 'settings.about.storage.databaseSectionTitle'],
+        ['settings.tabs.about', 'settings.about.analyticsLabel'],
+      ]) {
+        await page.getByRole('tab', { name: await ui.t(tab), exact: true }).click();
+        await page.getByText(await ui.t(ready), { exact: true }).first().waitFor();
+        await ui.capture(tab.split('.').pop());
+      }
+      return;
+    }
     if (ui.data.appearance) {
       await page
         .getByRole('tab', { name: await ui.t('settings.tabs.appearance'), exact: true })
         .click();
-      const toggle = page.getByRole('switch', {
+      // Target theme, display mode, fonts and sidebar styles reuse the local appearance view.
+      await page.getByRole('combobox', { name: await ui.t('settings.appearance.themeAriaLabel') }).waitFor();
+      await page.getByRole('radio', { name: await ui.t('settings.appearance.themeAria.dark') }).click();
+      assert.equal(
+        await page.getByRole('radio', { name: await ui.t('settings.appearance.themeAria.dark') }).getAttribute('aria-checked'),
+        'true',
+      );
+      await ui.capture('theme');
+      const fade = page.locator('#settings-search-target-appearance-stream-fade');
+      const toggle = fade.getByRole('switch', {
         name: await ui.t('settings.streamFade.toggleAria'),
       });
       await toggle.click();
       assert.equal(await toggle.getAttribute('aria-checked'), 'false');
       await ui.capture('fade-disabled');
-      await page
+      await fade
         .getByRole('button', { name: await ui.t('settings.defaults.restore'), exact: true })
         .click();
       assert.equal(await toggle.getAttribute('aria-checked'), 'true');

@@ -24,7 +24,6 @@ import { SETTINGS_CARD_CLASS, SETTINGS_ROW_DIVIDER_CLASS } from './settingsRowCl
 import { BetaChannelCell } from './BetaChannelCell';
 
 export function ExperimentalSection() {
-  const { t } = useTranslation();
   const betaChannelSupported =
     window.electronAPI?.supportsBetaUpdateChannel ?? window.electronAPI?.platform !== 'linux';
   const rows: { key: string; node: ReactNode }[] = [
@@ -36,6 +35,12 @@ export function ExperimentalSection() {
     })),
   ];
 
+  return <ExperimentalSectionView rows={rows} />;
+}
+
+/** 实验功能卡片:一张卡片里的设置行,分割线只出现在可见行之间。云实例设置复用。 */
+export function ExperimentalSectionView({ rows }: { rows: { key: string; node: ReactNode }[] }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-[14px]">
       <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
