@@ -30,23 +30,10 @@ import { WechatBotSection } from './WechatBotSection';
 import { WecomBotSection } from './WecomBotSection';
 import { showCindyGroup } from './imBotVisibility';
 
-import {
-  ImBotSettingsFrame,
-  ImBotGroupSection,
-  personalBotChannels,
-  type ImBotSettingsGroup,
-  type PersonalBotChannel,
-} from './ImBotSettingsLayout';
-export type { ImBotSettingsGroup } from './ImBotSettingsLayout';
+import { ImBotSettingsFrame, ImBotGroupSection } from './ImBotSettingsLayout';
 
-const personalBotSections = {
-  wechat: WechatBotSection,
-  wecom: WecomBotSection,
-  feishu: FeishuBotSection,
-  dingtalk: DingTalkBotSection,
-  discord: DiscordBotSection,
-  telegram: TelegramBotSection,
-};
+/** 「IM 机器人」页面分区 id(与 ?imGroup= 参数共用)。 */
+export type ImBotSettingsGroup = 'cindy' | 'personal';
 
 export function isImBotSettingsGroup(value: string | null): value is ImBotSettingsGroup {
   return value === 'cindy' || value === 'personal';
@@ -58,35 +45,44 @@ function PersonalGroupContent({
   preferredFeishuService,
   activation,
 }: {
-  targetChannel: PersonalBotChannel | null;
+  targetChannel: 'wechat' | 'wecom' | 'feishu' | 'discord' | 'telegram' | 'dingtalk' | null;
   preferredFeishuService: 'feishu' | 'lark' | null;
   activation: number;
 }) {
-  const [expandedChannel, setExpandedChannel] = useState<PersonalBotChannel | null>(targetChannel);
+  const [expandedChannel, setExpandedChannel] = useState<
+    'wechat' | 'wecom' | 'feishu' | 'discord' | 'telegram' | 'dingtalk' | null
+  >(targetChannel);
 
   useLayoutEffect(() => {
     if (targetChannel) setExpandedChannel(targetChannel);
   }, [targetChannel, activation]);
 
-  const toggle = (channel: PersonalBotChannel) => {
+  const toggle = (channel: 'wechat' | 'wecom' | 'feishu' | 'discord' | 'telegram' | 'dingtalk') => {
     setExpandedChannel((current) => (current === channel ? null : channel));
   };
 
   return (
     <div className="flex flex-col gap-3">
-      {personalBotChannels.map((channel) => {
-        const Section = personalBotSections[channel];
-        return (
-          <Section
-            key={channel}
-            expanded={expandedChannel === channel}
-            onToggle={() => toggle(channel)}
-            {...(channel === 'feishu'
-              ? { preferredService: preferredFeishuService, searchActivation: activation }
-              : {})}
-          />
-        );
-      })}
+      <WechatBotSection expanded={expandedChannel === 'wechat'} onToggle={() => toggle('wechat')} />
+      <WecomBotSection expanded={expandedChannel === 'wecom'} onToggle={() => toggle('wecom')} />
+      <FeishuBotSection
+        expanded={expandedChannel === 'feishu'}
+        onToggle={() => toggle('feishu')}
+        preferredService={preferredFeishuService}
+        searchActivation={activation}
+      />
+      <DingTalkBotSection
+        expanded={expandedChannel === 'dingtalk'}
+        onToggle={() => toggle('dingtalk')}
+      />
+      <DiscordBotSection
+        expanded={expandedChannel === 'discord'}
+        onToggle={() => toggle('discord')}
+      />
+      <TelegramBotSection
+        expanded={expandedChannel === 'telegram'}
+        onToggle={() => toggle('telegram')}
+      />
     </div>
   );
 }
@@ -96,7 +92,9 @@ export function ImBotSection({ targetGroup }: { targetGroup: ImBotSettingsGroup 
   const { entry, activation } = useSettingsSearchNavigation();
   const cindyGroupAvailable = showCindyGroup({ mode });
   const targetChannel =
-    personalBotChannels.find((channel) => entry?.targetId === 'personal-im-' + channel) ?? null;
+    (['wechat', 'wecom', 'feishu', 'discord', 'telegram', 'dingtalk'] as const).find(
+      (channel) => entry?.targetId === 'personal-im-' + channel,
+    ) ?? null;
   const preferredFeishuService =
     entry?.id === 'imBot.lark' ? 'lark' : entry?.id === 'imBot.feishu' ? 'feishu' : null;
   const cindySectionRef = useRef<HTMLElement | null>(null);

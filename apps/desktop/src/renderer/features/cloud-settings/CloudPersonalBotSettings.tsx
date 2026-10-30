@@ -9,15 +9,22 @@ import { TelegramBotSectionView } from '@/components/settings/TelegramBotSection
 import type { ImDefaultSettingsSummary } from '@/components/settings/ImDefaultSettingsSection';
 import type { ManagementItem } from '../../../shared/settingsManagement';
 import type { FeishuBotService } from '@/hooks/useFeishuBot';
-import { DISCORD_OWNER_USER_ID_PATTERN } from '@/hooks/useDiscordBot';
-import { TELEGRAM_OWNER_USER_ID_PATTERN, TELEGRAM_BOT_TOKEN_PATTERN } from '@/hooks/useTelegramBot';
+import { OWNER_USER_ID_PATTERN as DISCORD_OWNER_USER_ID_PATTERN } from '@/hooks/useDiscordBot';
+import {
+  OWNER_USER_ID_PATTERN as TELEGRAM_OWNER_USER_ID_PATTERN,
+  BOT_TOKEN_PATTERN as TELEGRAM_BOT_TOKEN_PATTERN,
+} from '@/hooks/useTelegramBot';
 import type { useCloudAuthorization } from './useCloudAuthorization';
 
-import type { PersonalBotChannel } from '@/components/settings/ImBotSettingsLayout';
-export {
-  personalBotChannels,
-  type PersonalBotChannel,
-} from '@/components/settings/ImBotSettingsLayout';
+export const personalBotChannels = [
+  'wechat',
+  'wecom',
+  'feishu',
+  'dingtalk',
+  'discord',
+  'telegram',
+] as const;
+export type PersonalBotChannel = (typeof personalBotChannels)[number];
 
 /** Target-only controllers for the SAME native views. Never instantiate a local bot hook.
  * Inputs live for one ticket only (the parent keys this controller by that ticket).

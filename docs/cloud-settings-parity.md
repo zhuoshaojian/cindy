@@ -6,7 +6,8 @@
 
 本表以 `SettingsView.tsx`、各设置组件及子组件、搜索侧表、原生云页面和 Host 读写适配器为准。
 首次核对日期：2026-10-30；审查基线 `7d5016b64a`、Dev `.3`、本人运行时 cloud.3。
-六类个人 IM 卡片已在 `c092d1614d` 共用本地组件，`b9ffd940f5` 进一步共用页面骨架、分组和渠道顺序。
+六类个人 IM 卡片已在 `c092d1614d` 共用本地组件，`b9ffd940f5` 进一步共用页面骨架和分组。渠道渲染、搜索枚举和类型声明现已恢复上游写法；
+云端渠道选择与排序留在云适配层，不再改造本地渠道注册方式。
 Dev `0.1.119-dev.cloud.20261030.5` 已打包并验证固定签名；当前已安装的 `.4` 仍等待系统钥匙串授权，`.5` 尚未替换，真实页面及保存验收未完成。
 CIS 校验修正 `b427a3c3` 已部署并核对运行产物；cloud.6 的
 [fork 交付流水线](https://github.com/zhuoshaojian/cindy/actions/runs/41005447359)通过完整构建、隔离桌面验收及 ACS 缓存准备，实际主容器与 initContainer 缓存命中也通过。本人试点已备份升级到 cloud.6，维护流程完成；其他实例及新领取默认值未变。
@@ -76,6 +77,24 @@ CIS 校验修正 `b427a3c3` 已部署并核对运行产物；cloud.6 的
 [`CloudBotAuthorization`](../apps/desktop/src/renderer/features/cloud-settings/CloudBotAuthorization.tsx)、
 [`client.ts`](../apps/desktop/src/renderer/features/cloud-settings/client.ts)、
 [`ImBotSection.settings-search.ts`](../apps/desktop/src/renderer/components/settings/ImBotSection.settings-search.ts)。
+
+## 上游差异收敛
+
+以同一 `v0.1.119`（`0694ed7e001e`）为基线，对比收敛前 `a463c3c8e4` 与本次工作树；
+`git diff --numstat` 的增删行数相加计为改动行数，不以净增行数代替。
+
+| 固定统计范围 | 收敛前（新增 / 删除） | 收敛后（新增 / 删除） | 改动行减少 |
+| --- | --- | --- | --- |
+| 七个既有本地 IM 组件：六类渠道与 `ImBotSection` | 665 / 342 | 596 / 300 | 111（11.0%） |
+| 最近两次 IM 复用涉及的 17 个代码及测试文件 | 3019 / 352 | 2940 / 304 | 127（3.8%） |
+
+第二行包含云端新增文件和共享布局文件，不代表整个 fork 分支。
+本次撤回渠道映射重构、无关重排和 hook 内常量重命名；保留展示接口、目标适配、读取失败提示与能力限制。
+微信的目标名称只由云适配器显式传入，不再借上游伙伴的 `host` 改写既有文案。
+本地渠道主体与上游一致；展示组件共用不等于上游新增字段会自动接通远端协议。
+
+验证：61 项定向测试、Desktop 类型检查、云设置五语 × 深浅色的 30 组隔离场景、本地微信 8 组深浅色场景通过。
+隔离场景使用合成数据，不替代真实云端保存、重开回读与持久化验收；本次没有重新打包或部署。
 
 ## 通用与运行设置
 

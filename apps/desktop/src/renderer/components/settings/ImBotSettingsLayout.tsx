@@ -2,18 +2,7 @@ import { Lightbulb } from 'lucide-react';
 import type { ReactNode, Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export type ImBotSettingsGroup = 'cindy' | 'personal';
-
-/** One display order for local and remote personal IM settings. */
-export const personalBotChannels = [
-  'wechat',
-  'wecom',
-  'feishu',
-  'dingtalk',
-  'discord',
-  'telegram',
-] as const;
-export type PersonalBotChannel = (typeof personalBotChannels)[number];
+import type { ImBotSettingsGroup } from './ImBotSection';
 
 /** Presentation only: each target supplies its own controllers and connection context. */
 export function ImBotSettingsFrame({

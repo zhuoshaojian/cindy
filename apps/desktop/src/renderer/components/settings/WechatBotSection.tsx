@@ -119,7 +119,7 @@ export function WechatBotSectionView({
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
-  const targetName = messageTargetName ?? host?.name;
+  const targetName = messageTargetName;
   const {
     state,
     channelSettings,
@@ -191,15 +191,9 @@ export function WechatBotSectionView({
       title={t('settings.wechatBot.title')}
       description={t('settings.wechatBot.description')}
       routeSummary={
-        companion
-          ? assigned === companion.id
-            ? companion.name
-            : null
-          : assigned
-            ? t('settings.wechatBot.companion.assigned')
-            : routeSummary
-              ? `${t(`settings.imBot.defaults.agents.${routeSummary.agentKind}`)} · ${routeSummary.model}`
-              : null
+        companion ? (assigned === companion.id ? companion.name : null)
+          : assigned ? t('settings.wechatBot.companion.assigned')
+            : routeSummary ? `${t(`settings.imBot.defaults.agents.${routeSummary.agentKind}`)} · ${routeSummary.model}` : null
       }
       expanded={expanded}
       onToggle={onToggle}
@@ -229,48 +223,32 @@ export function WechatBotSectionView({
       {companion || assigned ? (
         <div className="flex flex-col items-start gap-3">
           <p className="text-13 leading-[1.5] text-[var(--text-secondary)]">
-            {t(
-              otherCompanion
-                ? 'settings.wechatBot.companion.other'
-                : companion
-                  ? 'settings.wechatBot.companion.description'
-                  : 'settings.wechatBot.companion.assigned',
-              { name: companion?.name },
-            )}
+            {t(otherCompanion ? 'settings.wechatBot.companion.other'
+              : companion ? 'settings.wechatBot.companion.description' : 'settings.wechatBot.companion.assigned',
+            { name: companion?.name })}
           </p>
           <p className="text-12 leading-[1.5] text-[var(--text-secondary)]">
             {t('settings.wechatBot.companion.permissionNote')}
           </p>
           {!otherCompanion && assigned ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={isUpdatingCompanion}
-              onClick={() => void setCompanion(null)}
-            >
+            <Button variant="secondary" size="sm" loading={isUpdatingCompanion}
+              onClick={() => void setCompanion(null)}>
               {t('settings.wechatBot.companion.remove')}
             </Button>
           ) : !otherCompanion && state.bound && companion ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={isUpdatingCompanion}
-              disabled={!channelSettings}
-              onClick={() => void setCompanion(companion.id)}
-            >
+            <Button variant="secondary" size="sm" loading={isUpdatingCompanion}
+              disabled={!channelSettings} onClick={() => void setCompanion(companion.id)}>
               {t('settings.wechatBot.companion.useExisting', { name: companion.name })}
             </Button>
           ) : null}
         </div>
-      ) : (
-        <>
-          {defaultSettings}
+      ) : <>
+      {defaultSettings}
 
-          <div className="h-px w-full bg-[var(--border-default)]" />
+      <div className="h-px w-full bg-[var(--border-default)]" />
 
-          {workingDirectory}
-        </>
-      )}
+      {workingDirectory}
+      </>}
 
       <div className="h-px w-full bg-[var(--border-default)]" />
 

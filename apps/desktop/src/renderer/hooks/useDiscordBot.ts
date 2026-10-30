@@ -5,7 +5,7 @@ import { toast } from '@/lib/toast';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('useDiscordBot');
-export const DISCORD_OWNER_USER_ID_PATTERN = /^\d{17,20}$/;
+export const OWNER_USER_ID_PATTERN = /^\d{17,20}$/;
 
 interface DiscordBotCache {
   ownerUserId: string;
@@ -139,7 +139,7 @@ export function useDiscordBot(): UseDiscordBotReturn {
       setValidationError(t('logic.validation.discordFieldsRequired'));
       return false;
     }
-    if (!DISCORD_OWNER_USER_ID_PATTERN.test(trimmedOwnerUserId)) {
+    if (!OWNER_USER_ID_PATTERN.test(trimmedOwnerUserId)) {
       setValidationError(t('logic.validation.discordOwnerUserIdFormat'));
       return false;
     }
@@ -228,7 +228,7 @@ export function useDiscordBot(): UseDiscordBotReturn {
 
   const canConnect =
     token.trim().length > 0 &&
-    DISCORD_OWNER_USER_ID_PATTERN.test(ownerUserId.trim()) &&
+    OWNER_USER_ID_PATTERN.test(ownerUserId.trim()) &&
     !isSaving &&
     !isDisconnecting;
 

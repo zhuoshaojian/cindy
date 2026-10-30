@@ -156,7 +156,6 @@ export function DingTalkBotSectionView({
           </div>
           {connectionDetails ?? (
             <>
-              {' '}
               <InfoRow label={t('settings.dingtalkBot.appKeyLabel')} value={bot.appKey} />
               <InfoRow
                 label={t('settings.dingtalkBot.connected.ownerLabel')}

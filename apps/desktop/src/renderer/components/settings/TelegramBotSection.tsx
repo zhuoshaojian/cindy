@@ -478,9 +478,7 @@ function ConnectedCard(props: {
         <div className="grid gap-2 text-12 text-[var(--settings-section-desc)]">
           <div className="flex justify-between gap-4">
             <span>{t('settings.telegramBot.connected.botLabel')}</span>
-            <span className="font-medium text-[var(--settings-section-title)]">
-              {props.botLabel}
-            </span>
+            <span className="font-medium text-[var(--settings-section-title)]">{props.botLabel}</span>
           </div>
           <div className="flex justify-between gap-4">
             <span>{t('settings.telegramBot.connected.ownerLabel')}</span>
