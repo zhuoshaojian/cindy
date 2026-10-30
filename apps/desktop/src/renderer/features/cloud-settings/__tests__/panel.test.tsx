@@ -16,6 +16,13 @@ vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('@/features/device-link/useDeviceLinkDeviceList', () => ({
   useDeviceLinkDeviceList: vi.fn(),
 }));
+// Model pickers read the target catalog over DeviceLink; covered in model-settings.test.tsx.
+vi.mock('../CloudModelSettings', () => ({
+  CloudAuxiliarySettings: () => null,
+  CloudBotsSettings: () => null,
+  CloudSubagentSettings: () => null,
+  CloudVisionBridgeSettings: () => null,
+}));
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({
   useConfirmDialog: () => ({ confirm: vi.fn(async () => true) }),
 }));

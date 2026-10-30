@@ -42,6 +42,12 @@ import { ExperimentalSectionView } from '@/components/settings/ExperimentalSecti
 import { ContactsSectionView } from '@/components/settings/contacts/ContactsSection';
 import { UserPromptEditor } from '@/components/settings/UserPromptSection';
 import { CloudAppearanceSettings } from './CloudAppearanceSettings';
+import {
+  CloudAuxiliarySettings,
+  CloudBotsSettings,
+  CloudSubagentSettings,
+  CloudVisionBridgeSettings,
+} from './CloudModelSettings';
 import type { AvailableShell, ShellId } from '../../../shared/terminal-bridge';
 import type {
   CloudSettingsDomain,
@@ -51,6 +57,8 @@ import type {
 
 type Props = {
   tab: CloudSettingsTab;
+  /** Target device; model pickers read its catalog. */
+  deviceId: string;
   states: Partial<Record<CloudSettingsDomain, CloudSettingsState>>;
   disabled: boolean;
   cpuCount?: number;
@@ -188,7 +196,7 @@ function Storage({
 }
 
 export function NativeCloudSections(props: Props) {
-  const { tab, states, save, disabled, changed, trial } = props;
+  const { tab, states, save, disabled, changed, trial, deviceId } = props;
   const { t } = useTranslation();
   // The three-mode Git control requires the native mode wire field. The legacy
   // boolean cloud field cannot distinguish existing repositories from all projects.
@@ -202,16 +210,26 @@ export function NativeCloudSections(props: Props) {
     if (!s) throw Error('NOT_READY');
     return save(s, set, clear);
   };
-  const attempt = async (
+  // Resolves true once the target confirmed the write; failures are reported here.
+  const confirmSave = async (
     d: CloudSettingsDomain,
     set: Record<string, unknown>,
     clear?: string[],
   ) => {
     try {
       await update(d, set, clear);
+      return true;
     } catch {
       toast.error(t('hostSettings.saveFailed'));
+      return false;
     }
+  };
+  const attempt = async (
+    d: CloudSettingsDomain,
+    set: Record<string, unknown>,
+    clear?: string[],
+  ) => {
+    await confirmSave(d, set, clear);
   };
   const reset = (d: CloudSettingsDomain) => attempt(d, {}, Object.keys(states[d]?.defaults ?? {}));
   const s = (d: CloudSettingsDomain) => states[d]!;
@@ -286,6 +304,16 @@ export function NativeCloudSections(props: Props) {
               disabled={disabled}
               onChange={(next) => void attempt('desktopChat', { composerSendShortcut: next })}
               onReset={() => attempt('desktopChat', {}, ['composerSendShortcut'])}
+            />,
+          )}
+        {ready('botModelChain') &&
+          generalSection(
+            'settings-bots',
+            <CloudBotsSettings
+              state={s('botModelChain')}
+              deviceId={deviceId}
+              disabled={disabled}
+              attempt={confirmSave}
             />,
           )}
         {ready('collaboration') &&
@@ -386,6 +414,35 @@ export function NativeCloudSections(props: Props) {
               handleToggle={(kind, next) =>
                 attempt('memory', { [kind === 'claude-code' ? 'claudeCode' : kind]: next })
               }
+            />,
+          )}
+        {ready('subagentModel') &&
+          section(
+            'settings-search-target-personalization-subagents',
+            <CloudSubagentSettings
+              state={s('subagentModel')}
+              deviceId={deviceId}
+              disabled={disabled}
+              attempt={confirmSave}
+            />,
+          )}
+        {ready('auxiliaryModel') &&
+          section(
+            'settings-search-target-personalization-auxiliary-models',
+            <CloudAuxiliarySettings
+              state={s('auxiliaryModel')}
+              disabled={disabled}
+              attempt={confirmSave}
+            />,
+          )}
+        {ready('visionBridge') &&
+          section(
+            'settings-search-target-personalization-vision-bridge',
+            <CloudVisionBridgeSettings
+              state={s('visionBridge')}
+              deviceId={deviceId}
+              disabled={disabled}
+              attempt={confirmSave}
             />,
           )}
         {ready('contacts') &&

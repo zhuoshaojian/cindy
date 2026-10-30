@@ -1629,9 +1629,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
 
   return (
     <div className="flex flex-col gap-3">
-      {!companion ? <p className="text-12 text-[var(--text-tertiary)]">
-        {t('settings.remoteControl.hook.description')}
-      </p> : null}
+      {!companion ? <HookConnectionsDescription /> : null}
 
       {/* ── Slack 渠道卡 ─────────────────────────────────────────────── */}
       {!companion ? <ImChannelSettingsCard
@@ -2078,5 +2076,15 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
       {!companion ? renderProviderCard('telegram') : null}
       {renderProviderCard('x')}
     </div>
+  );
+}
+
+/** 官方渠道分组说明;云实例设置的官方分组复用。 */
+export function HookConnectionsDescription() {
+  const { t } = useTranslation();
+  return (
+    <p className="text-12 text-[var(--text-tertiary)]">
+      {t('settings.remoteControl.hook.description')}
+    </p>
   );
 }

@@ -483,6 +483,7 @@ export function CloudSettingsPanel({
                       >
                         <NativeCloudSections
                           tab={group}
+                          deviceId={deviceId}
                           states={states}
                           disabled={!online || loading || writing || !!failure}
                           cpuCount={cpuCount}

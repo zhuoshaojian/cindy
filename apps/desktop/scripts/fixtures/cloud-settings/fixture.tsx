@@ -94,6 +94,12 @@ mountPage({
     // Read-only target catalog for the real native picker. Local maker writes
     // remain forbidden; this is synthetic UI data, not DeviceLink acceptance.
     deviceLink: {
+      // Route pickers list other devices for cross-device models; this fixture has none.
+      getState: async () => ({ status: 'disconnected' }),
+      listDevices: async () => [],
+      onPresenceChanged: () => () => undefined,
+      onStatusChanged: () => () => undefined,
+      onControlTargetChanged: () => () => undefined,
       invoke: async (deviceId: string, channel: string) => {
         if (deviceId !== 'cloud-settings-trial') throw Error('Wrong fixture target');
         if (channel === 'maker:provider:list') return { providers: [targetProvider] };

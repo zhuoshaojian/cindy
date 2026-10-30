@@ -12,13 +12,13 @@ type Attempt = (
   domain: CloudSettingsDomain,
   set: Record<string, unknown>,
   clear?: string[],
-) => Promise<void>;
+) => Promise<unknown>;
 type ThemeOption = 'light' | 'dark' | 'system';
 
 /** Slider drags preview locally and save once the value settles; one write per change. */
 function useSettledField(
   value: number,
-  save: (next: number) => Promise<void>,
+  save: (next: number) => Promise<unknown>,
   blocked: boolean,
   changed: (dirty: boolean) => void,
 ): [number, (next: number) => void] {

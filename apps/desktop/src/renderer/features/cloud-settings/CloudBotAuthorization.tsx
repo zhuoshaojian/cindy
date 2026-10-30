@@ -11,6 +11,7 @@ import {
 } from './CloudPersonalBotSettings';
 import type { ImDefaultSettingsSummary } from '@/components/settings/ImDefaultSettingsSection';
 import { ImBotSettingsFrame, ImBotGroupSection } from '@/components/settings/ImBotSettingsLayout';
+import { HookConnectionsDescription } from '@/components/settings/HookConnectionsSection';
 import {
   useCloudAuthorization,
   supportedBotActions,
@@ -89,6 +90,7 @@ export function CloudBotAuthorization(
         }
         return (
           <ImBotGroupSection key={group} group={group} idPrefix="cloud-">
+            {group === 'cindy' && <HookConnectionsDescription />}
             {entries.map((item) => {
               const own = operationItem === item.id;
               const connected = item.status === 'connected';

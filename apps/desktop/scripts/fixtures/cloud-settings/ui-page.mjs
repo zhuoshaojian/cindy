@@ -82,6 +82,16 @@ export default {
   },
   async check(page, ui) {
     if (ui.data.pages) {
+      // Bot model chain and Subagent pickers read the target catalog over DeviceLink.
+      for (const [tab, anchor] of [
+        ['settings.tabs.general', '#settings-bots'],
+        ['settings.tabs.personalization', '#settings-search-target-personalization-subagents'],
+        ['settings.tabs.personalization', '#settings-search-target-personalization-vision-bridge'],
+      ]) {
+        await page.getByRole('tab', { name: await ui.t(tab), exact: true }).click();
+        await page.locator(anchor).scrollIntoViewIfNeeded();
+        await ui.capture(anchor.slice(1));
+      }
       for (const [tab, ready] of [
         ['settings.tabs.builtinTools', 'settings.builtinTools.plugins.browser.name'],
         ['settings.tabs.computerUse', 'settings.computerUse.android.title'],

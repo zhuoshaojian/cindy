@@ -68,6 +68,10 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
     },
     appearance: { uiFamily: '', codeFamily: '', uiSize: 14, codeSize: 12, windowZoom: 1 },
     privacy: { analyticsEnabled: true },
+    botModelChain: { modelChain: [] },
+    subagentModel: { claudeCode: null, codexSmartSubagentRouting: false },
+    auxiliaryModel: { models: [] },
+    visionBridge: { enabled: false, primary: null, fallback: null, targetModels: [] },
     browserBackend: { kind: 'external' },
     androidTools: { android: false },
     desktopChat: {

@@ -12,6 +12,7 @@ export const CLOUD_SETTINGS_GROUPS = {
     'desktopGeneral',
     'desktopChat',
     'desktopNotifications',
+    'botModelChain',
     'collaboration',
     'agentResource',
     'gitSafety',
@@ -21,6 +22,9 @@ export const CLOUD_SETTINGS_GROUPS = {
   personalization: [
     'personalization',
     'memory',
+    'subagentModel',
+    'auxiliaryModel',
+    'visionBridge',
     'contacts',
     'contactsSync',
     'chatEmbedding',
