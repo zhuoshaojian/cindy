@@ -11,7 +11,10 @@ import {
 } from './CloudPersonalBotSettings';
 import type { ImDefaultSettingsSummary } from '@/components/settings/ImDefaultSettingsSection';
 import { ImBotSettingsFrame, ImBotGroupSection } from '@/components/settings/ImBotSettingsLayout';
-import { HookConnectionsDescription } from '@/components/settings/HookConnectionsSection';
+import {
+  ChannelStatusBadge,
+  HookConnectionsDescription,
+} from '@/components/settings/HookConnectionsSection';
 import {
   useCloudAuthorization,
   supportedBotActions,
@@ -48,6 +51,14 @@ export function CloudBotAuthorization(
     )
       ? t(`settings.${id.slice(4)}Bot.title`)
       : fallback;
+  // Official channels reuse the local card copy; other items (e.g. a bound Slack
+  // workspace) name the target instance instead.
+  const description = (id: string) =>
+    id === 'bot:official:slack'
+      ? t('settings.remoteControl.hook.slackDescription')
+      : id === 'bot:official:telegram' || id === 'bot:official:x'
+        ? t(`settings.remoteControl.hook.${id.slice(13)}.description`)
+        : props.name;
   return (
     <ImBotSettingsFrame
       context={
@@ -196,25 +207,19 @@ export function CloudBotAuthorization(
                   key={item.id}
                   id={`cloud-${item.id}`}
                   title={label(item.id, item.label)}
-                  description={props.name}
+                  description={description(item.id)}
                   routeSummary={null}
                   status={
-                    <span
-                      className="text-12"
-                      style={{
-                        color: connected
-                          ? 'var(--settings-badge-connected)'
-                          : 'var(--settings-badge-needs-config)',
-                      }}
-                    >
-                      {t(
+                    <ChannelStatusBadge
+                      tone={connected ? 'ok' : 'attention'}
+                      label={t(
                         personal
                           ? `settings.${item.id.slice(4)}Bot.status.${statusKey}`
                           : connected
                             ? 'cloudSettings.authConnected'
                             : 'cloudSettings.authDisconnected',
                       )}
-                    </span>
+                    />
                   }
                   expanded={expanded[group] === item.id}
                   onToggle={() =>

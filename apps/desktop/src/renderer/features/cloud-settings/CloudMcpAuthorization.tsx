@@ -224,7 +224,7 @@ export function CloudMcpAuthorization({
         })}
         {!items.length && (
           <p className="px-5 py-4 text-13 text-[var(--text-secondary)]">
-            {t(loading ? 'cloudSettings.loading' : 'cloudSettings.noFields')}
+            {t(loading ? 'cloudSettings.loading' : 'bots.capabilities.empty_mcp')}
           </p>
         )}
       </div>

@@ -50,6 +50,7 @@ export function CloudSettingsPanel({
   onBack,
   trial = false,
   focusMaintenance = false,
+  version,
 }: {
   name: string;
   client: CloudSettingsClient;
@@ -57,6 +58,8 @@ export function CloudSettingsPanel({
   onBack(): void;
   trial?: boolean;
   focusMaintenance?: boolean;
+  /** Runtime version CIS reports for the instance; shown in About like the local app version. */
+  version?: string;
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
@@ -425,11 +428,9 @@ export function CloudSettingsPanel({
                       botAuthorization && (
                         <CloudBotAuthorization
                           summary={(itemId) =>
-                            cloudImSettingsSummary(
-                              itemId,
-                              states,
-                              t('settings.imBot.defaults.automatic'),
-                            )
+                            // The collapsed row is one short line like the local "Pi · auto";
+                            // the full automatic explanation stays in the expanded picker.
+                            cloudImSettingsSummary(itemId, states, t('hostSettings.card.automatic'))
                           }
                           settings={(itemId, section) => (
                             <CloudImSettings
@@ -487,6 +488,7 @@ export function CloudSettingsPanel({
                           states={states}
                           disabled={!online || loading || writing || !!failure}
                           cpuCount={cpuCount}
+                          appVersion={version}
                           trial={trial}
                           save={save}
                           changed={changed}
@@ -611,6 +613,7 @@ function AuthorizedCloudSettingsView() {
         online={online}
         onBack={back}
         focusMaintenance={params.get('section') === 'maintenance'}
+        version={instance?.version ?? undefined}
       />
     );
   return <Navigate to="/settings?tab=cloud-instances" replace />;

@@ -80,7 +80,7 @@ import {
 type CindyImCard = 'slack' | 'telegram' | 'x';
 
 /** 渠道卡状态徽章的色调档(映射到「个人」栏同款 --settings-badge-* token)。 */
-type ChannelBadgeTone = 'ok' | 'progress' | 'attention' | 'error';
+export type ChannelBadgeTone = 'ok' | 'progress' | 'attention' | 'error';
 
 function badgeToneColor(tone: ChannelBadgeTone): string {
   switch (tone) {
@@ -110,8 +110,8 @@ function transportBadgeTone(status: SlackHookView['status']): ChannelBadgeTone {
   }
 }
 
-/** 收起行状态徽章(结构与 FeishuBotSection 的状态 pill 逐字对齐)。 */
-function ChannelStatusBadge({ tone, label }: { tone: ChannelBadgeTone; label: string }) {
+/** 收起行状态徽章(结构与 FeishuBotSection 的状态 pill 逐字对齐)。云实例设置的官方卡复用。 */
+export function ChannelStatusBadge({ tone, label }: { tone: ChannelBadgeTone; label: string }) {
   const color = badgeToneColor(tone);
   return (
     <span

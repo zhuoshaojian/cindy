@@ -258,6 +258,38 @@ describe('shared native cloud settings', () => {
     expect(screen.queryByText('settings.composer.title')).toBeNull();
     expect(screen.queryByText('settings.language.title')).toBeNull();
   });
+  // The page title lived only inside the prompt editor, so it vanished with the prompt.
+  it('keeps the personalization title when the cloud does not report the prompt', async () => {
+    setup((client) => {
+      const connect = client.connect;
+      client.connect = async () => {
+        const cap = await connect();
+        return { ...cap, domains: cap.domains.filter((d) => d !== 'personalization') };
+      };
+    });
+    await screen.findByText('settings.memory.title');
+    expect(screen.getAllByText('settings.personalization.title')).toHaveLength(1);
+    expect(
+      screen.queryByRole('textbox', { name: 'settings.personalization.ariaLabel' }),
+    ).toBeNull();
+  });
+  it('shows the instance runtime version in About like the local app version', async () => {
+    setup();
+    cleanup();
+    render(
+      <CloudSettingsPanel
+        name="Cloud trial"
+        client={createTrialCloudSettingsClient()}
+        online
+        trial
+        version="0.1.120-cloud.1-cn-amd64"
+        onBack={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.about' }));
+    const label = await screen.findByText('settings.about.appVersionLabel');
+    expect(label.parentElement?.textContent).toContain('0.1.120-cloud.1-cn-amd64');
+  });
   it('removes cached controls when the cloud withdraws a capability', async () => {
     let supported = true;
     const { save } = setup((client) => {

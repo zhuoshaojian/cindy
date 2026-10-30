@@ -12,6 +12,16 @@ export function UserPromptSection() {
   return <UserPromptEditor {...state} />;
 }
 
+/** Personalization page title; the cloud surface shows it alone when the prompt is not reported. */
+export function PersonalizationPageTitle() {
+  const { t } = useTranslation();
+  return (
+    <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
+      {t('settings.personalization.title')}
+    </h2>
+  );
+}
+
 /** Shared native control; the cloud surface supplies its own scoped adapter. */
 export function UserPromptEditor({
   value,
@@ -86,9 +96,7 @@ export function UserPromptEditor({
 
   return (
     <div className="flex flex-col gap-[14px]">
-      <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-        {t('settings.personalization.title')}
-      </h2>
+      <PersonalizationPageTitle />
 
       <div
         className={cn(

@@ -919,7 +919,7 @@ export function CrashAutoUploadToggleView({
   );
 }
 
-function InfoRow({
+export function InfoRow({
   label,
   value,
   title = value,

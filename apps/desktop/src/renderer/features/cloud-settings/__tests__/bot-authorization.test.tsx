@@ -59,6 +59,23 @@ describe('cloud IM authorization', () => {
   );
 });
 
+// Unit/jsdom: official cards used the instance name as description and plain colored
+// text as status; they must show the local channel copy and the local status badge.
+it('shows official channels with the local description and status badge', async () => {
+  const client = createTrialCloudSettingsClient();
+  render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+  for (const [label, description] of [
+    ['Slack', 'settings.remoteControl.hook.slackDescription'],
+    ['Telegram', 'settings.remoteControl.hook.telegram.description'],
+    ['X', 'settings.remoteControl.hook.x.description'],
+  ]) {
+    const card = (await screen.findByRole('switch', { name: label })).closest('section')!;
+    expect(within(card).getByText(description)).toBeTruthy();
+    expect(within(card).queryByText('Cloud')).toBeNull();
+    expect(within(card).getByRole('status').textContent).toBe('cloudSettings.authDisconnected');
+  }
+});
+
 // Regression: the native panel hid all disconnected credential-based bots.
 // Existing coverage had only fieldless OAuth; a connect ticket with required fields
 // must remain visible and submit once through the scoped bridge (unit/jsdom).

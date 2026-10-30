@@ -38,10 +38,14 @@ import {
   CrashAutoUploadToggleView,
   DebugLogToggleView,
   Divider as AboutDivider,
+  InfoRow,
 } from '@/components/settings/AboutSection';
 import { ExperimentalSectionView } from '@/components/settings/ExperimentalSection';
 import { ContactsSectionView } from '@/components/settings/contacts/ContactsSection';
-import { UserPromptEditor } from '@/components/settings/UserPromptSection';
+import {
+  PersonalizationPageTitle,
+  UserPromptEditor,
+} from '@/components/settings/UserPromptSection';
 import { CloudAppearanceSettings } from './CloudAppearanceSettings';
 import {
   CloudAuxiliarySettings,
@@ -63,6 +67,8 @@ type Props = {
   states: Partial<Record<CloudSettingsDomain, CloudSettingsState>>;
   disabled: boolean;
   cpuCount?: number;
+  /** Instance runtime version from CIS; About shows it like the local app version. */
+  appVersion?: string;
   trial: boolean;
   save(
     state: CloudSettingsState,
@@ -197,7 +203,7 @@ function Storage({
 }
 
 export function NativeCloudSections(props: Props) {
-  const { tab, states, save, disabled, changed, trial, deviceId } = props;
+  const { tab, states, save, disabled, changed, trial, deviceId, appVersion } = props;
   const { t } = useTranslation();
   // The three-mode Git control requires the native mode wire field. The legacy
   // boolean cloud field cannot distinguish existing repositories from all projects.
@@ -369,6 +375,12 @@ export function NativeCloudSections(props: Props) {
   if (tab === 'personalization')
     return (
       <>
+        {/* The prompt editor carries the page title; keep the title when it is absent. */}
+        {!ready('personalization') && (
+          <div className="pb-[14px]">
+            <PersonalizationPageTitle />
+          </div>
+        )}
         {ready('personalization') &&
           section(
             'settings-search-target-personalization-user-prompt',
@@ -676,11 +688,22 @@ export function NativeCloudSections(props: Props) {
         </StorageDatabaseSection>
       </StorageSectionFrame>
     );
-  if (tab === 'about' && (ready('privacy') || ready('desktopNotifications') || ready('diagnostics')))
+  if (
+    tab === 'about' &&
+    (appVersion || ready('privacy') || ready('desktopNotifications') || ready('diagnostics'))
+  )
     return (
       <AboutSectionView
         card={
           <>
+            {appVersion && (
+              <>
+                <InfoRow label={t('settings.about.appVersionLabel')} value={appVersion} />
+                {(ready('privacy') || ready('desktopNotifications') || ready('diagnostics')) && (
+                  <AboutDivider />
+                )}
+              </>
+            )}
             {ready('privacy') && (
               <AnalyticsToggleView
                 customized={c('privacy')}
