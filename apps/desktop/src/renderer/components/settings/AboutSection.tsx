@@ -766,7 +766,6 @@ export function AnalyticsToggleView({
  *     在 mount 时同步一次,toggle 变化时立即同步
  */
 function DebugLogToggleRow() {
-  const { t } = useTranslation();
   const { enabled, setEnabled } = useExperimentalFlag('debug-network');
   const lockedOn = import.meta.env.DEV;
   const effectiveEnabled = lockedOn ? true : enabled;
@@ -775,6 +774,19 @@ function DebugLogToggleRow() {
     void window.electronAPI?.ccSetDebugNet?.(effectiveEnabled);
   }, [effectiveEnabled]);
 
+  return <DebugLogToggleView enabled={effectiveEnabled} disabled={lockedOn} onChange={setEnabled} />;
+}
+
+export function DebugLogToggleView({
+  enabled,
+  disabled,
+  onChange,
+}: {
+  enabled: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-1.5 px-[18px] py-4">
       <div className="flex items-center justify-between gap-3">
@@ -785,9 +797,9 @@ function DebugLogToggleRow() {
           {t('settings.about.debugLogLabel')}
         </span>
         <Switch
-          checked={effectiveEnabled}
-          disabled={lockedOn}
-          onCheckedChange={setEnabled}
+          checked={enabled}
+          disabled={disabled}
+          onCheckedChange={onChange}
           aria-label={t('settings.about.debugLogLabel')}
         />
       </div>

@@ -66,8 +66,12 @@ export function cloudSearchEntryAllowed(
     );
   if (entry.tab === 'about') {
     if (entry.id === 'settings.about.analyticsLabel') return domains.includes('privacy');
+    if (entry.id === 'settings.about.debugLogLabel') return domains.includes('desktopNotifications');
     if (entry.id === 'settings.about.logUpload.crashAutoLabel') return domains.includes('diagnostics');
-    return entry.id === 'about' && domains.some((d) => d === 'privacy' || d === 'diagnostics');
+    return (
+      entry.id === 'about' &&
+      domains.some((d) => d === 'privacy' || d === 'desktopNotifications' || d === 'diagnostics')
+    );
   }
   if (entry.tab === 'computer-use') {
     if (entry.id === 'settings.computerUse.browser.title') return domains.includes('browserTools');

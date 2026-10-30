@@ -47,7 +47,7 @@ export const CLOUD_SETTINGS_GROUPS = {
   'builtin-tools': ['builtinTools', 'browserTools'],
   'computer-use': ['browserTools', 'browserBackend', 'computerTools', 'androidTools'],
   storage: ['databaseWarning'],
-  about: ['privacy', 'diagnostics'],
+  about: ['privacy', 'desktopNotifications', 'diagnostics'],
 } as const;
 export type CloudSettingsTab = keyof typeof CLOUD_SETTINGS_GROUPS;
 export const CLOUD_SETTINGS_DOMAINS = [...new Set(Object.values(CLOUD_SETTINGS_GROUPS).flat())];

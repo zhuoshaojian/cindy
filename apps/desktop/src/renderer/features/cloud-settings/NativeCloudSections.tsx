@@ -36,6 +36,7 @@ import {
   AboutSectionView,
   AnalyticsToggleView,
   CrashAutoUploadToggleView,
+  DebugLogToggleView,
   Divider as AboutDivider,
 } from '@/components/settings/AboutSection';
 import { ExperimentalSectionView } from '@/components/settings/ExperimentalSection';
@@ -675,7 +676,7 @@ export function NativeCloudSections(props: Props) {
         </StorageDatabaseSection>
       </StorageSectionFrame>
     );
-  if (tab === 'about' && (ready('privacy') || ready('diagnostics')))
+  if (tab === 'about' && (ready('privacy') || ready('desktopNotifications') || ready('diagnostics')))
     return (
       <AboutSectionView
         card={
@@ -689,7 +690,21 @@ export function NativeCloudSections(props: Props) {
                 handleToggle={(next) => attempt('privacy', { analyticsEnabled: next })}
               />
             )}
-            {ready('privacy') && ready('diagnostics') && <AboutDivider />}
+            {ready('desktopNotifications') && (
+              <>
+                {ready('privacy') && <AboutDivider />}
+                <DebugLogToggleView
+                  enabled={bool(s('desktopNotifications'), 'networkDebugEnabled')}
+                  disabled={disabled}
+                  onChange={(next) =>
+                    void attempt('desktopNotifications', { networkDebugEnabled: next })
+                  }
+                />
+              </>
+            )}
+            {(ready('privacy') || ready('desktopNotifications')) && ready('diagnostics') && (
+              <AboutDivider />
+            )}
             {ready('diagnostics') && (
               <CrashAutoUploadToggleView
                 customized={c('diagnostics')}
