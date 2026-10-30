@@ -17833,6 +17833,8 @@
     }
   },
   "cloudSettings": {
+    "imConnectionDetailsUnavailable": "このインスタンスは接続済みアカウントの詳細情報をまだ提供していません。状態と操作はクラウド側のものです。",
+    "imRemoteControlUnavailable": "この項目はまだリモート設定に対応していません。クラウドの Cindy の設定から変更できます。",
     "imReadFailed": "新しい会話の設定を読み込めませんでした",
     "imReadFailedHint": "クラウドから有効な設定を取得できませんでした。再読み込みしてください。読み込めるまで編集はできません。保存済みの設定は上書きされません。",
     "imReadUnavailable": "現在、クラウドからこの設定が提供されていないため、ここでは編集できません。",

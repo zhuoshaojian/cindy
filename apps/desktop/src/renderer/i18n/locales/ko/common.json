@@ -17833,6 +17833,8 @@
     }
   },
   "cloudSettings": {
+    "imConnectionDetailsUnavailable": "이 인스턴스는 아직 연결된 계정의 상세 정보를 제공하지 않습니다. 상태와 작업은 클라우드 인스턴스 기준입니다.",
+    "imRemoteControlUnavailable": "이 항목은 아직 원격 설정을 지원하지 않습니다. 클라우드 Cindy의 설정에서 변경할 수 있습니다.",
     "imReadFailed": "새 대화 설정을 불러오지 못했습니다",
     "imReadFailedHint": "클라우드에서 유효한 설정을 받지 못했습니다. 다시 불러오세요. 불러오기가 완료될 때까지 편집할 수 없으며, 저장된 설정은 덮어쓰지 않습니다.",
     "imReadUnavailable": "현재 클라우드에서 이 설정을 제공하지 않아 여기에서 편집할 수 없습니다.",

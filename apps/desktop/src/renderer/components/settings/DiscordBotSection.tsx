@@ -46,14 +46,57 @@ export function DiscordBotSection({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const controller = useDiscordBot();
+  const [routeSummary, setRouteSummary] = useImChannelSettingsSummary('discord');
+  return (
+    <DiscordBotSectionView
+      expanded={expanded}
+      onToggle={onToggle}
+      controller={controller}
+      routeSummary={routeSummary}
+      defaultSettings={
+        <ImDefaultSettingsSection channel="discord" embedded onSummaryChange={setRouteSummary} />
+      }
+      notificationSettings={<DiscordLifecycleSettings controller={controller} />}
+    />
+  );
+}
+
+export function DiscordBotSectionView({
+  controller,
+  idPrefix = '',
+  canDisconnect = true,
+  canReconnect = true,
+  savedConnectionAvailable,
+  routeSummary,
+  defaultSettings,
+  connectionDetails,
+  notificationSettings,
+  expanded,
+  onToggle,
+}: {
+  idPrefix?: string;
+  canDisconnect?: boolean;
+  canReconnect?: boolean;
+  savedConnectionAvailable?: boolean;
+  controller: Omit<
+    ReturnType<typeof useDiscordBot>,
+    'lifecycleAnnouncement' | 'setLifecycleAnnouncement'
+  >;
+  routeSummary: import('./ImDefaultSettingsSection').ImDefaultSettingsSummary | null;
+  defaultSettings: React.ReactNode;
+  connectionDetails?: React.ReactNode;
+  notificationSettings?: React.ReactNode;
+
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const {
     token,
     setToken,
     ownerUserId,
     setOwnerUserId,
     status,
-    lifecycleAnnouncement,
-    setLifecycleAnnouncement,
     validationError,
     isSaving,
     isDisconnecting,
@@ -61,11 +104,10 @@ export function DiscordBotSection({
     connect,
     reconnect,
     disconnect,
-  } = useDiscordBot();
+  } = controller;
 
   const [showToken, setShowToken] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [routeSummary, setRouteSummary] = useImChannelSettingsSummary('discord');
   const { confirm } = useConfirmDialog();
   const { t } = useTranslation();
 
@@ -111,7 +153,7 @@ export function DiscordBotSection({
 
   return (
     <ImChannelSettingsCard
-      id="personal-im-discord"
+      id={`${idPrefix}personal-im-discord`}
       title={t('settings.discordBot.title')}
       description={t('settings.discordBot.description')}
       routeSummary={
@@ -144,11 +186,13 @@ export function DiscordBotSection({
         </span>
       }
     >
-      <ImDefaultSettingsSection channel="discord" embedded onSummaryChange={setRouteSummary} />
+      {defaultSettings}
       <div className="h-px w-full bg-[var(--border-default)]" />
       {/* 与 FeishuBotSection 同构:已连接 → 状态卡(单个解绑);否则表单(单个连接)。 */}
       {status.kind === 'connected' ? (
         <ConnectedCard
+          canDisconnect={canDisconnect}
+          connectionDetails={connectionDetails}
           botTag={status.appId}
           ownerUserId={ownerUserId}
           isDisconnecting={isDisconnecting}
@@ -156,10 +200,10 @@ export function DiscordBotSection({
         />
       ) : (
         <div className="flex flex-col gap-3">
-          {hasSavedCreds && ownerUserId && (
+          {(savedConnectionAvailable ?? !!(hasSavedCreds && ownerUserId)) && (
             <ImSavedConnectionRecovery
               loading={isSaving}
-              disabled={isDisconnecting}
+              disabled={!canReconnect || isDisconnecting}
               onReconnect={reconnect}
             />
           )}
@@ -172,6 +216,7 @@ export function DiscordBotSection({
           <div className="relative">
             <input
               type={showToken ? 'text' : 'password'}
+              aria-label={t('settings.discordBot.tokenLabel')}
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder={t('settings.discordBot.tokenPlaceholder')}
@@ -205,6 +250,7 @@ export function DiscordBotSection({
           </label>
           <input
             type="text"
+            aria-label={t('settings.discordBot.ownerUserIdLabel')}
             value={ownerUserId}
             onChange={(e) => setOwnerUserId(e.target.value)}
             placeholder={t('settings.discordBot.ownerUserIdPlaceholder')}
@@ -239,7 +285,7 @@ export function DiscordBotSection({
               <button
                 type="button"
                 onClick={() => void handleDisconnectClick()}
-                disabled={isDisconnecting}
+                disabled={!canDisconnect || isDisconnecting}
                 aria-label={t('settings.discordBot.disconnectAria')}
                 className={cn(
                   'mr-[4px] flex shrink-0 items-center justify-center bg-transparent p-0',
@@ -269,13 +315,7 @@ export function DiscordBotSection({
       {hasSavedCreds && (
         <>
           <div className="h-px w-full bg-[var(--border-default)]" />
-          <ImLifecycleAnnouncementSection
-            label={t('settings.discordBot.lifecycleAnnouncement.label')}
-            cellLabel={t('settings.discordBot.lifecycleAnnouncement.cellLabel')}
-            hint={t('settings.discordBot.lifecycleAnnouncement.hint')}
-            checked={lifecycleAnnouncement}
-            onCheckedChange={setLifecycleAnnouncement}
-          />
+          {notificationSettings}
         </>
       )}
 
@@ -327,6 +367,8 @@ export function DiscordBotSection({
 
 /** 已连接状态卡 —— 结构对齐 FeishuBotSection 的 ConnectedCard(单个解绑按钮)。 */
 function ConnectedCard(props: {
+  canDisconnect: boolean;
+  connectionDetails?: React.ReactNode;
   botTag: string;
   ownerUserId: string;
   isDisconnecting: boolean;
@@ -354,18 +396,20 @@ function ConnectedCard(props: {
           </div>
         </div>
       </div>
-      <div className="grid gap-2 text-12 text-[var(--settings-section-desc)]">
-        <div className="flex justify-between gap-4">
-          <span>{t('settings.discordBot.connected.botLabel')}</span>
-          <span className="font-medium text-[var(--settings-section-title)]">{props.botTag}</span>
+      {props.connectionDetails ?? (
+        <div className="grid gap-2 text-12 text-[var(--settings-section-desc)]">
+          <div className="flex justify-between gap-4">
+            <span>{t('settings.discordBot.connected.botLabel')}</span>
+            <span className="font-medium text-[var(--settings-section-title)]">{props.botTag}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span>{t('settings.discordBot.connected.ownerLabel')}</span>
+            <span className="font-medium text-[var(--settings-section-title)]">
+              {props.ownerUserId || '—'}
+            </span>
+          </div>
         </div>
-        <div className="flex justify-between gap-4">
-          <span>{t('settings.discordBot.connected.ownerLabel')}</span>
-          <span className="font-medium text-[var(--settings-section-title)]">
-            {props.ownerUserId || '—'}
-          </span>
-        </div>
-      </div>
+      )}
       <div className="flex gap-2 pt-1">
         <Button
           variant="secondary"
@@ -373,7 +417,7 @@ function ConnectedCard(props: {
           loading={props.isDisconnecting}
           type="button"
           onClick={props.onDisconnect}
-          disabled={props.isDisconnecting}
+          disabled={!props.canDisconnect || props.isDisconnecting}
           className="flex-1"
         >
           <Trash2 size={13} />
@@ -381,5 +425,23 @@ function ConnectedCard(props: {
         </Button>
       </div>
     </div>
+  );
+}
+
+function DiscordLifecycleSettings({
+  controller,
+}: {
+  controller: ReturnType<typeof useDiscordBot>;
+}) {
+  const { t } = useTranslation();
+  const { lifecycleAnnouncement, setLifecycleAnnouncement } = controller;
+  return (
+    <ImLifecycleAnnouncementSection
+      label={t('settings.discordBot.lifecycleAnnouncement.label')}
+      cellLabel={t('settings.discordBot.lifecycleAnnouncement.cellLabel')}
+      hint={t('settings.discordBot.lifecycleAnnouncement.hint')}
+      checked={lifecycleAnnouncement}
+      onCheckedChange={setLifecycleAnnouncement}
+    />
   );
 }

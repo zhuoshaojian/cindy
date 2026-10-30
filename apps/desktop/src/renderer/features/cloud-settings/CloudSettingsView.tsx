@@ -32,7 +32,7 @@ import { createCloudSettingsClient, type CloudSettingsClient } from './client';
 import { CloudInstanceSection } from './CloudInstanceSection';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
-import { CloudImSettings } from './CloudImSettings';
+import { CloudImSettings, cloudImSettingsSummary } from './CloudImSettings';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
 import { CloudMcpAuthorization } from './CloudMcpAuthorization';
 import { CloudPluginAuthorization } from './CloudPluginAuthorization';
@@ -424,9 +424,17 @@ export function CloudSettingsPanel({
                     {group === 'im-bot' ? (
                       botAuthorization && (
                         <CloudBotAuthorization
-                          settings={(itemId) => (
+                          summary={(itemId) =>
+                            cloudImSettingsSummary(
+                              itemId,
+                              states,
+                              t('settings.imBot.defaults.automatic'),
+                            )
+                          }
+                          settings={(itemId, section) => (
                             <CloudImSettings
                               itemId={itemId}
+                              section={section}
                               deviceId={deviceId}
                               states={states}
                               supportedDomains={domains}

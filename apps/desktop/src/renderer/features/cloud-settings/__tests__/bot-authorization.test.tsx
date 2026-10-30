@@ -1,19 +1,33 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CloudBotAuthorization } from '../CloudBotAuthorization';
 import { createTrialCloudSettingsClient } from '../trial';
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+const confirms = vi.hoisted(() => ({ confirm: vi.fn(async () => true) }));
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({
-  useConfirmDialog: () => ({ confirm: vi.fn(async () => true) }),
+  useConfirmDialog: () => confirms,
 }));
+beforeEach(() => {
+  confirms.confirm.mockClear().mockResolvedValue(true);
+  Object.assign(window, {
+    electronAPI: new Proxy(
+      {},
+      {
+        get() {
+          throw Error('LOCAL_API_FORBIDDEN');
+        },
+      },
+    ),
+  });
+});
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 afterEach(cleanup);
 describe('cloud IM authorization', () => {
-  it.each(['Slack', 'Telegram', 'X', 'settings.wechatBot.title'])(
+  it.each(['Slack', 'Telegram', 'X'])(
     'connects and cancels %s with cloud tickets and no local API',
     async (label) => {
       Object.assign(window, {
@@ -48,74 +62,152 @@ describe('cloud IM authorization', () => {
 // Regression: the native panel hid all disconnected credential-based bots.
 // Existing coverage had only fieldless OAuth; a connect ticket with required fields
 // must remain visible and submit once through the scoped bridge (unit/jsdom).
-it('shows all personal channels and submits credentials only to the selected cloud ticket', async () => {
+it.each([
+  ['wecom', { botId: 'test-bot', secret: 'synthetic-secret' }, 'connect'],
+  ['feishu', { appId: 'test-app', appSecret: 'synthetic-secret' }, 'bind'],
+  ['dingtalk', { appKey: 'test-app', appSecret: 'synthetic-secret' }, 'connect'],
+  ['discord', { token: 'synthetic-token', ownerUserId: '123456789012345678' }, 'connect'],
+  [
+    'telegram',
+    { token: '12345:synthetic_token_not_a_real_credential', ownerUserId: '12345' },
+    'connect',
+  ],
+] as const)(
+  'uses the native %s form and only the selected cloud ticket',
+  async (channel, values, actionLabel) => {
+    const client = createTrialCloudSettingsClient();
+    const original = client.manage!;
+    let submitted: any;
+    const manage = vi.spyOn(client, 'manage').mockImplementation(async (command) => {
+      if (command.operation === 'run') submitted = structuredClone(command);
+      return original(command);
+    });
+    const view = render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+    for (const id of ['wechat', 'wecom', 'feishu', 'dingtalk', 'discord', 'telegram']) {
+      expect(await screen.findByText(`settings.${id}Bot.title`)).toBeTruthy();
+      expect(screen.getByText(`settings.${id}Bot.description`)).toBeTruthy();
+    }
+    fireEvent.click(screen.getByText(`settings.${channel}Bot.title`));
+    const panel = document.getElementById(`cloud-personal-im-${channel}-panel`)!;
+    for (const [key, value] of Object.entries(values)) {
+      const input = within(panel).getByLabelText(`settings.${channel}Bot.${key}Label`);
+      if (['token', 'secret', 'appSecret'].includes(key))
+        expect(input.getAttribute('type')).toBe('password');
+      fireEvent.change(input, { target: { value } });
+    }
+    const connect = await within(panel).findByRole('button', {
+      name: `settings.${channel}Bot.${actionLabel}`,
+    });
+    expect(connect.matches(':disabled')).toBe(false);
+    fireEvent.click(connect);
+    await waitFor(() =>
+      expect(manage.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1),
+    );
+    expect(submitted.values).toEqual(
+      channel === 'feishu' ? { ...values, service: 'feishu' } : values,
+    );
+    await screen.findByText('cloudSettings.imConnectionDetailsUnavailable');
+    expect(screen.queryByLabelText(`settings.${channel}Bot.tokenLabel`)).toBeNull();
+    view.rerender(
+      <CloudBotAuthorization client={client} online={false} active name="Cloud" trial />,
+    );
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+  },
+);
+
+// Unit/jsdom: WeChat must share the local confirmation/waiting/bound UI, not a generic switch.
+// Previously the cloud-only switch skipped the native flow; no local controller may run.
+it('uses native WeChat authorization and a single unbind confirmation', async () => {
+  const client = createTrialCloudSettingsClient();
+  const manage = vi.spyOn(client, 'manage');
+  render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+  fireEvent.click(await screen.findByText('settings.wechatBot.title'));
+  expect(screen.queryByRole('switch', { name: 'settings.wechatBot.title' })).toBeNull();
+  const authorize = await screen.findByRole('button', {
+    name: 'settings.wechatBot.actions.connect',
+  });
+  confirms.confirm.mockResolvedValueOnce(false);
+  fireEvent.click(authorize);
+  await waitFor(() => expect(confirms.confirm).toHaveBeenCalledTimes(1));
+  expect(manage.mock.calls.some(([c]) => c.operation === 'run')).toBe(false);
+  fireEvent.click(authorize);
+  await screen.findByText('settings.wechatBot.waiting.heading');
+  fireEvent.click(await screen.findByRole('button', { name: 'cloudSettings.authTrialComplete' }));
+  const unbind = await screen.findByRole('button', { name: 'settings.wechatBot.actions.unbind' });
+  expect(confirms.confirm).toHaveBeenCalledTimes(2);
+  fireEvent.click(unbind);
+  await waitFor(() =>
+    expect(manage.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(2),
+  );
+  expect(confirms.confirm).toHaveBeenCalledTimes(3);
+});
+
+// An uncertain remote result must stay recoverable without re-running the action.
+it('allows checking an unknown credential operation without a second submission', async () => {
   const client = createTrialCloudSettingsClient();
   const original = client.manage!;
-  let sent: unknown;
-  const id = crypto.randomUUID();
   const manage = vi.spyOn(client, 'manage').mockImplementation(async (command) => {
-    if (command.operation !== 'list') {
-      sent = structuredClone(command);
-      return original(command);
-    }
-    return {
+    if (command.operation === 'run') throw Error('CONNECTION_LOST');
+    return original(command);
+  });
+  render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+  fireEvent.click(await screen.findByText('settings.wechatBot.title'));
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'settings.wechatBot.actions.connect' }),
+  );
+  const retry = await screen.findByRole('button', { name: 'cloudSettings.authCheck' });
+  expect(retry.matches(':disabled')).toBe(false);
+  fireEvent.click(retry);
+  await waitFor(() => expect(manage.mock.calls.some(([c]) => c.operation === 'status')).toBe(true));
+  expect(manage.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1);
+});
+
+// Unit/jsdom: capabilities and identity details can be absent on an older Host.
+// The shared card must remain honest and must not offer successful-looking no-op actions.
+it('keeps a read-only remote connection visible without enabling unsupported actions', async () => {
+  const client = createTrialCloudSettingsClient();
+  const manage = vi
+    .spyOn(client, 'manage')
+    .mockResolvedValue({
       kind: 'page',
       section: 'bots',
       offset: 0,
       items: [
-        ...['wecom', 'feishu', 'dingtalk', 'discord', 'telegram'].map((channel) => ({
-          id: `bot:${channel}`,
-          label: channel,
-          group: 'management.personalBots',
-          status: 'disconnected' as const,
-          actions: [
-            {
-              id,
-              intent: 'connect' as const,
-              label: 'management.actions.connect',
-              expiresAt: Date.now() + 300000,
-              fields: [
-                {
-                  name: 'token',
-                  label: 'Token',
-                  kind: 'password' as const,
-                  required: true,
-                  maxLength: 100,
-                },
-              ],
-            },
-          ],
-        })),
         {
-          id: 'bot:official:readonly',
-          label: 'Read-only connection',
-          group: 'management.officialBots',
+          id: 'bot:feishu',
+          label: 'Feishu',
+          group: 'management.personalBots',
           status: 'connected',
           actions: [],
         },
       ],
-    };
-  });
-  const props = { client, online: true, active: true, name: 'Cloud', trial: true };
-  const view = render(<CloudBotAuthorization {...props} />);
-  for (const channel of ['wecom', 'feishu', 'dingtalk', 'discord', 'telegram'])
-    expect(await screen.findByText(`settings.${channel}Bot.title`)).toBeTruthy();
-  expect(screen.getByText('Read-only connection')).toBeTruthy();
-  fireEvent.click(screen.getByText('settings.telegramBot.title'));
-  const token = screen.getByLabelText('settings.telegramBot.tokenLabel');
-  expect(token.getAttribute('type')).toBe('password');
-  fireEvent.change(token, { target: { value: 'invalid-test-token' } });
-  fireEvent.click(await screen.findByRole('button', { name: 'settings.telegramBot.connect' }));
+    });
+  render(<CloudBotAuthorization client={client} online active name="Cloud" />);
+  fireEvent.click(await screen.findByText('settings.feishuBot.title'));
+  const clear = await screen.findByRole('button', { name: 'settings.feishuBot.connected.clear' });
+  expect(clear.matches(':disabled')).toBe(true);
+  const reconnect = screen.getByRole('button', { name: 'settings.feishuBot.connected.reconnect' });
+  expect(reconnect.matches(':disabled')).toBe(true);
+  expect(screen.getByText('cloudSettings.imConnectionDetailsUnavailable')).toBeTruthy();
+  fireEvent.click(clear);
+  expect(manage.mock.calls.some(([c]) => c.operation === 'run')).toBe(false);
+});
+
+// Credentials must not survive leaving the native card (previous generic forms unmounted).
+it('clears a credential draft when the channel card is collapsed', async () => {
+  const client = createTrialCloudSettingsClient();
+  render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+  const card = await screen.findByText('settings.discordBot.title');
+  fireEvent.click(card);
+  const input = await screen.findByLabelText('settings.discordBot.tokenLabel');
+  fireEvent.change(input, { target: { value: 'synthetic-draft' } });
+  fireEvent.click(card);
+  fireEvent.click(card);
   await waitFor(() =>
-    expect(manage.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1),
+    expect(
+      (screen.getByLabelText('settings.discordBot.tokenLabel') as HTMLInputElement).value,
+    ).toBe(''),
   );
-  expect(sent).toMatchObject({
-    actionId: id,
-    values: { token: 'invalid-test-token' },
-  });
-  expect(screen.queryByLabelText('settings.telegramBot.tokenLabel')).toBeNull();
-  view.rerender(<CloudBotAuthorization {...props} online={false} />);
-  expect(screen.queryByLabelText('settings.telegramBot.tokenLabel')).toBeNull();
 });
 
 // The new controller must never save model or group settings to this computer or
@@ -188,6 +280,7 @@ it('keeps missing saved Telegram groups and never applies personal groups to off
   const props = {
     deviceId: 'cloud-target',
     states: { telegramGroups: state },
+    section: 'telegram' as const,
     disabled: false,
     save,
   };
@@ -213,28 +306,60 @@ it('keeps missing saved Telegram groups and never applies personal groups to off
 // Unit/jsdom: real shared section must survive per-domain read errors and retry.
 // Prior tests only covered ready snapshots; no local controller or credentials may be consulted.
 it.each([
-  ['wechat', 'imWechat'], ['wecom', 'imWecom'], ['feishu', 'imFeishu'],
-  ['dingtalk', 'imDingtalk'], ['discord', 'imDiscord'], ['telegram', 'imTelegram'],
-] as const)('retains %s new-conversation settings through loading, failure and retry', async (channel, domain) => {
-  const client = createTrialCloudSettingsClient();
-  const [ready] = await client.read([domain]);
-  const retry = vi.fn(), save = vi.fn();
-  const props = { itemId: `bot:${channel}`, deviceId: 'cloud-target', disabled: true,
-    loading: true, retry, retryDisabled: true, save };
-  const view = render(<CloudImSettings {...props} states={{}} />);
-  const section = screen.getByRole('region', { name: 'settings.imBot.defaults.title' });
-  expect(within(section).getByRole('status').textContent).toContain('settings.imBot.defaults.loading');
-  view.rerender(<CloudImSettings {...props} loading={false} retryDisabled={false}
-    states={{ [domain]: { domain, status: 'unreadable', revision: null, readErrorCode: 'SETTINGS_REQUEST_FAILED' } }} />);
-  expect(within(section).getByRole('alert').textContent).toContain('cloudSettings.imReadFailed');
-  expect(within(section).queryByText('Target model picker')).toBeNull();
-  fireEvent.click(within(section).getByRole('button', { name: 'cloudSettings.reload' }));
-  expect(retry).toHaveBeenCalledTimes(1);
-  view.rerender(<CloudImSettings {...props} states={{}} />);
-  expect(within(section).getByRole('status')).toBeTruthy();
-  view.rerender(<CloudImSettings {...props} loading={false} disabled={false} states={{ [domain]: ready }} />);
-  expect(screen.queryByRole('alert')).toBeNull();
-  expect(screen.getByText('Target model picker')).toBeTruthy();
-  expect(pickers.model.deviceId).toBe('cloud-target');
-  expect(save).not.toHaveBeenCalled();
-});
+  ['wechat', 'imWechat'],
+  ['wecom', 'imWecom'],
+  ['feishu', 'imFeishu'],
+  ['dingtalk', 'imDingtalk'],
+  ['discord', 'imDiscord'],
+  ['telegram', 'imTelegram'],
+] as const)(
+  'retains %s new-conversation settings through loading, failure and retry',
+  async (channel, domain) => {
+    const client = createTrialCloudSettingsClient();
+    const [ready] = await client.read([domain]);
+    const retry = vi.fn(),
+      save = vi.fn();
+    const props = {
+      itemId: `bot:${channel}`,
+      deviceId: 'cloud-target',
+      disabled: true,
+      loading: true,
+      retry,
+      retryDisabled: true,
+      save,
+    };
+    const view = render(<CloudImSettings {...props} states={{}} />);
+    const section = screen.getByRole('region', { name: 'settings.imBot.defaults.title' });
+    expect(within(section).getByRole('status').textContent).toContain(
+      'settings.imBot.defaults.loading',
+    );
+    view.rerender(
+      <CloudImSettings
+        {...props}
+        loading={false}
+        retryDisabled={false}
+        states={{
+          [domain]: {
+            domain,
+            status: 'unreadable',
+            revision: null,
+            readErrorCode: 'SETTINGS_REQUEST_FAILED',
+          },
+        }}
+      />,
+    );
+    expect(within(section).getByRole('alert').textContent).toContain('cloudSettings.imReadFailed');
+    expect(within(section).queryByText('Target model picker')).toBeNull();
+    fireEvent.click(within(section).getByRole('button', { name: 'cloudSettings.reload' }));
+    expect(retry).toHaveBeenCalledTimes(1);
+    view.rerender(<CloudImSettings {...props} states={{}} />);
+    expect(within(section).getByRole('status')).toBeTruthy();
+    view.rerender(
+      <CloudImSettings {...props} loading={false} disabled={false} states={{ [domain]: ready }} />,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('Target model picker')).toBeTruthy();
+    expect(pickers.model.deviceId).toBe('cloud-target');
+    expect(save).not.toHaveBeenCalled();
+  },
+);

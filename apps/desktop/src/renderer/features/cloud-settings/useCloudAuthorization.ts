@@ -110,7 +110,12 @@ export function useCloudAuthorization(
   useEffect(() => {
     setCallback('');
   }, [selected, operation?.operationId, operation?.phase]);
-  const run = async (item: ManagementItem, action: Action, values: Record<string, string> = {}) => {
+  const run = async (
+    item: ManagementItem,
+    action: Action,
+    values: Record<string, string> = {},
+    options: { confirmed?: boolean } = {},
+  ) => {
     if (!current() || pending.current || activeOperation(operationRef.current) || !client.manage)
       return;
     if (action.expiresAt <= Date.now()) {
@@ -124,6 +129,7 @@ export function useCloudAuthorization(
     try {
       if (
         action.intent === 'disconnect' &&
+        !options.confirmed &&
         !(await confirm({
           title: t('settings.providers.button.disconnect'),
           description: t('cloudSettings.authDisconnect', { name, provider: item.label }),

@@ -3,6 +3,7 @@ import { ModelSelector } from '@/components/new-chat/ModelSelector';
 import {
   ImDefaultSettingsSectionFrame,
   ImDefaultSettingsSectionView,
+  type ImDefaultSettingsSummary,
 } from '@/components/settings/ImDefaultSettingsSection';
 import {
   TelegramBehaviorSettingsView,
@@ -31,6 +32,7 @@ const channels = {
 const routeKey = (agent: ImDefaultAgentKind) => (agent === 'claude-code' ? 'claudeCode' : agent);
 type Props = {
   itemId: string;
+  section?: 'defaults' | 'telegram';
   deviceId: string;
   states: Partial<Record<CloudSettingsDomain, CloudSettingsState>>;
   disabled: boolean;
@@ -48,6 +50,7 @@ type Props = {
 /** All reads/writes target the selected cloud Host. Official hooks never use personal bot scopes. */
 export function CloudImSettings({
   itemId,
+  section = 'defaults',
   deviceId,
   states,
   disabled,
@@ -61,7 +64,7 @@ export function CloudImSettings({
   const { t } = useTranslation();
   const channel = itemId.replace(/^bot:/, '') as keyof typeof channels;
   const domain = channels[channel];
-  if (!domain) return null;
+  if (!domain || (section === 'telegram' && channel !== 'telegram')) return null;
   const state = states[domain];
   const supported = !supportedDomains || supportedDomains.includes(domain);
   const commit = async (s: CloudSettingsState, set: Record<string, unknown>, clear?: string[]) => {
@@ -129,7 +132,7 @@ export function CloudImSettings({
   const available = !loading && !readFailed && supported && state && value && active;
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      {!available && (
+      {section === 'defaults' && !available && (
         <ImDefaultSettingsSectionFrame descriptionChannel={channel} embedded>
           {loading ? (
             <p role="status" className="text-13 text-[var(--text-tertiary)]">
@@ -159,8 +162,46 @@ export function CloudImSettings({
           )}
         </ImDefaultSettingsSectionFrame>
       )}
+      {section === 'telegram' && (
+        <>
+          <section className="flex flex-col gap-2">
+            <h3 className="text-13 font-medium text-[var(--settings-section-title)]">
+              {t('settings.telegramBot.persona.title')}
+            </h3>
+            <p className="text-12 text-[var(--settings-section-desc)]">
+              {t('cloudSettings.imRemoteControlUnavailable')}
+            </p>
+          </section>
+          {(['telegramBehavior', 'telegramGroups'] as const)
+            .filter((domain) => states[domain]?.status !== 'ready')
+            .map((domain) => (
+              <ErrorNotice
+                key={domain}
+                role="alert"
+                message={t(
+                  domain === 'telegramBehavior'
+                    ? 'settings.telegramBot.behavior.title'
+                    : 'settings.telegramBot.groups.title',
+                )}
+                description={t(
+                  states[domain]?.status === 'unavailable'
+                    ? 'cloudSettings.imReadUnavailable'
+                    : 'cloudSettings.imReadFailedHint',
+                )}
+                details={states[domain]?.readErrorCode}
+                actions={
+                  retry && (
+                    <Button size="sm" disabled={retryDisabled} onClick={retry}>
+                      {t('cloudSettings.reload')}
+                    </Button>
+                  )
+                }
+              />
+            ))}
+        </>
+      )}
       <fieldset disabled={disabled} className="m-0 flex min-w-0 flex-col gap-6 border-0 p-0">
-        {available && (
+        {section === 'defaults' && available && (
           <ImDefaultSettingsSectionView
             deviceId={deviceId}
             embedded
@@ -223,13 +264,13 @@ export function CloudImSettings({
             }
           />
         )}
-        {channel === 'telegram' && behavior?.status === 'ready' && (
+        {section === 'telegram' && behavior?.status === 'ready' && (
           <TelegramBehaviorSettingsView
             behavior={additionalSettingsSchemas.telegramBehavior.parse(behavior.value)}
             patch={(patch) => void commit(behavior, patch)}
           />
         )}
-        {channel === 'telegram' && groups?.status === 'ready' && (
+        {section === 'telegram' && groups?.status === 'ready' && (
           <TelegramGroupActivationSettingsView
             groups={[...knownGroups].map(([chatId, chatName]) => ({
               chatId,
@@ -249,4 +290,32 @@ export function CloudImSettings({
       </fieldset>
     </div>
   );
+}
+
+/** Collapsed native card summary comes only from the selected Host snapshot. */
+export function cloudImSettingsSummary(
+  itemId: string,
+  states: Props['states'],
+  automaticLabel: string,
+): ImDefaultSettingsSummary | null {
+  const domain = channels[itemId.replace(/^bot:/, '') as keyof typeof channels];
+  if (!domain) return null;
+  const state = states[domain];
+  const parsed =
+    state?.status === 'ready' ? additionalSettingsSchemas[domain].safeParse(state.value) : null;
+  if (!parsed?.success) return null;
+  const value = parsed.data;
+  const route = value[routeKey(value.agentKind)];
+  const choice = state?.choices?.[routeKey(value.agentKind)]?.find(
+    ({ value: option }) =>
+      option &&
+      typeof option === 'object' &&
+      !Array.isArray(option) &&
+      option.modelId === route.modelId &&
+      option.providerId === route.providerId,
+  );
+  return {
+    agentKind: value.agentKind,
+    model: route.modelId ? (choice?.label ?? route.modelId) : automaticLabel,
+  };
 }

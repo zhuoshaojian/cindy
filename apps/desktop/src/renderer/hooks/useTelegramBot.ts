@@ -6,9 +6,9 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('useTelegramBot');
 /** Telegram 数字 user id(私聊 chat id 同值);现网长度 5-15 位左右, 放宽到 4-20。 */
-const OWNER_USER_ID_PATTERN = /^\d{4,20}$/;
+export const TELEGRAM_OWNER_USER_ID_PATTERN = /^\d{4,20}$/;
 /** BotFather token 形态: `<botId>:<secret>` — 只做粗校验挡手滑。 */
-const BOT_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]{20,}$/;
+export const TELEGRAM_BOT_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]{20,}$/;
 
 interface TelegramBotCache {
   ownerUserId: string;
@@ -126,11 +126,11 @@ export function useTelegramBot(): UseTelegramBotReturn {
       setValidationError(t('logic.validation.telegramFieldsRequired'));
       return false;
     }
-    if (!BOT_TOKEN_PATTERN.test(trimmedToken)) {
+    if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmedToken)) {
       setValidationError(t('logic.validation.telegramTokenFormat'));
       return false;
     }
-    if (!OWNER_USER_ID_PATTERN.test(trimmedOwnerUserId)) {
+    if (!TELEGRAM_OWNER_USER_ID_PATTERN.test(trimmedOwnerUserId)) {
       setValidationError(t('logic.validation.telegramOwnerUserIdFormat'));
       return false;
     }
@@ -234,8 +234,8 @@ export function useTelegramBot(): UseTelegramBotReturn {
   );
 
   const canConnect =
-    BOT_TOKEN_PATTERN.test(token.trim()) &&
-    OWNER_USER_ID_PATTERN.test(ownerUserId.trim()) &&
+    TELEGRAM_BOT_TOKEN_PATTERN.test(token.trim()) &&
+    TELEGRAM_OWNER_USER_ID_PATTERN.test(ownerUserId.trim()) &&
     !isSaving &&
     !isDisconnecting &&
     !isTogglingOnline;

@@ -4,6 +4,12 @@ import { Switch } from '@/components/ui/switch';
 import { ImChannelSettingsCard } from '@/components/settings/ImChannelSettingsCard';
 import { OAuthBrowserLink, OAuthDeviceCodeCard } from '@/components/settings/OAuthDeviceCodeCard';
 import { CloudBotConnectionForm, cloudBotActionLabel } from './CloudBotConnectionForm';
+import {
+  CloudPersonalBotSettings,
+  personalBotChannels,
+  type PersonalBotChannel,
+} from './CloudPersonalBotSettings';
+import type { ImDefaultSettingsSummary } from '@/components/settings/ImDefaultSettingsSection';
 import { GroupTip } from '@/components/settings/ImBotSection';
 import {
   useCloudAuthorization,
@@ -13,7 +19,10 @@ import {
 
 /** Same accordion and group layout as local IM settings; only cloud tickets are executed. */
 export function CloudBotAuthorization(
-  props: CloudAuthorizationProps & { settings?(itemId: string): ReactNode },
+  props: CloudAuthorizationProps & {
+    settings?(itemId: string, section?: 'defaults' | 'telegram'): ReactNode;
+    summary?(itemId: string): ImDefaultSettingsSummary | null;
+  },
 ) {
   const {
     t,
@@ -85,6 +94,90 @@ export function CloudBotAuthorization(
                   : item.status === 'disconnected'
                     ? 'needsConfig'
                     : item.status;
+              const channel = item.id.replace(/^bot:/, '') as PersonalBotChannel;
+              if (
+                item.group === 'management.personalBots' &&
+                personalBotChannels.includes(channel)
+              ) {
+                return (
+                  <CloudPersonalBotSettings
+                    key={`${item.id}:${form?.id ?? 'no-form'}:${props.online}:${props.active}`}
+                    item={item}
+                    channel={channel}
+                    disabled={
+                      disabled ||
+                      !props.active ||
+                      (busy && !own) ||
+                      (own && operation?.phase === 'unknown')
+                    }
+                    pending={own && busy}
+                    expanded={expanded[group] === item.id}
+                    onToggle={() =>
+                      setExpanded((old) => ({
+                        ...old,
+                        [group]: old[group] === item.id ? null : item.id,
+                      }))
+                    }
+                    defaults={props.settings?.(item.id)}
+                    summary={props.summary?.(item.id)}
+                    telegramSettings={props.settings?.(item.id, 'telegram')}
+                    run={run}
+                    cancel={() => operate('cancel')}
+                    supplementary={
+                      own ? (
+                        <>
+                          {operation && (
+                            <p role="status" className="text-13 text-[var(--text-secondary)]">
+                              {t(`cloudSettings.authPhase.${operation.phase}`)}
+                            </p>
+                          )}
+                          {(busy || operation?.phase === 'unknown') && channel !== 'wechat' && (
+                            <Button
+                              variant="secondary"
+                              disabled={disabled}
+                              onClick={() => void operate('cancel')}
+                            >
+                              {t('settings.providers.button.cancel')}
+                            </Button>
+                          )}
+                          {operation?.phase === 'unknown' && channel === 'wechat' && (
+                            <Button
+                              variant="secondary"
+                              disabled={disabled}
+                              onClick={() => void operate('cancel')}
+                            >
+                              {t('settings.providers.button.cancel')}
+                            </Button>
+                          )}
+                          {prompt &&
+                            (prompt.kind === 'device' && prompt.userCode ? (
+                              <OAuthDeviceCodeCard
+                                deviceCode={{
+                                  verificationUrl: prompt.url,
+                                  userCode: prompt.userCode,
+                                  expiresAt: prompt.expiresAt,
+                                }}
+                                onOpen={open}
+                              />
+                            ) : (
+                              <OAuthBrowserLink url={prompt.url} onOpen={open} />
+                            ))}
+                          {operation?.phase === 'unknown' && (
+                            <Button disabled={disabled} onClick={() => void operate('status')}>
+                              {t('cloudSettings.authCheck')}
+                            </Button>
+                          )}
+                          {prompt && props.trial && (
+                            <Button onClick={() => void operate('respond')}>
+                              {t('cloudSettings.authTrialComplete')}
+                            </Button>
+                          )}
+                        </>
+                      ) : null
+                    }
+                  />
+                );
+              }
               return (
                 <ImChannelSettingsCard
                   key={item.id}
