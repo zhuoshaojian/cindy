@@ -2,11 +2,10 @@
 
 The source target is selected by [`delivery/version.json`](delivery/version.json)
 and [`source-freeze.json`](source-freeze.json), not by a version copied into this guide.
-The current upstream is v0.1.113; the build uses the complete merged client commit,
-not whole-file overlays from v0.1.108. See [candidate delivery](delivery/README.md)
-for the latest built image and [0.1.113 instance acceptance](ACCEPTANCE-0113-20261022.md)
-for the separate tested-instance result. A newer candidate does not mean an instance
-was upgraded. Earlier acceptance records qualify only their exact artifacts.
+The build uses the complete merged client commit, not whole-file replacements from
+an older runtime. See [delivery status](delivery/README.md) and the release-specific
+acceptance record for tested artifacts. Delivery alone does not mean an instance
+was upgraded or admitted; acceptance records qualify only their exact artifacts.
 
 Use the `feat/cloud-settings-native-client` branch of `zhuoshaojian/cindy`.
 Required host tools: Git with full branch history and Git LFS, Python >= 3.12, and Docker
@@ -19,7 +18,7 @@ From the repository root, with a committed, clean `deploy/linux-desktop/`:
 
 ```sh
 python3 deploy/linux-desktop/build-image.py \
-  --tag cindy-runtime-cn:0.1.113-source-candidate-unique \
+  --tag cindy-runtime-cn:source-build-unique \
   --output /absolute/private/cache/cindy-source-build-unique
 ```
 
@@ -51,11 +50,8 @@ Git LFS in its job directory; it does not change the shared runner or install Gi
   independent cloud revision; these become image labels and build records.
 - `source-freeze.json` selects the complete merged client commit, which must contain
   the upstream commit recorded in `delivery/version.json`. The builder checks both
-  the exact upstream tag and ancestry. The current 0.1.115 freeze contains the
-  input-overload recovery fix directly and has an empty `includedPatch`: all
-  application source comes from one merged commit. Older 0.1.113 releases pinned a
-  `captureHost.ts` replacement from `runtime-desktop-xfce/source-manifest.json` by
-  SHA-256; that historical provenance remains in their own build records.
+  the exact upstream tag and ancestry. Current freezes use an empty `includedPatch`: all application source comes from
+  the merged commit. Historical artifact records retain their own original inputs.
 - The upstream version and cloud revision are build arguments shared by the
   application, image labels and release records. The pinned dependency base has
   its own source identity, so an application version bump retains its build cache.
