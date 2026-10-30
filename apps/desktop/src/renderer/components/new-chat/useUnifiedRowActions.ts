@@ -39,6 +39,7 @@ import {
 import { getRecentModelsOwner, recordRecentModel } from '@/state/recentModels';
 
 import type { ModelMemoryAccessors } from './ModelSelector';
+import type { ModelPickerPreferenceStore } from './modelPickerPreferences';
 import type { UnifiedSelectedRow } from './UnifiedModelPanel';
 import {
   agentKindOfEngine,
@@ -53,6 +54,7 @@ import {
 type ActionResult = void | boolean | Promise<void | boolean>;
 
 export interface UnifiedRowActionsOptions {
+  engineStore?: ModelPickerPreferenceStore['engines'];
   favoriteStore?: FavoriteStore;
   onFavoriteError?: () => void;
   interactionDisabled: boolean;
@@ -271,7 +273,8 @@ type ActionName =
 export function useUnifiedRowActions(options: UnifiedRowActionsOptions): UnifiedRowActions {
   const preferenceOwner = getDataOwnerGeneration();
   const preferencesCurrent = () => isDataOwnerGenerationCurrent(preferenceOwner);
-  const commitPreference = (action: () => Promise<boolean>) => preferencesCurrent() ? action() : Promise.resolve(false);
+  const commitPreference = async (action: () => void | Promise<boolean>): Promise<boolean> =>
+    preferencesCurrent() && await action() !== false;
   // 同一个面板一次只提交一份配置,避免后发请求先完成再被旧回执覆盖;锁覆盖确认、写入、
   // 回滚和收藏收尾。在途时控件看上去可点就一定接得住:新的点击进队列,不静默丢弃 ——
   // 深度 / Fast 按「行 + 维度」各留最新一笔,其余动作只留最新一个,按先后顺序依次提交。
@@ -864,12 +867,12 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
           }),
         ).then((applied) => {
           if (!applied) return false;
-          return commitPreference(() => setModelEngineOverride(anchor.providerId, anchor.modelId, engine));
+          return commitPreference(() => (options.engineStore?.set ?? setModelEngineOverride)(anchor.providerId, anchor.modelId, engine));
         });
       }
       return;
     }
-    return commitPreference(() => setModelEngineOverride(anchor.providerId, anchor.modelId, engine));
+    return commitPreference(() => (options.engineStore?.set ?? setModelEngineOverride)(anchor.providerId, anchor.modelId, engine));
   };
 
   const applyEffort: UnifiedRowActions['applyEffort'] = (anchor, entry, config, effort) => {
@@ -1004,7 +1007,7 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
 
     /** 「跟随推荐」的持久化部分:删 override + 删掉当前与推荐引擎两格的深度 / Fast 记忆。 */
     const resetStoredConfig = async (): Promise<boolean> => {
-      if (!await commitPreference(() => clearModelEngineOverride(anchor.providerId, anchor.modelId)) || !preferencesCurrent()) return false;
+      if (!await commitPreference(() => (options.engineStore?.clear ?? clearModelEngineOverride)(anchor.providerId, anchor.modelId)) || !preferencesCurrent()) return false;
       // ★ 删,不是写快照(2026-08-17 review H3)。记忆表是 override 表:表里没有该键
       // ⇒ 跟随当前版本的目录默认。此前这里把**这一版**的 defaultEffort 快照写回记忆槽,
       // 于是服务端之后改了推荐档,点过「恢复推荐」的用户被钉死在旧值上 —— 与

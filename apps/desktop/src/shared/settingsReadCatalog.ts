@@ -15,6 +15,7 @@ export const SETTINGS_READ_HARNESSES = ['claude-code', 'codex', 'pi'] as const;
 export const SETTINGS_READ_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 export const SETTINGS_READ_IM_CHANNELS = ['global', 'feishu', 'slack', 'discord', 'wechat', 'telegram', 'dingtalk', 'wecom'] as const;
 export const SETTINGS_READ_SHORTCUT_IDS = [
+  'session-history-back', 'session-history-forward', 'region-screenshot',
   'toggle-sidebar', 'open-settings', 'new-maker', 'close-tab-or-window', 'right-tab-prev', 'right-tab-next',
   'find-in-page', 'search-in-project', 'save-file', 'open-terminal', 'zoom-in', 'zoom-out', 'zoom-reset',
   'browser-focus-url', 'browser-back', 'browser-forward', 'browser-reload', 'cycle-permission-mode',
@@ -238,7 +239,7 @@ const im = family(SETTINGS_READ_IM_CHANNELS, channel => ({
 const shortcuts = family(SETTINGS_READ_SHORTCUT_IDS, id => ({
   [`shortcuts.${id}`]: { ...definition(z.array(settingsReadShortcutComboSchema).max(3), 'shortcuts', 'shortcuts',
     'KeyboardShortcutsSection', `shared/appShortcuts.ts#${id}`, 'profile', 'immediate', 'safeProjection',
-    id === 'open-settings' ? ['darwin'] : id.startsWith('zoom-') ? ['win32', 'linux'] : SETTINGS_READ_PLATFORMS), labelKey: `settings.shortcuts.items.${id}.label` },
+    id === 'region-screenshot' ? ['darwin', 'win32'] : id === 'open-settings' ? ['darwin'] : id.startsWith('zoom-') ? ['win32', 'linux'] : SETTINGS_READ_PLATFORMS), labelKey: `settings.shortcuts.items.${id}.label` },
 })) as { [K in typeof SETTINGS_READ_SHORTCUT_IDS[number] as `shortcuts.${K}`]: SettingsReadFieldDefinition<z.ZodArray<typeof settingsReadShortcutComboSchema>> };
 const worklouder = family(SETTINGS_READ_WORKLOUDER_MODELS, model => ({
   ...group(`worklouder.${model}`, { deviceEnabled: bool, lightingBrightness: integer(0, 100),
@@ -312,6 +313,7 @@ export const SETTINGS_READ_COLLECTION_IDS = Object.keys(SETTINGS_READ_COLLECTION
 
 /** 资源、操作和远端归属不伪装成已读取 Host 设置值，也不进入快照字段。 */
 export const SETTINGS_READ_EXTERNAL_CATALOG = [
+  { id: 'localAgent.applications', tab: 'remote-control', control: 'LocalAgentSection', kind: 'authorization', entry: 'local-agent' },
   { id: 'account.profile', tab: 'general', control: 'UserProfileCard', kind: 'external', entry: 'account' },
   { id: 'account.logout', tab: 'general', control: 'LogoutSection', kind: 'action', entry: 'account' },
   { id: 'billing.account', tab: 'billing', control: 'BillingSettingsSection', kind: 'external', entry: 'billing' },
@@ -322,6 +324,7 @@ export const SETTINGS_READ_EXTERNAL_CATALOG = [
   { id: 'voice.dictionary', tab: 'voice-input', control: 'VoiceInputSection', kind: 'resource', entry: 'voice' },
   // Local microphone filtering is not part of the deployed v2 snapshot contract.
   { id: 'voice.speakerFilter', tab: 'voice-input', control: 'VoiceInputSection', kind: 'external', entry: 'voice' },
+  { id: 'voice.conversation', tab: 'voice-input', control: 'VoiceInputSection', kind: 'external', entry: 'voice' },
   { id: 'voice.history', tab: 'voice-input', control: 'VoiceInputSection', kind: 'resource', entry: 'voice' },
   { id: 'voice.credentials', tab: 'voice-input', control: 'VoiceInputSection', kind: 'authorization', entry: 'voice' },
   { id: 'im.connections', tab: 'im-bot', control: 'ImBotSection', kind: 'authorization', entry: 'im' },

@@ -57,7 +57,7 @@ describe('actual interaction preference readers', () => {
     expect(value(result, 'computer.enabled')).toBe(false);
     expect(result.fields['im.wecom.notificationsEnabled']).toEqual({ status: 'private' });
     expect(value(result, 'im.official.slackEnabled')).toBe(false);
-    expect(Object.keys(result.fields).filter(k => k.startsWith('shortcuts.'))).toHaveLength(27);
+    expect(Object.keys(result.fields).filter(k => k.startsWith('shortcuts.'))).toHaveLength(30);
     for (const [key, item] of Object.entries(result.fields)) {
       expect(key in SETTINGS_READ_CATALOG, key).toBe(true);
       if (item.status === 'value' && !key.match(/^im\.(global|feishu|slack|discord|wechat|telegram|dingtalk|wecom)\.agents\..*\.(model|providerId)$/)) expect(SETTINGS_READ_CATALOG[key as keyof typeof SETTINGS_READ_CATALOG].valueSchema.safeParse(item.value).success, key).toBe(true);
@@ -85,7 +85,7 @@ describe('actual interaction preference readers', () => {
     expect(value(windows, 'shortcuts.zoom-in')).toHaveLength(3);
     const linux = inspectInteractionSettings({ ...context(), platform: 'linux' });
     expect(value(linux, 'voice.shortcutConfigured')).toBe(false);
-    expect(SETTINGS_READ_SHORTCUT_IDS).toHaveLength(27);
+    expect(SETTINGS_READ_SHORTCUT_IDS).toHaveLength(30);
   });
   it('reads saved owner preferences, not live model eligibility, and drops sensitive payloads', () => {
     write('voice-input-data.v1.json', { settings: { language: 'ja', microphoneDeviceId: 'private-mic', refinementInstructions: 'private-prompt', dictionaryEntries: [{ text: 'private-dictionary' }], dictionarySyncEnabledOverride: false }, history: [{ transcript: 'private-history' }] });
@@ -185,7 +185,7 @@ describe('known persisted dynamic collections', () => {
     ['model-disable-prefs.json', { disabledModels: { test: false } }, 'modelDisable'],
     ['model-context-limit-prefs.json', { limits: { test: '10000' } }, 'modelContextBudget'],
     ['ghost-cindy-prefs.json', { overrides: { plugin: { 'text.oneshot': false } } }, 'pluginCindyPrefs'],
-    ['ghost-errand-prefs.json', { errand: { plugin: { permissionMode: 'bypassPermissions' } } }, 'pluginErrandPrefs'],
+    ['ghost-errand-prefs.json', { errand: { plugin: { permissionMode: 'invalid-permission' } } }, 'pluginErrandPrefs'],
     ['local-codex-provider-prefs.json', { providers: { private: { removed: 'true' } } }, 'providerPresentation'],
   ] as const)('rejects malformed collection leaves and leaves bytes intact: %s', (name, raw, collection) => {
     const file = write(name, raw);

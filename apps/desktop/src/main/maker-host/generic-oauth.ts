@@ -1,3 +1,4 @@
+import { resolveCopilotAccountUrl } from './copilot-account-url.js';
 import { collectModelDiscoveryPages } from './model-discovery-pages.js';
 import { openManagementAuthorization, presentManagementDeviceCode, attachManagementAuthorization, assertManagementAuthorizationCurrent } from '../host-settings/managementAuthorization.js';
 import { providerOAuthContract } from '@cindy/model-providers';
@@ -855,10 +856,11 @@ export async function discoverGenericOAuthModels(
   agent?: AgentKind,
   isCurrent: () => boolean = () => true,
 ): Promise<DiscoveredModel[] | null> {
-  const url = discoveryUrl ?? oauth.modelsDiscoveryUrl;
-  if (!url || !isCurrent()) return null;
+  const configuredUrl = discoveryUrl ?? oauth.modelsDiscoveryUrl;
+  if (!configuredUrl || !isCurrent()) return null;
   const token = readCachedGenericOAuthAccessToken(providerId, oauth);
   if (!token) return null;
+  const url = resolveCopilotAccountUrl(configuredUrl, token);
   const headers: Record<string, string> = { authorization: `Bearer ${token}` };
   if (agent === 'claude-code' && !isOpenRouterModelsUrl(url)) headers['anthropic-version'] = '2023-06-01';
   let res: Response;
