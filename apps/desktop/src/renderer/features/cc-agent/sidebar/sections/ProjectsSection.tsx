@@ -47,6 +47,7 @@ import {
   SquarePen,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { CloudInstanceSidebarEntries } from '@/features/cloud-settings/CloudInstanceSidebarEntries';
 
 import { cn } from '@/lib/utils';
 import { Tip } from '@/components/ui/tooltip';
@@ -1172,6 +1173,9 @@ export function ProjectsSection({
               }
             : null
         }
+      />
+      <CloudInstanceSidebarEntries
+        visibleDeviceIds={deviceGroupingActive ? deviceSections.map((section) => section.deviceId) : []}
       />
       {hasMainListContent ? (
         <div className="relative flex flex-col gap-1 pt-1 pr-0 pl-3">

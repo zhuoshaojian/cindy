@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CloudSettingsShortcut } from '../CloudSettingsShortcut';
+import { CloudInstanceSidebarEntries } from '../CloudInstanceSidebarEntries';
 import { CloudInstanceAccessProvider, useCloudInstanceAccess } from '../CloudInstanceAccess';
 import { setDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
 
@@ -16,6 +17,10 @@ const auth = vi.hoisted(() => ({
 }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => auth }));
 const instanceAccess = vi.fn();
+const instanceList = vi.fn();
+vi.mock('@/features/remote-desktop/useRemoteDesktopAvailability', () => ({
+  useRemoteDesktopAvailability: () => ({ available: false, checking: false, reason: 'offline' }),
+}));
 beforeEach(() => {
   Object.assign(auth, {
     mode: 'cloud',
@@ -27,11 +32,14 @@ beforeEach(() => {
   });
   setDataOwnerGeneration(auth.dataOwnerId, auth.dataOwnerGeneration);
   instanceAccess.mockReset().mockResolvedValue({ schemaVersion: 1, allowed: true });
-  vi.stubGlobal('electronAPI', { cloudSettings: { instanceAccess } });
+  instanceList.mockReset().mockResolvedValue([]);
+  vi.stubGlobal('electronAPI', { cloudSettings: { instanceAccess, instanceList } });
 });
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (_key: string, vars: { name: string }) => `Configure ${vars.name}` }),
+  useTranslation: () => ({
+    t: (key: string, vars?: { name?: string }) => (vars?.name ? `Configure ${vars.name}` : key),
+  }),
 }));
 vi.mock('@/components/ui/tooltip', () => ({
   Tip: ({ children }: { children: React.ReactNode }) => children,
@@ -205,17 +213,34 @@ it('refreshes both entries on every account switch without reusing denied or all
   instanceAccess.mockResolvedValueOnce({ schemaVersion: 1, allowed: false });
   const view = render(content());
   await act(async () => {});
-  expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual(['hidden', 'hidden']);
-  for (const [owner, allowed] of [['enterprise', true], ['personal', false], ['enterprise', true]] as const) {
+  expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual([
+    'hidden',
+    'hidden',
+  ]);
+  for (const [owner, allowed] of [
+    ['enterprise', true],
+    ['personal', false],
+    ['enterprise', true],
+  ] as const) {
     let resolve!: (value: { schemaVersion: 1; allowed: boolean }) => void;
-    instanceAccess.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    instanceAccess.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
     auth.dataOwnerId = owner;
     auth.dataOwnerGeneration++;
     setDataOwnerGeneration(owner, auth.dataOwnerGeneration);
     view.rerender(content());
-    expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual(['checking', 'checking']);
+    expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual([
+      'checking',
+      'checking',
+    ]);
     await act(async () => resolve({ schemaVersion: 1, allowed }));
-    expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual(allowed ? ['allowed', 'allowed'] : ['hidden', 'hidden']);
+    expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual(
+      allowed ? ['allowed', 'allowed'] : ['hidden', 'hidden'],
+    );
   }
   expect(instanceAccess).toHaveBeenCalledTimes(4);
 });
@@ -232,9 +257,14 @@ it('recovers from the account transition fence without focus, even while hidden'
     await act(async () => {});
     expect(access()).toBe('hidden');
     await act(async () => vi.advanceTimersByTimeAsync(250));
-    expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual(['allowed', 'allowed']);
+    expect(screen.getAllByTestId('access').map((node) => node.textContent)).toEqual([
+      'allowed',
+      'allowed',
+    ]);
     expect(instanceAccess).toHaveBeenCalledTimes(2);
-  } finally { visibility.mockRestore(); }
+  } finally {
+    visibility.mockRestore();
+  }
 });
 
 it('does not retry an explicit denial and cancels the outgoing account retry', async () => {
@@ -264,4 +294,109 @@ it('bounds failed-read retries and cancels them when unmounted', async () => {
   view.unmount();
   await act(async () => vi.advanceTimersByTimeAsync(120_000));
   expect(instanceAccess).toHaveBeenCalledTimes(4);
+});
+
+// Unit regression: production sidebar discovery + real header/link. Existing
+// shortcut tests start with an already-visible device; they missed an empty
+// DeviceLink directory after relay stop. CIS discovery must still expose the
+// correct target, without inventing task/remote availability or claiming one.
+const cloudDevice = 'cloud-device-0123456789abcdef01234567';
+const cloudInstance = {
+  instanceId: 'instance-a',
+  deviceId: cloudDevice,
+  name: 'CIS instance',
+  desiredState: 'running',
+};
+function sidebar(visibleDeviceIds: string[] = []) {
+  return (
+    <CloudInstanceAccessProvider>
+      <MemoryRouter initialEntries={['/cc-agent/new']}>
+        <Routes>
+          <Route
+            path="/cc-agent/new"
+            element={<CloudInstanceSidebarEntries visibleDeviceIds={visibleDeviceIds} />}
+          />
+          <Route path="/cloud-settings" element={<Destination />} />
+        </Routes>
+      </MemoryRouter>
+    </CloudInstanceAccessProvider>
+  );
+}
+it('keeps CIS configuration reachable without a DeviceLink directory', async () => {
+  instanceList.mockResolvedValue([cloudInstance]);
+  render(sidebar());
+  await screen.findByRole('link', { name: 'CIS instance' });
+  fireEvent.click(screen.getByRole('link', { name: 'Configure CIS instance' }));
+  expect(JSON.parse(screen.getByRole('status').textContent!)).toEqual({
+    path: '/cloud-settings',
+    query: `?deviceId=${cloudDevice}`,
+    state: { returnTo: '/cc-agent/new' },
+  });
+  expect(instanceList).toHaveBeenCalledExactlyOnceWith({});
+});
+it('fills missing headers without duplicating grouped devices or deleted instances', async () => {
+  instanceList.mockResolvedValue([
+    cloudInstance,
+    { ...cloudInstance, instanceId: 'deleted', deviceId: 'deleted', desiredState: 'deleted' },
+  ]);
+  const view = render(sidebar([cloudDevice]));
+  await act(async () => {});
+  expect(screen.queryByRole('link')).toBeNull();
+  view.rerender(sidebar());
+  fireEvent.click(await screen.findByRole('link', { name: 'CIS instance' }));
+  expect(JSON.parse(screen.getByRole('status').textContent!).query).toBe(
+    `?deviceId=${cloudDevice}`,
+  );
+});
+it('never discovers instances for a denied account, including after switching away and back', async () => {
+  instanceList.mockResolvedValue([cloudInstance]);
+  const view = render(sidebar());
+  await screen.findByRole('link', { name: 'CIS instance' });
+  instanceAccess.mockResolvedValue({ allowed: false });
+  auth.dataOwnerId = 'denied';
+  auth.dataOwnerGeneration++;
+  setDataOwnerGeneration(auth.dataOwnerId, auth.dataOwnerGeneration);
+  view.rerender(sidebar());
+  expect(screen.queryByRole('link')).toBeNull();
+  await act(async () => {});
+  expect(instanceList).toHaveBeenCalledTimes(1);
+  instanceAccess.mockResolvedValue({ allowed: true });
+  auth.dataOwnerId = 'owner-a';
+  auth.dataOwnerGeneration++;
+  setDataOwnerGeneration(auth.dataOwnerId, auth.dataOwnerGeneration);
+  view.rerender(sidebar());
+  await screen.findByRole('link', { name: 'CIS instance' });
+  expect(instanceList).toHaveBeenCalledTimes(2);
+});
+it('discards an outgoing owner list even when the new account is also admitted', async () => {
+  let resolve!: (value: unknown[]) => void;
+  instanceList.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const view = render(sidebar());
+  await act(async () => {});
+  auth.dataOwnerId = 'owner-b';
+  auth.dataOwnerGeneration++;
+  setDataOwnerGeneration(auth.dataOwnerId, auth.dataOwnerGeneration);
+  view.rerender(sidebar());
+  await act(async () => {});
+  await act(async () => resolve([cloudInstance]));
+  expect(screen.queryByRole('link')).toBeNull();
+});
+it('refreshes read-only discovery after a failed list and removes deleted instances', async () => {
+  vi.useFakeTimers();
+  instanceList
+    .mockRejectedValueOnce(new Error('Unavailable'))
+    .mockResolvedValueOnce([cloudInstance]);
+  render(sidebar());
+  await act(async () => {});
+  expect(screen.queryByRole('link')).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(screen.getByRole('link', { name: 'CIS instance' })).toBeTruthy();
+  instanceList.mockResolvedValue([]);
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(screen.queryByRole('link')).toBeNull();
 });
