@@ -17,9 +17,7 @@
  * 个人机器人在各构建与账号中都显示。
  */
 
-import { Lightbulb } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useSettingsSearchNavigation } from './SettingsSearchNavigation';
 
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,29 +30,23 @@ import { WechatBotSection } from './WechatBotSection';
 import { WecomBotSection } from './WecomBotSection';
 import { showCindyGroup } from './imBotVisibility';
 
-/** 「IM 机器人」页面分区 id(与 ?imGroup= 参数共用)。 */
-export type ImBotSettingsGroup = 'cindy' | 'personal';
+import {
+  ImBotSettingsFrame,
+  ImBotGroupSection,
+  personalBotChannels,
+  type ImBotSettingsGroup,
+  type PersonalBotChannel,
+} from './ImBotSettingsLayout';
+export type { ImBotSettingsGroup } from './ImBotSettingsLayout';
 
-/** 分区标题的 i18n key。 */
-const IM_BOT_GROUP_LABEL_KEY: Record<ImBotSettingsGroup, string> = {
-  cindy: 'settings.imBot.groups.cindy',
-  personal: 'settings.imBot.groups.personal',
+const personalBotSections = {
+  wechat: WechatBotSection,
+  wecom: WecomBotSection,
+  feishu: FeishuBotSection,
+  dingtalk: DingTalkBotSection,
+  discord: DiscordBotSection,
+  telegram: TelegramBotSection,
 };
-
-/** 分区 Tips 的 i18n key —— 一句话讲清该分区是什么、与另一区的差异。 */
-const IM_BOT_GROUP_TIP_KEY: Record<ImBotSettingsGroup, string> = {
-  cindy: 'settings.imBot.tips.cindy',
-  personal: 'settings.imBot.tips.personal',
-};
-
-export function GroupTip({ message }: { message: string }) {
-  return (
-    <div className="flex items-start gap-2 rounded-xl bg-[var(--surface-chip)] px-3.5 py-2.5">
-      <Lightbulb size={14} className="mt-[2px] shrink-0 text-[var(--text-tertiary)]" />
-      <p className="text-12 leading-[1.6] text-[var(--text-secondary)]">{message}</p>
-    </div>
-  );
-}
 
 export function isImBotSettingsGroup(value: string | null): value is ImBotSettingsGroup {
   return value === 'cindy' || value === 'personal';
@@ -66,57 +58,45 @@ function PersonalGroupContent({
   preferredFeishuService,
   activation,
 }: {
-  targetChannel: 'wechat' | 'wecom' | 'feishu' | 'discord' | 'telegram' | 'dingtalk' | null;
+  targetChannel: PersonalBotChannel | null;
   preferredFeishuService: 'feishu' | 'lark' | null;
   activation: number;
 }) {
-  const [expandedChannel, setExpandedChannel] = useState<
-    'wechat' | 'wecom' | 'feishu' | 'discord' | 'telegram' | 'dingtalk' | null
-  >(targetChannel);
+  const [expandedChannel, setExpandedChannel] = useState<PersonalBotChannel | null>(targetChannel);
 
   useLayoutEffect(() => {
     if (targetChannel) setExpandedChannel(targetChannel);
   }, [targetChannel, activation]);
 
-  const toggle = (channel: 'wechat' | 'wecom' | 'feishu' | 'discord' | 'telegram' | 'dingtalk') => {
+  const toggle = (channel: PersonalBotChannel) => {
     setExpandedChannel((current) => (current === channel ? null : channel));
   };
 
   return (
     <div className="flex flex-col gap-3">
-      <WechatBotSection expanded={expandedChannel === 'wechat'} onToggle={() => toggle('wechat')} />
-      <WecomBotSection expanded={expandedChannel === 'wecom'} onToggle={() => toggle('wecom')} />
-      <FeishuBotSection
-        expanded={expandedChannel === 'feishu'}
-        onToggle={() => toggle('feishu')}
-        preferredService={preferredFeishuService}
-        searchActivation={activation}
-      />
-      <DingTalkBotSection
-        expanded={expandedChannel === 'dingtalk'}
-        onToggle={() => toggle('dingtalk')}
-      />
-      <DiscordBotSection
-        expanded={expandedChannel === 'discord'}
-        onToggle={() => toggle('discord')}
-      />
-      <TelegramBotSection
-        expanded={expandedChannel === 'telegram'}
-        onToggle={() => toggle('telegram')}
-      />
+      {personalBotChannels.map((channel) => {
+        const Section = personalBotSections[channel];
+        return (
+          <Section
+            key={channel}
+            expanded={expandedChannel === channel}
+            onToggle={() => toggle(channel)}
+            {...(channel === 'feishu'
+              ? { preferredService: preferredFeishuService, searchActivation: activation }
+              : {})}
+          />
+        );
+      })}
     </div>
   );
 }
 
 export function ImBotSection({ targetGroup }: { targetGroup: ImBotSettingsGroup | null }) {
-  const { t } = useTranslation();
   const { mode, dataOwnerId } = useAuth();
   const { entry, activation } = useSettingsSearchNavigation();
   const cindyGroupAvailable = showCindyGroup({ mode });
   const targetChannel =
-    (['wechat', 'wecom', 'feishu', 'discord', 'telegram', 'dingtalk'] as const).find(
-      (channel) => entry?.targetId === 'personal-im-' + channel,
-    ) ?? null;
+    personalBotChannels.find((channel) => entry?.targetId === 'personal-im-' + channel) ?? null;
   const preferredFeishuService =
     entry?.id === 'imBot.lark' ? 'lark' : entry?.id === 'imBot.feishu' ? 'feishu' : null;
   const cindySectionRef = useRef<HTMLElement | null>(null);
@@ -142,55 +122,19 @@ export function ImBotSection({ targetGroup }: { targetGroup: ImBotSettingsGroup 
   }, [effectiveTargetGroup]);
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-          {t('settings.sections.imBot')}
-        </h2>
-        <span className="rounded-full border border-[var(--settings-badge-border)] bg-[var(--settings-badge-bg)] px-2 py-[1px] text-10 font-medium uppercase leading-[1.5] tracking-wide text-[var(--text-secondary)]">
-          {t('settings.imBot.beta')}
-        </span>
-      </div>
-
-      <div key={`${mode}:${dataOwnerId ?? 'none'}`} className="mt-4 flex flex-col gap-8">
-        {cindyGroupAvailable && (
-          <section
-            ref={cindySectionRef}
-            id="im-bot-group-cindy"
-            aria-labelledby="im-bot-group-heading-cindy"
-            className="flex scroll-mt-4 flex-col gap-3"
-          >
-            <h3
-              id="im-bot-group-heading-cindy"
-              className="text-14 font-medium leading-[1.4] text-[var(--settings-section-title)]"
-            >
-              {t(IM_BOT_GROUP_LABEL_KEY.cindy)}
-            </h3>
-            <GroupTip message={t(IM_BOT_GROUP_TIP_KEY.cindy)} />
-            <HookConnectionsSection />
-          </section>
-        )}
-
-        <section
-          ref={personalSectionRef}
-          id="im-bot-group-personal"
-          aria-labelledby="im-bot-group-heading-personal"
-          className="flex scroll-mt-4 flex-col gap-3"
-        >
-          <h3
-            id="im-bot-group-heading-personal"
-            className="text-14 font-medium leading-[1.4] text-[var(--settings-section-title)]"
-          >
-            {t(IM_BOT_GROUP_LABEL_KEY.personal)}
-          </h3>
-          <GroupTip message={t(IM_BOT_GROUP_TIP_KEY.personal)} />
-          <PersonalGroupContent
-            targetChannel={targetChannel}
-            preferredFeishuService={preferredFeishuService}
-            activation={activation}
-          />
-        </section>
-      </div>
-    </div>
+    <ImBotSettingsFrame contentKey={`${mode}:${dataOwnerId ?? 'none'}`}>
+      {cindyGroupAvailable && (
+        <ImBotGroupSection group="cindy" sectionRef={cindySectionRef}>
+          <HookConnectionsSection />
+        </ImBotGroupSection>
+      )}
+      <ImBotGroupSection group="personal" sectionRef={personalSectionRef}>
+        <PersonalGroupContent
+          targetChannel={targetChannel}
+          preferredFeishuService={preferredFeishuService}
+          activation={activation}
+        />
+      </ImBotGroupSection>
+    </ImBotSettingsFrame>
   );
 }

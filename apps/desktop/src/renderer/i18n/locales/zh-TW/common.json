@@ -4188,7 +4188,9 @@
           "reconnecting": "本機正在恢復與微信的連線，無需重新掃碼。",
           "needs_reauth": "微信授權已失效或被新的連線替換，請重新掃碼。",
           "disabled_by_policy": "連線因當前版本的相容性策略暫停；憑證和任務仍保留。",
-          "error": "連線暫時失敗。可以重新掃碼，或解綁後稍後再試。"
+          "error": "連線暫時失敗。可以重新掃碼，或解綁後稍後再試。",
+          "connectedOnHost": "微信私聊訊息會直接進入 {{name}} 上的 Cindy，訊息不經過 Cindy 伺服器轉發。",
+          "reconnectingOnHost": "{{name}} 正在恢復與微信的連線，無需重新掃碼。"
         }
       },
       "actions": {
@@ -4226,7 +4228,8 @@
         "remove": "移除夥伴繫結",
         "useExisting": "使用已連線的微信與 {{name}} 對話",
         "updateFailed": "無法更新繫結。請等微信中的工作結束後重試，並確認夥伴仍可用。"
-      }
+      },
+      "introOnHost": "連線後，你發給該微信連線的私聊訊息會進入 {{name}} 上的 Cindy。授權網頁由騰訊提供，頁面中可能顯示 OpenClaw。"
     },
     "discordBot": {
       "title": "Discord 機器人",

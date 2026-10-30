@@ -4188,7 +4188,9 @@
           "reconnecting": "WeChat 接続を復旧しています。再スキャンは不要です。",
           "needs_reauth": "WeChat 認証が期限切れか、別の接続に置き換えられました。もう一度スキャンしてください。",
           "disabled_by_policy": "互換性ポリシーにより接続は一時停止中です。認証情報とセッションは保持されています。",
-          "error": "接続を一時的に利用できません。再スキャンするか、連携解除後にもう一度お試しください。"
+          "error": "接続を一時的に利用できません。再スキャンするか、連携解除後にもう一度お試しください。",
+          "connectedOnHost": "WeChat のプライベートメッセージは Cindy のサーバーを経由せず、{{name}} の Cindy に直接届きます。",
+          "reconnectingOnHost": "{{name}} が WeChat に再接続しています。再スキャンは不要です。"
         }
       },
       "actions": {
@@ -4226,7 +4228,8 @@
         "remove": "チームメイトとの連携を解除",
         "useExisting": "接続済みの WeChat で {{name}} と話す",
         "updateFailed": "連携を更新できませんでした。WeChat のタスクが終わってから再試行し、チームメイトが利用可能か確認してください。"
-      }
+      },
+      "introOnHost": "接続後、この WeChat 接続へのプライベートメッセージは {{name}} の Cindy に届きます。認証ページは Tencent が提供し、OpenClaw と表示される場合があります。"
     },
     "discordBot": {
       "title": "Discord ボット",

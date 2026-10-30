@@ -10,7 +10,7 @@ import {
   type PersonalBotChannel,
 } from './CloudPersonalBotSettings';
 import type { ImDefaultSettingsSummary } from '@/components/settings/ImDefaultSettingsSection';
-import { GroupTip } from '@/components/settings/ImBotSection';
+import { ImBotSettingsFrame, ImBotGroupSection } from '@/components/settings/ImBotSettingsLayout';
 import {
   useCloudAuthorization,
   supportedBotActions,
@@ -48,37 +48,47 @@ export function CloudBotAuthorization(
       ? t(`settings.${id.slice(4)}Bot.title`)
       : fallback;
   return (
-    <section className="flex flex-col gap-6" aria-label={t('settings.tabs.imBot')}>
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-13 text-[var(--settings-section-desc)]">
-          {t('cloudSettings.authScope', { name: props.name })}
-        </p>
-        <Button
-          variant="secondary"
-          size="md"
-          disabled={disabled || busy}
-          onClick={() => void load()}
-        >
-          {t('cloudSettings.reload')}
-        </Button>
-      </div>
-      {failure && (
-        <p role="alert" className="text-13 text-[var(--text-secondary)]">
-          {t(`cloudSettings.${failure}`)}
-        </p>
-      )}
-      {loading && !items.length && <p role="status">{t('cloudSettings.loading')}</p>}
+    <ImBotSettingsFrame
+      context={
+        <>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-13 text-[var(--settings-section-desc)]">
+              {t('cloudSettings.authScope', { name: props.name })}
+            </p>
+            <Button
+              variant="secondary"
+              size="md"
+              disabled={disabled || busy}
+              onClick={() => void load()}
+            >
+              {t('cloudSettings.reload')}
+            </Button>
+          </div>
+          {failure && (
+            <p role="alert" className="text-13 text-[var(--text-secondary)]">
+              {t(`cloudSettings.${failure}`)}
+            </p>
+          )}
+          {loading && !items.length && <p role="status">{t('cloudSettings.loading')}</p>}
+        </>
+      }
+    >
       {(['cindy', 'personal'] as const).map((group) => {
         const entries = items.filter(
           (item) => (item.group === 'management.officialBots') === (group === 'cindy'),
         );
         if (!entries.length) return null;
+        if (group === 'personal') {
+          const rank = (id: string) => {
+            const index = personalBotChannels.indexOf(
+              id.replace(/^bot:/, '') as PersonalBotChannel,
+            );
+            return index < 0 ? personalBotChannels.length : index;
+          };
+          entries.sort((left, right) => rank(left.id) - rank(right.id));
+        }
         return (
-          <div key={group} className="flex flex-col gap-3">
-            <h2 className="text-16 font-medium text-[var(--settings-section-title)]">
-              {t(`settings.imBot.groups.${group}`)}
-            </h2>
-            <GroupTip message={t(`settings.imBot.tips.${group}`)} />
+          <ImBotGroupSection key={group} group={group} idPrefix="cloud-">
             {entries.map((item) => {
               const own = operationItem === item.id;
               const connected = item.status === 'connected';
@@ -104,6 +114,7 @@ export function CloudBotAuthorization(
                     key={`${item.id}:${form?.id ?? 'no-form'}:${props.online}:${props.active}`}
                     item={item}
                     channel={channel}
+                    targetName={props.name}
                     disabled={
                       disabled ||
                       !props.active ||
@@ -308,13 +319,13 @@ export function CloudBotAuthorization(
                 </ImChannelSettingsCard>
               );
             })}
-          </div>
+          </ImBotGroupSection>
         );
       })}
       {!loading && !failure && !items.length && <p>{t('cloudSettings.noFields')}</p>}
       {props.trial && (
         <p className="text-12 text-[var(--text-tertiary)]">{t('cloudSettings.authTrial')}</p>
       )}
-    </section>
+    </ImBotSettingsFrame>
   );
 }

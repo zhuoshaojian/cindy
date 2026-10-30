@@ -4219,7 +4219,9 @@
           "reconnecting": "This computer is restoring the WeChat connection. No new scan is needed.",
           "needs_reauth": "The WeChat authorization expired or was replaced by another connection. Scan again.",
           "disabled_by_policy": "The connection is paused by this version's compatibility policy; credentials and sessions remain saved.",
-          "error": "The connection is temporarily unavailable. Scan again or unbind and retry later."
+          "error": "The connection is temporarily unavailable. Scan again or unbind and retry later.",
+          "connectedOnHost": "Private WeChat messages go directly to Cindy on {{name}}, without passing through Cindy servers.",
+          "reconnectingOnHost": "{{name}} is reconnecting to WeChat. You do not need to scan again."
         }
       },
       "actions": {
@@ -4257,7 +4259,8 @@
         "remove": "Remove teammate link",
         "useExisting": "Use connected WeChat with {{name}}",
         "updateFailed": "Could not update the link. Wait for WeChat tasks to finish, then retry and check that the teammate is available."
-      }
+      },
+      "introOnHost": "After connecting, private messages sent to this WeChat connection go to Cindy on {{name}}. Tencent provides the authorization page, which may display OpenClaw."
     },
     "discordBot": {
       "title": "Discord Bot",

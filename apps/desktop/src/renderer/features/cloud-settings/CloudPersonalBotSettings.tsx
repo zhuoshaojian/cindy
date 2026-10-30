@@ -13,15 +13,11 @@ import { DISCORD_OWNER_USER_ID_PATTERN } from '@/hooks/useDiscordBot';
 import { TELEGRAM_OWNER_USER_ID_PATTERN, TELEGRAM_BOT_TOKEN_PATTERN } from '@/hooks/useTelegramBot';
 import type { useCloudAuthorization } from './useCloudAuthorization';
 
-export const personalBotChannels = [
-  'wechat',
-  'wecom',
-  'feishu',
-  'dingtalk',
-  'discord',
-  'telegram',
-] as const;
-export type PersonalBotChannel = (typeof personalBotChannels)[number];
+import type { PersonalBotChannel } from '@/components/settings/ImBotSettingsLayout';
+export {
+  personalBotChannels,
+  type PersonalBotChannel,
+} from '@/components/settings/ImBotSettingsLayout';
 
 /** Target-only controllers for the SAME native views. Never instantiate a local bot hook.
  * Inputs live for one ticket only (the parent keys this controller by that ticket).
@@ -29,6 +25,7 @@ export type PersonalBotChannel = (typeof personalBotChannels)[number];
  */
 export function CloudPersonalBotSettings({
   channel,
+  targetName,
   item,
   disabled,
   expanded,
@@ -42,6 +39,7 @@ export function CloudPersonalBotSettings({
   cancel,
 }: {
   channel: PersonalBotChannel;
+  targetName: string;
   item: ManagementItem;
   disabled: boolean;
   expanded: boolean;
@@ -157,6 +155,7 @@ export function CloudPersonalBotSettings({
       view = (
         <WechatBotSectionView
           {...common}
+          messageTargetName={targetName}
           authorizationAvailable={!!authorizeAction}
           workingDirectory={unsupported('settings.wechatBot.workingDir.title')}
           controller={{

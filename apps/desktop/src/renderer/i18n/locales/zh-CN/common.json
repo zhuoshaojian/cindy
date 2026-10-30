@@ -4188,7 +4188,9 @@
           "reconnecting": "本机正在恢复与微信的连接，无需重新扫码。",
           "needs_reauth": "微信授权已失效或被新的连接替换，请重新扫码。",
           "disabled_by_policy": "连接因当前版本的兼容性策略暂停；凭证和任务仍保留。",
-          "error": "连接暂时失败。可以重新扫码，或解绑后稍后再试。"
+          "error": "连接暂时失败。可以重新扫码，或解绑后稍后再试。",
+          "connectedOnHost": "微信私聊消息会直接进入 {{name}} 上的 Cindy，消息不经过 Cindy 服务端转发。",
+          "reconnectingOnHost": "{{name}} 正在恢复与微信的连接，无需重新扫码。"
         }
       },
       "actions": {
@@ -4226,7 +4228,8 @@
         "remove": "移除伙伴绑定",
         "useExisting": "使用已连接的微信与 {{name}} 对话",
         "updateFailed": "未能更新绑定。请等待微信中的任务结束后重试，并确认伙伴仍可用。"
-      }
+      },
+      "introOnHost": "连接后，你发给该微信连接的私聊消息会进入 {{name}} 上的 Cindy。授权网页由腾讯提供，页面中可能显示 OpenClaw。"
     },
     "discordBot": {
       "title": "Discord 机器人",

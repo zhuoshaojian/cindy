@@ -83,6 +83,7 @@ export function WechatBotSection({
 
 export function WechatBotSectionView({
   controller,
+  messageTargetName,
   idPrefix = '',
   canDisconnect = true,
   routeSummary,
@@ -95,6 +96,8 @@ export function WechatBotSectionView({
   host,
 }: {
   idPrefix?: string;
+  /** Names the execution target without instantiating a local or remote controller. */
+  messageTargetName?: string;
   canDisconnect?: boolean;
   controller: Omit<
     ReturnType<typeof useWechatBot>,
@@ -116,6 +119,7 @@ export function WechatBotSectionView({
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
+  const targetName = messageTargetName ?? host?.name;
   const {
     state,
     channelSettings,
@@ -307,7 +311,10 @@ export function WechatBotSectionView({
                 )}
               </h3>
               <p className="mt-1 text-12 leading-[1.6] text-[var(--settings-section-desc)]">
-                {t(`settings.wechatBot.bound.notes.${state.phase}`)}
+                {t(
+                  `settings.wechatBot.bound.notes.${state.phase}${targetName && (state.phase === 'connected' || state.phase === 'reconnecting') ? 'OnHost' : ''}`,
+                  { name: targetName },
+                )}
               </p>
             </div>
           </div>
@@ -354,7 +361,10 @@ export function WechatBotSectionView({
                   ? 'settings.wechatBot.disabledNote'
                   : state.phase === 'error'
                     ? 'settings.wechatBot.errorNote'
-                    : 'settings.wechatBot.intro',
+                    : targetName
+                      ? 'settings.wechatBot.introOnHost'
+                      : 'settings.wechatBot.intro',
+                { name: targetName },
               )}
             </p>
           </div>
