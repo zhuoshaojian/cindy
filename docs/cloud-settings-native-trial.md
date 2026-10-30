@@ -584,3 +584,19 @@ UI 专项在隔离 Electron 运行真实 CloudInstancesPage，覆盖五语、明
 
 本轮 12 个定向测试文件、261 项通过，Desktop typecheck 通过；服务端对应验收见
 [cindy-server 休眠登录审查](https://github.com/zhuoshaojian/cindy-server/blob/fix/cloud-settings-parity/docs/cloud-instance/sleep-login-review.md)。
+
+### 2026-10-30：休眠登录流程测试包
+
+已从 `ac287e6f60078df4319363eaa311daea191d996a` 的干净源码导出构建并安装
+`0.1.120-dev.cloud.20261030.2`（macOS arm64，Cindy Cloud Dev CN）。服务端对应
+`f0f2cfe32f58d12a1ff3a92ef6fad7ac0f4ed4ee`，CIS 两个角色已部署；完整迁移记录见
+[cindy-server 的部署审查](https://github.com/zhuoshaojian/cindy-server/blob/fix/cloud-settings-parity/docs/cloud-instance/sleep-login-review.md)。
+
+测试包沿用 `com.xd.cindycn.clouddev`、`CindyCloudDev-cn` 独立 profile 和原固定证书；主程序
+与四个 Helper 的 bundle 身份、arm64 架构、签名验证、端点与上一版一致性检查通过。正式版
+app.asar 摘要及 Dev 设备身份保持不变，保留 Dev 数据与凭据，不注册正式版 URL/File handlers。
+测试包不参与正式自动更新，固定本地签名不等于 Apple 公证。
+
+ZIP 的 SHA-256：`f26ebe30d1ef3eec883434ca376b3683c0e8f8a05c02d501c9efad0f5b6a9bbe`。
+本次安装后主进程在系统 `SecKeychainItemCopyContent` 等待授权，尚未完成安装包界面与真实
+登录流程复验；前文的 40 个 UI 场景是隔离 Electron 样本，不能替代这项实机验证。
