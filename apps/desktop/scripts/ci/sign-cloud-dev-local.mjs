@@ -75,6 +75,16 @@ function walk(directory) {
   });
 }
 let binaries = 0;
+function signBundle(target) {
+  // Fresh Forge output may still carry Electron's old signing identifier even
+  // after its plist was renamed. Bind each app to its own isolated bundle ID.
+  const appId = run('/usr/libexec/PlistBuddy', [
+    '-c', 'Print :CFBundleIdentifier', path.join(target, 'Contents/Info.plist'),
+  ]).trim();
+  if (appId !== bundleId && !appId.startsWith(`${bundleId}.`))
+    throw new Error('Nested app is outside the isolated Cloud Dev identity');
+  run('/usr/bin/codesign', [...signArgs, '--identifier', appId, target]);
+}
 for (const relative of ['Resources/app.asar.unpacked', 'Resources/tools', 'Frameworks']) {
   const entries = walk(path.join(root, 'Contents', relative));
   for (const entry of entries) {
@@ -93,10 +103,12 @@ for (const relative of ['Resources/app.asar.unpacked', 'Resources/tools', 'Frame
   }
   // walk is post-order: nested bundles must be sealed before their parents.
   for (const entry of entries)
-    if (fs.statSync(entry).isDirectory() && /\.(app|framework)$/.test(entry))
-      run('/usr/bin/codesign', [...signArgs, entry]);
+    if (fs.statSync(entry).isDirectory()) {
+      if (entry.endsWith('.app')) signBundle(entry);
+      else if (entry.endsWith('.framework')) run('/usr/bin/codesign', [...signArgs, entry]);
+    }
 }
-run('/usr/bin/codesign', [...signArgs, root]);
+signBundle(root);
 run('/usr/bin/codesign', ['--verify', '--deep', '--strict', root]);
 const requirement = run('/usr/bin/codesign', ['-dr', '-', root])
   .split('\n')
