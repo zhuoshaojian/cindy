@@ -31,8 +31,8 @@ RUN apt-get -o Acquire::Retries=5 update \
     && apt-get -o Acquire::Retries=5 install --yes --no-install-recommends "${deps[@]}"
 
 FROM dock-build-tools AS dock-build
-ARG PLANK_SOURCE_URL=https://deb.debian.org/debian/pool/main/p/plank/plank_0.11.89.orig.tar.xz
-ARG PLANK_DEBIAN_SOURCE_URL=https://deb.debian.org/debian/pool/main/p/plank/plank_0.11.89-4.debian.tar.xz
+ARG PLANK_SOURCE_URL=https://snapshot.debian.org/archive/debian/20260905T205002Z/pool/main/p/plank/plank_0.11.89.orig.tar.xz
+ARG PLANK_DEBIAN_SOURCE_URL=https://snapshot.debian.org/archive/debian/20260905T205002Z/pool/main/p/plank/plank_0.11.89-4.debian.tar.xz
 ADD --checksum=sha256:a662a46eaeffbd40661d1f36abd2589f7a98baef4b918876b872047b7ca59d9d ${PLANK_SOURCE_URL} /workspace/plank-downloads/plank_0.11.89.orig.tar.xz
 ADD --checksum=sha256:afb06a37ecabf0f83d9b338cf8848c11834f06a9ab611436f34d049734023b9a ${PLANK_DEBIAN_SOURCE_URL} /workspace/plank-downloads/plank_0.11.89-4.debian.tar.xz
 COPY build-recipe/runtime-desktop-xfce/plank/ /workspace/plank-recipe/

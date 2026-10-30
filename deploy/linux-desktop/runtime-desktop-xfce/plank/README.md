@@ -13,8 +13,10 @@ exported ABI symbols remain present. Build tools never enter the runtime layer.
 The prepared build cache retains the resulting library between cloud revisions.
 
 Sources are Plank 0.11.89 and Debian packaging revision 4 from
-`https://deb.debian.org/debian/pool/main/p/plank/`. Both source archives are
-SHA-256 pinned in `build.sh` and the Dockerfile. Apply Debian's patch series first,
+`https://snapshot.debian.org/archive/debian/20260905T205002Z/pool/main/p/plank/`.
+This is the same fixed-date Debian snapshot used by the base recipe and the
+runner's existing download route. The archives are byte-identical to the Debian
+pool sources; their SHA-256 pins in `build.sh` and the Dockerfile are unchanged. Apply Debian's patch series first,
 then `hide-preferences.patch`; dependencies use the base's signed, fixed-date
 Debian snapshots and the direct versions in `build-deps.txt`.
 
