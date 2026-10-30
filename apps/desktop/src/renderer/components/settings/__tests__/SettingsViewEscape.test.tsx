@@ -140,7 +140,11 @@ describe('SettingsView Escape', () => {
     auth.cloudAccess = 'allowed';
     const instanceList = vi.fn().mockResolvedValue([]);
     const instanceClaim = vi.fn();
-    vi.stubGlobal('electronAPI', { platform: 'darwin', cloudSettings: { instanceList, instanceClaim } });
+    vi.stubGlobal('electronAPI', {
+      platform: 'darwin',
+      cloudSettings: { instanceList, instanceClaim },
+      cloudLoginWindow: { open: vi.fn(), onCompleted: vi.fn(() => () => undefined) },
+    });
     renderSettings('/settings?tab=cloud-instances');
     await screen.findByRole('button', { name: 'cloudSettings.onboarding.claim' });
     expect(screen.getByRole('tabpanel').id).toBe('settings-panel-cloud-instances');

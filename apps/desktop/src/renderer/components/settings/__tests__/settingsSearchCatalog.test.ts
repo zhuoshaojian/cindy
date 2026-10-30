@@ -201,7 +201,18 @@ describe('settings search catalog', () => {
         const dynamicProviderAnchor =
           /^cindy-im-(slack|telegram|x)$/.test(target) &&
           source.includes('id={\`cindy-im-\${provider}\`}');
-        expect(source.includes('id="' + target + '"') || dynamicProviderAnchor, target).toBe(true);
+        // Local and cloud IM pages share one group section; its anchor is built from the group.
+        const dynamicGroupAnchor =
+          /^im-bot-group-(cindy|personal)$/.test(target) &&
+          source.includes('id={\`${idPrefix}im-bot-group-${group}\`}');
+        const prefixedChannelAnchor = source.includes('id={\`${idPrefix}' + target + '\`}');
+        expect(
+          source.includes('id="' + target + '"') ||
+            dynamicProviderAnchor ||
+            dynamicGroupAnchor ||
+            prefixedChannelAnchor,
+          target,
+        ).toBe(true);
       }
     }
     for (const [, target] of source.matchAll(/id="(settings-search-[^"]+)"/g)) {
