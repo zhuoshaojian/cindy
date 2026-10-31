@@ -42,6 +42,9 @@ export const CLOUD_SETTINGS_GROUPS = {
     'imWecom',
     'telegramBehavior',
     'telegramGroups',
+    // Notification sections inside the WeCom and Feishu cards.
+    'wecomNotifications',
+    'desktopNotifications',
   ],
   ghosts: [],
   'builtin-tools': ['builtinTools', 'browserTools'],

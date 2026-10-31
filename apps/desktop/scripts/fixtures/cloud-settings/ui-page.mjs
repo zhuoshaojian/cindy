@@ -49,6 +49,10 @@ export default {
         'Native new-conversation section remains visible on failed cloud reads and recovers after retry',
       data: { bots: true, imReadFailure: true },
     },
+    'im-notifications': {
+      about: 'WeCom group webhook and Feishu/Discord notices inside the native channel cards',
+      data: { bots: true, imNotifications: true },
+    },
     'im-preferences': {
       about: 'Target IM defaults and personal Telegram group controls',
       data: { bots: true, imPreferences: true },
@@ -99,7 +103,10 @@ export default {
         ['settings.tabs.about', 'settings.about.analyticsLabel'],
       ]) {
         await page.getByRole('tab', { name: await ui.t(tab), exact: true }).click();
-        await page.getByText(await ui.t(ready), { exact: true }).first().waitFor();
+        await page
+          .getByText(await ui.t(ready), { exact: true })
+          .first()
+          .waitFor();
         await ui.capture(tab.split('.').pop());
       }
       return;
@@ -109,10 +116,16 @@ export default {
         .getByRole('tab', { name: await ui.t('settings.tabs.appearance'), exact: true })
         .click();
       // Target theme, display mode, fonts and sidebar styles reuse the local appearance view.
-      await page.getByRole('combobox', { name: await ui.t('settings.appearance.themeAriaLabel') }).waitFor();
-      await page.getByRole('radio', { name: await ui.t('settings.appearance.themeAria.dark') }).click();
+      await page
+        .getByRole('combobox', { name: await ui.t('settings.appearance.themeAriaLabel') })
+        .waitFor();
+      await page
+        .getByRole('radio', { name: await ui.t('settings.appearance.themeAria.dark') })
+        .click();
       assert.equal(
-        await page.getByRole('radio', { name: await ui.t('settings.appearance.themeAria.dark') }).getAttribute('aria-checked'),
+        await page
+          .getByRole('radio', { name: await ui.t('settings.appearance.themeAria.dark') })
+          .getAttribute('aria-checked'),
         'true',
       );
       await ui.capture('theme');
@@ -145,6 +158,30 @@ export default {
         .getByText(await ui.t('settings.imBot.defaults.modelLabel'), { exact: true })
         .waitFor();
       await ui.capture('im-read-recovered');
+    } else if (ui.data.imNotifications) {
+      await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
+      await page.getByText(await ui.t('settings.wecomBot.title'), { exact: true }).click();
+      const webhook = page.getByLabel(await ui.t('settings.notifications.wecomGroupLabel'), {
+        exact: true,
+      });
+      await webhook.scrollIntoViewIfNeeded();
+      await ui.capture('wecom-webhook');
+      // Trial tickets only: nothing is sent and no real webhook is stored.
+      await webhook.fill('https://example.invalid/cgi-bin/webhook/send?key=fixture');
+      await page
+        .getByRole('button', { name: await ui.t('settings.notifications.wecomGroupSaveAndTest') })
+        .click();
+      const test = page.getByRole('button', {
+        name: await ui.t('settings.notifications.wecomGroupTest'),
+      });
+      await test.waitFor();
+      await test.scrollIntoViewIfNeeded();
+      await ui.capture('wecom-configured');
+      await page.getByText(await ui.t('settings.discordBot.title'), { exact: true }).click();
+      await page
+        .getByText(await ui.t('settings.discordBot.title'), { exact: true })
+        .scrollIntoViewIfNeeded();
+      await ui.capture('discord-unconfigured');
     } else if (ui.data.imPreferences) {
       await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
       await page.getByText(await ui.t('settings.telegramBot.title'), { exact: true }).click();

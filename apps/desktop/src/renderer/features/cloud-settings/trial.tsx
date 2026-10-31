@@ -44,6 +44,7 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
     >),
     telegramBehavior: { emojiReactions: 'minimal', replyQuoteGroup: 'first', replyQuoteDm: 'off' },
     telegramGroups: { always: [] },
+    wecomNotifications: { enabled: true },
     desktopNotifications: {
       notificationsEnabled: true,
       feishuNotificationsEnabled: false,

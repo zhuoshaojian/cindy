@@ -41,6 +41,7 @@ export function CloudPersonalBotSettings({
   summary,
   supplementary,
   telegramSettings,
+  notificationSettings,
   pending,
   run,
   cancel,
@@ -55,6 +56,8 @@ export function CloudPersonalBotSettings({
   summary?: ImDefaultSettingsSummary | null;
   supplementary: ReactNode;
   telegramSettings?: ReactNode;
+  /** Target notification controls; `undefined` when the target does not offer them. */
+  notificationSettings?: ReactNode;
   pending: boolean;
   run: ReturnType<typeof useCloudAuthorization>['run'];
   cancel(): Promise<void>;
@@ -135,6 +138,8 @@ export function CloudPersonalBotSettings({
       </p>
     </section>
   );
+  const notifications = (label: string) =>
+    notificationSettings === undefined ? unsupported(label) : notificationSettings;
   const idle = item.status === 'disconnected' || item.status === 'available';
   const status: DiscordBotTransportStatus =
     pending || item.status === 'connecting'
@@ -193,7 +198,7 @@ export function CloudPersonalBotSettings({
       view = (
         <WecomBotSectionView
           {...common}
-          notificationSettings={unsupported('settings.notifications.wecomGroupLabel')}
+          notificationSettings={notifications('settings.notifications.wecomGroupLabel')}
           controller={{
             botId: value('botId'),
             setBotId: set('botId'),
@@ -217,7 +222,7 @@ export function CloudPersonalBotSettings({
       view = (
         <FeishuBotSectionView
           {...common}
-          notificationSettings={unsupported('settings.feishuBot.lifecycleAnnouncement.label')}
+          notificationSettings={notifications('settings.feishuBot.lifecycleAnnouncement.label')}
           canSubmit={valid}
           services={
             form?.fields
@@ -276,7 +281,7 @@ export function CloudPersonalBotSettings({
         <DiscordBotSectionView
           savedConnectionAvailable={!!reconnectAction}
           {...common}
-          notificationSettings={unsupported('settings.discordBot.lifecycleAnnouncement.label')}
+          notificationSettings={notifications('settings.discordBot.lifecycleAnnouncement.label')}
           controller={{
             token: value('token'),
             setToken: set('token'),

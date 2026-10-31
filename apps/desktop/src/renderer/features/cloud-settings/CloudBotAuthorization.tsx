@@ -20,12 +20,21 @@ import {
   supportedBotActions,
   type CloudAuthorizationProps,
 } from './useCloudAuthorization';
+import {
+  CloudBotNotificationSettings,
+  type CloudBotNotificationPreferences,
+} from './CloudBotNotificationSettings';
+import {
+  BOT_NOTIFICATION_GROUP,
+  BOT_NOTIFICATION_ITEMS,
+} from '../../../shared/cloudBotNotifications';
 
 /** Same accordion and group layout as local IM settings; only cloud tickets are executed. */
 export function CloudBotAuthorization(
   props: CloudAuthorizationProps & {
     settings?(itemId: string, section?: 'defaults' | 'telegram'): ReactNode;
     summary?(itemId: string): ImDefaultSettingsSummary | null;
+    notificationPreferences?: CloudBotNotificationPreferences;
   },
 ) {
   const {
@@ -45,6 +54,33 @@ export function CloudBotAuthorization(
   } = useCloudAuthorization(props, 'bots');
   const [expanded, setExpanded] = useState<Record<string, string | null>>({});
   const disabled = !props.online || requesting || loading;
+  // Notification items belong inside their channel card. An older target lists none,
+  // and its cards keep the explicit "not available" note.
+  const notificationsSupported = items.some((item) => item.group === BOT_NOTIFICATION_GROUP);
+  const notificationSettings = (channel: PersonalBotChannel) => {
+    if (channel !== 'wecom' && channel !== 'feishu' && channel !== 'discord') return undefined;
+    // Like the credential forms, no webhook input stays on screen for an offline target.
+    if (!props.online) return null;
+    if (!notificationsSupported) return undefined;
+    const item = items.find(
+      (entry) => entry.id === BOT_NOTIFICATION_ITEMS[channel === 'wecom' ? 'wecomGroup' : channel],
+    );
+    // Feishu, like the local card, shows no notification section before credentials exist.
+    if (!item) return channel === 'feishu' ? null : undefined;
+    const own = operationItem === item.id;
+    return (
+      <CloudBotNotificationSettings
+        channel={channel}
+        item={item}
+        preferences={props.notificationPreferences}
+        disabled={disabled || !props.active || (busy && !own)}
+        pending={own && busy}
+        runSettled={(target, action, values) =>
+          new Promise((settled) => void run(target, action, values, { confirmed: true, settled }))
+        }
+      />
+    );
+  };
   const label = (id: string, fallback: string) =>
     ['wechat', 'wecom', 'feishu', 'dingtalk', 'discord', 'telegram'].includes(
       id.replace(/^bot:/, ''),
@@ -87,7 +123,9 @@ export function CloudBotAuthorization(
     >
       {(['cindy', 'personal'] as const).map((group) => {
         const entries = items.filter(
-          (item) => (item.group === 'management.officialBots') === (group === 'cindy'),
+          (item) =>
+            item.group !== BOT_NOTIFICATION_GROUP &&
+            (item.group === 'management.officialBots') === (group === 'cindy'),
         );
         if (!entries.length) return null;
         if (group === 'personal') {
@@ -145,6 +183,7 @@ export function CloudBotAuthorization(
                     defaults={props.settings?.(item.id)}
                     summary={props.summary?.(item.id)}
                     telegramSettings={props.settings?.(item.id, 'telegram')}
+                    notificationSettings={notificationSettings(channel)}
                     run={run}
                     cancel={() => operate('cancel')}
                     supplementary={

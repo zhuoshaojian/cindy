@@ -46,11 +46,21 @@ export function useCloudAuthorization(
   const opened = useRef(new Set<string>());
   const operationRef = useRef(operation);
   operationRef.current = operation;
+  // Callers that need an outcome (e.g. a native toast) wait for the terminal phase.
+  const settled = useRef(new Map<string, (phase: Operation['phase']) => void>());
+  const finish = (op: Operation) => {
+    if (activeOperation(op)) return;
+    const resolve = settled.current.get(op.operationId);
+    settled.current.delete(op.operationId);
+    resolve?.(op.phase);
+  };
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
       sequence.current++;
+      for (const resolve of settled.current.values()) resolve('unknown');
+      settled.current.clear();
     };
   }, [client]);
   const current = () => alive.current && scope.current.client === client && scope.current.online;
@@ -60,6 +70,7 @@ export function useCloudAuthorization(
       operationRef.current = result;
       setOperation(result);
     }
+    finish(result);
     return result;
   };
   const load = async () => {
@@ -114,14 +125,14 @@ export function useCloudAuthorization(
     item: ManagementItem,
     action: Action,
     values: Record<string, string> = {},
-    options: { confirmed?: boolean } = {},
+    options: { confirmed?: boolean; settled?(phase: Operation['phase']): void } = {},
   ) => {
     if (!current() || pending.current || activeOperation(operationRef.current) || !client.manage)
-      return;
+      return options.settled?.('cancelled');
     if (action.expiresAt <= Date.now()) {
       setFailure('authExpired');
       void load();
-      return;
+      return options.settled?.('expired');
     }
     // Lock before a confirmation dialog to prevent double clicks opening parallel requests.
     pending.current = true;
@@ -136,14 +147,15 @@ export function useCloudAuthorization(
           confirmText: t('settings.providers.button.disconnect'),
         }))
       )
-        return;
-      if (!current()) return;
+        return options.settled?.('cancelled');
+      if (!current()) return options.settled?.('cancelled');
       const operationId = crypto.randomUUID();
       operationVersion.current++;
       setOperationItem(item.id);
       operationRef.current = { kind: 'operation', operationId, phase: 'running' };
       setOperation(operationRef.current);
       setFailure(undefined);
+      if (options.settled) settled.current.set(operationId, options.settled);
       try {
         const next = accept(
           await client.manage({ operation: 'run', actionId: action.id, operationId, values }),
@@ -156,6 +168,7 @@ export function useCloudAuthorization(
           setOperation({ kind: 'operation', operationId, phase: 'unknown' });
           setFailure('authUnknown');
         }
+        finish({ kind: 'operation', operationId, phase: 'unknown' });
       }
     } finally {
       pending.current = false;
@@ -213,12 +226,14 @@ export function useCloudAuthorization(
         }
       } catch {
         if (!cancelled && current() && version === operationVersion.current) {
-          setOperation({
+          const unknown = {
             kind: 'operation',
             operationId: operation!.operationId,
             phase: 'unknown',
-          });
+          } as const;
+          setOperation(unknown);
           setFailure('authUnknown');
+          finish(unknown);
         }
         return;
       }

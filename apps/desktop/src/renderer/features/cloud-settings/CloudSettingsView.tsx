@@ -38,6 +38,7 @@ import { CloudMcpAuthorization } from './CloudMcpAuthorization';
 import { CloudPluginAuthorization } from './CloudPluginAuthorization';
 import { CloudProviderAuthorization } from './CloudProviderAuthorization';
 import { NativeCloudSections } from './NativeCloudSections';
+import type { CloudBotNotificationPreferences } from './CloudBotNotificationSettings';
 import { cloudSearchEntryAllowed } from './search';
 import type { SettingsSearchEntry } from '@/components/settings/settingsSearchTypes';
 const groups = TAB_IDS.filter((tab): tab is CloudSettingsTab => tab in CLOUD_SETTINGS_GROUPS);
@@ -230,6 +231,25 @@ export function CloudSettingsPanel({
       pending.current = false;
       setWriting(false);
     }
+  };
+  // Target values shown in the native notification sections of the IM cards.
+  const ready = (domain: CloudSettingsDomain) =>
+    states[domain]?.status === 'ready' ? states[domain] : undefined;
+  const wecomNotifications = ready('wecomNotifications');
+  const desktopNotifications = ready('desktopNotifications');
+  const notificationPreferences: CloudBotNotificationPreferences = {
+    wecomEnabled: wecomNotifications && wecomNotifications.value?.enabled === true,
+    feishuSessionEnabled:
+      desktopNotifications && desktopNotifications.value?.feishuNotificationsEnabled === true,
+    setWecomEnabled: async (enabled) => {
+      if (!wecomNotifications) throw new Error('NOT_READY');
+      await save(wecomNotifications, { enabled });
+    },
+    setFeishuSessionEnabled: async (enabled) => {
+      if (!desktopNotifications) throw new Error('NOT_READY');
+      await save(desktopNotifications, { feishuNotificationsEnabled: enabled });
+    },
+    refresh: () => setEpoch((value) => value + 1),
   };
   const tabs = groups.filter((group) =>
     group === 'providers'
@@ -447,6 +467,7 @@ export function CloudSettingsPanel({
                               save={save}
                             />
                           )}
+                          notificationPreferences={notificationPreferences}
                           client={client}
                           name={name}
                           online={online}

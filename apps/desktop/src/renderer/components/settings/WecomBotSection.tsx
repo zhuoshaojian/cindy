@@ -297,8 +297,16 @@ export function WecomBotSectionView({
 }
 
 function WecomGroupNotificationSection() {
+  return <WecomGroupNotificationSectionView wecomGroup={useWecomGroupNotificationSettings()} />;
+}
+
+/** Shared group-webhook control; the cloud surface supplies a target-scoped controller. */
+export function WecomGroupNotificationSectionView({
+  wecomGroup,
+}: {
+  wecomGroup: ReturnType<typeof useWecomGroupNotificationSettings>;
+}) {
   const { t } = useTranslation();
-  const wecomGroup = useWecomGroupNotificationSettings();
   const [webhookUrl, setWebhookUrl] = useState('');
   return (
     <div className="flex flex-col gap-4">

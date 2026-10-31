@@ -4,6 +4,13 @@ import type {
   ManagementResult,
   ManagementField,
 } from '../../../shared/settingsManagement';
+import {
+  BOT_NOTIFICATION_GROUP,
+  BOT_NOTIFICATION_ITEMS,
+  LIFECYCLE_ANNOUNCEMENT_FIELD,
+  WECOM_GROUP_MESSAGE_FIELD,
+  WECOM_GROUP_WEBHOOK_FIELD,
+} from '../../../shared/cloudBotNotifications';
 
 /** DEV-only in-memory authorization. No external URLs or provider IPC are invoked. */
 export function createTrialAuthorization() {
@@ -57,6 +64,91 @@ export function createTrialAuthorization() {
   };
   const connected = new Set<string>();
   const tickets = new Map<string, { id: string; disconnect: boolean }>();
+  // Notification items: in-memory only; a trial test never sends a WeCom message.
+  const notify = { webhook: false, feishu: true, discord: true };
+  const notifyTickets = new Map<string, (values: Record<string, string>) => void>();
+  const field = (name: string, kind: ManagementField['kind'], value?: string) =>
+    ({
+      name,
+      label: name,
+      kind,
+      required: true,
+      maxLength: kind === 'password' ? 8192 : 512,
+      ...(kind === 'select'
+        ? {
+            value,
+            options: [
+              { value: 'on', label: 'on' },
+              { value: 'off', label: 'off' },
+            ],
+          }
+        : {}),
+    }) as ManagementField;
+  const notificationItems = (): ManagementItem[] => {
+    const action = (
+      intent: ManagementItem['actions'][number]['intent'],
+      fields: ManagementField[],
+      apply: (values: Record<string, string>) => void,
+    ) => {
+      const id = crypto.randomUUID();
+      notifyTickets.set(id, apply);
+      return { id, intent, label: 'Trial', fields, expiresAt: Date.now() + 300_000 };
+    };
+    const lifecycle = (key: 'feishu' | 'discord') =>
+      action(
+        'edit',
+        [field(LIFECYCLE_ANNOUNCEMENT_FIELD, 'select', notify[key] ? 'on' : 'off')],
+        (v) => {
+          notify[key] = v[LIFECYCLE_ANNOUNCEMENT_FIELD] === 'on';
+        },
+      );
+    return [
+      {
+        id: BOT_NOTIFICATION_ITEMS.wecomGroup,
+        label: 'WeCom group notifications',
+        group: BOT_NOTIFICATION_GROUP,
+        status: notify.webhook ? 'connected' : 'disconnected',
+        ...(notify.webhook ? { detail: '••••demo' } : {}),
+        actions: notify.webhook
+          ? [
+              action('sync', [field(WECOM_GROUP_MESSAGE_FIELD, 'text')], () => undefined),
+              action('delete', [], () => {
+                notify.webhook = false;
+              }),
+            ]
+          : [
+              action(
+                'create',
+                [
+                  field(WECOM_GROUP_WEBHOOK_FIELD, 'password'),
+                  field(WECOM_GROUP_MESSAGE_FIELD, 'text'),
+                ],
+                () => {
+                  notify.webhook = true;
+                },
+              ),
+            ],
+      },
+      ...(connected.has('feishu')
+        ? [
+            {
+              id: BOT_NOTIFICATION_ITEMS.feishu,
+              label: 'Feishu notifications',
+              group: BOT_NOTIFICATION_GROUP,
+              status: 'connected' as const,
+              actions: [lifecycle('feishu')],
+            },
+          ]
+        : []),
+      {
+        id: BOT_NOTIFICATION_ITEMS.discord,
+        label: 'Discord notifications',
+        group: BOT_NOTIFICATION_GROUP,
+        status: 'available',
+        actions: [lifecycle('discord')],
+      },
+    ];
+  };
   const operations = new Map<
     string,
     { id: string; view: Extract<ManagementResult, { kind: 'operation' }> }
@@ -94,11 +186,24 @@ export function createTrialAuthorization() {
             ],
           };
         });
+      if (command.section === 'bots') items.push(...notificationItems());
       return { kind: 'page', section: command.section, offset: 0, items };
     }
     if (command.operation === 'run') {
       const old = operations.get(command.operationId);
       if (old) return structuredClone(old.view);
+      const apply = notifyTickets.get(command.actionId);
+      if (apply) {
+        notifyTickets.delete(command.actionId);
+        apply(command.values);
+        const view = {
+          kind: 'operation' as const,
+          operationId: command.operationId,
+          phase: 'succeeded' as const,
+        };
+        operations.set(command.operationId, { id: 'notify', view });
+        return structuredClone(view);
+      }
       const ticket = tickets.get(command.actionId);
       if (!ticket) throw new Error('EXPIRED');
       tickets.delete(command.actionId);

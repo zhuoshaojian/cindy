@@ -428,10 +428,14 @@ function ConnectedCard(props: {
   );
 }
 
-function DiscordLifecycleSettings({
+/** Also used by the cloud settings card with a target-scoped controller. */
+export function DiscordLifecycleSettings({
   controller,
 }: {
-  controller: ReturnType<typeof useDiscordBot>;
+  controller: Pick<
+    ReturnType<typeof useDiscordBot>,
+    'lifecycleAnnouncement' | 'setLifecycleAnnouncement'
+  >;
 }) {
   const { t } = useTranslation();
   const { lifecycleAnnouncement, setLifecycleAnnouncement } = controller;
