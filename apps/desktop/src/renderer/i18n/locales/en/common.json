@@ -18127,6 +18127,7 @@
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "This instance does not yet expose connected account details. Status and actions refer to the cloud instance.",
     "imRemoteControlUnavailable": "This setting is not yet available remotely. You can change it in Settings on the cloud Cindy.",
+    "wecomGroupHint": "Used for automation completion notifications. Paste a WeCom group bot Webhook URL; it is encrypted on {{name}}.",
     "imReadFailed": "Could not load new conversation settings",
     "imReadFailedHint": "The cloud instance did not return valid settings. Reload to try again. Editing is unavailable until they load; saved settings will not be overwritten.",
     "imReadUnavailable": "The cloud instance is not providing these settings, so they cannot be edited here yet.",

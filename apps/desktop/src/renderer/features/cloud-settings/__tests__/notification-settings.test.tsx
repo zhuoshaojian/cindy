@@ -9,7 +9,11 @@ import { toast } from '@/lib/toast';
 
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
-  useTranslation: () => ({ t: (key: string) => key }),
+  // Only the target name is interpolated, so scoped copy stays checkable.
+  useTranslation: () => ({
+    t: (key: string, options?: { name?: string }) =>
+      options?.name ? `${key}:${options.name}` : key,
+  }),
 }));
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({
   useConfirmDialog: () => ({ confirm: vi.fn(async () => true) }),
@@ -222,6 +226,15 @@ it('drops the webhook input when the target goes offline', async () => {
   // The bot's own connect form keeps its existing offline behaviour; the webhook input goes.
   expect(screen.queryByLabelText('settings.notifications.wecomGroupLabel')).toBeNull();
   expect(screen.queryByText('WeCom group notifications')).toBeNull();
+  // The typed URL is not kept for when the target returns.
+  view.rerender(<CloudBotAuthorization {...props} online />);
+  expect(
+    (
+      (await waitFor(() =>
+        live('wecom').getByLabelText('settings.notifications.wecomGroupLabel'),
+      )) as HTMLInputElement
+    ).value,
+  ).toBe('');
 });
 
 // A failed target operation must surface the native failure toast, not a false success.
@@ -258,5 +271,40 @@ it('reports a failed WeCom save and keeps the webhook unconfigured', async () =>
   );
   expect(toast.success).not.toHaveBeenCalled();
   expect(prefs.refresh).not.toHaveBeenCalled();
-  expect(live('wecom').getByLabelText('settings.notifications.wecomGroupLabel')).toBeTruthy();
+  // Like the local input, the typed URL survives the failure (and the card's remount
+  // on the reloaded list) so it can be corrected and retried.
+  const typed = within(section).getByLabelText('settings.notifications.wecomGroupLabel');
+  await waitFor(() =>
+    expect(live('wecom').getByLabelText('settings.notifications.wecomGroupLabel')).not.toBe(typed),
+  );
+  expect(
+    (live('wecom').getByLabelText('settings.notifications.wecomGroupLabel') as HTMLInputElement)
+      .value,
+  ).toBe('https://example.invalid/hook');
+  // Closing the editor drops it, as leaving the local section does.
+  fireEvent.click(screen.getByText('settings.wecomBot.title'));
+  fireEvent.click(screen.getByText('settings.wecomBot.title'));
+  expect(
+    (
+      (await waitFor(() =>
+        live('wecom').getByLabelText('settings.notifications.wecomGroupLabel'),
+      )) as HTMLInputElement
+    ).value,
+  ).toBe('');
+});
+
+// The URL is stored by the target instance, not on this computer.
+it('names the target instance in the WeCom webhook hint', async () => {
+  render(
+    <CloudBotAuthorization
+      client={createTrialCloudSettingsClient()}
+      online
+      active
+      name="Studio"
+      trial
+    />,
+  );
+  const section = await panel('wecom');
+  expect(within(section).getByText('cloudSettings.wecomGroupHint:Studio')).toBeTruthy();
+  expect(within(section).queryByText('settings.notifications.wecomGroupHint')).toBeNull();
 });

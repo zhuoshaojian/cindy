@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { ImChannelSettingsCard } from '@/components/settings/ImChannelSettingsCard';
@@ -53,6 +53,19 @@ export function CloudBotAuthorization(
     busy,
   } = useCloudAuthorization(props, 'bots');
   const [expanded, setExpanded] = useState<Record<string, string | null>>({});
+  // Cards remount on every list reload (their key carries the ticket), so the typed
+  // webhook lives here to survive a failed save, as the local input does.
+  const [wecomWebhook, setWecomWebhook] = useState('');
+  const wecomEditing =
+    props.online &&
+    props.active &&
+    expanded.personal === 'bot:wecom' &&
+    items.some(
+      (item) => item.id === BOT_NOTIFICATION_ITEMS.wecomGroup && item.status !== 'connected',
+    );
+  useEffect(() => {
+    if (!wecomEditing) setWecomWebhook('');
+  }, [wecomEditing]);
   const disabled = !props.online || requesting || loading;
   // Notification items belong inside their channel card. An older target lists none,
   // and its cards keep the explicit "not available" note.
@@ -72,6 +85,8 @@ export function CloudBotAuthorization(
       <CloudBotNotificationSettings
         channel={channel}
         item={item}
+        targetName={props.name}
+        webhookDraft={[wecomWebhook, setWecomWebhook]}
         preferences={props.notificationPreferences}
         disabled={disabled || !props.active || (busy && !own)}
         pending={own && busy}

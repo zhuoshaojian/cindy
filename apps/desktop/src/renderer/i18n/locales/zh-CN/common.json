@@ -18067,6 +18067,7 @@
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "此实例暂未提供已连接账号的详细信息。连接状态与操作以云端为准。",
     "imRemoteControlUnavailable": "此项暂不支持从客户端配置云实例，可在云端 Cindy 的设置中操作。",
+    "wecomGroupHint": "用于自动操作的完成通知。粘贴企微群机器人的 Webhook URL，URL 会加密保存在 {{name}}。",
     "imReadFailed": "无法读取新对话配置",
     "imReadFailedHint": "云端未能返回有效配置。请重新加载；读取成功前无法编辑，已保存的设置不会被覆盖。",
     "imReadUnavailable": "当前云端未提供这项配置，暂时无法在这里编辑。",

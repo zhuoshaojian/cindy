@@ -165,6 +165,12 @@ export default {
         exact: true,
       });
       await webhook.scrollIntoViewIfNeeded();
+      // The URL is stored on the target, so the hint names it instead of "this device".
+      await page
+        .getByText(await ui.t('cloudSettings.wecomGroupHint', { name: 'Cloud example' }), {
+          exact: true,
+        })
+        .waitFor();
       await ui.capture('wecom-webhook');
       // Trial tickets only: nothing is sent and no real webhook is stored.
       await webhook.fill('https://example.invalid/cgi-bin/webhook/send?key=fixture');

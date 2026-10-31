@@ -18067,6 +18067,7 @@
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "此執行個體暫未提供已連線帳號的詳細資訊。連線狀態與操作以雲端為準。",
     "imRemoteControlUnavailable": "此項暫不支援從用戶端設定雲端執行個體，可在雲端 Cindy 的設定中操作。",
+    "wecomGroupHint": "用於自動操作的完成通知。貼上企微群機器人的 Webhook URL，URL 會加密儲存在 {{name}}。",
     "imReadFailed": "無法讀取新對話設定",
     "imReadFailedHint": "雲端未能傳回有效設定。請重新載入；讀取成功前無法編輯，已儲存的設定不會被覆寫。",
     "imReadUnavailable": "目前雲端未提供這項設定，暫時無法在此編輯。",

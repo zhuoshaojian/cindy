@@ -303,11 +303,18 @@ function WecomGroupNotificationSection() {
 /** Shared group-webhook control; the cloud surface supplies a target-scoped controller. */
 export function WecomGroupNotificationSectionView({
   wecomGroup,
+  webhookDraft,
+  hint,
 }: {
   wecomGroup: ReturnType<typeof useWecomGroupNotificationSettings>;
+  /** Draft owned by a host that remounts this view (e.g. after a cloud list reload). */
+  webhookDraft?: [string, (next: string) => void];
+  /** Replaces the unconfigured hint, e.g. to name the instance that stores the URL. */
+  hint?: string;
 }) {
   const { t } = useTranslation();
-  const [webhookUrl, setWebhookUrl] = useState('');
+  const localDraft = useState('');
+  const [webhookUrl, setWebhookUrl] = webhookDraft ?? localDraft;
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
@@ -323,7 +330,7 @@ export function WecomGroupNotificationSectionView({
               ? t('settings.notifications.wecomGroupConfiguredHint', {
                   maskedKey: wecomGroup.maskedKey,
                 })
-              : t('settings.notifications.wecomGroupHint')}
+              : (hint ?? t('settings.notifications.wecomGroupHint'))}
           </p>
         </div>
         <Switch

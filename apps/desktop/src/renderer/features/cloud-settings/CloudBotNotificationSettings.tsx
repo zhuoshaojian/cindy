@@ -29,6 +29,8 @@ export interface CloudBotNotificationPreferences {
 export function CloudBotNotificationSettings({
   channel,
   item,
+  targetName,
+  webhookDraft,
   preferences,
   disabled,
   pending,
@@ -36,6 +38,9 @@ export function CloudBotNotificationSettings({
 }: {
   channel: 'wecom' | 'feishu' | 'discord';
   item: ManagementItem;
+  targetName: string;
+  /** Typed WeCom webhook, owned by the parent so a list reload keeps it. */
+  webhookDraft?: [string, (next: string) => void];
   preferences?: CloudBotNotificationPreferences;
   disabled: boolean;
   pending: boolean;
@@ -67,6 +72,8 @@ export function CloudBotNotificationSettings({
   if (channel === 'wecom')
     view = (
       <WecomGroupNotificationSectionView
+        webhookDraft={webhookDraft}
+        hint={t('cloudSettings.wecomGroupHint', { name: targetName })}
         wecomGroup={{
           configured: item.status === 'connected',
           // Unreported before a webhook exists; the native switch is disabled then anyway.
