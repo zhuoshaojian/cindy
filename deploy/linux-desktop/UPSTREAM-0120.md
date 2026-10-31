@@ -166,3 +166,28 @@ operator and cache probe were removed with UID preconditions.
 Only the fork feature branch is updated. The post-build fixture correction and
 these documentation changes do not alter the delivered source or image and do
 not trigger another cloud-image delivery.
+
+## cloud.2 owner delivery (2026-10-31)
+
+[Delivery run 41161353870](https://github.com/zhuoshaojian/cindy/actions/runs/41161353870)
+built recipe `7b29af0d27` from source `4a9dcadf94` (runtime notification management items for
+WeCom group webhook, Feishu and Discord notices). It published
+`cloud-runtime-cn:0.1.120-cloud.2-cn-amd64` at
+`sha256:202dba2f7fcb560813561527e570f450c3b59d365b08a6faf59df11634ef5573`. All five build
+records, native SQLite/vec/PTY checks and the isolated Linux smoke passed; both ACS cache
+entries were Ready and a disposable probe proved main and init cache hits with the embedded
+application version, then was removed by UID.
+
+The matching Dev client `0.1.120-dev.cloud.20261030.5` was installed first. Owner-only
+admission then added the release to the owner profile and the keyring list, retiring the
+unreferenced `0.1.108-oauth-browser.20261016` keyring/maintenance entry and the owner's unused
+`0.1.108-xfce-dock-r5c.20261020` approval. Global native admission and new-claim defaults were
+not changed; both CIS roles confirmed only the owner instance may upgrade and other records and
+Pods were unchanged.
+
+The owner upgrade passed through the maintenance service: stopped read-only OSS backup of
+3,548 files / 726,998,206 encrypted bytes, databases and schedules preserved, main and init on
+the delivered digest with an actual cache hit, ready with zero restarts and maintenance
+released. Live IM notification acceptance is recorded in
+[the settings parity inventory](../../docs/cloud-settings-parity.md). Other instances remain on
+their current release until a separate fleet admission.
