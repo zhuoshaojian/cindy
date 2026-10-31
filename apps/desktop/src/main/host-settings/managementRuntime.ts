@@ -10,6 +10,7 @@ import { getCloudSettingsSnapshotContext } from './snapshotRuntime.js';
 import { createSettingsManagement } from './management.js';
 import { listPersonalBotManagement } from './managementConnections.js';
 import { listOfficialBotManagement, listWechatManagement } from './managementBots.js';
+import { listBotNotificationManagement } from './managementNotifications.js';
 import { listProviderManagement } from './managementProviders.js';
 
 const management = createSettingsManagement({
@@ -30,6 +31,7 @@ const management = createSettingsManagement({
       return [
         ...listWechatManagement(caller),
         ...personal,
+        ...(await listBotNotificationManagement(caller, (id) => !cnPersonal || id !== 'discord')),
         ...(!cnPersonal ? listOfficialBotManagement(caller) : []),
       ];
     }

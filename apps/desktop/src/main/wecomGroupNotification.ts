@@ -11,6 +11,7 @@ import {
 import { ownerScopedImSecrets, removeOwnerScopedImSecretStrict } from './im/ownerScopedStorage';
 import { createLogger } from './logger';
 import { assertTrustedAppRendererEvent } from './security/trustedAppRenderer';
+import { registerCloudDomainCall } from './host-settings/managementCalls.js';
 
 const log = createLogger('wecom-group-notification');
 const WEBHOOK_SECRET_NAME = 'wecom-group-webhook-url';
@@ -336,14 +337,9 @@ export function initWecomGroupNotificationIpc(): void {
     return runInImAccountGeneration(accountGeneration, async () => operation(accountGeneration));
   };
 
-  ipcMain.handle('wecomGroupNotification:get-state', (event) => {
-    assertTrustedAppRendererEvent(event);
-    return wecomGroupNotificationService.getState();
-  });
-  ipcMain.handle(
-    'wecomGroupNotification:save-and-test',
-    async (event, webhookUrl: unknown, testMessage: unknown) => {
-      assertTrustedAppRendererEvent(event);
+  const handlers: Record<string, (...args: unknown[]) => unknown> = {
+    'wecomGroupNotification:get-state': () => wecomGroupNotificationService.getState(),
+    'wecomGroupNotification:save-and-test': async (webhookUrl, testMessage) => {
       if (typeof webhookUrl !== 'string') throw new TypeError('webhookUrl must be a string');
       const accountGeneration = captureImAccountGeneration();
       if (accountGeneration === null) throw new ImAccountScopeClosedError();
@@ -353,25 +349,29 @@ export function initWecomGroupNotificationIpc(): void {
         ),
       );
     },
-  );
-  ipcMain.handle('wecomGroupNotification:test', async (event, testMessage: unknown) => {
-    assertTrustedAppRendererEvent(event);
-    return runAccountScoped(async (accountGeneration) => {
-      await wecomGroupNotificationService.test(parseTestMessage(testMessage), () =>
-        isImAccountGenerationCurrent(accountGeneration),
-      );
-      return { ok: true as const };
+    'wecomGroupNotification:test': async (testMessage) =>
+      runAccountScoped(async (accountGeneration) => {
+        await wecomGroupNotificationService.test(parseTestMessage(testMessage), () =>
+          isImAccountGenerationCurrent(accountGeneration),
+        );
+        return { ok: true as const };
+      }),
+    'wecomGroupNotification:set-enabled': (enabled) => {
+      if (typeof enabled !== 'boolean') throw new TypeError('enabled must be a boolean');
+      return runAccountScoped(() => wecomGroupNotificationService.setEnabled(enabled));
+    },
+    'wecomGroupNotification:clear': () =>
+      runAccountScoped(() => wecomGroupNotificationService.clear()),
+  };
+  for (const [channel, handler] of Object.entries(handlers)) {
+    // Cloud settings reach only the compiled management allowlist; set-enabled stays
+    // on the owner-scoped settings domain.
+    registerCloudDomainCall(channel, handler);
+    ipcMain.handle(channel, (event, ...args) => {
+      assertTrustedAppRendererEvent(event);
+      return handler(...args);
     });
-  });
-  ipcMain.handle('wecomGroupNotification:set-enabled', (event, enabled: unknown) => {
-    assertTrustedAppRendererEvent(event);
-    if (typeof enabled !== 'boolean') throw new TypeError('enabled must be a boolean');
-    return runAccountScoped(() => wecomGroupNotificationService.setEnabled(enabled));
-  });
-  ipcMain.handle('wecomGroupNotification:clear', (event) => {
-    assertTrustedAppRendererEvent(event);
-    return runAccountScoped(() => wecomGroupNotificationService.clear());
-  });
+  }
 }
 
 export const __testing = {
