@@ -191,3 +191,28 @@ the delivered digest with an actual cache hit, ready with zero restarts and main
 released. Live IM notification acceptance is recorded in
 [the settings parity inventory](../../docs/cloud-settings-parity.md). Other instances remain on
 their current release until a separate fleet admission.
+
+## cloud.2 fleet admission (2026-10-31)
+
+The owner authorized fleet admission after the `.6` client checks, explicitly skipping a real
+WeCom webhook success path (covered by synthetic tests only). Before admission, CIS
+`cis-0d9ae0d0` (based on the live `f0f2cfe3`) was delivered so the web console omits the new
+native-only `management.botNotifications` group instead of showing raw keys.
+
+A fresh baseline (14 records, no active maintenance) matched the earlier one with no record
+changes, and the re-prepared policy was byte-identical to the reviewed candidate; both roles
+loaded it with their deployed schema. Immutable `cis-u120c2-1031-fleet-*` ConfigMaps were rolled
+out orchestrator then API, both ready with zero restarts. The change set new-claim defaults,
+placements and tenants to cloud.2, added cloud.2 to native maintenance admission (12 to 13),
+and gave the 12 other org instances an exact cloud.2 approval. Each verified profile at the
+16-entry cap retired one unreferenced old approval; backup, access, automation, settings web,
+invitations, credential pilot and legacy versions were unchanged.
+
+Both roles confirmed: the 10 running org instances on cloud.1 report cloud.2 as their update,
+the owner is already current, the two stopped instances only received approvals, and a dry-run
+new-claim manifest uses cloud.2 for main and init without creating an instance. Images, power
+state, auto-update preferences, resources, maintenance policies and Pod UIDs of every record were
+unchanged; no instance was upgraded or restarted by admission. Running instances move in their
+own maintenance windows according to their auto-update preference. The personal instance is out
+of scope. Dev test clients `.4` and earlier will show the notification items as extra generic
+cards once their instance is on cloud.2; official clients have no cloud settings.
