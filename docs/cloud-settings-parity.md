@@ -46,6 +46,25 @@ CIS 校验修正 `b427a3c3` 已部署；六类 IM 读取、侧边栏与设置入
 Subagent 与视觉桥；本地自动操作与伙伴模型样板通过。样板为合成数据，未逐字核对其他四种
 语言；真实云端读写需新测试包安装后另记。
 
+## IM 通知对齐（2026-10-31，源码）
+
+企业微信群通知、飞书上线播报与任务完成通知、Discord 上线播报改为共用本地展示组件。
+运行时在 bots 管理列表新增 `management.botNotifications` 分组的三个条目（见
+[`cloudBotNotifications.ts`](../apps/desktop/src/shared/cloudBotNotifications.ts)），复用既有
+intent、字段与状态，CIS 校验与设置合同均不变；旧运行时不列出这些条目，卡片保留“暂不支持”说明。
+
+- 交付顺序：先装含本改动的客户端，再升级运行时。旧客户端会把新条目当普通卡片显示。
+- 打码密钥：设置快照仍不含打码密钥；管理通道只向已验证的实例主人返回本地同款 `••••末四位`。
+- 未验收：真实运行时的保存、测试发送与播报切换须在新运行时镜像上线本人实例后另记。
+
+后续优先级（2026-10-31）：
+1. P1，合同已有、只改客户端：官方 Hook 上线播报、个人 Telegram 名称与 Soul、快捷键、
+   对话语义索引（先查该实例为何未上报）。
+2. P2，需运行时补字段或操作：Git 三档、默认 shell 解析值、终端字体、记忆重置、Agent 版本号、
+   个人指令正文（先确认披露边界）。
+3. P3，资源与目录类：供应商模型管理、MCP 增删改、插件与 Pi 扩展、工作目录、存储统计与清理、
+   对话目录、worktree 回收、通讯录管理、语音、远控与 SSH、用量、会话导入、日志上传。
+
 ## 真实实例逐页复核（2026-10-31，只读）
 
 Dev `.3`（`922aab2fb8`）与 `.4`（`4cd3dff548`）分别控制本人 `0.1.120-cloud.1-cn-amd64`，
@@ -235,15 +254,15 @@ UI 检查 18 项（深浅色，简中，合成数据）通过。
 | 个人微信：权限能力提示 | 不一致 | 本地按 Agent `turnPermissionPolicy` 判提示，云 View 未传 warning；远端适配还硬编码排除 Pi。不能把这一差异宣称为沿用本地能力判断 |
 | 个人微信：授权中、待确认、已绑定、需重授权 | 展示已共用、状态投影待补 | 共用本地确认、等待、取消、重新绑定、解绑交互；旧管理列表不能区分所有本地 phase，不以通用 connected/error 推断完整授权状态 |
 | 企业微信：Bot ID、Secret、连接/重连/断开 | 展示已共用 | `WecomBotSectionView` 共用本地表单、状态与操作；只执行目标已下发票据，连接详情尚未完整投影，不填写真实凭据验收 |
-| 企业微信：群通知开关 | 待接入 | `wecomNotifications` 有合同，未投影到原生云页 |
-| 企业微信：群通知 Webhook 设置/清除/测试发送 | 待接入 | 本地独立凭据和操作，不等于前一行的 enabled；测试会发送消息，不能隐式执行 |
+| 企业微信：群通知开关 | 源码接入 | IM 分类读取 `wecomNotifications`；共用 `WecomGroupNotificationSectionView`。未配置 Webhook 时目标返回 unavailable，开关与本地一样禁用 |
+| 企业微信：群通知 Webhook 设置/清除/测试发送 | 源码接入（需新运行时） | 管理条目 `notify:wecom-group`：create/sync/delete 分别为保存并测试、发送测试、移除，仅用户点击时执行；Webhook 只写不回显，只回本地同款打码密钥 |
 | 飞书/Lark：服务选择、App ID/Secret、主人绑定、重连/清除 | 展示已共用、元数据待补 | `FeishuBotSectionView` 共用表单、状态与说明；服务选项和恢复/清除按目标票据开放，主人身份等未返回字段明确提示 |
 | 飞书：群组权限模式 | 源码接入，当前真实读取失败 | `imFeishu.groupPermissionMode`，复用 PermissionSelector |
-| 飞书：任务生命周期播报 | 待接入 | `FeishuBotNotificationSection` 的第一个独立开关 |
-| 飞书：任务完成通知 | 待接入 | 第二个独立开关，并受主人绑定状态约束，不能用系统通知替代 |
+| 飞书：任务生命周期播报 | 源码接入（需新运行时） | 管理条目 `notify:feishu` 的 edit 下拉；共用 `FeishuBotNotificationSectionView`，与本地一样仅在已保存凭据后显示 |
+| 飞书：任务完成通知 | 源码接入（主人状态需新运行时） | 写 `desktopNotifications.feishuNotificationsEnabled`；主人绑定只以 `notify:feishu` 状态回传已绑/未绑，不回传 open_id。本地“未绑定自动复位”不在云页执行，打开页面不写入 |
 | 钉钉：Client ID/Secret、连接/重连/断开 | 展示已共用 | `DingTalkBotSectionView` 共用表单、状态与指引；保存/重连/清除只调用目标票据 |
 | Discord：Token、Owner User ID、连接/恢复/断开 | 展示已共用 | `DiscordBotSectionView` 共用表单、格式校验、连接恢复卡与一次断开确认；未知回执仍走远端查询，不重复写入 |
-| Discord：任务生命周期播报 | 待接入 | `ImLifecycleAnnouncementSection` 未进入云页；不是官方 Hook 的同名开关 |
+| Discord：任务生命周期播报 | 源码接入（需新运行时） | 管理条目 `notify:discord` 的 edit 下拉；共用 `DiscordLifecycleSettings`，与本地一样仅在已保存凭据后显示 |
 | 个人 Telegram：Token、Owner User ID、连接/断开 | 展示已共用 | `TelegramBotSectionView` 共用表单、格式校验和连接卡；断开按明确票据执行，不用断开冒充保留绑定的下线 |
 | 个人 Telegram：上线/下线、恢复已保存连接 | 待完整接入 | 本地 `ConnectedCard`/`setOnline`，云端通用断开不能替代下线 |
 | 个人 Telegram：同一机器人远端设备列表及控制 | 待接入 | 本地 `TelegramRemoteDevices`，不是顶层云实例列表 |
