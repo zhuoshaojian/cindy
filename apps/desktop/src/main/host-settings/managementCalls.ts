@@ -57,6 +57,13 @@ const channels = new Set([
   'maker:provider:oauth:login',
   'maker:provider:oauth:logout',
   'cloud:provider:key-replace',
+  // Model management of the cloud providers page (cloud:provider-settings:v1).
+  'maker:model-disable:set',
+  'maker:provider:order:set',
+  'maker:provider:presentation:set',
+  'maker:provider:remote-access:set',
+  'maker:provider:models-refresh',
+  'maker:provider:models-rediscover',
 ]);
 const registered = new Map<string, IpcHandler>();
 const events = new WeakMap<object, ManagementExecution>();

@@ -487,6 +487,19 @@ export function setProviderGroupRemoteHandler(handler: ProviderGroupRemoteHandle
   providerGroupRemoteHandler = handler;
 }
 
+/**
+ * Cloud fork: one private same-account channel registered only by a managed cloud runtime.
+ * Unregistered (every ordinary desktop), the channel keeps upstream's CHANNEL_NOT_ALLOWED.
+ */
+export interface CloudPrivateInvokeHandler {
+  channel: string;
+  handle(controller: string, raw: unknown): Promise<unknown>;
+}
+let cloudPrivateInvokeHandler: CloudPrivateInvokeHandler | null = null;
+export function setCloudPrivateInvokeHandler(handler: CloudPrivateInvokeHandler | null): void {
+  cloudPrivateInvokeHandler = handler;
+}
+
 /** 组摘要只给同账号电脑：分享受邀者与共享任务访客是其他账号，看不到组内电脑。 */
 function isSameAccountController(src: string): boolean {
   return !isProviderSharePeer(src) && !isSharedTaskPeer(src);
@@ -647,7 +660,7 @@ async function persistRemoteSetting(channel: string, args: unknown[], result: un
  */
 type DisplayWireProtocol = 'openai-chat' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai';
 
-function projectRoutingForDisplay(
+export function projectRoutingForDisplay(
   routing: unknown,
 ): Record<string, { wireProtocol?: DisplayWireProtocol; disabled?: true }> | undefined {
   if (!routing || typeof routing !== 'object' || Array.isArray(routing)) return undefined;
@@ -4548,6 +4561,24 @@ async function executeRemoteInvoke(src: string, payload: InvokePayload | undefin
     log.warn(`blocked invoke from revoked controller ${shortId(src)}: ${payload.channel}`);
     return { ok: false, error: { code: 'ACCESS_REVOKED', message: 'access revoked by target device' } };
   }
+  const cloudPrivate = cloudPrivateInvokeHandler;
+  if (cloudPrivate && payload.channel === cloudPrivate.channel) {
+    if (!isSameAccountController(src)) {
+      return { ok: false, error: { code: 'CHANNEL_NOT_ALLOWED', message: `channel '${payload.channel}' not allowed` } };
+    }
+    try {
+      return {
+        ok: true,
+        result: await timing.measure('handler', () => runDeviceLinkInvokeContext(
+          { controllerDeviceId: src, channel: payload.channel },
+          () => cloudPrivate.handle(src, payload.args?.[0]),
+        )),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: { code: 'IPC_ERROR', message: /^\[[A-Z_]+\]/.test(message) ? message : '[INTERNAL] cloud request failed' } };
+    }
+  }
   // 双层校验之二:allowlist(权威)
   if (!REMOTE_INVOKE_ALLOWLIST.has(payload.channel)) {
     log.warn(`blocked non-allowlisted channel from ${shortId(src)}: ${payload.channel}`);
@@ -4962,6 +4993,7 @@ export const __testing = {
     completedRemoteInvokeResults.clear();
     providerShareDenialLoggedAt.clear();
     providerGroupRemoteHandler = null;
+    cloudPrivateInvokeHandler = null;
     completedRemoteInvokeResultBytes = 0;
     inFlightRemoteInvokeResults.clear();
     inFlightRemoteInvokeBytes = 0;

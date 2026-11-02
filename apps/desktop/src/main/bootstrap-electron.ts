@@ -620,6 +620,7 @@ import { startProfileTelemetry } from './instance-runtime/profile-telemetry.js';
 import { instanceAuthReady, instanceDurableObservation, instanceAuthRealm, instanceLoginRequired, instanceLoginRecovered } from './instance-runtime/host.js';
 import { startAuthRecoveryControl } from './instance-runtime/auth-recovery.js';
 import { startInstanceStatus } from './instance-runtime/status.js';
+import { registerCloudProviderSettings } from './instance-runtime/providerSettingsRegistration.js';
 import { publishedPluginOauthIdentity } from './plugin-oauth/runtime.js';
 import { startCloudSettingsSnapshotPublisher } from './host-settings/snapshotRuntime.js';
 import { startCloudSettingsWebTransport } from './host-settings/webRuntime.js';
@@ -10003,6 +10004,8 @@ app.on('ready', async () => {
     const stopProfileTelemetry = startProfileTelemetry({ deviceId: instance.deviceId, membershipId: instance.membershipId, realm: instanceAuthRealm, read: readInstanceReadiness, readAuth: instanceDurableObservation, onFailure: () => createLogger('instance-runtime').warn('profile observation unavailable') });
     const stopSettingsSnapshot = startCloudSettingsSnapshotPublisher();
     const stopSettingsWeb = startCloudSettingsWebTransport();
+    const stopProviderSettings = registerCloudProviderSettings();
+    app.once('will-quit', stopProviderSettings);
     app.once('will-quit', stopSettingsWeb);
     app.once('will-quit', stopSettingsSnapshot);
     app.once('will-quit', stopProfileTelemetry);
