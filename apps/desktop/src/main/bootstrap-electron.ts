@@ -40,6 +40,7 @@ import {
   writeCindyMakeSyncLatestBeforeBuild,
 } from './cindy-make/settingsStore.js';
 import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudManagementExecution } from './host-settings/managementCalls.js';
+import { presentManagementDeviceCode } from './host-settings/managementAuthorization.js';
 import { configureAdditionalSettingsRuntime } from './host-settings/additionalRuntime.js';
 import { initializeCloudDeviceLinkDefaults } from './instance-runtime/device-link-defaults.js';
 import { cindyManagedHomeDir, isCloudPilotDistribution } from './cloudPilotDistribution.js';
@@ -5530,7 +5531,7 @@ const registerIpcHandlers = () => {
           ? (code) => {
               if (owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending()) return;
               if (management) {
-                management.prompt({ kind: 'device', url: code.verificationUrl, userCode: code.userCode, expiresAt: code.expiresAt });
+                presentManagementDeviceCode(code);
                 return;
               }
               try {

@@ -165,12 +165,9 @@ export function createProviderSetup(call: Call, now = Date.now) {
       case 'native-login':
         // The instance's own Claude Code / Codex / Grok login, shown on the controlling computer.
         if (request.agent === 'claude') return call('maker:claude-oauth:login', [], execution);
+        // No owner token: a cloud login has no window to hold it; cancelling the ticket ends it.
         if (request.agent === 'codex')
-          return call(
-            'maker:auth:trigger-login',
-            ['codex', { mode: 'device-code', ownerId: randomUUID() }],
-            execution,
-          );
+          return call('maker:auth:trigger-login', ['codex', { mode: 'device-code' }], execution);
         if (request.agent === 'xai')
           return call(
             'maker:xai-oauth:login',

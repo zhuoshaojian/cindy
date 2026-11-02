@@ -131,7 +131,7 @@ describe('cloud provider setup stages', () => {
     }
     expect(h.call).toHaveBeenCalledWith(
       'maker:auth:trigger-login',
-      ['codex', { mode: 'device-code', ownerId: expect.any(String) }],
+      ['codex', { mode: 'device-code' }],
       execution,
     );
     expect(h.call).toHaveBeenCalledWith('maker:claude-oauth:login', [], execution);
