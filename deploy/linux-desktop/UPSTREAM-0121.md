@@ -151,3 +151,32 @@ new-claim manifest uses cloud.1 for main and init without creating an instance. 
 state, auto-update preferences, resources, maintenance policies and Pod UIDs were unchanged; no
 instance was upgraded or restarted by admission. Running instances move in their own maintenance
 windows according to their auto-update preference. The personal instance is out of scope.
+
+## cloud.2: provider settings channel (2026-11-02)
+
+The user asked for the cloud providers page to match the local page. `0.1.121-cloud.2`
+(freeze `d28b406429`, delivery `0c42ed6e57`) adds the private DeviceLink channel
+`cloud:provider-settings:v1`, registered only on managed instances and only for the instance
+owner. It returns the full provider catalog the local page uses (hidden and payment-locked
+models included, routing projected, no credentials) and writes model visibility (CAS on the
+Host revision), model/provider disable, order, presentation, remote access and model refresh
+through the native handlers. Logins, API keys and new connections stay on the CIS tickets.
+
+Delivery run 41405831375 passed verify, candidate (two layers, native smoke on
+`0.1.121-cloud.2`, five records) and cache; an in-cluster probe hit the qualified cache and
+read the packaged version. The owner-only policy changed only the owner's verified profile and
+the approval lists (one unreferenced `0.1.108` approval retired at the cap); defaults,
+placements, tenants, schedules and backup were unchanged, and both roles rolled out ready.
+
+The owner upgrade backed up **3,545 files / 726,892,629 bytes**, started main and init on the
+delivered digest with a cache hit, became ready with zero restarts, released maintenance and
+preserved databases, schedules and peer records. Other instances stay on `0.1.121-cloud.1`.
+
+With the Mac Dev `0.1.121-dev.cloud.20261102.2` (`68e8af43e6`) the channel listed 8 providers in
+79 ms (244 KB) and rejected an invalid request. Through the real UI: hiding a model wrote the
+override to the instance and a reset restored it; keyboard reordering wrote the instance order
+and the original order was restored (the stored order keeps a deleted provider id, so writes
+send only current ids); the remote access switch toggled on and back off; disabling a model
+from the drawer and re-enabling it inline both wrote and read back. The final state equals the
+baseline. Third-party login, API key entry and an older-runtime fallback were not exercised
+live (the fallback is covered by unit tests). Fleet admission has not been requested.
