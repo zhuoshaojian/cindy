@@ -277,8 +277,13 @@ detection, which held the instance's ticket operation, so the save was cancelled
 form saves; saving after the detection worked, the key reached the instance only through the
 ticket and the returned catalog carried no key (a placeholder key was used and the connection
 deleted). `1644842a42` queues ticket operations, waits until the instance is idle and keeps
-only the latest keyed detection; a unit test fails on the old behaviour. It ships in the Mac
-Dev `.9`, whose live check waits for its Keychain prompt.
+only the latest keyed detection; a unit test fails on the old behaviour. With the Mac Dev `.9`
+a save 0.1 s after typing the key and a save while the form showed the running detection both
+created the connection with the local toast, and the catalog carried no key. The same check
+found that adding right after opening the page, before the instance's ticket list was read,
+opened the older runtimes' dialog; `78b7bc6a7e` reads the list first and keeps that dialog for
+runtimes without the setup ticket (unit tested, Mac Dev `.10`, live check waits for its
+Keychain prompt). Every test connection was deleted on the instance and on the local profile.
 The final instance catalog, Fast policy, Cindy AI and organization states equal the baseline.
 Not exercised live: the third wizard step (needs a real key or sign-in), DeepSeek and Zhipu
 balances and the Claude and Grok usage links (no such connection on the instance), third-party
