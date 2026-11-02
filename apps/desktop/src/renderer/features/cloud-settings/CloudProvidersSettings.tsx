@@ -690,10 +690,13 @@ function CloudProviderCatalogPage({
                     className="flex flex-col gap-0.5"
                     rowClassName="provider-settings-sortable-row"
                   />
-                  <ProviderShareReceivedRailGroup
-                    selectedShareId={selectedShare?.shareId ?? null}
-                    onSelect={(shareId) => setSelectedShareId(shareId)}
-                  />
+                  {/* Only the instance's own list; never this computer's shares in its place. */}
+                  {shareSupported && (
+                    <ProviderShareReceivedRailGroup
+                      selectedShareId={selectedShare?.shareId ?? null}
+                      onSelect={(shareId) => setSelectedShareId(shareId)}
+                    />
+                  )}
                   {suggestions.length > 0 && (
                     <>
                       <span

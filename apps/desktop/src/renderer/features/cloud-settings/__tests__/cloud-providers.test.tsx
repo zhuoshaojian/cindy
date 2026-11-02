@@ -32,10 +32,11 @@ vi.mock('@/hooks/useDeviceProviders', () => ({
 vi.mock('@/components/settings/useProviderSubscriptionCard', () => ({
   useDeviceProviderSubscriptionCard: () => null,
 }));
+const localShares = vi.hoisted(() => ({ list: [] as unknown[] }));
 vi.mock('@/features/provider-share/providerShareStore', () => ({
   useProviderSharePendingRequests: () => [],
   // This computer's list; the cloud page must show the instance's instead.
-  useProviderShareReceived: () => ({ received: [], loaded: true }),
+  useProviderShareReceived: () => ({ received: localShares.list, loaded: true }),
   ensureProviderShareReceivedStarted: () => undefined,
   requestProviderShareJoin: () => undefined,
 }));
@@ -180,7 +181,7 @@ const items: ManagementItem[] = [
 
 afterEach(cleanup);
 
-function setup(options: { unsupported?: boolean } = {}) {
+function setup(options: { unsupported?: boolean; withoutShare?: boolean } = {}) {
   let visibility = {
     status: 'ready',
     revision: 'r1',
@@ -204,7 +205,7 @@ function setup(options: { unsupported?: boolean } = {}) {
           'effort',
           'model-edit',
           'cli-scan',
-          'share',
+          ...(options.withoutShare ? [] : ['share']),
         ],
         efforts: { 'codex:*': { 'm-1': 'high' } },
       };
@@ -432,6 +433,32 @@ describe('shares on the instance', () => {
         }),
       ),
     );
+  });
+});
+
+describe('shares on an older runtime', () => {
+  it("never shows this computer's shares in place of the instance list", async () => {
+    localShares.list = [
+      {
+        shareId: 'local-share',
+        memberId: 'm',
+        providerId: 'openai',
+        providerLabel: 'Local only share',
+        hostDeviceId: 'h',
+        deviceName: 'H',
+        status: 'active',
+        hostOnline: true,
+        hostCapable: true,
+        owner: { displayName: 'Bo', avatarUrl: null, region: 'cn' },
+      },
+    ];
+    try {
+      setup({ withoutShare: true });
+      expect(await screen.findByText('settings.providers.models.modelCount:2')).toBeTruthy();
+      expect(screen.queryByText('Local only share')).toBeNull();
+    } finally {
+      localShares.list = [];
+    }
   });
 });
 
