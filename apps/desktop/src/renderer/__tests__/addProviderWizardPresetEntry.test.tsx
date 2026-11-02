@@ -59,7 +59,13 @@ import { AddProviderWizard, OFFICIAL_API_PRESETS } from '@/components/settings/A
 import { AddSpeechModelsDialog } from '@/components/settings/AddSpeechModelsDialog';
 import { UnifiedModelList } from '@/components/settings/UnifiedModelList';
 import { speechModels } from '../../main/voice-conversation/models';
-import { __resetForTest as resetVisibility, setModelVisibilityOwner } from '@/state/modelVisibilityPrefs';
+import { __resetForTest as resetVisibility } from '@/state/modelVisibilityPrefs';
+import {
+  connectHostModelPresentationPreferences,
+  ensureHostModelPresentationLoaded,
+} from '@/state/hostModelPresentationPreferences';
+import { setDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
+import { createModelPresentationTestHost } from './modelPresentationTestHost';
 import { createCustomProvider, updateCustomProvider, deleteCustomProvider, readCustomProviderKey } from '@/lib/customProviders';
 
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({
@@ -1774,14 +1780,13 @@ describe('speech models in the existing provider wizard', () => {
   // TTS model, then the management switch must restore its companion picker entry.
   // Existing tests stopped at defaultEnabled:false or disabled every saved addition.
   it('can show a previously unchecked discovered speech model through model management', async () => {
-    const syncVisibility = vi.fn<(owner: string, generation: number, overrides: Record<string, boolean>) => Promise<void>>(async () => undefined);
-    Object.assign(window.electronAPI.maker, {
-      claimLegacyModelVisibilityOwner: () => ({ dataOwnerId: 'speech-review', ownerGeneration: 1,
-        canWriteOwnerScoped: true, claimed: true, claimedByOtherOwner: false,
-        canInitialize: true, profileOrigin: 'new' }),
-      syncModelVisibility: syncVisibility,
-    });
-    await setModelVisibilityOwner('speech-review', 1, 'cloud');
+    // Model visibility is persisted by the Host, not mirrored from the Renderer.
+    const host = createModelPresentationTestHost(window.localStorage);
+    host.select('speech-review', 1);
+    host.initialized();
+    host.install();
+    connectHostModelPresentationPreferences();
+    await ensureHostModelPresentationLoaded();
     try {
       vi.mocked(window.electronAPI.maker.fetchProviderModels).mockResolvedValue({ ok: true, models: [
         { id: 'my-later-tts', name: 'Later speech', discoveredMetadata: { mode: 'audio_speech' } },
@@ -1797,8 +1802,12 @@ describe('speech models in the existing provider wizard', () => {
         catalog: { ...BUNDLED_CATALOG, providers: [provider, other] },
         gatewayAllowed: false, disabled: () => false, readKey: () => 'fake-key',
         gatewayConnection: () => ({ baseUrl: '', apiKey: '' }),
-        visibilityOverride: (agent: string, providerId: string, modelId: string) =>
-          (syncVisibility.mock.lastCall?.[2] as Record<string, boolean> | undefined)?.[`${agent}:${providerId}:${modelId}`],
+        visibilityOverride: (agent: string, providerId: string, modelId: string) => {
+          const snapshot = host.snapshot();
+          return snapshot.status === 'ready'
+            ? snapshot.value.visibility.overrides[`${agent}:${providerId}:${modelId}`]
+            : undefined;
+        },
       };
       cleanup();
       const view = { ...provider, connected: true,
@@ -1817,6 +1826,7 @@ describe('speech models in the existing provider wizard', () => {
     } finally {
       cleanup();
       resetVisibility();
+      setDataOwnerGeneration(null, 0);
     }
   });
 });

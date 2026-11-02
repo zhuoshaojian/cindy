@@ -114,8 +114,8 @@ function assertCoverage(parts: ReadonlySettingsInspection[]) {
   expect([...owned].sort()).toEqual([...SETTINGS_READ_FIELD_IDS].sort());
   // 真正执行结果独立于目录：删除实际 put/publish 或遗漏循环项必须使本断言失败。
   const produced = parts.flatMap(part => Object.keys(part.fields));
-  expect(produced.length).toBe(456);
-  expect(new Set(produced).size).toBe(456);
+  expect(produced.length).toBe(459);
+  expect(new Set(produced).size).toBe(459);
   expect(produced.sort()).toEqual([...SETTINGS_READ_FIELD_IDS].sort());
   for (const [index, expected] of [PREFERENCE_SETTINGS_FIELD_IDS, CORE_SETTINGS_FIELD_IDS, INTERACTION_SETTINGS_FIELD_IDS].entries()) {
     expect(Object.keys(parts[index]!.fields).sort()).toEqual([...expected].sort());
@@ -136,7 +136,7 @@ afterEach(() => {
 });
 
 describe('production reader to v2 coverage seam', () => {
-  it.each(['darwin', 'win32', 'linux'] as const)('reads all 456 native leaves and projects the 453 v2 leaves on %s without placeholder fill', platform => {
+  it.each(['darwin', 'win32', 'linux'] as const)('reads all 459 native leaves and projects the 453 v2 leaves on %s without placeholder fill', platform => {
     state.platform = platform;
     const { parts, inspection, report } = noWrites(() => read());
     assertCoverage(parts);
@@ -145,7 +145,15 @@ describe('production reader to v2 coverage seam', () => {
     }
     expect(Object.keys(report.fields)).toEqual([...SETTINGS_SNAPSHOT_V2_FIELD_IDS]);
     expect(Object.keys(inspection.fields).filter(id => !Object.hasOwn(report.fields, id)).sort())
-      .toEqual(['gitSafety.autoInitProjectGit', 'gitSafety.mode', 'voice.composerLongPressEnabled']);
+      // Leaves added after the frozen v2 wire stay native-only, including newer shortcuts.
+      .toEqual([
+        'gitSafety.autoInitProjectGit',
+        'gitSafety.mode',
+        'shortcuts.region-screenshot',
+        'shortcuts.session-history-back',
+        'shortcuts.session-history-forward',
+        'voice.composerLongPressEnabled',
+      ]);
     // 所有旧版 wire 字段保留真实读取状态，新版字段仍必须有本地读取接线。
     for (const id of SETTINGS_SNAPSHOT_V2_FIELD_IDS) expect(report.fields[id].status, id).toBe(inspection.fields[id]!.status);
     expect(report.fields['im.wecom.notificationsEnabled']).toEqual({ status: 'private' });

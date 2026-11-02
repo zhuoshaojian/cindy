@@ -1342,7 +1342,8 @@ describe('远程交互接线不变式', () => {
     const listener = app.slice(listenerStart, listenerEnd);
     expect(listener).toContain('applyAppDefaultModelSelection(appDefaultSelection)');
     expect(listener).toContain('syncNewMakerPrefs(appDefaultSelection.requestId)');
-    expect(listener).toMatch(/applyRemoteDraftPreference\(\{\s*agent, providerId, modelId, active, effort, fast, thinking, markModelChoice,?\s*\}\)/);
+    // taskProviderId keeps an in-task model change from moving the new-task source (#6555).
+    expect(listener).toMatch(/applyRemoteDraftPreference\(\{\s*agent, providerId, modelId, active, effort, fast, thinking, markModelChoice, taskProviderId,?\s*\}\)/);
     const appSrc = read('state/applyRemoteDraftPreference.ts');
     expect(appSrc).toContain(
       'markModelChoice === false ? patchVendorPrefsPreservingModelChoice : patchVendorPrefs',
