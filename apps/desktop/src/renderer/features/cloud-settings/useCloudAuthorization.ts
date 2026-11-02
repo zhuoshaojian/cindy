@@ -26,6 +26,8 @@ export interface CloudAuthorizationProps {
 export function useCloudAuthorization(
   { client, online, active, name, trial = false, refresh = 0 }: CloudAuthorizationProps,
   section: 'providers' | 'bots',
+  /** Keep items whose actions need fields (API keys, new connections). */
+  { all = false }: { all?: boolean } = {},
 ) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
@@ -91,7 +93,9 @@ export function useCloudAuthorization(
           // A connection form or a read-only state is still a real IM channel.
           // Filtering by OAuth buttons hid every unconfigured personal bot.
           const visible =
-            section === 'bots' ? values : values.filter((item) => supportedActions(item).length);
+            section === 'bots' || all
+              ? values
+              : values.filter((item) => supportedActions(item).length);
           if (new Set(visible.map((item) => item.id)).size !== visible.length)
             throw new Error('INVALID_PAGE');
           setItems(visible);

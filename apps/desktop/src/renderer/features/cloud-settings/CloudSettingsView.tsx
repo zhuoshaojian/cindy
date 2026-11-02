@@ -36,7 +36,7 @@ import { CloudImSettings, cloudImSettingsSummary } from './CloudImSettings';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
 import { CloudMcpAuthorization } from './CloudMcpAuthorization';
 import { CloudPluginAuthorization } from './CloudPluginAuthorization';
-import { CloudProviderAuthorization } from './CloudProviderAuthorization';
+import { CloudProvidersSettings } from './CloudProvidersSettings';
 import { NativeCloudSections } from './NativeCloudSections';
 import type { CloudBotNotificationPreferences } from './CloudBotNotificationSettings';
 import { cloudSearchEntryAllowed } from './search';
@@ -374,11 +374,14 @@ export function CloudSettingsPanel({
                 </div>
               </div>
             </header>
+            {/* Providers scroll inside their card, as on the local settings page. */}
             <div
               ref={scrollRef}
-              className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+              className={`min-h-0 flex-1 [scrollbar-gutter:stable] ${tab === 'providers' ? 'overflow-hidden' : 'overflow-y-auto'}`}
             >
-              <div className="mx-auto w-full min-w-0 max-w-[920px] px-1 pb-32 animate-fade-in">
+              <div
+                className={`mx-auto w-full min-w-0 max-w-[920px] px-1 animate-fade-in ${tab === 'providers' ? 'flex h-full min-h-0 flex-col' : 'pb-32'}`}
+              >
                 {failure && tab !== 'instance' && (
                   <div role="alert" className={card}>
                     {t(`cloudSettings.${failure}`)}
@@ -440,6 +443,7 @@ export function CloudSettingsPanel({
                   <div
                     key={group}
                     hidden={tab !== group}
+                    className={group === 'providers' ? 'min-h-0 flex-1' : undefined}
                     role="tabpanel"
                     id={`settings-panel-${group}`}
                     aria-labelledby={`settings-tab-${group}`}
@@ -489,13 +493,14 @@ export function CloudSettingsPanel({
                       )
                     ) : group === 'providers' ? (
                       providerAuthorization && (
-                        <CloudProviderAuthorization
+                        <CloudProvidersSettings
                           client={client}
                           name={name}
                           online={online}
                           active={tab === group}
                           trial={trial}
                           refresh={epoch}
+                          deviceId={deviceId}
                         />
                       )
                     ) : (
