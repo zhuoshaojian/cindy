@@ -25,6 +25,7 @@ import { ConnectedPill, ProviderAccountHeader } from '@/components/settings/Prov
 import { OAuthBrowserLink, OAuthDeviceCodeCard } from '@/components/settings/OAuthDeviceCodeCard';
 import { SettingsTextInput } from '@/components/settings/SettingsTextInput';
 import { buildUnionRows, UnifiedModelList } from '@/components/settings/UnifiedModelList';
+import { ModelSettingsSourceContext } from '@/components/settings/modelSettingsSource';
 import { useDeviceProviderSubscriptionCard } from '@/components/settings/useProviderSubscriptionCard';
 import { QuotaHoverCard } from '@/components/status/QuotaHoverCard';
 import { ProviderShareEntryButton } from '@/features/provider-share/ProviderShareEntryButton';
@@ -508,220 +509,222 @@ function CloudProviderCatalogPage({
   };
 
   return (
-    <section
-      className="flex h-full min-h-0 flex-col gap-[14px]"
-      aria-label={t('settings.providers.title')}
-    >
-      <div className="flex shrink-0 items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2
-            className="text-16 font-medium leading-[1.2]"
-            style={{ color: 'var(--settings-section-title)' }}
-          >
-            {t('settings.providers.title')}
-          </h2>
-          <p className="text-13 leading-[1.5]" style={{ color: 'var(--settings-section-desc)' }}>
-            {t('settings.providers.subtitle')}
-          </p>
+    // The real model list, panel and price dialog read and write the instance through this.
+    <ModelSettingsSourceContext.Provider value={catalog.source}>
+      <section
+        className="flex h-full min-h-0 flex-col gap-[14px]"
+        aria-label={t('settings.providers.title')}
+      >
+        <div className="flex shrink-0 items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <h2
+              className="text-16 font-medium leading-[1.2]"
+              style={{ color: 'var(--settings-section-title)' }}
+            >
+              {t('settings.providers.title')}
+            </h2>
+            <p className="text-13 leading-[1.5]" style={{ color: 'var(--settings-section-desc)' }}>
+              {t('settings.providers.subtitle')}
+            </p>
+          </div>
         </div>
-      </div>
-      {auth.failure && (
-        <p role="alert" className="text-13 text-[var(--text-secondary)]">
-          {t(`cloudSettings.${auth.failure}`)}
-        </p>
-      )}
-      {catalog.status === 'loading' && <p role="status">{t('cloudSettings.loading')}</p>}
-      {catalog.status === 'unavailable' && (
-        <div className="flex items-center gap-3">
+        {auth.failure && (
           <p role="alert" className="text-13 text-[var(--text-secondary)]">
-            {t('cloudSettings.readFailed')}
+            {t(`cloudSettings.${auth.failure}`)}
           </p>
-          <Button
-            variant="secondary"
-            size="md"
-            disabled={!online}
-            onClick={() => void catalog.load()}
-          >
-            <RefreshCw size={14} />
-            {t('cloudSettings.reload')}
-          </Button>
-        </div>
-      )}
-      {catalog.status === 'ready' && (
-        <div
-          className="flex min-h-0 flex-1 overflow-hidden rounded-xl border"
-          style={{
-            backgroundColor: 'var(--settings-theme-card-bg)',
-            borderColor: 'var(--settings-theme-card-border)',
-          }}
-        >
+        )}
+        {catalog.status === 'loading' && <p role="status">{t('cloudSettings.loading')}</p>}
+        {catalog.status === 'unavailable' && (
+          <div className="flex items-center gap-3">
+            <p role="alert" className="text-13 text-[var(--text-secondary)]">
+              {t('cloudSettings.readFailed')}
+            </p>
+            <Button
+              variant="secondary"
+              size="md"
+              disabled={!online}
+              onClick={() => void catalog.load()}
+            >
+              <RefreshCw size={14} />
+              {t('cloudSettings.reload')}
+            </Button>
+          </div>
+        )}
+        {catalog.status === 'ready' && (
           <div
-            className="flex w-[224px] shrink-0 flex-col border-r"
-            style={{ borderColor: 'var(--settings-theme-card-border)' }}
+            className="flex min-h-0 flex-1 overflow-hidden rounded-xl border"
+            style={{
+              backgroundColor: 'var(--settings-theme-card-bg)',
+              borderColor: 'var(--settings-theme-card-border)',
+            }}
           >
-            <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-              {list.length > 1 && (
-                <div className="select-none px-1.5 pb-1 pt-1">
-                  <span className="text-11" style={{ color: 'var(--text-tertiary)' }}>
-                    {t('settings.providers.order.hint')}
-                  </span>
-                </div>
-              )}
-              <SortableList
-                items={list}
-                getId={(p) => p.id}
-                onReorder={persistOrder}
-                renderItem={(p, index) => (
-                  <RailRow
-                    provider={p}
-                    selected={selected?.id === p.id}
-                    onSelect={() => setSelectedId(p.id)}
-                    position={index + 1}
-                    total={list.length}
-                    onMove={(delta) => moveWithKeyboard(p.id, delta)}
-                    sortable={list.length > 1 && online}
-                  />
-                )}
-                disabled={list.length < 2 || !online}
-                reducedMotion={reducedMotion}
-                filter="input, textarea, select, a, [data-no-drag]"
-                className="flex flex-col gap-0.5"
-                rowClassName="provider-settings-sortable-row"
-              />
-            </div>
             <div
-              id="settings-search-settings-providers-addProvider"
-              className="border-t p-2"
+              className="flex w-[224px] shrink-0 flex-col border-r"
               style={{ borderColor: 'var(--settings-theme-card-border)' }}
             >
-              <Button
-                variant="secondary"
-                size="lg"
-                type="button"
-                disabled={!online}
-                onClick={() => setAdding(true)}
-                className="w-full"
+              <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+                {list.length > 1 && (
+                  <div className="select-none px-1.5 pb-1 pt-1">
+                    <span className="text-11" style={{ color: 'var(--text-tertiary)' }}>
+                      {t('settings.providers.order.hint')}
+                    </span>
+                  </div>
+                )}
+                <SortableList
+                  items={list}
+                  getId={(p) => p.id}
+                  onReorder={persistOrder}
+                  renderItem={(p, index) => (
+                    <RailRow
+                      provider={p}
+                      selected={selected?.id === p.id}
+                      onSelect={() => setSelectedId(p.id)}
+                      position={index + 1}
+                      total={list.length}
+                      onMove={(delta) => moveWithKeyboard(p.id, delta)}
+                      sortable={list.length > 1 && online}
+                    />
+                  )}
+                  disabled={list.length < 2 || !online}
+                  reducedMotion={reducedMotion}
+                  filter="input, textarea, select, a, [data-no-drag]"
+                  className="flex flex-col gap-0.5"
+                  rowClassName="provider-settings-sortable-row"
+                />
+              </div>
+              <div
+                id="settings-search-settings-providers-addProvider"
+                className="border-t p-2"
+                style={{ borderColor: 'var(--settings-theme-card-border)' }}
               >
-                <Plus size={15} />
-                {t('settings.providers.addProvider')}
-              </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  type="button"
+                  disabled={!online}
+                  onClick={() => setAdding(true)}
+                  className="w-full"
+                >
+                  <Plus size={15} />
+                  {t('settings.providers.addProvider')}
+                </Button>
+              </div>
+            </div>
+            <div key={selected?.id} className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {selected &&
+                header(
+                  selected,
+                  <>
+                    {selected.suspended && (
+                      <div
+                        className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-5 py-3 text-13"
+                        style={{ borderColor: 'var(--settings-theme-card-border)' }}
+                      >
+                        <span style={{ color: 'var(--text-tertiary)' }}>
+                          {t('settings.providers.detail.suspendedBanner')}
+                        </span>
+                        <Button
+                          variant="secondary"
+                          size="md"
+                          disabled={!online}
+                          onClick={() =>
+                            void writeOrToast({
+                              op: 'model-disable',
+                              kind: 'provider',
+                              providerId: selected.id,
+                              disabled: false,
+                            })
+                          }
+                        >
+                          {t('settings.providers.button.enableProvider')}
+                        </Button>
+                      </div>
+                    )}
+                    {!selected.suspended &&
+                      selected.connected &&
+                      selected.agents.length > 0 &&
+                      selected.remoteInvocationEnabled !== undefined && (
+                        <CloudRemoteAccessRow
+                          key={selected.id}
+                          provider={selected}
+                          disabled={!online}
+                          groupSize={(() => {
+                            const view = remote.providers.find((p) => p.id === selected.id);
+                            const group = view ? remoteProviderGroupOf(view) : null;
+                            return group ? providerGroupDeviceCount(group.members) : null;
+                          })()}
+                          pendingShareRequests={
+                            pending.filter(
+                              (request) =>
+                                request.hostDeviceId === deviceId &&
+                                request.share.providerId === selected.id,
+                            ).length
+                          }
+                          onManageShare={() => setShareProviderId(selected.id)}
+                          write={(enabled) =>
+                            catalog.write({
+                              op: 'remote-access',
+                              providerId: selected.id,
+                              enabled,
+                            })
+                          }
+                        />
+                      )}
+                    {!selected.suspended &&
+                      catalog.source &&
+                      (providerHasModels(selected) ||
+                        isCustomRoutedProvider(selected) ||
+                        isBuiltinRefreshableProviderId(selected.id)) && (
+                        <>
+                          <div
+                            className="border-t"
+                            style={{ borderColor: 'var(--settings-theme-card-border)' }}
+                          />
+                          <UnifiedModelList
+                            provider={selected}
+                            emptyMessage={
+                              selected.source === 'user' && selected.modelDiscoveryFailure
+                                ? t(
+                                    `settings.providers.detail.discoveryFailed.${selected.modelDiscoveryFailure.kind}`,
+                                  )
+                                : t(
+                                    selected.connected
+                                      ? 'settings.providers.detail.emptyModelsConnected'
+                                      : 'settings.providers.detail.emptyModels',
+                                  )
+                            }
+                            {...(isBuiltinRefreshableProviderId(selected.id) ||
+                            isCustomRoutedProvider(selected)
+                              ? {
+                                  onRefresh: () => void refreshModels(selected),
+                                  refreshing: refreshing === selected.id,
+                                  refreshDisabled: refreshing !== null || !online,
+                                  ...(isBuiltinRefreshableProviderId(selected.id)
+                                    ? {
+                                        refreshIdleLabel: t(
+                                          'settings.providers.models.refreshBuiltinAria',
+                                        ),
+                                      }
+                                    : {}),
+                                }
+                              : {})}
+                          />
+                        </>
+                      )}
+                  </>,
+                )}
             </div>
           </div>
-          <div key={selected?.id} className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {selected &&
-              header(
-                selected,
-                <>
-                  {selected.suspended && (
-                    <div
-                      className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-5 py-3 text-13"
-                      style={{ borderColor: 'var(--settings-theme-card-border)' }}
-                    >
-                      <span style={{ color: 'var(--text-tertiary)' }}>
-                        {t('settings.providers.detail.suspendedBanner')}
-                      </span>
-                      <Button
-                        variant="secondary"
-                        size="md"
-                        disabled={!online}
-                        onClick={() =>
-                          void writeOrToast({
-                            op: 'model-disable',
-                            kind: 'provider',
-                            providerId: selected.id,
-                            disabled: false,
-                          })
-                        }
-                      >
-                        {t('settings.providers.button.enableProvider')}
-                      </Button>
-                    </div>
-                  )}
-                  {!selected.suspended &&
-                    selected.connected &&
-                    selected.agents.length > 0 &&
-                    selected.remoteInvocationEnabled !== undefined && (
-                      <CloudRemoteAccessRow
-                        key={selected.id}
-                        provider={selected}
-                        disabled={!online}
-                        groupSize={(() => {
-                          const view = remote.providers.find((p) => p.id === selected.id);
-                          const group = view ? remoteProviderGroupOf(view) : null;
-                          return group ? providerGroupDeviceCount(group.members) : null;
-                        })()}
-                        pendingShareRequests={
-                          pending.filter(
-                            (request) =>
-                              request.hostDeviceId === deviceId &&
-                              request.share.providerId === selected.id,
-                          ).length
-                        }
-                        onManageShare={() => setShareProviderId(selected.id)}
-                        write={(enabled) =>
-                          catalog.write({
-                            op: 'remote-access',
-                            providerId: selected.id,
-                            enabled,
-                          })
-                        }
-                      />
-                    )}
-                  {!selected.suspended &&
-                    catalog.source &&
-                    (providerHasModels(selected) ||
-                      isCustomRoutedProvider(selected) ||
-                      isBuiltinRefreshableProviderId(selected.id)) && (
-                      <>
-                        <div
-                          className="border-t"
-                          style={{ borderColor: 'var(--settings-theme-card-border)' }}
-                        />
-                        <UnifiedModelList
-                          provider={selected}
-                          source={catalog.source}
-                          emptyMessage={
-                            selected.source === 'user' && selected.modelDiscoveryFailure
-                              ? t(
-                                  `settings.providers.detail.discoveryFailed.${selected.modelDiscoveryFailure.kind}`,
-                                )
-                              : t(
-                                  selected.connected
-                                    ? 'settings.providers.detail.emptyModelsConnected'
-                                    : 'settings.providers.detail.emptyModels',
-                                )
-                          }
-                          {...(isBuiltinRefreshableProviderId(selected.id) ||
-                          isCustomRoutedProvider(selected)
-                            ? {
-                                onRefresh: () => void refreshModels(selected),
-                                refreshing: refreshing === selected.id,
-                                refreshDisabled: refreshing !== null || !online,
-                                ...(isBuiltinRefreshableProviderId(selected.id)
-                                  ? {
-                                      refreshIdleLabel: t(
-                                        'settings.providers.models.refreshBuiltinAria',
-                                      ),
-                                    }
-                                  : {}),
-                              }
-                            : {})}
-                        />
-                      </>
-                    )}
-                </>,
-              )}
-          </div>
-        </div>
-      )}
-      <CloudAddProviderDialog
-        open={adding}
-        onOpenChange={setAdding}
-        auth={auth}
-        disabled={disabled}
-        run={runAction}
-      />
-    </section>
+        )}
+        <CloudAddProviderDialog
+          open={adding}
+          onOpenChange={setAdding}
+          auth={auth}
+          disabled={disabled}
+          run={runAction}
+        />
+      </section>
+    </ModelSettingsSourceContext.Provider>
   );
 }
 

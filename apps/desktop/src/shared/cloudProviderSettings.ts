@@ -23,10 +23,28 @@ export const CLOUD_PROVIDER_SETTINGS_OPS = [
   'remote-access',
   'refresh',
   'rediscover',
+  'model-call',
+  'effort',
+  'model-edit',
+  'cli-scan',
 ] as const;
 export type CloudProviderSettingsOp = (typeof CLOUD_PROVIDER_SETTINGS_OPS)[number];
 
+/** Model panel calls served by the instance's native handlers, with its own owner stamp. */
+export const CLOUD_MODEL_CALLS = {
+  'context-get': 'maker:model-context-limit:get',
+  'context-set': 'maker:model-context-limit:set',
+  'context-reset': 'maker:model-context-limit:reset',
+  'compaction-set': 'maker:model-compaction:set',
+  'price-get': 'maker:model-price-override:get',
+  'price-set': 'maker:model-price-override:set',
+  'price-reset': 'maker:model-price-override:reset',
+} as const;
+export type CloudModelCall = keyof typeof CLOUD_MODEL_CALLS;
+
 const id = z.string().min(1).max(256);
+const agent = z.enum(['claude-code', 'codex', 'pi']);
+const modelTarget = z.object({ providerId: id, agent, modelId: id }).strict();
 const ownerGeneration = z.number().int().nonnegative();
 const targets = z
   .array(z.object({ agent: z.string().min(1).max(64), modelId: id }).strict())
@@ -86,6 +104,67 @@ export const cloudProviderSettingsRequestSchema = z.discriminatedUnion('op', [
     .strict(),
   z.object({ op: z.literal('refresh'), ownerGeneration, providerId: id }).strict(),
   z.object({ op: z.literal('rediscover'), ownerGeneration, providerId: id }).strict(),
+  z
+    .object({
+      op: z.literal('model-call'),
+      ownerGeneration,
+      call: z.enum(Object.keys(CLOUD_MODEL_CALLS) as [CloudModelCall, ...CloudModelCall[]]),
+      target: modelTarget
+        .extend({ relatedTargets: z.array(modelTarget).max(2).optional() })
+        .strict(),
+      /** Limit or compaction percentage (null resets), or the desired price quote. */
+      value: z
+        .union([
+          z.number().finite().nullable(),
+          z
+            .object({
+              currency: z.enum(['CNY', 'USD']),
+              inputPerMtok: z.number().finite(),
+              outputPerMtok: z.number().finite(),
+              cacheReadPerMtok: z.number().finite().nullable().optional(),
+              cacheCreatePerMtok: z.number().finite().nullable().optional(),
+            })
+            .strict(),
+        ])
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('effort'),
+      ownerGeneration,
+      agent,
+      providerId: id,
+      modelId: id,
+      effort: z.string().min(1).max(32).nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('model-edit'),
+      ownerGeneration,
+      providerId: id,
+      agent,
+      modelId: id,
+      edit: z.discriminatedUnion('kind', [
+        z
+          .object({
+            kind: z.literal('interface'),
+            api: z.string().min(1).max(128),
+            profile: z.boolean(),
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal('capability'),
+            media: z.enum(['image', 'video']),
+            value: z.enum(['default', 'generate', 'edit']),
+          })
+          .strict(),
+      ]),
+    })
+    .strict(),
+  z.object({ op: z.literal('cli-scan'), ownerGeneration }).strict(),
 ]);
 export type CloudProviderSettingsRequest = z.infer<typeof cloudProviderSettingsRequestSchema>;
 
@@ -103,6 +182,8 @@ export interface CloudProviderSettingsList {
   providers: unknown[];
   providerOrder: string[];
   visibility: CloudProviderVisibilityState;
+  /** Remembered reasoning effort by memory slot (`agent:providerId`, `agent:*`) and model. */
+  efforts?: Record<string, Record<string, string>>;
   supportedOps: CloudProviderSettingsOp[];
 }
 
@@ -113,4 +194,6 @@ export interface CloudProviderSettingsWriteReceipt {
   visibility?: CloudProviderVisibilityState;
   /** The write changed the catalog itself; refetch `list`. */
   catalogChanged: boolean;
+  /** Result of a model panel call (context limit or price override view, CLI detections). */
+  value?: unknown;
 }

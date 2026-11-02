@@ -1,4 +1,6 @@
+import type { AgentKind } from '@cindy/model-providers';
 import {
+  CLOUD_MODEL_CALLS,
   CLOUD_PROVIDER_SETTINGS_CHANNEL,
   CLOUD_PROVIDER_SETTINGS_MAX_BYTES,
   CLOUD_PROVIDER_SETTINGS_OPS,
@@ -15,6 +17,7 @@ import type {
   ModelPresentationReceipt,
   ModelPresentationRequest,
 } from '../../shared/modelPresentationPreferences.js';
+import type { CustomModelEdit } from '../../shared/customModelEdit.js';
 import type { ManagementExecution } from '../host-settings/management.js';
 
 export interface ProviderSettingsChannelDeps {
@@ -31,6 +34,19 @@ export interface ProviderSettingsChannelDeps {
   /** Display-only routing (upstream DeviceLink projection); execution details never cross. */
   projectRouting(routing: unknown): unknown;
   resolveLogoKind(providerId: string, routing: unknown): string | null;
+  /** Remembered reasoning effort by memory slot and model (Host new-task history). */
+  readEfforts(): Record<string, Record<string, string>>;
+  applyEffort(pref: {
+    agent: AgentKind;
+    providerId: string;
+    modelId: string;
+    effort: string | null;
+  }): Promise<void>;
+  /** Read-modify-write of the saved custom provider config on this instance. */
+  editModel(
+    request: { providerId: string; agent: AgentKind; modelId: string; edit: CustomModelEdit },
+    execution: ManagementExecution,
+  ): Promise<void>;
   timeoutMs?: number;
 }
 
@@ -128,6 +144,7 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
         ? raw.providerOrder.filter((id): id is string => typeof id === 'string')
         : [],
       visibility,
+      efforts: deps.readEfforts(),
       supportedOps: [...CLOUD_PROVIDER_SETTINGS_OPS],
     };
     if (Buffer.byteLength(JSON.stringify(result)) > CLOUD_PROVIDER_SETTINGS_MAX_BYTES)
@@ -209,6 +226,63 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
         return native('maker:provider:models-refresh', request.providerId);
       case 'rediscover':
         return native('maker:provider:models-rediscover', request.providerId);
+      case 'model-call': {
+        // The instance stamps its own owner; a controller stamp never reaches the handler.
+        const stamp = { dataOwnerId: owner.dataOwnerId, ownerGeneration: owner.ownerGeneration };
+        const quote = typeof request.value === 'object' && request.value !== null;
+        const args =
+          request.call === 'context-set' || request.call === 'compaction-set'
+            ? quote
+              ? fail('INVALID_PARAMS', 'expected a number or null')
+              : [request.target, request.value ?? null, stamp]
+            : request.call === 'context-reset'
+              ? [request.target, stamp]
+              : request.call === 'price-set'
+                ? quote
+                  ? [request.target, request.value]
+                  : fail('INVALID_PARAMS', 'expected a price quote')
+                : [request.target];
+        const value = await deps.call(CLOUD_MODEL_CALLS[request.call], args, run);
+        run.assertCurrent();
+        return {
+          ok: true,
+          ownerGeneration: owner.ownerGeneration,
+          // Overrides change the catalog's limits and prices; reads change nothing.
+          catalogChanged: !request.call.endsWith('-get'),
+          value,
+        };
+      }
+      case 'effort':
+        await deps.applyEffort({
+          agent: request.agent,
+          providerId: request.providerId,
+          modelId: request.modelId,
+          effort: request.effort,
+        });
+        run.assertCurrent();
+        return {
+          ok: true,
+          ownerGeneration: owner.ownerGeneration,
+          catalogChanged: false,
+          value: deps.readEfforts(),
+        };
+      case 'model-edit':
+        await deps.editModel(
+          {
+            providerId: request.providerId,
+            agent: request.agent,
+            modelId: request.modelId,
+            edit: request.edit,
+          },
+          run,
+        );
+        run.assertCurrent();
+        return { ok: true, ownerGeneration: owner.ownerGeneration, catalogChanged: true };
+      case 'cli-scan': {
+        const value = await deps.call('maker:provider:local-cli-scan', [], run);
+        run.assertCurrent();
+        return { ok: true, ownerGeneration: owner.ownerGeneration, catalogChanged: false, value };
+      }
     }
   }
 

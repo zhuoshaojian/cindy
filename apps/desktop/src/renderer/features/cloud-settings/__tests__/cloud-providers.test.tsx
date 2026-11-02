@@ -167,7 +167,15 @@ function setup(options: { unsupported?: boolean } = {}) {
         providers,
         providerOrder: ['web-1', 'openai'],
         visibility,
-        supportedOps: ['list', 'visibility-set', 'order'],
+        supportedOps: ['list', 'visibility-set', 'order', 'model-call', 'effort', 'model-edit'],
+        efforts: { 'codex:*': { 'm-1': 'high' } },
+      };
+    if (request.op === 'model-call')
+      return {
+        ok: true,
+        ownerGeneration: 3,
+        catalogChanged: false,
+        value: { limit: null, isCustomized: false },
       };
     if (request.op === 'visibility-set') {
       visibility = { status: 'ready', revision: 'r2', overrides: {} };
@@ -270,6 +278,27 @@ describe('cloud instance providers page', () => {
           operation: 'run',
           actionId: 'a2',
           values: { apiKey: 'typed-by-user', preset: 'moonshot' },
+        }),
+      ),
+    );
+  });
+});
+
+describe('cloud model panel', () => {
+  it('opens the local model panel and reads the instance context limit', async () => {
+    const { invoke } = setup();
+    const open = await screen.findAllByRole('button', {
+      name: 'settings.providers.models.advanced.openAria',
+    });
+    fireEvent.click(open[0]!);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    await waitFor(() =>
+      expect(invoke.mock.calls.map((call) => call[2][0])).toContainEqual(
+        expect.objectContaining({
+          op: 'model-call',
+          call: 'context-get',
+          ownerGeneration: 3,
+          target: expect.objectContaining({ providerId: 'web-1', agent: 'codex' }),
         }),
       ),
     );

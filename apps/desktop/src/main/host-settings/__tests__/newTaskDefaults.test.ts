@@ -17,7 +17,7 @@ vi.mock('../../appSessionState.js', () => ({
   isAppSessionBoundaryPending: () => host.pending,
 }));
 vi.mock('../../logger.js', () => ({ createLogger: () => ({ info() {}, warn() {} }) }));
-import { inspectNewTaskDefaults, commitNewTaskDefaults, readNewTaskPreferenceHistory, saveNewTaskPreferenceHistory, setNewTaskDefaultRecommendation, applyHostRemoteDraftPreference } from '../new-task-defaults';
+import { inspectNewTaskDefaults, commitNewTaskDefaults, readNewTaskPreferenceHistory, saveNewTaskPreferenceHistory, setNewTaskDefaultRecommendation, applyHostRemoteDraftPreference, applyHostModelEffort } from '../new-task-defaults';
 import { installHostNewMakerDefaultsSource } from '../cache';
 import { getRemoteNewMakerDefaults, getWorkerDefaultsFromNewMaker, syncNewMakerDraftCache, getSelectedNewMakerRoute } from '../../maker-host/newMakerDefaultsCache';
 
@@ -151,5 +151,25 @@ describe('Host 新任务默认值迁移与真源', () => {
   it.each(['workingDir', 'attachments', 'writableDirs', 'prompt'])('迁移白名单拒绝任务字段 %s', async field => {
     await expect(saveNewTaskPreferenceHistory({ ...legacy(), [field]: 'not-settings' }, stamp(), revision(), true)).rejects.toThrow('INVALID_PREFERENCE_HISTORY');
     expect(fs.readdirSync(host.root)).toEqual([]);
+  });
+});
+
+// Unit: the cloud providers page sets a model's effort through the instance Host. Same rules
+// as the native panel: set writes the source and global slots; clear drops every slot of the
+// harness so no copy restores the old value, and other harnesses are untouched.
+describe('cloud model effort memory', () => {
+  it('sets the source and global slots and clears every slot of the harness', async () => {
+    await applyHostRemoteDraftPreference({ agent: 'codex', providerId: 'other', modelId: 'm', active: false, effort: 'low' });
+    await applyHostRemoteDraftPreference({ agent: 'pi', providerId: 'p', modelId: 'm', active: false, effort: 'low' });
+    await applyHostModelEffort({ agent: 'codex', providerId: 'xd', modelId: 'm', effort: 'high' });
+    let memory = readNewTaskPreferenceHistory()!.providerModelMemory;
+    expect(memory['codex:xd'].effortByModel.m).toBe('high');
+    expect(memory['codex:*'].effortByModel.m).toBe('high');
+    expect(memory['codex:other'].effortByModel.m).toBe('low');
+    await applyHostModelEffort({ agent: 'codex', providerId: 'xd', modelId: 'm', effort: null });
+    memory = readNewTaskPreferenceHistory()!.providerModelMemory;
+    for (const slot of ['codex:xd', 'codex:*', 'codex:other']) expect(memory[slot].effortByModel).not.toHaveProperty('m');
+    expect(memory['pi:p'].effortByModel.m).toBe('low');
+    await expect(applyHostModelEffort({ agent: 'codex', providerId: '*', modelId: 'm', effort: 'low' })).rejects.toThrow('INVALID_VALUE');
   });
 });

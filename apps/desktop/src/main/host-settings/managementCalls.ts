@@ -64,6 +64,15 @@ const channels = new Set([
   'maker:provider:remote-access:set',
   'maker:provider:models-refresh',
   'maker:provider:models-rediscover',
+  // Cloud provider settings: the model panel and instance CLI detection.
+  'maker:model-context-limit:get',
+  'maker:model-context-limit:set',
+  'maker:model-context-limit:reset',
+  'maker:model-compaction:set',
+  'maker:model-price-override:get',
+  'maker:model-price-override:set',
+  'maker:model-price-override:reset',
+  'maker:provider:local-cli-scan',
 ]);
 const registered = new Map<string, IpcHandler>();
 const events = new WeakMap<object, ManagementExecution>();

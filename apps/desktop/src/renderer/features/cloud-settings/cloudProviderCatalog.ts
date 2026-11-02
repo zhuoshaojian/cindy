@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isModelVisible, type ProviderView } from '@cindy/model-providers';
+import { isModelVisible, type Effort, type ProviderView } from '@cindy/model-providers';
 
-import type { ModelListSource } from '@/components/settings/UnifiedModelList';
+import type { ModelSettingsSource } from '@/components/settings/modelSettingsSource';
+import { toast } from '@/lib/toast';
+import { i18n } from '@/i18n';
 import { extractIpcError } from '@/utils/ipcError';
-import { CloudModelDrawer } from './CloudModelDrawer';
 import {
+  type CloudModelCall,
   CLOUD_PROVIDER_SETTINGS_CHANNEL,
   type CloudProviderSettingsList,
   type CloudProviderSettingsRequest,
@@ -102,6 +104,33 @@ export function useCloudProviderCatalog({
     if (active && online) void load();
   }, [active, online, refresh, load]);
 
+  /** One write; resolves with the receipt and applies its visibility or effort result. */
+  const send = useCallback(
+    async (request: CloudProviderWrite): Promise<CloudProviderSettingsWriteReceipt> => {
+      const current = listRef.current;
+      if (!current || !online) throw new Error('UNAVAILABLE');
+      const visibility = request.op === 'visibility-set' || request.op === 'visibility-reset';
+      if (visibility && (current.visibility.status !== 'ready' || !current.visibility.revision))
+        throw new Error('UNAVAILABLE');
+      const receipt = await invoke<CloudProviderSettingsWriteReceipt>({
+        ...request,
+        ownerGeneration: current.ownerGeneration,
+        ...(visibility ? { revision: current.visibility.revision } : {}),
+      } as CloudProviderSettingsRequest);
+      if (receipt?.ok !== true) throw new Error('INVALID_RECEIPT');
+      if (receipt.visibility && listRef.current)
+        accept({ ...listRef.current, visibility: receipt.visibility });
+      if (request.op === 'effort' && receipt.value && listRef.current)
+        accept({
+          ...listRef.current,
+          efforts: receipt.value as Record<string, Record<string, string>>,
+        });
+      if (receipt.catalogChanged) void load();
+      return receipt;
+    },
+    [invoke, load, online],
+  );
+
   /** Resolves false when the instance refused the write; the catalog is then reread. */
   const write = useCallback(
     async (request: CloudProviderWrite): Promise<boolean> => {
@@ -111,15 +140,7 @@ export function useCloudProviderCatalog({
       if (visibility && (current.visibility.status !== 'ready' || !current.visibility.revision))
         return false;
       try {
-        const receipt = await invoke<CloudProviderSettingsWriteReceipt>({
-          ...request,
-          ownerGeneration: current.ownerGeneration,
-          ...(visibility ? { revision: current.visibility.revision } : {}),
-        } as CloudProviderSettingsRequest);
-        if (receipt?.ok !== true) throw new Error('INVALID_RECEIPT');
-        if (receipt.visibility && listRef.current === current)
-          accept({ ...current, visibility: receipt.visibility });
-        if (receipt.catalogChanged) await load();
+        await send(request);
         return true;
       } catch {
         // Owner, revision and catalog changes all resolve the same way: show the instance's state.
@@ -127,12 +148,46 @@ export function useCloudProviderCatalog({
         return false;
       }
     },
-    [invoke, load, online],
+    [load, online, send],
   );
 
-  const source = useMemo<ModelListSource | null>(() => {
+  const source = useMemo<ModelSettingsSource | null>(() => {
     if (!list) return null;
     const { visibility } = list;
+    const efforts = list.efforts ?? {};
+    const supported = new Set(list.supportedOps);
+    const modelCall =
+      (call: CloudModelCall) =>
+      async (target: unknown, value?: unknown): Promise<never> => {
+        // Runtimes before the model panel calls answer as unsupported; the panel shows its error.
+        if (!supported.has('model-call')) throw new Error('UNSUPPORTED');
+        const { providerId, agent, modelId, relatedTargets } = target as {
+          providerId: string;
+          agent: 'claude-code' | 'codex' | 'pi';
+          modelId: string;
+          relatedTargets?: Array<{ providerId: string; agent: string; modelId: string }>;
+        };
+        const receipt = await send({
+          op: 'model-call',
+          call,
+          target: {
+            providerId,
+            agent,
+            modelId,
+            ...(relatedTargets?.length
+              ? {
+                  relatedTargets: relatedTargets.map((related) => ({
+                    providerId: related.providerId,
+                    agent: related.agent as 'claude-code' | 'codex' | 'pi',
+                    modelId: related.modelId,
+                  })),
+                }
+              : {}),
+          },
+          ...(value === undefined ? {} : { value: value as number | null }),
+        });
+        return receipt.value as never;
+      };
     return {
       visibilityVersion,
       isModelEnabled: (agent, providerId, model) =>
@@ -150,12 +205,38 @@ export function useCloudProviderCatalog({
         targets.length
           ? write({ op: 'visibility-reset', providerId, targets: [...targets] })
           : Promise.resolve(true),
+      isModelVisibilityCustomized: (agent, providerId, modelId) =>
+        visibility.status === 'ready' &&
+        Object.hasOwn(visibility.overrides, visibilityPreferenceKey(agent, providerId, modelId)),
       async setModelDisable(input) {
         if (!(await write({ op: 'model-disable', ...input }))) throw new Error('WRITE_FAILED');
       },
-      AdvancedDrawer: CloudModelDrawer,
+      // Same lookup as this device: the global slot first, the source copy as fallback.
+      getEffort: (agent, providerId, modelId) =>
+        (efforts[`${agent}:*`]?.[modelId] ?? efforts[`${agent}:${providerId}`]?.[modelId]) as
+          Effort | undefined,
+      setEffort(agent, providerId, modelId, effort) {
+        if (!supported.has('effort')) return;
+        void send({ op: 'effort', agent, providerId, modelId, effort }).catch(() => {
+          void load();
+          toast.error(i18n.t('hostSettings.saveFailed'));
+        });
+      },
+      editModel: (_provider, agent, modelId, edit) =>
+        supported.has('model-edit')
+          ? write({ op: 'model-edit', providerId: _provider.id, agent, modelId, edit })
+          : Promise.resolve(false),
+      maker: {
+        getModelContextLimit: (target) => modelCall('context-get')(target),
+        setModelContextLimit: (target, limit) => modelCall('context-set')(target, limit),
+        resetModelContextLimit: (target) => modelCall('context-reset')(target),
+        setModelCompaction: (target, pct) => modelCall('compaction-set')(target, pct),
+        getModelPriceOverride: (target) => modelCall('price-get')(target),
+        setModelPriceOverride: (target, desired) => modelCall('price-set')(target, desired),
+        resetModelPriceOverride: (target) => modelCall('price-reset')(target),
+      },
     };
-  }, [list, visibilityVersion, write]);
+  }, [list, visibilityVersion, write, send, load]);
 
   return {
     status,

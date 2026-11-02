@@ -71,11 +71,15 @@ function setup(overrides: Partial<ProviderSettingsChannelDeps> = {}) {
         ),
       ),
     resolveLogoKind: () => 'cindy',
+    readEfforts: () => ({ 'codex:*': { shown: 'high' } }),
+    applyEffort: vi.fn(async () => {}),
+    editModel: vi.fn(async () => {}),
     ...overrides,
   };
   return {
     channel: createProviderSettingsChannel(deps),
     call,
+    deps,
     mutateVisibility,
     setOwner: (next: typeof OWNER | null) => {
       owner = next;
@@ -272,5 +276,99 @@ describe('cloud provider settings channel', () => {
     ])
       await expect(run(h, bad)).rejects.toThrow('[INVALID_PARAMS]');
     expect(h.call).not.toHaveBeenCalled();
+  });
+
+  it('serves model panel calls with the instance owner stamp and returns their views', async () => {
+    const f = setup();
+    f.call.mockImplementation(async (channel) => ({ channel }));
+    const target = { providerId: 'xd', agent: 'codex', modelId: 'shown' };
+    const forged = { dataOwnerId: 'controller', ownerGeneration: 1 };
+    const send = (call: string, value?: unknown) =>
+      f.channel.handle('controller', {
+        op: 'model-call',
+        ownerGeneration: 7,
+        call,
+        target,
+        ...(value === undefined ? {} : { value }),
+      });
+    await expect(send('context-get')).resolves.toMatchObject({
+      catalogChanged: false,
+      value: { channel: 'maker:model-context-limit:get' },
+    });
+    await expect(send('context-set', 64_000)).resolves.toMatchObject({ catalogChanged: true });
+    await send('compaction-set', null);
+    await send('context-reset');
+    const quote = { currency: 'USD', inputPerMtok: 1, outputPerMtok: 2 };
+    await send('price-set', quote);
+    expect(f.call.mock.calls.map(([channel, args]) => [channel, args])).toEqual([
+      ['maker:model-context-limit:get', [target]],
+      ['maker:model-context-limit:set', [target, 64_000, OWNER]],
+      ['maker:model-compaction:set', [target, null, OWNER]],
+      ['maker:model-context-limit:reset', [target, OWNER]],
+      ['maker:model-price-override:set', [target, quote]],
+    ]);
+    expect(JSON.stringify(f.call.mock.calls)).not.toContain(forged.dataOwnerId);
+    await expect(send('price-set', 3)).rejects.toThrow('[INVALID_PARAMS]');
+    await expect(send('context-set', quote)).rejects.toThrow('[INVALID_PARAMS]');
+    await expect(
+      f.channel.handle('controller', {
+        op: 'model-call',
+        ownerGeneration: 7,
+        call: 'context-set',
+        target: { ...target, owner: forged },
+        value: 1,
+      }),
+    ).rejects.toThrow('[INVALID_PARAMS]');
+  });
+
+  it('applies reasoning effort on the instance and returns the new effort memory', async () => {
+    const f = setup();
+    await expect(
+      f.channel.handle('controller', {
+        op: 'effort',
+        ownerGeneration: 7,
+        agent: 'codex',
+        providerId: 'xd',
+        modelId: 'shown',
+        effort: null,
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      ownerGeneration: 7,
+      catalogChanged: false,
+      value: { 'codex:*': { shown: 'high' } },
+    });
+    expect(f.deps.applyEffort).toHaveBeenCalledWith({
+      agent: 'codex',
+      providerId: 'xd',
+      modelId: 'shown',
+      effort: null,
+    });
+    const list = (await f.channel.handle('controller', { op: 'list' })) as { efforts: unknown };
+    expect(list.efforts).toEqual({ 'codex:*': { shown: 'high' } });
+  });
+
+  it('edits a custom model on the instance and scans the instance CLIs', async () => {
+    const f = setup();
+    const edit = { kind: 'capability', media: 'image', value: 'edit' } as const;
+    await expect(
+      f.channel.handle('controller', {
+        op: 'model-edit',
+        ownerGeneration: 7,
+        providerId: 'web-1',
+        agent: 'codex',
+        modelId: 'm',
+        edit,
+      }),
+    ).resolves.toMatchObject({ catalogChanged: true });
+    expect(f.deps.editModel).toHaveBeenCalledWith(
+      { providerId: 'web-1', agent: 'codex', modelId: 'm', edit },
+      expect.objectContaining({ assertCurrent: expect.any(Function) }),
+    );
+    f.call.mockResolvedValueOnce({ detections: [] });
+    await expect(
+      f.channel.handle('controller', { op: 'cli-scan', ownerGeneration: 7 }),
+    ).resolves.toMatchObject({ value: { detections: [] } });
+    expect(f.call).toHaveBeenLastCalledWith('maker:provider:local-cli-scan', [], expect.anything());
   });
 });

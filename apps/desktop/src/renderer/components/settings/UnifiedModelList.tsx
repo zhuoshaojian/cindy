@@ -26,7 +26,7 @@ import { modelManagementState } from './modelManagementState';
  * 同一模式下同一轴的控件形态唯一 —— 这是本组件的硬约束(v4 交互稿定稿延续)。
  */
 
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Info, Lock, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
 
@@ -72,6 +72,7 @@ import {
 } from '@/state/modelVisibilityPrefs';
 import { LocalPackagingTag } from './LocalPackagingTag';
 import { ModelAdvancedDrawer } from './ModelAdvancedDrawer';
+import { useModelSettingsSource } from './modelSettingsSource';
 import {
   groupModelsForManagement,
   MANAGEMENT_KIND_ORDER,
@@ -300,21 +301,6 @@ export function canWriteModelVisibility(options: {
   return options.connected;
 }
 
-/**
- * Optional data source for listing another device's catalog (the cloud instance settings
- * page). The local page omits it and keeps this device's stores and drawer.
- */
-export interface ModelListSource {
-  visibilityVersion: number;
-  isModelEnabled: typeof isModelEnabled;
-  setModelVisibilities: typeof setModelVisibilities;
-  resetModelVisibilities: typeof resetModelVisibilities;
-  setModelDisable: (
-    input: Parameters<Window['electronAPI']['maker']['setModelDisable']>[0],
-  ) => Promise<unknown>;
-  AdvancedDrawer: ComponentType<Parameters<typeof ModelAdvancedDrawer>[0]>;
-}
-
 /** 该行在指定 agent 下的可见性(不可用 → null)。 */
 function rowEnabled(
   providerId: string,
@@ -472,7 +458,6 @@ export function UnifiedModelList({
   compact,
   focusModelId,
   focusAgent,
-  source,
 }: {
   provider: ProviderView;
   /** 「刷新模型」；内置供应商走各自真源，自定义供应商走 additions-only 发现。 */
@@ -492,10 +477,10 @@ export function UnifiedModelList({
   /** Settings deep link target: reveal, focus, and scroll this model row into view. */
   focusModelId?: string;
   focusAgent?: AgentKind;
-  /** Another device's catalog; omitted for this device. */
-  source?: ModelListSource;
 }) {
   const { t } = useTranslation();
+  /** Another device's model settings (cloud instance page); null for this device. */
+  const source = useModelSettingsSource();
   const { confirm } = useConfirmDialog();
   const [query, setQuery] = useState('');
   const [managementView, setManagementView] = useState<ManagementView>('brand');
@@ -614,12 +599,11 @@ export function UnifiedModelList({
   const visibilityVersion = source ? source.visibilityVersion : localVisibilityVersion;
   const isEnabled = source?.isModelEnabled ?? isModelEnabled;
   const writeModelDisable = useCallback(
-    (input: Parameters<ModelListSource['setModelDisable']>[0]) =>
+    (input: Parameters<Window['electronAPI']['maker']['setModelDisable']>[0]) =>
       source ? source.setModelDisable(input) : window.electronAPI.maker.setModelDisable(input),
     [source],
   );
   const localModels = provider.id === MANAGED_OLLAMA_PROVIDER_ID && !source;
-  const AdvancedDrawer = source?.AdvancedDrawer ?? ModelAdvancedDrawer;
 
   const selectionAvailable = provider.connected && !provider.suspended;
   const multiAgent = provider.agents.length > 1;
@@ -1502,7 +1486,7 @@ export function UnifiedModelList({
             })()}
         </div>
       </div>
-      <AdvancedDrawer
+      <ModelAdvancedDrawer
         provider={provider}
         row={currentAdvancedRow}
         open={advancedOpen && currentAdvancedRow !== null}

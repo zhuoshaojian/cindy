@@ -244,6 +244,42 @@ export async function applyHostRemoteDraftPreference(pref: {
   }, { assertCurrent: () => assertSettingsOwner(owner) });
 }
 
+/** Global effort slot read first by every client; the per-source slot is the legacy copy. */
+const MODEL_EFFORT_PRESET_SLOT = '*';
+/**
+ * A model's remembered reasoning effort, written the same way the native model panel does:
+ * setting writes the global and the source slot; clearing removes the model from every slot
+ * of that harness so nothing restores the old value. Used by the cloud settings page.
+ */
+export async function applyHostModelEffort(pref: {
+  agent: NewTaskDefaultSettings['harness']; providerId: string; modelId: string; effort: string | null;
+}): Promise<void> {
+  const owner = currentSettingsOwner();
+  if (!owner) throw new HostSettingsError('OWNER_CHANGED');
+  if (!pref.providerId || pref.providerId === MODEL_EFFORT_PRESET_SLOT || !pref.modelId) throw new HostSettingsError('INVALID_VALUE');
+  await store.commitAtomic(state => {
+    const value = state.value;
+    const vendor = value.harness === 'claude-code' ? 'cc' : value.harness;
+    const history: NewTaskPreferenceHistory = structuredClone(value._history ?? {
+      vendor, lastByVendor: {}, modelChosenByVendor: {}, defaultTupleCustomized: false,
+      defaultTupleSelectionCustomized: false, effortByModel: {}, fastModeByModel: {},
+      worktreeEnabled: value.worktree, worktreePreferenceCustomized: state.customizedKeys.includes('worktree'), providerModelMemory: {},
+    });
+    const empty = () => ({ lastModel: '', effortByModel: {}, fastByModel: {}, thinkingByModel: {} });
+    if (pref.effort === null) {
+      for (const [key, slot] of Object.entries(history.providerModelMemory))
+        if (key.startsWith(`${pref.agent}:`)) delete slot.effortByModel[pref.modelId];
+    } else {
+      for (const key of [`${pref.agent}:${pref.providerId}`, `${pref.agent}:${MODEL_EFFORT_PRESET_SLOT}`]) {
+        const slot = history.providerModelMemory[key] ?? empty();
+        slot.effortByModel[pref.modelId] = pref.effort;
+        history.providerModelMemory[key] = slot;
+      }
+    }
+    validateNewTaskPreferenceHistory(history);
+    return { clear: keys, set: { ...overridesFromHistory(history, value, state.customizedKeys), _history: history, _initialized: true } };
+  }, { assertCurrent: () => assertSettingsOwner(owner) });
+}
 /** 原生 UI 的 CAS/迁移保留权限历史；helper 的封闭字段语法仍不能读写权限。 */
 export async function saveNewTaskPreferenceHistory(history: unknown, owner: SettingsOwnerStamp, expectedRevision: string, importOnly: boolean): Promise<'saved' | 'already_initialized'> {
   validateNewTaskPreferenceHistory(history);
