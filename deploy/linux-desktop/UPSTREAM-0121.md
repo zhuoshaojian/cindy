@@ -116,3 +116,19 @@ read-only-PVC encrypted OSS backup of **3,548 files / 726,973,111 bytes**, main 
 delivered digest with an actual cache hit, ready with zero restarts, maintenance released, and
 databases and schedules preserved. The packaged Xfce desktop and locked Dock started. Migration
 0136 is present on the instance: `image_refs` exists and all three statistics triggers count it.
+
+The installed Mac Dev `0.1.121-dev.cloud.20261102.1` started after Keychain access and the
+sidebar cloud entry was visible. Through the real Main → CIS → runtime path the owner target
+exposed 34 domains: 31 ready and three conditional unavailable results (`wecomNotifications`
+without a configured webhook, `telegramGroups`, `chatEmbedding`), with no read failure.
+About shows `0.1.121-cloud.1-cn-amd64`, and the WeCom card still shows the native group
+webhook section with the target-named hint.
+
+A real UI change disabled cloud system notifications without an error. Closing and reopening
+the page read back off, and an independent read of the instance preference file showed
+`notificationsEnabled: false`. The original value had no override, so the public save API
+(with its read-issued operation ticket) cleared it: the revision returned to its original
+value, the reopened UI showed on and the instance file no longer contains the key. The Mac
+Dev preference file was byte-for-byte unchanged. This is real client acceptance on the owner
+instance, not a DeviceLink transport or third-party OAuth retest. Other instances remain on
+`0.1.120-cloud.2` until a separate fleet admission.
