@@ -934,6 +934,7 @@ import {
 import {
   isCustomProviderRuntimeKeyStorageKey,
   isRendererAccessibleSafeStorageKey,
+  providerSecretStorageKey,
   type ProviderSecretId,
 } from '../shared/providerSecrets.js';
 import {
@@ -5510,10 +5511,15 @@ const registerIpcHandlers = () => {
 
   // xAI(SuperGrok 订阅)OAuth —— 与 claude-oauth 同形态。登录成功后 bridge 的 xai provider 立即可用
   // (buildHeaders 每请求现取 token);连接态由 renderer refetch listProviders 时现读 hasGrokOAuthLogin。
-  ipcMain.handle(MAKER_IPC_INVOKE.XAI_OAUTH_LOGIN, async (event, method?: 'browser' | 'device') => {
-    assertTrustedAppRendererEvent(event);
-    if (method !== undefined && method !== 'browser' && method !== 'device')
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(MAKER_IPC_INVOKE.XAI_OAUTH_LOGIN, async (rawEvent, methodInput?: unknown) => {
+    if (!isCloudManagementInvocation(rawEvent)) assertTrustedAppRendererEvent(rawEvent as Electron.IpcMainInvokeEvent);
+    const event = rawEvent as Electron.IpcMainInvokeEvent;
+    if (methodInput !== undefined && methodInput !== 'browser' && methodInput !== 'device')
       throwIpcError('INVALID_ARGUMENT', 'Invalid xAI login method');
+    const method = methodInput as 'browser' | 'device' | undefined;
+    // A cloud settings page shows the device code (or the browser link) on the controlling computer.
+    const management = cloudManagementExecution();
+    management?.onCancel(() => cancelGrokOAuthLogin());
     const owner = activeOwnerScopeKey();
     // reason 是 renderer 决定提示用的结构化数据,不抛 throwIpcError(规则 13 查询型例外)。
     // 登录成功即生效:订阅直连 handler 每请求经 buildHeaders 现取凭证,无需任何"就绪"步骤。
@@ -5523,6 +5529,10 @@ const registerIpcHandlers = () => {
         method === 'device'
           ? (code) => {
               if (owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending()) return;
+              if (management) {
+                management.prompt({ kind: 'device', url: code.verificationUrl, userCode: code.userCode, expiresAt: code.expiresAt });
+                return;
+              }
               try {
                 if (!event.sender.isDestroyed())
                   event.sender.send(MAKER_PUSH.PROVIDER_OAUTH_PROGRESS, {
@@ -6016,14 +6026,17 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle(
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(
     'safe-storage-remove',
     async (
-      event: Electron.IpcMainInvokeEvent,
-      key: string,
+      event: unknown,
+      keyInput: unknown,
     ): Promise<{ success: boolean; error?: string }> => {
+      const key = keyInput as string;
       try {
-        assertTrustedAppRendererEvent(event);
+        // The cloud providers page removes only the Cindy AI key through its closed call.
+        if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Electron.IpcMainInvokeEvent);
+        else if (key !== providerSecretStorageKey('xd')) return { success: false, error: 'invalid key' };
         if (!isValidRendererKey(key)) {
           return { success: false, error: 'invalid key' };
         }

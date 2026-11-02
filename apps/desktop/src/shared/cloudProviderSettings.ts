@@ -7,8 +7,8 @@ import { z } from 'zod';
  *
  * Reads return the full catalog the local providers page uses (hidden and payment-locked
  * models included); execution routing and credentials never cross. Writes reuse the Host's
- * native provider handlers. Credentials, logins and new connections stay on the CIS
- * management tickets.
+ * native provider handlers. Credentials and logins stay on the CIS
+ * management tickets (see CLOUD_PROVIDER_SETUP_ITEM).
  */
 export const CLOUD_PROVIDER_SETTINGS_CHANNEL = 'cloud:provider-settings:v1';
 export const CLOUD_PROVIDER_SETTINGS_MAX_BYTES = 2 * 1024 * 1024;
@@ -28,6 +28,21 @@ export const CLOUD_PROVIDER_SETTINGS_OPS = [
   'model-edit',
   'cli-scan',
   'share',
+  'presets',
+  'provider-view',
+  'custom-create',
+  'custom-update',
+  'custom-delete',
+  'models-fetch',
+  'test-connection',
+  'detect',
+  'setup-stage',
+  'setup-result',
+  'xd',
+  'byok',
+  'codex-limits',
+  'codex-reset',
+  'account-usage',
 ] as const;
 export type CloudProviderSettingsOp = (typeof CLOUD_PROVIDER_SETTINGS_OPS)[number];
 
@@ -43,10 +58,42 @@ export const CLOUD_MODEL_CALLS = {
 } as const;
 export type CloudModelCall = keyof typeof CLOUD_MODEL_CALLS;
 
+/**
+ * Setup steps that carry secrets (API keys, request headers) or need an interactive login run
+ * through this CIS management item: the controller stages the non-secret request on the
+ * private channel, then applies it with the secrets in the ticket and reads the result back.
+ */
+export const CLOUD_PROVIDER_SETUP_ITEM = 'setup:apply';
+export const CLOUD_PROVIDER_SETUP_KINDS = [
+  'models-fetch',
+  'test-connection',
+  'detect',
+  'custom-create',
+  'custom-update',
+  'builtin-key',
+  'oauth-login',
+  'native-login',
+] as const;
+export type CloudProviderSetupKind = (typeof CLOUD_PROVIDER_SETUP_KINDS)[number];
+/** Ticket field with the secrets: `{ apiKey?, headers?, keys?, runtimeHeaders? }` as JSON. */
+export interface CloudProviderSetupSecrets {
+  apiKey?: string;
+  headers?: Record<string, string>;
+  keys?: Partial<Record<'claude-code' | 'codex' | 'pi', string>>;
+  runtimeHeaders?: Partial<Record<'claude-code' | 'codex' | 'pi', Record<string, string>>>;
+}
+
 const id = z.string().min(1).max(256);
 const agent = z.enum(['claude-code', 'codex', 'pi']);
 const modelTarget = z.object({ providerId: id, agent, modelId: id }).strict();
 const ownerGeneration = z.number().int().nonnegative();
+const json = z.record(z.string(), z.unknown());
+const updateOptions = z
+  .object({
+    source: z.literal('manual-settings').optional(),
+    codexImageGenerationRestartPolicy: z.literal('interrupt').optional(),
+  })
+  .strict();
 const targets = z
   .array(z.object({ agent: z.string().min(1).max(64), modelId: id }).strict())
   .min(1)
@@ -166,6 +213,63 @@ export const cloudProviderSettingsRequestSchema = z.discriminatedUnion('op', [
     })
     .strict(),
   z.object({ op: z.literal('cli-scan'), ownerGeneration }).strict(),
+  z.object({ op: z.literal('presets'), ownerGeneration }).strict(),
+  /** One provider as the instance's own Settings page sees it; never credentials. */
+  z.object({ op: z.literal('provider-view'), ownerGeneration, providerId: id }).strict(),
+  /** Secret-free configuration writes (OAuth drafts, model choices); keys use the ticket. */
+  z
+    .object({
+      op: z.enum(['custom-create', 'custom-update']),
+      ownerGeneration,
+      config: json,
+      options: updateOptions.optional(),
+    })
+    .strict(),
+  z.object({ op: z.literal('custom-delete'), ownerGeneration, providerId: id }).strict(),
+  /** Secret-free probes (saved credentials stay on the instance, or no authentication). */
+  z
+    .object({
+      op: z.enum(['models-fetch', 'test-connection', 'detect']),
+      ownerGeneration,
+      request: json,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('setup-stage'),
+      ownerGeneration,
+      kind: z.enum(CLOUD_PROVIDER_SETUP_KINDS),
+      request: json,
+    })
+    .strict(),
+  z.object({ op: z.literal('setup-result'), ownerGeneration, stageId: z.string().uuid() }).strict(),
+  z
+    .object({
+      op: z.literal('xd'),
+      ownerGeneration,
+      action: z.enum(['status', 'retry', 'rotate', 'disconnect']),
+    })
+    .strict(),
+  z
+    .object({ op: z.literal('byok'), ownerGeneration, action: z.enum(['status', 'retry']) })
+    .strict(),
+  z.object({ op: z.literal('codex-limits'), ownerGeneration, providerId: id.optional() }).strict(),
+  z
+    .object({
+      op: z.literal('codex-reset'),
+      ownerGeneration,
+      idempotencyKey: z.string().uuid(),
+      providerId: id.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('account-usage'),
+      ownerGeneration,
+      providerId: id,
+      forceRefresh: z.boolean().optional(),
+    })
+    .strict(),
   z
     .object({
       op: z.literal('share'),

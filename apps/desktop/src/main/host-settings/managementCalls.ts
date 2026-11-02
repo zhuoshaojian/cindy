@@ -73,6 +73,17 @@ const channels = new Set([
   'maker:model-price-override:set',
   'maker:model-price-override:reset',
   'maker:provider:local-cli-scan',
+  // Cloud provider setup: the local add-provider wizard and connection form.
+  'maker:provider:models-fetch',
+  'maker:provider:test-connection',
+  'maker:provider:detect',
+  'maker:provider:account-usage',
+  'maker:usage:codex-rate-limits',
+  'maker:usage:codex-rate-limit-reset',
+  'maker:auth:trigger-login',
+  'maker:xai-oauth:login',
+  // Called with the Cindy AI key name only (disconnect on the providers page).
+  'safe-storage-remove',
 ]);
 const registered = new Map<string, IpcHandler>();
 const events = new WeakMap<object, ManagementExecution>();
@@ -107,15 +118,28 @@ export function cloudManagementExecution(): ManagementExecution | undefined {
   return context.getStore();
 }
 
+let senders = 0;
 export async function callCloudManagement(
   channel: string,
   args: unknown[],
   execution: ManagementExecution,
+  /** Handlers that key a cancellable operation by its sender get a private, inert one. */
+  { sender = false }: { sender?: boolean } = {},
 ): Promise<unknown> {
   execution.assertCurrent();
   const handler = registered.get(channel);
   if (!channels.has(channel) || !handler) throw new Error('MANAGEMENT_UNAVAILABLE');
-  const origin = Object.freeze({});
+  const origin = Object.freeze(
+    sender
+      ? {
+          sender: Object.freeze({
+            id: 1_000_000_000 + (++senders % 1_000_000_000),
+            once: () => undefined,
+            removeListener: () => undefined,
+          }),
+        }
+      : {},
+  );
   events.set(origin, execution);
   try {
     return await context.run(execution, async () => {

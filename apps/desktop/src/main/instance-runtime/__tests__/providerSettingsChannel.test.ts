@@ -393,3 +393,157 @@ describe('cloud provider settings channel', () => {
     expect(f.deps.shareCommand).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('cloud provider setup over the channel', () => {
+  const userProvider = {
+    id: 'web-1',
+    name: 'Gateway',
+    source: 'user',
+    routing: {
+      codex: { upstream: 'https://gateway.example.test/v1', wireProtocol: 'openai-chat' },
+    },
+    models: { codex: [] },
+  };
+  function withSetup(native: (channel: string, args: unknown[]) => unknown = () => ({ ok: true })) {
+    const stages = { stage: vi.fn(() => 'stage-1'), result: vi.fn(() => ({ status: 'pending' })) };
+    const control = {
+      status: vi.fn(() => ({ state: 'ok', source: 'server' })),
+      retry: vi.fn(async () => ({ state: 'ok' })),
+      rotate: vi.fn(async () => ({ state: 'ok', rotated: true })),
+      byokStatus: vi.fn(() => ({ state: 'ready', providers: [] })),
+      byokRetry: vi.fn(async () => ({ state: 'ready', providers: [] })),
+    };
+    const call = vi.fn(async (channel: string, args: unknown[]) =>
+      channel === 'maker:provider:list'
+        ? { providers: [userProvider], providerOrder: [] }
+        : native(channel, args),
+    );
+    const h = setup({
+      call,
+      setup: {
+        secretFree: (request: Record<string, unknown>) =>
+          !request.apiKey && !(request.headers && Object.keys(request.headers).length),
+        ...stages,
+      } as never,
+      modelAccess: () => control,
+      xdKey: 'api_key',
+    });
+    return { h: Object.assign(h, { call }), stages, control };
+  }
+  const handle = (h: ReturnType<typeof setup>, request: Record<string, unknown>) =>
+    h.channel.handle('controller', { ownerGeneration: 7, ...request });
+
+  it('keeps the routing of the owner’s own connections and the projection for the rest', async () => {
+    const { h } = withSetup();
+    const list = (await run(h, { op: 'list' })) as { providers: Array<{ routing: unknown }> };
+    expect(list.providers[0].routing).toEqual(userProvider.routing);
+    const view = (await handle(h, { op: 'provider-view', providerId: 'web-1' })) as {
+      value: { routing: unknown };
+    };
+    expect(view.value.routing).toEqual(userProvider.routing);
+    await expect(handle(h, { op: 'provider-view', providerId: 'gone' })).rejects.toThrow(
+      '[NOT_FOUND]',
+    );
+  });
+
+  it('writes secret-free configurations and refuses inline credentials', async () => {
+    const { h } = withSetup();
+    const config = { id: 'web-2', name: 'G', runtimes: { codex: { baseUrl: 'https://g.test' } } };
+    await handle(h, { op: 'custom-create', config });
+    expect(h.call).toHaveBeenLastCalledWith(
+      'maker:provider:custom:create',
+      [config, {}, { source: 'manual-settings' }],
+      expect.anything(),
+    );
+    await expect(
+      handle(h, {
+        op: 'custom-update',
+        config: { ...config, runtimes: { codex: { baseUrl: 'x', headers: { A: 'secret' } } } },
+      }),
+    ).rejects.toThrow('[INVALID_PARAMS]');
+    await expect(
+      handle(h, { op: 'models-fetch', request: { baseUrl: 'https://g.test', apiKey: 'typed' } }),
+    ).rejects.toThrow('[INVALID_PARAMS]');
+    await expect(
+      handle(h, {
+        op: 'test-connection',
+        request: { kind: 'adhoc', spec: { baseUrl: 'https://g.test', apiKey: 'typed' } },
+      }),
+    ).rejects.toThrow('[INVALID_PARAMS]');
+    await handle(h, {
+      op: 'test-connection',
+      request: { kind: 'saved', providerId: 'web-1', agent: 'codex' },
+    });
+    expect(h.call).toHaveBeenLastCalledWith(
+      'maker:provider:test-connection',
+      [{ kind: 'saved', providerId: 'web-1', agent: 'codex' }],
+      expect.anything(),
+      { sender: true },
+    );
+  });
+
+  it('stages setup steps and reads their results through the setup store', async () => {
+    const { h, stages } = withSetup();
+    await expect(
+      handle(h, {
+        op: 'setup-stage',
+        kind: 'models-fetch',
+        request: { baseUrl: 'https://g.test' },
+      }),
+    ).resolves.toMatchObject({ value: { stageId: 'stage-1' } });
+    expect(stages.stage).toHaveBeenCalledWith('owner-1:7', 'models-fetch', {
+      baseUrl: 'https://g.test',
+    });
+    await expect(
+      handle(h, { op: 'setup-result', stageId: '00000000-0000-4000-8000-000000000000' }),
+    ).resolves.toMatchObject({ value: { status: 'pending' } });
+  });
+
+  it('runs Cindy AI and organization actions with the instance’s own controls', async () => {
+    const { h, control } = withSetup((channel) =>
+      channel === 'safe-storage-remove' ? { success: true } : undefined,
+    );
+    await expect(handle(h, { op: 'xd', action: 'rotate' })).resolves.toMatchObject({
+      value: { rotated: true },
+      catalogChanged: true,
+    });
+    await handle(h, { op: 'xd', action: 'disconnect' });
+    expect(h.call).toHaveBeenLastCalledWith('safe-storage-remove', ['api_key'], expect.anything());
+    await handle(h, { op: 'byok', action: 'retry' });
+    expect(control.byokRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads Codex limits, resets and account usage from the native handlers', async () => {
+    const { h } = withSetup();
+    await handle(h, { op: 'codex-limits', providerId: 'openai-1' });
+    expect(h.call).toHaveBeenLastCalledWith(
+      'maker:usage:codex-rate-limits',
+      ['openai-1'],
+      expect.anything(),
+    );
+    const key = '11111111-2222-4333-8444-555555555555';
+    await handle(h, { op: 'codex-reset', idempotencyKey: key });
+    expect(h.call).toHaveBeenLastCalledWith(
+      'maker:usage:codex-rate-limit-reset',
+      [key],
+      expect.anything(),
+    );
+    await handle(h, { op: 'account-usage', providerId: 'web-1', forceRefresh: true });
+    expect(h.call).toHaveBeenLastCalledWith(
+      'maker:provider:account-usage',
+      [{ providerId: 'web-1', forceRefresh: true }],
+      expect.anything(),
+    );
+  });
+
+  it('revokes the OpenAI image key when OpenAI is removed, as the local page does', async () => {
+    const { h } = withSetup((channel) => (channel === 'builtin-api-key-has' ? true : undefined));
+    await handle(h, { op: 'presentation', providerId: 'openai', action: 'remove' });
+    const channels = h.call.mock.calls.map((call) => call[0]);
+    expect(channels).toEqual([
+      'builtin-api-key-has',
+      'builtin-api-key-remove',
+      'maker:provider:presentation:set',
+    ]);
+  });
+});

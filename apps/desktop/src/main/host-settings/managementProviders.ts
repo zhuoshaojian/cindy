@@ -10,6 +10,8 @@ import {
 } from '@cindy/model-providers';
 import { getCustomProvider } from '../maker-host/custom-provider-store.js';
 import { callCloudManagement, hasCloudManagementCall } from './managementCalls.js';
+import { CLOUD_PROVIDER_SETUP_ITEM } from '../../shared/cloudProviderSettings.js';
+import { providerSetup } from '../instance-runtime/providerSetup.js';
 import {
   managementReadExecution,
   managementRecord,
@@ -388,6 +390,31 @@ export async function listProviderManagement(caller: ManagementCaller): Promise<
       },
     ],
   });
+  // Cloud providers page: applies a staged wizard or connection-form step with its secrets.
+  const setup = providerSetup();
+  if (setup)
+    entries.push({
+      id: CLOUD_PROVIDER_SETUP_ITEM,
+      label: 'Provider setup',
+      status: 'available',
+      group: 'management.providerSetup',
+      actions: [
+        {
+          resource: 'provider:setup',
+          intent: 'connect',
+          label: 'management.actions.connect',
+          fields: [
+            { ...managementTextField('stage'), maxLength: 64 },
+            { ...managementTextField('secrets', 'password', false), maxLength: 16_384 },
+          ],
+          async run(values, execution) {
+            const owner = setup.owner();
+            if (!owner) throw new Error('MANAGEMENT_OWNER_CHANGED');
+            await setup.setup.apply(owner, values.stage!, values.secrets, execution);
+          },
+        },
+      ],
+    });
   caller.assertCurrent();
   return entries;
 }

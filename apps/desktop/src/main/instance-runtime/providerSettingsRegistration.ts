@@ -15,18 +15,30 @@ import {
 import { currentSettingsOwner } from '../host-settings/personalization.js';
 import { getCustomProvider } from '../maker-host/custom-provider-store.js';
 import { executeProviderShareGuestCommand } from '../device-link/providerShareRuntime.js';
+import { cloudModelAccessControl } from '../model-access/index.js';
+import { providerSecretStorageKey } from '../../shared/providerSecrets.js';
 import { getInstanceConfig } from './config.js';
 import { createProviderSettingsChannel } from './providerSettingsChannel.js';
+import { createProviderSetup, setProviderSetup } from './providerSetup.js';
 
 /** Managed cloud instances only: the owner's cloud settings page manages providers over DeviceLink. */
 export function registerCloudProviderSettings(): () => void {
   const instance = getInstanceConfig();
   if (!instance) return () => {};
+  const isInstanceOwner = () =>
+    getInstanceConfig()?.membershipId === instance.membershipId &&
+    authManager.getCurrentUserId() === instance.membershipId;
+  const setup = createProviderSetup(callCloudManagement);
+  setProviderSetup({
+    setup,
+    owner: () => {
+      const owner = isInstanceOwner() ? currentSettingsOwner() : null;
+      return owner ? `${owner.dataOwnerId}:${owner.ownerGeneration}` : null;
+    },
+  });
   setCloudPrivateInvokeHandler(
     createProviderSettingsChannel({
-      isInstanceOwner: () =>
-        getInstanceConfig()?.membershipId === instance.membershipId &&
-        authManager.getCurrentUserId() === instance.membershipId,
+      isInstanceOwner,
       owner: currentSettingsOwner,
       call: callCloudManagement,
       inspectVisibility: inspectModelPresentationPreferences,
@@ -42,6 +54,9 @@ export function registerCloudProviderSettings(): () => void {
         ),
       applyEffort: (pref) => applyHostModelEffort(pref),
       shareCommand: (command) => executeProviderShareGuestCommand(command),
+      setup,
+      modelAccess: cloudModelAccessControl,
+      xdKey: providerSecretStorageKey('xd'),
       async editModel({ providerId, agent, modelId, edit }, execution) {
         const config = await getCustomProvider(storedCustomProviderId(providerId));
         execution.assertCurrent();
@@ -62,5 +77,8 @@ export function registerCloudProviderSettings(): () => void {
       },
     }),
   );
-  return () => setCloudPrivateInvokeHandler(null);
+  return () => {
+    setCloudPrivateInvokeHandler(null);
+    setProviderSetup(null);
+  };
 }

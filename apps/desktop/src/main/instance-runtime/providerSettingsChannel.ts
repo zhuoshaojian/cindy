@@ -19,19 +19,34 @@ import type {
 } from '../../shared/modelPresentationPreferences.js';
 import type { CustomModelEdit } from '../../shared/customModelEdit.js';
 import type { ManagementExecution } from '../host-settings/management.js';
+import { hasRuntimeHeaders, type ProviderSetup } from './providerSetup.js';
+
+/** Cindy AI and organization connection controls of the instance's own Settings page. */
+export interface CloudModelAccessControl {
+  status(): unknown;
+  retry(): Promise<unknown>;
+  rotate(): Promise<unknown>;
+  byokStatus(): unknown;
+  byokRetry(): Promise<unknown>;
+}
 
 export interface ProviderSettingsChannelDeps {
   /** The managed instance exists and its signed-in member is the instance owner. */
   isInstanceOwner(): boolean;
   owner(): SettingsOwnerStamp | null;
   /** Native provider handlers through the closed cloud management call set. */
-  call(channel: string, args: unknown[], execution: ManagementExecution): Promise<unknown>;
+  call(
+    channel: string,
+    args: unknown[],
+    execution: ManagementExecution,
+    options?: { sender?: boolean },
+  ): Promise<unknown>;
   inspectVisibility(): ModelPresentationPreferencesSnapshot;
   mutateVisibility(
     request: ModelPresentationRequest & { operation: ModelPresentationOperation },
     assertCaller: () => void,
   ): Promise<ModelPresentationReceipt>;
-  /** Display-only routing (upstream DeviceLink projection); execution details never cross. */
+  /** Display-only routing (upstream DeviceLink projection) for built-in and organization rows. */
   projectRouting(routing: unknown): unknown;
   resolveLogoKind(providerId: string, routing: unknown): string | null;
   /** Remembered reasoning effort by memory slot and model (Host new-task history). */
@@ -51,6 +66,11 @@ export interface ProviderSettingsChannelDeps {
     request: { providerId: string; agent: AgentKind; modelId: string; edit: CustomModelEdit },
     execution: ManagementExecution,
   ): Promise<void>;
+  /** Staged wizard and connection-form steps; secrets and logins apply on the CIS ticket. */
+  setup?: ProviderSetup;
+  modelAccess?(): CloudModelAccessControl | null;
+  /** Storage name of the Cindy AI key (the only key the page may remove). */
+  xdKey?: string;
   timeoutMs?: number;
 }
 
@@ -74,18 +94,26 @@ function visibilityState(
     : { status: snapshot.status, revision: null, overrides: {} };
 }
 
-/** Same display fields as the upstream DeviceLink list, without dropping hidden models. */
+/**
+ * Same display fields as the upstream DeviceLink list, without dropping hidden models. The
+ * owner's own connections keep their routing (the endpoints they typed; credentials and
+ * authentication headers stay in the instance's Main process), so subtitles, account usage
+ * and the connection form read the same facts as locally. Built-in and organization
+ * connections keep display-only routing.
+ */
 function projectProvider(raw: unknown, deps: ProviderSettingsChannelDeps): unknown {
   const provider = record(raw);
   const out: Record<string, unknown> = { ...provider };
-  delete out.routing;
   delete out.logoKind;
   delete out.remoteModelIds;
   delete out.remoteInvocationEnabled;
   if (typeof provider.remoteInvocationEnabled === 'boolean')
     out.remoteInvocationEnabled = provider.remoteInvocationEnabled;
-  const routing = deps.projectRouting(provider.routing);
-  if (routing !== undefined) out.routing = routing;
+  if (provider.source !== 'user') {
+    delete out.routing;
+    const routing = deps.projectRouting(provider.routing);
+    if (routing !== undefined) out.routing = routing;
+  }
   const logoKind =
     typeof provider.id === 'string' ? deps.resolveLogoKind(provider.id, provider.routing) : null;
   if (logoKind) out.logoKind = logoKind;
@@ -214,6 +242,13 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
           providerIds: request.providerIds,
         });
       case 'presentation':
+        // Deleting OpenAI also revokes its image API key, as on the local page.
+        if (
+          request.action === 'remove' &&
+          request.providerId === 'openai' &&
+          (await deps.call('builtin-api-key-has', ['openai-images'], run)) === true
+        )
+          await deps.call('builtin-api-key-remove', ['openai-images'], run);
         return native('maker:provider:presentation:set', {
           dataOwnerId: owner.dataOwnerId,
           ownerGeneration: owner.ownerGeneration,
@@ -292,6 +327,142 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
         run.assertCurrent();
         return { ok: true, ownerGeneration: owner.ownerGeneration, catalogChanged: false, value };
       }
+      default:
+        return setupWrite(request, owner, run);
+    }
+  }
+
+  const ownerKey = (owner: SettingsOwnerStamp) => `${owner.dataOwnerId}:${owner.ownerGeneration}`;
+  async function setupWrite(
+    request: Exclude<CloudProviderSettingsRequest, { op: 'list' }>,
+    owner: SettingsOwnerStamp,
+    run: ManagementExecution,
+  ): Promise<CloudProviderSettingsWriteReceipt> {
+    const done = (value: unknown, catalogChanged = false) => {
+      run.assertCurrent();
+      return { ok: true as const, ownerGeneration: owner.ownerGeneration, catalogChanged, value };
+    };
+    const setup = deps.setup ?? fail('UNSUPPORTED', 'provider setup is unavailable');
+    switch (request.op) {
+      case 'presets':
+        return done(await deps.call('maker:provider:presets', [], run));
+      case 'provider-view': {
+        const raw = record(await deps.call('maker:provider:list', [], run));
+        const view = (Array.isArray(raw.providers) ? raw.providers : []).find(
+          (provider) => record(provider).id === request.providerId,
+        );
+        return done(view ? projectProvider(view, deps) : fail('NOT_FOUND', 'provider not found'));
+      }
+      case 'custom-create':
+      case 'custom-update':
+        if (hasRuntimeHeaders(request.config))
+          fail('INVALID_PARAMS', 'request headers travel with the secrets');
+        return done(
+          await deps.call(
+            request.op === 'custom-create'
+              ? 'maker:provider:custom:create'
+              : 'maker:provider:custom:update',
+            [request.config, {}, request.options ?? { source: 'manual-settings' }],
+            run,
+          ),
+          true,
+        );
+      case 'custom-delete':
+        return done(
+          await deps.call(
+            'maker:provider:custom:delete',
+            [
+              request.providerId,
+              { dataOwnerId: owner.dataOwnerId, ownerGeneration: owner.ownerGeneration },
+              { source: 'manual-settings' },
+            ],
+            run,
+          ),
+          true,
+        );
+      case 'models-fetch':
+      case 'test-connection':
+      case 'detect': {
+        const probe =
+          request.op === 'test-connection' && request.request.kind === 'adhoc'
+            ? (request.request.spec as Record<string, unknown> | undefined)
+            : request.request;
+        if (!probe || !setup.secretFree(probe))
+          fail('INVALID_PARAMS', 'credentials travel with the secrets');
+        const channel =
+          request.op === 'models-fetch'
+            ? 'maker:provider:models-fetch'
+            : request.op === 'detect'
+              ? 'maker:provider:detect'
+              : 'maker:provider:test-connection';
+        return done(
+          await deps.call(channel, [request.request], run, {
+            sender: request.op !== 'models-fetch',
+          }),
+        );
+      }
+      case 'setup-stage':
+        return done({ stageId: setup.stage(ownerKey(owner), request.kind, request.request) });
+      case 'setup-result':
+        return done(setup.result(ownerKey(owner), request.stageId));
+      case 'xd':
+      case 'byok': {
+        const control = deps.modelAccess?.() ?? fail('UNAVAILABLE', 'model access is not ready');
+        if (request.op === 'byok')
+          return done(
+            request.action === 'retry' ? await control.byokRetry() : control.byokStatus(),
+          );
+        if (request.action === 'disconnect') {
+          const removed = record(
+            await deps.call(
+              'safe-storage-remove',
+              [deps.xdKey ?? fail('UNAVAILABLE', 'no key')],
+              run,
+            ),
+          );
+          if (removed.success !== true) fail('INTERNAL', 'the Cindy AI key was not removed');
+          return done(control.status(), true);
+        }
+        return done(
+          request.action === 'retry'
+            ? await control.retry()
+            : request.action === 'rotate'
+              ? await control.rotate()
+              : control.status(),
+          request.action !== 'status',
+        );
+      }
+      case 'codex-limits':
+        return done(
+          await deps.call(
+            'maker:usage:codex-rate-limits',
+            request.providerId ? [request.providerId] : [],
+            run,
+          ),
+        );
+      case 'codex-reset':
+        return done(
+          await deps.call(
+            'maker:usage:codex-rate-limit-reset',
+            [request.idempotencyKey, ...(request.providerId ? [request.providerId] : [])],
+            run,
+          ),
+        );
+      case 'account-usage':
+        return done(
+          await deps.call(
+            'maker:provider:account-usage',
+            [
+              {
+                providerId: request.providerId,
+                ...(request.forceRefresh ? { forceRefresh: true } : {}),
+              },
+            ],
+            run,
+          ),
+        );
+      default:
+        return fail('INVALID_PARAMS', 'unknown provider settings request');
     }
   }
 

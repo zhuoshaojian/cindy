@@ -3,6 +3,7 @@ vi.mock('../../maker-host/custom-provider-store.js', () => ({ getCustomProvider:
 import { listProviderManagement } from '../managementProviders.js';
 import { registerCloudDomainCall } from '../managementCalls.js';
 import type { ManagementExecution } from '../management.js';
+import { setProviderSetup, type ProviderSetup } from '../../instance-runtime/providerSetup.js';
 
 describe('provider management on 0.1.97', () => {
   it('uses the official Claude CLI and offers no retired independent Claude login', async () => {
@@ -24,5 +25,29 @@ describe('provider management on 0.1.97', () => {
     await entries.find(e => e.id === 'provider:anthropic')!.actions.find(a => a.intent === 'authorize')!.run({}, execution);
     expect(login).toHaveBeenCalledOnce();
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe('cloud provider setup ticket', () => {
+  it('is listed only on a managed instance and applies its stage for the current owner', async () => {
+    registerCloudDomainCall('maker:provider:list', () => ({ providers: [] }));
+    registerCloudDomainCall('maker:provider:presets', () => ({ presets: [] }));
+    const caller = { key: 'fixture', assertCurrent() {} };
+    expect((await listProviderManagement(caller)).some((e) => e.id === 'setup:apply')).toBe(false);
+    const apply = vi.fn(async () => undefined);
+    setProviderSetup({ setup: { apply } as unknown as ProviderSetup, owner: () => 'owner-1:7' });
+    try {
+      const item = (await listProviderManagement(caller)).find((e) => e.id === 'setup:apply')!;
+      const action = item.actions[0]!;
+      expect(action.fields?.map((field) => [field.name, field.kind, field.required])).toEqual([
+        ['stage', 'text', true],
+        ['secrets', 'password', false],
+      ]);
+      const execution: ManagementExecution = { signal: new AbortController().signal, assertCurrent() {}, onCancel() {}, prompt() {} };
+      await action.run({ stage: 'stage-1', secrets: '{"apiKey":"k"}' }, execution);
+      expect(apply).toHaveBeenCalledWith('owner-1:7', 'stage-1', '{"apiKey":"k"}', execution);
+    } finally {
+      setProviderSetup(null);
+    }
   });
 });
