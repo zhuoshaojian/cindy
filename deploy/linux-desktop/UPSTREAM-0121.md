@@ -269,9 +269,16 @@ the local page of the same Dev app:
 - The Codex quota card shows the weekly limit and the instance's free reset; it was expanded but
   not used (one available before and after).
 
-One difference was found and fixed: the cloud header offered disconnect for a connected no-auth
-custom endpoint, while the local header offers it only for a key endpoint (`ac61a8b763`, Mac Dev
-`.8`, unit tested; its live check waits for the Keychain prompt, the screen was locked again).
+Two differences were found and fixed. The cloud header offered disconnect for a connected no-auth
+custom endpoint, while the local header offers it only for a key endpoint (`ac61a8b763`); with
+the Mac Dev `.8` the no-auth endpoint shows only configured and a key endpoint still shows
+disconnect. Saving a key endpoint right after typing the key collided with the form's keyed
+detection, which held the instance's ticket operation, so the save was cancelled while the local
+form saves; saving after the detection worked, the key reached the instance only through the
+ticket and the returned catalog carried no key (a placeholder key was used and the connection
+deleted). `1644842a42` queues ticket operations, waits until the instance is idle and keeps
+only the latest keyed detection; a unit test fails on the old behaviour. It ships in the Mac
+Dev `.9`, whose live check waits for its Keychain prompt.
 The final instance catalog, Fast policy, Cindy AI and organization states equal the baseline.
 Not exercised live: the third wizard step (needs a real key or sign-in), DeepSeek and Zhipu
 balances and the Claude and Grok usage links (no such connection on the instance), third-party
