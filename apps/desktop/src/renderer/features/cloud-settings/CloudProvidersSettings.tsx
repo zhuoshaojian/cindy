@@ -55,6 +55,7 @@ import { providerGroupDeviceCount } from '../../../shared/providerGroup';
 import { remoteProviderGroupOf } from '../../../shared/remoteProviderGroups';
 import { CloudProviderAuthorization } from './CloudProviderAuthorization';
 import { CloudAddProviderDialog } from './CloudAddProviderDialog';
+import { CloudXdQuota } from './CloudXdQuota';
 import { useCloudProviderCatalog } from './cloudProviderCatalog';
 import { useCloudAuthorization, type CloudAuthorizationProps } from './useCloudAuthorization';
 
@@ -504,7 +505,11 @@ function CloudProviderCatalogPage({
             </p>
           )}
           {detail && <div className="px-5 pb-4">{detail}</div>}
-          <CloudProviderQuota provider={p} deviceId={deviceId} />
+          {p.id === 'xd' ? (
+            <CloudXdQuota deviceId={deviceId} online={online} />
+          ) : (
+            <CloudProviderQuota provider={p} deviceId={deviceId} />
+          )}
           {children}
         </div>
       </div>
