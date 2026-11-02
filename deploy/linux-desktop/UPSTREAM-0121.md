@@ -180,3 +180,38 @@ send only current ids); the remote access switch toggled on and back off; disabl
 from the drawer and re-enabling it inline both wrote and read back. The final state equals the
 baseline. Third-party login, API key entry and an older-runtime fallback were not exercised
 live (the fallback is covered by unit tests). Fleet admission has not been requested.
+
+## cloud.4: second batch of provider settings (2026-11-02)
+
+`0.1.121-cloud.3` (freeze `51f9cc05e7`, run 41421964109) was cancelled before delivery and was
+never cached or approved; cloud.4 supersedes it with a model panel fix and the shares work. `0.1.121-cloud.4` (freeze
+`25ce5ac5de`, delivery `7aec2f3d9b`) extends `cloud:provider-settings:v1` with model panel
+calls (context limit, compaction and price overrides through the native handlers, stamped with
+the instance owner), reasoning effort in the instance Host history, protocol and image/video
+capability edits applied to the instance's full custom provider config, an instance CLI scan,
+and the owner's guest share actions (received list, trust the sharer, leave). Other share
+commands are rejected on the channel. The user chose to show only existing local models; there
+is no download, start or delete for instance models.
+
+Run 41425144350 attempt 1 failed in candidate when github.com returned HTTP 500 for the Codex
+release download; the failed jobs were rerun unchanged and attempt 2 passed verify, candidate
+(native smoke on `0.1.121-cloud.4`) and cache. An in-cluster probe hit the qualified cache. The
+owner-only policy added the cloud.4 approval and pinned only the owner's verified profile;
+defaults, schedules and backup policy were unchanged and both roles rolled out ready.
+
+The owner upgrade from `0.1.121-cloud.2` backed up **3,552 files / 726,999,407 bytes**, started
+main and init on the delivered digest with a cache hit, became ready with zero restarts, released
+maintenance and preserved databases, schedules and peer records. Other instances stay where
+their own update preferences put them.
+
+With the Mac Dev `0.1.121-dev.cloud.20261102.4` (`7aec2f3d9b`) the channel advertised the new
+operations and rejected a share link creation. Through the real UI: the Cindy AI quota module
+matched the local page; the instance's CLI scan found Claude Code and Codex and suggested only
+Anthropic because OpenAI is already listed (same rule as local); the model panel set reasoning
+effort to high (provider and preset slots) and cleared it, and set a 200K context limit and
+reset it; the received share opened and its trust switch wrote to the instance and was turned
+back. Clearing an effort leaves empty memory slots, as the local page does; there is no effect
+on defaults. Protocol and capability edits, price writes, third-party login, API key entry and
+joining a share by link were not exercised live. `cd4d5099ba` hides the received shares group on
+runtimes without the share operation so an older instance never shows this computer's shares;
+it ships in the Mac Dev from `.5`. Fleet admission has not been requested.
