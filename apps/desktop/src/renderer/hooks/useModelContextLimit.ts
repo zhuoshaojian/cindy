@@ -22,8 +22,10 @@ export function useModelContextLimit(target: ModelContextLimitTarget | null) {
   // Another device's settings (cloud instance page) answer instead of this device.
   const source = useModelSettingsSource();
   const remote = source !== null;
-  const maker = useRef(source?.maker ?? window.electronAPI.maker);
-  maker.current = source?.maker ?? window.electronAPI.maker;
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  // Resolved when a request runs, as the direct preload call was.
+  const maker = () => sourceRef.current?.maker ?? window.electronAPI.maker;
   const generation = useRef(0);
   const pendingWrite = useRef<{
     request: number; owner: ReturnType<typeof getDataOwnerGeneration>; refresh: boolean;
@@ -50,7 +52,7 @@ export function useModelContextLimit(target: ModelContextLimitTarget | null) {
         let view: ModelContextLimitView;
         do {
           if (pendingWrite.current?.request === request) pendingWrite.current.refresh = false;
-          view = await maker.current.getModelContextLimit(stableTarget);
+          view = await maker().getModelContextLimit(stableTarget);
         } while (current() && pendingWrite.current?.request === request && pendingWrite.current.refresh);
         return view;
       };
@@ -58,8 +60,8 @@ export function useModelContextLimit(target: ModelContextLimitTarget | null) {
       try {
         let view = write
           ? 'compactionPct' in write
-            ? await maker.current.setModelCompaction(stableTarget, write.compactionPct, stamp)
-            : await maker.current.setModelContextLimit(stableTarget, write.limit, stamp)
+            ? await maker().setModelCompaction(stableTarget, write.compactionPct, stamp)
+            : await maker().setModelContextLimit(stableTarget, write.limit, stamp)
           : await read();
         if (write && current() && (stableTarget.agent === 'codex' || pendingWrite.current?.refresh)) {
           view = await read();
