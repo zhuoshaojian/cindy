@@ -215,3 +215,40 @@ on defaults. Protocol and capability edits, price writes, third-party login, API
 joining a share by link were not exercised live. `cd4d5099ba` hides the received shares group on
 runtimes without the share operation so an older instance never shows this computer's shares;
 it ships in the Mac Dev from `.5`. Fleet admission has not been requested.
+
+## cloud.6: third batch of provider settings (2026-11-02)
+
+The third batch makes the cloud page open the local add-provider wizard and connection dialog
+and follow the local header rules (built-in sign-in buttons, Cindy AI credential menu without
+copying the key, organization config refresh, Fast, Codex reset credits, usage links and the
+DeepSeek and Zhipu balance modules, editing custom connections). Deleting a provider now asks
+first, as it does locally (`b99fea3b05`). Steps without secrets use `cloud:provider-settings:v1`;
+API keys, request headers and sign-ins are staged on the channel without secrets and run through
+the CIS management ticket `setup:apply`, so no secret crosses DeviceLink. The CIS web console
+hides that ticket from its generic list (cindy-server `378ec50e`, deployed by CIS delivery
+41461306855).
+
+`0.1.121-cloud.5` (freeze `9872c64cb7`, run 41462017983) was cancelled before delivery and was
+never cached or approved: the instance Codex sign-in still required an Electron window owner.
+`0.1.121-cloud.6` (freeze `c3a376909c`, delivery `9cd94c7851`) signs the instance Codex in by
+device code without a window and shows provider device codes on the management card.
+
+Run 41463026713 attempt 1 failed in candidate: a 110 MB npm tarball arrived at 37 KB/s, the
+install step took 56 minutes, and the one-hour build cache token had expired when the cache
+export started (401). The failed job was rerun unchanged; attempt 2 passed verify, candidate
+(native smoke on `0.1.121-cloud.6`, build inputs bound to `c3a376909c`) and cache, and an
+in-cluster probe hit the qualified cache. A build that runs longer than an hour fails the same
+way and is safe to rerun. The owner-only policy added the cloud.6 approval, pinned only the
+owner's verified profile and retired one unreferenced `0.1.113-cloud.28` keyring approval at the
+cap; defaults, placements, tenants, schedules and backup policy were unchanged and both roles
+rolled out ready.
+
+The owner upgrade from `0.1.121-cloud.4` (baseline retaken just before: 14 instances, no active
+maintenance) backed up **3,556 files / 828,470,681 bytes**, started main and init on the
+delivered digest with a cache hit, became ready with zero restarts, released maintenance and
+preserved databases, schedules and peer records. The other 13 instances were not touched.
+
+The Mac Dev `0.1.121-dev.cloud.20261102.7` (`948983cc61`; `c3a376909c` changes only the
+instance runtime) is installed. Real UI acceptance against cloud.6 has not run yet: the screen
+was locked, so the Keychain prompt of the new Dev signature could not be answered. Fleet
+admission has not been requested.
