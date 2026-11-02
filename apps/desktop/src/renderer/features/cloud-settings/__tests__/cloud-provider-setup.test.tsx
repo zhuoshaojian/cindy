@@ -126,7 +126,11 @@ const setupItem = {
 
 afterEach(cleanup);
 
-function setup() {
+function setup({ holdFirstRun = false }: { holdFirstRun?: boolean } = {}) {
+  let release = () => undefined as void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const stages: Array<{ kind: string; request: Record<string, unknown> }> = [];
   const invoke = vi.fn(
     async (_device: string, channel: string, [request]: [Record<string, unknown>]) => {
@@ -182,7 +186,9 @@ function setup() {
             value:
               stage.kind === 'models-fetch'
                 ? { ok: true, models: [{ id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' }] }
-                : { ok: true },
+                : stage.kind === 'detect'
+                  ? { candidates: [], reason: 'insufficient_evidence' }
+                  : { ok: true },
           });
         }
         default:
@@ -220,7 +226,11 @@ function setup() {
         };
         return { kind: 'page', section: 'providers', items: [{ ...setupItem, actions: [ticket] }] };
       }
-      if (request.operation === 'run') runs.push(request.values!);
+      if (request.operation === 'run') {
+        runs.push(request.values!);
+        // The instance is still working on the first ticket operation.
+        if (holdFirstRun && runs.length === 1) await held;
+      }
       return { kind: 'operation', operationId: request.operationId, phase: 'succeeded' };
     },
   );
@@ -233,7 +243,7 @@ function setup() {
       deviceId="cloud-device-000000000000000000000001"
     />,
   );
-  return { invoke, manage, stages, runs };
+  return { invoke, manage, stages, runs, release };
 }
 
 describe('cloud provider setup with the local wizard', () => {
@@ -292,6 +302,58 @@ describe('cloud provider setup with the local wizard', () => {
         .value,
     ).toBe('https://gateway.example.test/v1');
     expect(invoke.mock.calls.map((call) => call[2][0].op)).toContain('provider-view');
+  });
+});
+
+describe('cloud provider setup while a keyed detection is running', () => {
+  it('saves after the detection instead of failing on the busy instance', async () => {
+    const { stages, runs, release } = setup({ holdFirstRun: true });
+    fireEvent.click(await screen.findByRole('button', { name: /settings.providers.addProvider/ }));
+    fireEvent.click(
+      await within(await screen.findByRole('dialog')).findByRole('button', {
+        name: /settings.providers.wizard.customTitle/,
+      }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(
+      within(dialog).getByPlaceholderText('settings.providers.custom.fields.namePlaceholder'),
+      { target: { value: 'Gateway two' } },
+    );
+    fireEvent.change(
+      within(dialog).getByPlaceholderText('settings.providers.custom.fields.baseUrlPlaceholder'),
+      { target: { value: 'https://two.example.test/v1' } },
+    );
+    fireEvent.change(
+      within(dialog).getByPlaceholderText('settings.providers.custom.fields.apiKeyPlaceholder'),
+      { target: { value: KEY } },
+    );
+    // The form detects the provider with the key; that ticket operation is still running.
+    await waitFor(() => expect(runs).toHaveLength(1));
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'settings.providers.connection.manualAdd' }),
+    );
+    fireEvent.change(within(dialog).getByLabelText('settings.providers.connection.manualId'), {
+      target: { value: 'model-two' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'settings.providers.custom.fields.addModel' }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'settings.providers.connection.saveProvider' }),
+    );
+    // The save reaches the instance while the detection still holds it.
+    await waitFor(() => expect(stages.map((stage) => stage.kind)).toContain('custom-create'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    release();
+    await waitFor(
+      () => expect(toasts.success).toHaveBeenCalledWith('settings.providers.custom.toast.created'),
+      { timeout: 3000 },
+    );
+    expect(stages.map((stage) => stage.kind)).toEqual(['detect', 'custom-create']);
+    expect(runs.map((values) => JSON.parse(values.secrets!))).toEqual([
+      { apiKey: KEY },
+      { keys: { pi: KEY } },
+    ]);
   });
 });
 

@@ -94,13 +94,38 @@ export function useCloudProviderSetup({
   const used = useRef(new Set<string>());
   const value = async <T,>(request: CloudProviderWrite): Promise<T> =>
     (await sendRef.current(request)).value as T;
+  // The instance runs one ticket operation at a time and refuses an overlapping one, while
+  // the local form freely saves during a detection. Queue them and wait until it is idle.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const detectTurn = useRef(0);
+  const idle = async () => {
+    for (const until = Date.now() + 60_000; Date.now() < until;) {
+      if (!authRef.current.requesting && !authRef.current.busy) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error('SETUP_BUSY');
+  };
 
-  const apply = async (
+  /** Resolves undefined when `wanted` says a newer request superseded it before its turn. */
+  const apply = (
     kind: CloudProviderSetupKind,
     request: Record<string, unknown>,
     secrets: CloudProviderSetupSecrets | null = null,
+    wanted: () => boolean = () => true,
+  ): Promise<unknown> => {
+    const next = queue.current.then(() =>
+      wanted() ? applyNow(kind, request, secrets) : undefined,
+    );
+    queue.current = next.catch(() => undefined);
+    return next;
+  };
+  const applyNow = async (
+    kind: CloudProviderSetupKind,
+    request: Record<string, unknown>,
+    secrets: CloudProviderSetupSecrets | null,
   ): Promise<unknown> => {
     const { stageId } = await value<{ stageId: string }>({ op: 'setup-stage', kind, request });
+    await idle();
     const find = (items: ManagementItem[] | undefined) =>
       items?.find((item) => item.id === CLOUD_PROVIDER_SETUP_ITEM);
     let item = find(authRef.current.items);
@@ -164,12 +189,20 @@ export function useCloudProviderSetup({
         ) as never;
       },
       async detectProvider(input) {
-        // A remote detection cannot be withdrawn; a superseded result is ignored by the form.
-        if ('cancel' in input) return { candidates: [], reason: 'insufficient_evidence' };
+        // A started remote detection cannot be withdrawn; the form ignores a superseded result.
+        // Withdrawing still skips a keyed detection that is queued and has not started.
+        if ('cancel' in input) {
+          detectTurn.current++;
+          return { candidates: [], reason: 'insufficient_evidence' };
+        }
         const { request, secrets } = splitProbe(input);
-        return (
-          secrets ? apply('detect', request, secrets) : value({ op: 'detect', request: input })
-        ) as never;
+        if (!secrets) return value({ op: 'detect', request: input }) as never;
+        // Only the latest keyed detection spends a ticket; queued older ones are skipped.
+        const turn = ++detectTurn.current;
+        return ((await apply('detect', request, secrets, () => turn === detectTurn.current)) ?? {
+          candidates: [],
+          reason: 'insufficient_evidence',
+        }) as never;
       },
       async testProviderConnection(input) {
         if (input.kind === 'cancel')
