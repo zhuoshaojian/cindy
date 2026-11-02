@@ -27,6 +27,7 @@ export const CLOUD_PROVIDER_SETTINGS_OPS = [
   'effort',
   'model-edit',
   'cli-scan',
+  'share',
 ] as const;
 export type CloudProviderSettingsOp = (typeof CLOUD_PROVIDER_SETTINGS_OPS)[number];
 
@@ -165,6 +166,21 @@ export const cloudProviderSettingsRequestSchema = z.discriminatedUnion('op', [
     })
     .strict(),
   z.object({ op: z.literal('cli-scan'), ownerGeneration }).strict(),
+  z
+    .object({
+      op: z.literal('share'),
+      ownerGeneration,
+      /** Guest actions on this instance: its received shares, its credential trust, leaving. */
+      command: z.discriminatedUnion('action', [
+        z.object({ action: z.literal('received') }).strict(),
+        z.object({ action: z.literal('get-credential-consent'), shareId: id }).strict(),
+        z
+          .object({ action: z.literal('set-credential-consent'), shareId: id, skip: z.boolean() })
+          .strict(),
+        z.object({ action: z.literal('leave'), memberId: id }).strict(),
+      ]),
+    })
+    .strict(),
 ]);
 export type CloudProviderSettingsRequest = z.infer<typeof cloudProviderSettingsRequestSchema>;
 

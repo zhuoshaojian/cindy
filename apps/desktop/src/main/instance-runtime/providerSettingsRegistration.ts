@@ -14,6 +14,7 @@ import {
 } from '../host-settings/new-task-defaults.js';
 import { currentSettingsOwner } from '../host-settings/personalization.js';
 import { getCustomProvider } from '../maker-host/custom-provider-store.js';
+import { executeProviderShareGuestCommand } from '../device-link/providerShareRuntime.js';
 import { getInstanceConfig } from './config.js';
 import { createProviderSettingsChannel } from './providerSettingsChannel.js';
 
@@ -40,6 +41,7 @@ export function registerCloudProviderSettings(): () => void {
           ),
         ),
       applyEffort: (pref) => applyHostModelEffort(pref),
+      shareCommand: (command) => executeProviderShareGuestCommand(command),
       async editModel({ providerId, agent, modelId, edit }, execution) {
         const config = await getCustomProvider(storedCustomProviderId(providerId));
         execution.assertCurrent();

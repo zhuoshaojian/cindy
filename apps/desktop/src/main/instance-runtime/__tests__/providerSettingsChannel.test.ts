@@ -74,6 +74,7 @@ function setup(overrides: Partial<ProviderSettingsChannelDeps> = {}) {
     readEfforts: () => ({ 'codex:*': { shown: 'high' } }),
     applyEffort: vi.fn(async () => {}),
     editModel: vi.fn(async () => {}),
+    shareCommand: vi.fn(async (command) => ({ command })),
     ...overrides,
   };
   return {
@@ -370,5 +371,25 @@ describe('cloud provider settings channel', () => {
       f.channel.handle('controller', { op: 'cli-scan', ownerGeneration: 7 }),
     ).resolves.toMatchObject({ value: { detections: [] } });
     expect(f.call).toHaveBeenLastCalledWith('maker:provider:local-cli-scan', [], expect.anything());
+  });
+
+  it('runs only guest share actions on the instance', async () => {
+    const f = setup();
+    const share = (command: unknown) =>
+      f.channel.handle('controller', { op: 'share', ownerGeneration: 7, command });
+    await expect(
+      share({ action: 'set-credential-consent', shareId: 's1', skip: true }),
+    ).resolves.toMatchObject({
+      value: { command: { action: 'set-credential-consent', shareId: 's1', skip: true } },
+    });
+    await share({ action: 'leave', memberId: 'm1' });
+    expect(f.deps.shareCommand).toHaveBeenCalledTimes(2);
+    for (const forbidden of [
+      { action: 'create-link', providerId: 'xd' },
+      { action: 'approve', requestId: 'r1' },
+      { action: 'send-request', link: 'cindy://provider-share/join?x=1' },
+    ])
+      await expect(share(forbidden)).rejects.toThrow('[INVALID_PARAMS]');
+    expect(f.deps.shareCommand).toHaveBeenCalledTimes(2);
   });
 });

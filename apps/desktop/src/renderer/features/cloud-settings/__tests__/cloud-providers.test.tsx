@@ -34,6 +34,10 @@ vi.mock('@/components/settings/useProviderSubscriptionCard', () => ({
 }));
 vi.mock('@/features/provider-share/providerShareStore', () => ({
   useProviderSharePendingRequests: () => [],
+  // This computer's list; the cloud page must show the instance's instead.
+  useProviderShareReceived: () => ({ received: [], loaded: true }),
+  ensureProviderShareReceivedStarted: () => undefined,
+  requestProviderShareJoin: () => undefined,
 }));
 // The cloud page must never read or write this computer's model preferences.
 vi.mock('@/state/modelVisibilityPrefs', async (original) => ({
@@ -200,9 +204,36 @@ function setup(options: { unsupported?: boolean } = {}) {
           'effort',
           'model-edit',
           'cli-scan',
+          'share',
         ],
         efforts: { 'codex:*': { 'm-1': 'high' } },
       };
+    if (request.op === 'share') {
+      const command = (request as unknown as { command: { action: string; skip?: boolean } })
+        .command;
+      return {
+        ok: true,
+        ownerGeneration: 3,
+        catalogChanged: false,
+        value:
+          command.action === 'received'
+            ? [
+                {
+                  shareId: 'share-1',
+                  memberId: 'member-1',
+                  providerId: 'anthropic',
+                  providerLabel: 'Shared Claude',
+                  hostDeviceId: 'host',
+                  deviceName: 'Host',
+                  status: 'active',
+                  hostOnline: true,
+                  hostCapable: true,
+                  owner: { displayName: 'Ada', avatarUrl: null, region: 'cn' },
+                },
+              ]
+            : { skip: command.skip === true },
+      };
+    }
     if (request.op === 'cli-scan')
       return {
         ok: true,
@@ -239,6 +270,14 @@ function setup(options: { unsupported?: boolean } = {}) {
       {
         get(target, key) {
           if (key === 'deviceLink') return target.deviceLink;
+          // Account-level share reads stay on this computer; model settings never do.
+          if (key === 'providerShare')
+            return {
+              command: async () => {
+                throw Error('LOCAL_SHARE_COMMAND');
+              },
+              onReceivedChanged: () => () => undefined,
+            };
           throw Error(`LOCAL_API_FORBIDDEN ${String(key)}`);
         },
       },
@@ -364,6 +403,33 @@ describe('instance CLI suggestions', () => {
     await waitFor(() =>
       expect(manage).toHaveBeenCalledWith(
         expect.objectContaining({ operation: 'run', actionId: 'a0' }),
+      ),
+    );
+  });
+});
+
+describe('shares on the instance', () => {
+  it('lists the instance received shares and writes trust on the instance', async () => {
+    const { invoke } = setup();
+    fireEvent.click(await screen.findByRole('button', { name: /Shared Claude/ }));
+    expect(await screen.findByTestId('provider-share-received-detail')).toBeTruthy();
+    await waitFor(() =>
+      expect(invoke.mock.calls.map((call) => call[2][0])).toContainEqual(
+        expect.objectContaining({
+          op: 'share',
+          command: { action: 'get-credential-consent', shareId: 'share-1' },
+        }),
+      ),
+    );
+    const trust = within(screen.getByTestId('provider-share-received-detail')).getByRole('switch');
+    await waitFor(() => expect((trust as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(trust);
+    await waitFor(() =>
+      expect(invoke.mock.calls.map((call) => call[2][0])).toContainEqual(
+        expect.objectContaining({
+          op: 'share',
+          command: { action: 'set-credential-consent', shareId: 'share-1', skip: true },
+        }),
       ),
     );
   });

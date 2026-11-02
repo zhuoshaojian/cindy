@@ -42,6 +42,10 @@ export interface ProviderSettingsChannelDeps {
     modelId: string;
     effort: string | null;
   }): Promise<void>;
+  /** Guest share actions on this instance (received list, credential trust, leave). */
+  shareCommand(
+    command: Extract<CloudProviderSettingsRequest, { op: 'share' }>['command'],
+  ): Promise<unknown>;
   /** Read-modify-write of the saved custom provider config on this instance. */
   editModel(
     request: { providerId: string; agent: AgentKind; modelId: string; edit: CustomModelEdit },
@@ -278,6 +282,11 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
         );
         run.assertCurrent();
         return { ok: true, ownerGeneration: owner.ownerGeneration, catalogChanged: true };
+      case 'share': {
+        const value = await deps.shareCommand(request.command);
+        run.assertCurrent();
+        return { ok: true, ownerGeneration: owner.ownerGeneration, catalogChanged: false, value };
+      }
       case 'cli-scan': {
         const value = await deps.call('maker:provider:local-cli-scan', [], run);
         run.assertCurrent();

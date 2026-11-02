@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GripVertical, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import {
@@ -30,6 +30,16 @@ import { useDeviceProviderSubscriptionCard } from '@/components/settings/useProv
 import { QuotaHoverCard } from '@/components/status/QuotaHoverCard';
 import { ProviderShareEntryButton } from '@/features/provider-share/ProviderShareEntryButton';
 import { ProviderShareManagePage } from '@/features/provider-share/ProviderShareManagePage';
+import { ProviderSharePasteButton } from '@/features/provider-share/ProviderSharePasteDialog';
+import {
+  ProviderShareReceivedDetail,
+  ProviderShareReceivedRailGroup,
+} from '@/features/provider-share/ProviderShareReceivedRail';
+import {
+  ProviderShareSourceContext,
+  type ProviderShareSource,
+} from '@/features/provider-share/providerShareSource';
+import type { ReceivedSnapshot } from '@/features/provider-share/providerShareStore';
 import { providerShareGate } from '@/features/provider-share/providerShareFormat';
 import { useProviderSharePendingRequests } from '@/features/provider-share/providerShareStore';
 import { useDeviceProviders } from '@/hooks/useDeviceProviders';
@@ -43,6 +53,7 @@ import {
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import type { ManagementItem, ManagementResult } from '../../../shared/settingsManagement';
+import type { CloudProviderSettingsRequest } from '../../../shared/cloudProviderSettings';
 import { MANAGED_LLAMACPP_PROVIDER_ID } from '../../../shared/llamaCpp';
 import {
   MANAGED_LMSTUDIO_PROVIDER_ID,
@@ -60,6 +71,7 @@ import { useCloudProviderCatalog } from './cloudProviderCatalog';
 import { useCloudAuthorization, type CloudAuthorizationProps } from './useCloudAuthorization';
 
 type Action = ManagementItem['actions'][number];
+type ShareCommand = Extract<CloudProviderSettingsRequest, { op: 'share' }>['command'];
 type Phase = Extract<ManagementResult, { kind: 'operation' }>['phase'];
 
 function providerHasModels(provider: ProviderView): boolean {
@@ -161,6 +173,42 @@ function CloudProviderCatalogPage({
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const [keyFormFor, setKeyFormFor] = useState<string | null>(null);
   const [addStart, setAddStart] = useState<string | null>(null);
+  const [selectedShareId, setSelectedShareId] = useState<string | null>(null);
+  const [shares, setShares] = useState<ReceivedSnapshot>({ received: [], loaded: false });
+  const shareSupported = catalog.supportedOps.includes('share');
+  // Shares as the instance sees them; trust and leaving run on the instance too.
+  const loadShares = useCallback(() => {
+    if (!shareSupported) return;
+    void catalog
+      .send({ op: 'share', command: { action: 'received' } })
+      .then((receipt) => {
+        if (Array.isArray(receipt.value))
+          setShares({ received: receipt.value as ReceivedSnapshot['received'], loaded: true });
+      })
+      .catch(() => undefined);
+  }, [shareSupported, deviceId]);
+  useEffect(() => loadShares(), [loadShares]);
+  const shareSource = useMemo<ProviderShareSource>(
+    () => ({
+      received: shares,
+      command: (async (command: { action: string }) => {
+        if (
+          command.action !== 'get-credential-consent' &&
+          command.action !== 'set-credential-consent' &&
+          command.action !== 'leave'
+        )
+          throw new Error('[UNSUPPORTED] not available for the cloud instance');
+        const receipt = await catalog.send({
+          op: 'share',
+          command: command as ShareCommand,
+        });
+        if (command.action === 'leave') loadShares();
+        return receipt.value;
+      }) as ProviderShareSource['command'],
+    }),
+    [shares, loadShares, catalog.send],
+  );
+  const selectedShare = shares.received.find((share) => share.shareId === selectedShareId) ?? null;
   const [detections, setDetections] = useState<LocalCliDetection[]>([]);
   const scanSupported = catalog.supportedOps.includes('cli-scan');
   // The instance's own CLIs, scanned once like the local page; suggestions are optional.
@@ -553,249 +601,270 @@ function CloudProviderCatalogPage({
   return (
     // The real model list, panel and price dialog read and write the instance through this.
     <ModelSettingsSourceContext.Provider value={catalog.source}>
-      <section
-        className="flex h-full min-h-0 flex-col gap-[14px]"
-        aria-label={t('settings.providers.title')}
-      >
-        <div className="flex shrink-0 items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h2
-              className="text-16 font-medium leading-[1.2]"
-              style={{ color: 'var(--settings-section-title)' }}
-            >
-              {t('settings.providers.title')}
-            </h2>
-            <p className="text-13 leading-[1.5]" style={{ color: 'var(--settings-section-desc)' }}>
-              {t('settings.providers.subtitle')}
-            </p>
+      <ProviderShareSourceContext.Provider value={shareSupported ? shareSource : null}>
+        <section
+          className="flex h-full min-h-0 flex-col gap-[14px]"
+          aria-label={t('settings.providers.title')}
+        >
+          <div className="flex shrink-0 items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <h2
+                className="text-16 font-medium leading-[1.2]"
+                style={{ color: 'var(--settings-section-title)' }}
+              >
+                {t('settings.providers.title')}
+              </h2>
+              <p
+                className="text-13 leading-[1.5]"
+                style={{ color: 'var(--settings-section-desc)' }}
+              >
+                {t('settings.providers.subtitle')}
+              </p>
+            </div>
+            {/* Joining by link is an account action, as on the local page. */}
+            <ProviderSharePasteButton />
           </div>
-        </div>
-        {auth.failure && (
-          <p role="alert" className="text-13 text-[var(--text-secondary)]">
-            {t(`cloudSettings.${auth.failure}`)}
-          </p>
-        )}
-        {catalog.status === 'loading' && <p role="status">{t('cloudSettings.loading')}</p>}
-        {catalog.status === 'unavailable' && (
-          <div className="flex items-center gap-3">
+          {auth.failure && (
             <p role="alert" className="text-13 text-[var(--text-secondary)]">
-              {t('cloudSettings.readFailed')}
+              {t(`cloudSettings.${auth.failure}`)}
             </p>
-            <Button
-              variant="secondary"
-              size="md"
-              disabled={!online}
-              onClick={() => void catalog.load()}
-            >
-              <RefreshCw size={14} />
-              {t('cloudSettings.reload')}
-            </Button>
-          </div>
-        )}
-        {catalog.status === 'ready' && (
-          <div
-            className="flex min-h-0 flex-1 overflow-hidden rounded-xl border"
-            style={{
-              backgroundColor: 'var(--settings-theme-card-bg)',
-              borderColor: 'var(--settings-theme-card-border)',
-            }}
-          >
+          )}
+          {catalog.status === 'loading' && <p role="status">{t('cloudSettings.loading')}</p>}
+          {catalog.status === 'unavailable' && (
+            <div className="flex items-center gap-3">
+              <p role="alert" className="text-13 text-[var(--text-secondary)]">
+                {t('cloudSettings.readFailed')}
+              </p>
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={!online}
+                onClick={() => void catalog.load()}
+              >
+                <RefreshCw size={14} />
+                {t('cloudSettings.reload')}
+              </Button>
+            </div>
+          )}
+          {catalog.status === 'ready' && (
             <div
-              className="flex w-[224px] shrink-0 flex-col border-r"
-              style={{ borderColor: 'var(--settings-theme-card-border)' }}
+              className="flex min-h-0 flex-1 overflow-hidden rounded-xl border"
+              style={{
+                backgroundColor: 'var(--settings-theme-card-bg)',
+                borderColor: 'var(--settings-theme-card-border)',
+              }}
             >
-              <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-                {list.length > 1 && (
-                  <div className="select-none px-1.5 pb-1 pt-1">
-                    <span className="text-11" style={{ color: 'var(--text-tertiary)' }}>
-                      {t('settings.providers.order.hint')}
-                    </span>
-                  </div>
-                )}
-                <SortableList
-                  items={list}
-                  getId={(p) => p.id}
-                  onReorder={persistOrder}
-                  renderItem={(p, index) => (
-                    <RailRow
-                      provider={p}
-                      selected={selected?.id === p.id}
-                      onSelect={() => setSelectedId(p.id)}
-                      position={index + 1}
-                      total={list.length}
-                      onMove={(delta) => moveWithKeyboard(p.id, delta)}
-                      sortable={list.length > 1 && online}
-                    />
-                  )}
-                  disabled={list.length < 2 || !online}
-                  reducedMotion={reducedMotion}
-                  filter="input, textarea, select, a, [data-no-drag]"
-                  className="flex flex-col gap-0.5"
-                  rowClassName="provider-settings-sortable-row"
-                />
-                {suggestions.length > 0 && (
-                  <>
-                    <span
-                      className="px-2.5 pb-1 pt-3 text-11 font-medium uppercase"
-                      style={{ color: 'var(--text-tertiary)', letterSpacing: '0.5px' }}
-                    >
-                      {t('settings.providers.detect.groupLabel')}
-                    </span>
-                    {suggestions.map((s) => (
-                      <SuggestionRow
-                        key={s.detection.cli}
-                        detection={s.detection}
-                        provider={s.provider}
-                        disabled={!online}
-                        onClick={() => {
-                          setAddStart(s.provider.id);
-                          setAdding(true);
-                        }}
-                      />
-                    ))}
-                  </>
-                )}
-              </div>
               <div
-                id="settings-search-settings-providers-addProvider"
-                className="border-t p-2"
+                className="flex w-[224px] shrink-0 flex-col border-r"
                 style={{ borderColor: 'var(--settings-theme-card-border)' }}
               >
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  type="button"
-                  disabled={!online}
-                  onClick={() => {
-                    setAddStart(null);
-                    setAdding(true);
-                  }}
-                  className="w-full"
+                <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+                  {list.length > 1 && (
+                    <div className="select-none px-1.5 pb-1 pt-1">
+                      <span className="text-11" style={{ color: 'var(--text-tertiary)' }}>
+                        {t('settings.providers.order.hint')}
+                      </span>
+                    </div>
+                  )}
+                  <SortableList
+                    items={list}
+                    getId={(p) => p.id}
+                    onReorder={persistOrder}
+                    renderItem={(p, index) => (
+                      <RailRow
+                        provider={p}
+                        selected={selected?.id === p.id}
+                        onSelect={() => {
+                          setSelectedShareId(null);
+                          setSelectedId(p.id);
+                        }}
+                        position={index + 1}
+                        total={list.length}
+                        onMove={(delta) => moveWithKeyboard(p.id, delta)}
+                        sortable={list.length > 1 && online}
+                      />
+                    )}
+                    disabled={list.length < 2 || !online}
+                    reducedMotion={reducedMotion}
+                    filter="input, textarea, select, a, [data-no-drag]"
+                    className="flex flex-col gap-0.5"
+                    rowClassName="provider-settings-sortable-row"
+                  />
+                  <ProviderShareReceivedRailGroup
+                    selectedShareId={selectedShare?.shareId ?? null}
+                    onSelect={(shareId) => setSelectedShareId(shareId)}
+                  />
+                  {suggestions.length > 0 && (
+                    <>
+                      <span
+                        className="px-2.5 pb-1 pt-3 text-11 font-medium uppercase"
+                        style={{ color: 'var(--text-tertiary)', letterSpacing: '0.5px' }}
+                      >
+                        {t('settings.providers.detect.groupLabel')}
+                      </span>
+                      {suggestions.map((s) => (
+                        <SuggestionRow
+                          key={s.detection.cli}
+                          detection={s.detection}
+                          provider={s.provider}
+                          disabled={!online}
+                          onClick={() => {
+                            setAddStart(s.provider.id);
+                            setAdding(true);
+                          }}
+                        />
+                      ))}
+                    </>
+                  )}
+                </div>
+                <div
+                  id="settings-search-settings-providers-addProvider"
+                  className="border-t p-2"
+                  style={{ borderColor: 'var(--settings-theme-card-border)' }}
                 >
-                  <Plus size={15} />
-                  {t('settings.providers.addProvider')}
-                </Button>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    type="button"
+                    disabled={!online}
+                    onClick={() => {
+                      setAddStart(null);
+                      setAdding(true);
+                    }}
+                    className="w-full"
+                  >
+                    <Plus size={15} />
+                    {t('settings.providers.addProvider')}
+                  </Button>
+                </div>
+              </div>
+              <div
+                key={selectedShare ? `share:${selectedShare.shareId}` : selected?.id}
+                className="flex min-h-0 min-w-0 flex-1 flex-col"
+              >
+                {selectedShare ? (
+                  <ProviderShareReceivedDetail share={selectedShare} />
+                ) : (
+                  selected &&
+                  header(
+                    selected,
+                    <>
+                      {selected.suspended && (
+                        <div
+                          className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-5 py-3 text-13"
+                          style={{ borderColor: 'var(--settings-theme-card-border)' }}
+                        >
+                          <span style={{ color: 'var(--text-tertiary)' }}>
+                            {t('settings.providers.detail.suspendedBanner')}
+                          </span>
+                          <Button
+                            variant="secondary"
+                            size="md"
+                            disabled={!online}
+                            onClick={() =>
+                              void writeOrToast({
+                                op: 'model-disable',
+                                kind: 'provider',
+                                providerId: selected.id,
+                                disabled: false,
+                              })
+                            }
+                          >
+                            {t('settings.providers.button.enableProvider')}
+                          </Button>
+                        </div>
+                      )}
+                      {!selected.suspended &&
+                        selected.connected &&
+                        selected.agents.length > 0 &&
+                        selected.remoteInvocationEnabled !== undefined && (
+                          <CloudRemoteAccessRow
+                            key={selected.id}
+                            provider={selected}
+                            disabled={!online}
+                            groupSize={(() => {
+                              const view = remote.providers.find((p) => p.id === selected.id);
+                              const group = view ? remoteProviderGroupOf(view) : null;
+                              return group ? providerGroupDeviceCount(group.members) : null;
+                            })()}
+                            pendingShareRequests={
+                              pending.filter(
+                                (request) =>
+                                  request.hostDeviceId === deviceId &&
+                                  request.share.providerId === selected.id,
+                              ).length
+                            }
+                            onManageShare={() => setShareProviderId(selected.id)}
+                            write={(enabled) =>
+                              catalog.write({
+                                op: 'remote-access',
+                                providerId: selected.id,
+                                enabled,
+                              })
+                            }
+                          />
+                        )}
+                      {!selected.suspended &&
+                        catalog.source &&
+                        (providerHasModels(selected) ||
+                          isCustomRoutedProvider(selected) ||
+                          isBuiltinRefreshableProviderId(selected.id)) && (
+                          <>
+                            <div
+                              className="border-t"
+                              style={{ borderColor: 'var(--settings-theme-card-border)' }}
+                            />
+                            <UnifiedModelList
+                              provider={selected}
+                              emptyMessage={
+                                selected.source === 'user' && selected.modelDiscoveryFailure
+                                  ? t(
+                                      `settings.providers.detail.discoveryFailed.${selected.modelDiscoveryFailure.kind}`,
+                                    )
+                                  : t(
+                                      selected.connected
+                                        ? 'settings.providers.detail.emptyModelsConnected'
+                                        : 'settings.providers.detail.emptyModels',
+                                    )
+                              }
+                              {...(isBuiltinRefreshableProviderId(selected.id) ||
+                              isCustomRoutedProvider(selected)
+                                ? {
+                                    onRefresh: () => void refreshModels(selected),
+                                    refreshing: refreshing === selected.id,
+                                    refreshDisabled: refreshing !== null || !online,
+                                    ...(isBuiltinRefreshableProviderId(selected.id)
+                                      ? {
+                                          refreshIdleLabel: t(
+                                            'settings.providers.models.refreshBuiltinAria',
+                                          ),
+                                        }
+                                      : {}),
+                                  }
+                                : {})}
+                            />
+                          </>
+                        )}
+                    </>,
+                  )
+                )}
               </div>
             </div>
-            <div key={selected?.id} className="flex min-h-0 min-w-0 flex-1 flex-col">
-              {selected &&
-                header(
-                  selected,
-                  <>
-                    {selected.suspended && (
-                      <div
-                        className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-5 py-3 text-13"
-                        style={{ borderColor: 'var(--settings-theme-card-border)' }}
-                      >
-                        <span style={{ color: 'var(--text-tertiary)' }}>
-                          {t('settings.providers.detail.suspendedBanner')}
-                        </span>
-                        <Button
-                          variant="secondary"
-                          size="md"
-                          disabled={!online}
-                          onClick={() =>
-                            void writeOrToast({
-                              op: 'model-disable',
-                              kind: 'provider',
-                              providerId: selected.id,
-                              disabled: false,
-                            })
-                          }
-                        >
-                          {t('settings.providers.button.enableProvider')}
-                        </Button>
-                      </div>
-                    )}
-                    {!selected.suspended &&
-                      selected.connected &&
-                      selected.agents.length > 0 &&
-                      selected.remoteInvocationEnabled !== undefined && (
-                        <CloudRemoteAccessRow
-                          key={selected.id}
-                          provider={selected}
-                          disabled={!online}
-                          groupSize={(() => {
-                            const view = remote.providers.find((p) => p.id === selected.id);
-                            const group = view ? remoteProviderGroupOf(view) : null;
-                            return group ? providerGroupDeviceCount(group.members) : null;
-                          })()}
-                          pendingShareRequests={
-                            pending.filter(
-                              (request) =>
-                                request.hostDeviceId === deviceId &&
-                                request.share.providerId === selected.id,
-                            ).length
-                          }
-                          onManageShare={() => setShareProviderId(selected.id)}
-                          write={(enabled) =>
-                            catalog.write({
-                              op: 'remote-access',
-                              providerId: selected.id,
-                              enabled,
-                            })
-                          }
-                        />
-                      )}
-                    {!selected.suspended &&
-                      catalog.source &&
-                      (providerHasModels(selected) ||
-                        isCustomRoutedProvider(selected) ||
-                        isBuiltinRefreshableProviderId(selected.id)) && (
-                        <>
-                          <div
-                            className="border-t"
-                            style={{ borderColor: 'var(--settings-theme-card-border)' }}
-                          />
-                          <UnifiedModelList
-                            provider={selected}
-                            emptyMessage={
-                              selected.source === 'user' && selected.modelDiscoveryFailure
-                                ? t(
-                                    `settings.providers.detail.discoveryFailed.${selected.modelDiscoveryFailure.kind}`,
-                                  )
-                                : t(
-                                    selected.connected
-                                      ? 'settings.providers.detail.emptyModelsConnected'
-                                      : 'settings.providers.detail.emptyModels',
-                                  )
-                            }
-                            {...(isBuiltinRefreshableProviderId(selected.id) ||
-                            isCustomRoutedProvider(selected)
-                              ? {
-                                  onRefresh: () => void refreshModels(selected),
-                                  refreshing: refreshing === selected.id,
-                                  refreshDisabled: refreshing !== null || !online,
-                                  ...(isBuiltinRefreshableProviderId(selected.id)
-                                    ? {
-                                        refreshIdleLabel: t(
-                                          'settings.providers.models.refreshBuiltinAria',
-                                        ),
-                                      }
-                                    : {}),
-                                }
-                              : {})}
-                          />
-                        </>
-                      )}
-                  </>,
-                )}
-            </div>
-          </div>
-        )}
-        <CloudAddProviderDialog
-          open={adding}
-          onOpenChange={(next) => {
-            setAdding(next);
-            if (!next) setAddStart(null);
-          }}
-          auth={auth}
-          disabled={disabled}
-          run={runAction}
-          unlisted={unlisted}
-          start={addStart}
-        />
-      </section>
+          )}
+          <CloudAddProviderDialog
+            open={adding}
+            onOpenChange={(next) => {
+              setAdding(next);
+              if (!next) setAddStart(null);
+            }}
+            auth={auth}
+            disabled={disabled}
+            run={runAction}
+            unlisted={unlisted}
+            start={addStart}
+          />
+        </section>
+      </ProviderShareSourceContext.Provider>
     </ModelSettingsSourceContext.Provider>
   );
 }
