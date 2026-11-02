@@ -186,7 +186,12 @@ const items: ManagementItem[] = [
 afterEach(cleanup);
 
 function setup(
-  options: { unsupported?: boolean; withoutShare?: boolean; extraItems?: ManagementItem[] } = {},
+  options: {
+    unsupported?: boolean;
+    withoutShare?: boolean;
+    extraItems?: ManagementItem[];
+    extraProviders?: ProviderView[];
+  } = {},
 ) {
   let visibility = {
     status: 'ready',
@@ -200,7 +205,7 @@ function setup(
       return {
         version: 1,
         ownerGeneration: 3,
-        providers,
+        providers: [...providers, ...(options.extraProviders ?? [])],
         providerOrder: ['web-1', 'openai'],
         visibility,
         supportedOps: [
@@ -452,6 +457,61 @@ describe('deleting a provider on the instance', () => {
     await waitFor(() => expect(dialogs.confirm).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(manage.mock.calls.filter((call) => call[0].operation === 'run')).toHaveLength(0);
+  });
+});
+
+describe('custom connection header on the instance', () => {
+  const disconnectItem = (id: string) =>
+    ({
+      id: `provider:${id}`,
+      label: id,
+      status: 'connected',
+      group: 'management.currentProviders',
+      actions: [
+        {
+          id: `x-${id}`,
+          label: 'management.actions.disconnect',
+          intent: 'disconnect',
+          fields: [],
+          expiresAt: 9e15,
+        },
+      ],
+    }) as unknown as ManagementItem;
+  const open = async (name: string) => {
+    const row = (await screen.findAllByText(name)).find((node) =>
+      node.closest('.provider-settings-sortable-row'),
+    );
+    fireEvent.click(row!);
+    await screen.findByRole('button', { name: 'settings.providers.detail.moreActionsAria' });
+  };
+
+  it('offers disconnect only for a key-based endpoint, like the local header', async () => {
+    setup({
+      extraProviders: [
+        {
+          id: 'proxy-1',
+          name: 'Open proxy',
+          source: 'user',
+          agents: ['pi'],
+          auth: { method: 'none' },
+          routing: {},
+          models: { pi: [model('p-1')] },
+          connected: true,
+        } as unknown as ProviderView,
+      ],
+      extraItems: [disconnectItem('web-1'), disconnectItem('proxy-1')],
+    });
+    await open('My gateway');
+    expect(
+      await screen.findByRole('button', { name: 'settings.providers.button.disconnect' }),
+    ).toBeTruthy();
+    await open('Open proxy');
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'settings.providers.button.disconnect' }),
+      ).toBeNull(),
+    );
+    expect(screen.getByText('settings.providers.pill.configured')).toBeTruthy();
   });
 });
 

@@ -632,7 +632,8 @@ function CloudProviderCatalogPage({
         : p.id === 'xd'
           ? null
           : p.connected && !reconnectRequired
-            ? customApiKey && !disconnect
+            ? // Like the local custom header: only a key-based endpoint offers disconnect.
+              customApiKey && (!disconnect || p.auth.method !== 'apiKey')
               ? null
               : disconnect
                 ? {
