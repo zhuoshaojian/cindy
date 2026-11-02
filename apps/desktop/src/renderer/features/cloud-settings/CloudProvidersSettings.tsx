@@ -282,8 +282,15 @@ function CloudProviderCatalogPage({
               p.agents[0] === 'claude-code' ? 'Claude Code' : p.agents[0] === 'pi' ? 'Pi' : 'Codex',
           })
         : null;
+    // Same subtitles as the local headers for Cindy AI and organization connections.
     const subtitle =
-      p.source === 'user' ? customProviderSubtitleForDisplay(p) : providerSubtitleForDisplay(p, '');
+      p.id === 'xd'
+        ? t('settings.providers.xd.simpleSubtitle')
+        : isOrganizationManagedProvider(p)
+          ? t('settings.providers.byok.managed')
+          : p.source === 'user'
+            ? customProviderSubtitleForDisplay(p)
+            : providerSubtitleForDisplay(p, '');
     const prompt = owns ? auth.prompt : undefined;
     const detail =
       prompt?.kind === 'device' && prompt.userCode ? (
