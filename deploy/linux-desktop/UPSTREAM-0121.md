@@ -248,7 +248,31 @@ maintenance) backed up **3,556 files / 828,470,681 bytes**, started main and ini
 delivered digest with a cache hit, became ready with zero restarts, released maintenance and
 preserved databases, schedules and peer records. The other 13 instances were not touched.
 
-The Mac Dev `0.1.121-dev.cloud.20261102.7` (`948983cc61`; `c3a376909c` changes only the
-instance runtime) is installed. Real UI acceptance against cloud.6 has not run yet: the screen
-was locked, so the Keychain prompt of the new Dev signature could not be answered. Fleet
-admission has not been requested.
+With the Mac Dev `0.1.121-dev.cloud.20261102.7` (`948983cc61`; `c3a376909c` changes only the
+instance runtime) the channel advertised all 29 operations. Through the real UI, compared with
+the local page of the same Dev app:
+
+- Delete asks first: deleting the built-in OpenAI showed the local confirmation and cancelling
+  left the instance catalog unchanged; a temporary connection was deleted after confirmation.
+- The add wizard matches the local one (steps, groups, ElevenLabs, more local services, custom
+  endpoint last) without Ollama and the managed llama.cpp entry, as agreed; the DeepSeek, OpenAI,
+  xAI and custom endpoint forms are identical. An unreachable no-key endpoint
+  (`127.0.0.1:9`) gave the same detection and test messages as local, saved on the instance,
+  opened in the edit dialog with the instance's name, address, auth and runtime, was renamed and
+  then deleted.
+- Headers and menus match: Cindy AI offers fetch credentials again, rotate and disconnect (no
+  copy key, by request); fetching again ran on the instance and stayed connected; rotate and
+  disconnect showed the local confirmations and were cancelled. Organization connections show
+  refresh organization config (busy, then ready) and no model refresh. The built-in OpenAI shows
+  use this computer's Codex account and Fast.
+- Fast on the subscription account wrote `allowFast:false` to the instance and was turned back.
+- The Codex quota card shows the weekly limit and the instance's free reset; it was expanded but
+  not used (one available before and after).
+
+One difference was found and fixed: the cloud header offered disconnect for a connected no-auth
+custom endpoint, while the local header offers it only for a key endpoint (`ac61a8b763`, Mac Dev
+`.8`, unit tested; its live check waits for the Keychain prompt, the screen was locked again).
+The final instance catalog, Fast policy, Cindy AI and organization states equal the baseline.
+Not exercised live: the third wizard step (needs a real key or sign-in), DeepSeek and Zhipu
+balances and the Claude and Grok usage links (no such connection on the instance), third-party
+sign-in and real API keys. Fleet admission has not been requested.
