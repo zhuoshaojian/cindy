@@ -48,7 +48,9 @@ export const CLOUD_SETTINGS_GROUPS = {
   ],
   ghosts: [],
   'builtin-tools': ['builtinTools', 'browserTools'],
-  'computer-use': ['browserTools', 'browserBackend', 'computerTools', 'androidTools'],
+  // Android (ADB) automation is not offered: a cloud instance cannot reach the
+  // user's USB or local-network Android devices.
+  'computer-use': ['browserTools', 'browserBackend', 'computerTools'],
   storage: ['databaseWarning'],
   about: ['privacy', 'desktopNotifications', 'diagnostics'],
 } as const;

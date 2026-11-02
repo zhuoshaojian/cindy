@@ -77,10 +77,9 @@ export function cloudSearchEntryAllowed(
     if (entry.id === 'settings.computerUse.browser.title') return domains.includes('browserTools');
     if (entry.id === 'settings.computerUse.directControl.title')
       return domains.includes('computerTools');
-    if (entry.id === 'settings.computerUse.android.title') return domains.includes('androidTools');
     return (
       entry.id === 'computerUse' &&
-      domains.some((d) => d === 'browserTools' || d === 'computerTools' || d === 'androidTools')
+      domains.some((d) => d === 'browserTools' || d === 'computerTools')
     );
   }
   if (entry.tab === 'builtin-tools') return domains.includes('builtinTools');

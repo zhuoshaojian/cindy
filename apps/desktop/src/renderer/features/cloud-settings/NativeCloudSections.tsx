@@ -19,7 +19,6 @@ import type { LocalePreference } from '@/i18n';
 import { LspBetaCellView } from '@/components/settings/LspBetaCell';
 import { BuiltinToolsSectionView } from '@/components/settings/BuiltinToolsSection';
 import {
-  AndroidAutomationHeader,
   AutomationCard,
   BrowserAutomationHeader,
   ComputerAutomationHeader,
@@ -658,22 +657,6 @@ export function NativeCloudSections(props: Props) {
                 onChange={(next) => void attempt('computerTools', { computer: next })}
               />
             </AutomationCard>
-          </>
-        )}
-        {ready('androidTools') && (
-          <>
-            <div aria-hidden="true" className="h-px bg-[var(--settings-theme-card-border)]" />
-            {/* ADB and device selection need the target's native setup flow. */}
-            <AutomationCard id="automation-android">
-              <AndroidAutomationHeader
-                checked={bool(s('androidTools'), 'android')}
-                disabled={disabled}
-                onChange={(next) => void attempt('androidTools', { android: next })}
-              />
-            </AutomationCard>
-            <p className="text-12 leading-[1.5] text-[var(--settings-section-desc)]">
-              {t('settings.computerUse.android.toggleHint')}
-            </p>
           </>
         )}
       </div>

@@ -98,7 +98,7 @@ export default {
       }
       for (const [tab, ready] of [
         ['settings.tabs.builtinTools', 'settings.builtinTools.plugins.browser.name'],
-        ['settings.tabs.computerUse', 'settings.computerUse.android.title'],
+        ['settings.tabs.computerUse', 'settings.computerUse.directControl.title'],
         ['settings.tabs.storage', 'settings.about.storage.databaseSectionTitle'],
         ['settings.tabs.about', 'settings.about.analyticsLabel'],
       ]) {
@@ -108,6 +108,14 @@ export default {
           .first()
           .waitFor();
         await ui.capture(tab.split('.').pop());
+        // A cloud instance cannot reach the user's Android devices.
+        if (tab === 'settings.tabs.computerUse')
+          assert.equal(
+            await page
+              .getByText(await ui.t('settings.computerUse.android.title'), { exact: true })
+              .count(),
+            0,
+          );
       }
       return;
     }

@@ -335,8 +335,10 @@ describe('shared native cloud settings', () => {
     expect(allowed.some((e) => e.id === 'settings.agentResource.preset')).toBe(true);
     for (const id of ['general.language', 'general.composer', 'personalization.linkOpen'])
       expect(allowed.some((e) => e.id === id)).toBe(true);
+    // A cloud instance cannot reach the user's Android devices: no ADB entry or domain.
+    expect(CLOUD_SETTINGS_DOMAINS).not.toContain('androidTools');
+    expect(allowed.some((e) => e.tab === 'computer-use' && /android/i.test(e.id))).toBe(false);
     for (const id of [
-      'settings.computerUse.android.title',
       'settings.appearance.themeLabel',
       'settings.appearance.font.uiSize.label',
       'settings.about.analyticsLabel',

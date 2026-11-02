@@ -74,7 +74,6 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
     auxiliaryModel: { models: [] },
     visionBridge: { enabled: false, primary: null, fallback: null, targetModels: [] },
     browserBackend: { kind: 'external' },
-    androidTools: { android: false },
     desktopChat: {
       composerSendShortcut: 'enter',
       webLinkOpenPreference: 'external',

@@ -40,7 +40,7 @@ export function cloudSettingsFieldCoverage(id: SettingsSnapshotFieldId): CloudSe
   }
   if (domain === 'browser') return field === 'backend' ? edit('browserBackend','kind') : field === 'enabled' ? edit('browserTools','browser') : {kind:'dedicated',reason:'Copying personal browser login data requires its native consent flow and an available source profile.'};
   if (domain === 'computer') return edit('computerTools','computer');
-  if (domain === 'android') return field === 'enabled' ? edit('androidTools','android') : {kind:'dedicated',reason:'ADB executable and device selection require the native Android setup flow; absent on the target cloud runtime.'};
+  if (domain === 'android') return {kind:'notApplicable',reason:'ADB needs a USB or local-network Android device; a cloud instance cannot reach the user\'s devices.'};
   if (domain === 'voice') return {kind:'notApplicable',reason:'Desktop microphone and dictation settings require an audio device; the target cloud runtime has none.'};
   if (domain === 'worklouder' || domain === 'gamepad') return {kind:'notApplicable',reason:'Requires an attached physical input device.'};
   if (domain === 'deviceLink') return {kind:'dedicated',reason:'Remote desktop/control consent and device permissions use the existing device connection flow.'};
