@@ -1391,7 +1391,7 @@ export function DatabaseWarningSettingsView({
         >
           {t('settings.about.storage.dbSizeWarningDisableLabel')}
         </span>
-        <span className="text-11 leading-[1.4] text-[var(--settings-section-sublabel)] opacity-70">
+        <span className="text-11 leading-[1.4] text-[var(--text-secondary)]">
           {t('settings.about.storage.dbSizeWarningDisableDescription')}
         </span>
       </label>

@@ -102,7 +102,7 @@ export function CloudMcpAuthorization({
           presentation: 'standard',
           title: t('cloudSettings.mcpRemove'),
           description: t('cloudSettings.authScope', { name }),
-          confirmText: t('common.confirm'),
+          confirmText: t('settings.mcp.deleteConfirm.confirm'),
           cancelText: t('settings.mcp.cancel'),
         }))
       )

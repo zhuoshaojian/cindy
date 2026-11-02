@@ -150,7 +150,7 @@ export function CloudPersonalBotSettings({
           ? { kind: 'conflict', appId: '' }
           : idle
             ? { kind: 'idle' }
-            : { kind: 'error', reason: t('cloudSettings.authFailed') };
+            : { kind: 'error', reason: t('settings.discordBot.status.error') };
   const common = {
     expanded,
     onToggle,
