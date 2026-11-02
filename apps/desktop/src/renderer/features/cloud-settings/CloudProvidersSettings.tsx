@@ -49,6 +49,7 @@ import {
   MANAGED_OLLAMA_PROVIDER_ID,
 } from '../../../shared/localModelRuntime';
 import { applyProviderOrder } from '../../../shared/providerOrder';
+import { localCliDisplayName, type LocalCliDetection } from '../../../shared/localCliDetect';
 import { isBuiltinRefreshableProviderId } from '../../../shared/providerModelRefresh';
 import { providerGroupDeviceCount } from '../../../shared/providerGroup';
 import { remoteProviderGroupOf } from '../../../shared/remoteProviderGroups';
@@ -158,6 +159,24 @@ function CloudProviderCatalogPage({
   const [adding, setAdding] = useState(false);
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const [keyFormFor, setKeyFormFor] = useState<string | null>(null);
+  const [addStart, setAddStart] = useState<string | null>(null);
+  const [detections, setDetections] = useState<LocalCliDetection[]>([]);
+  const scanSupported = catalog.supportedOps.includes('cli-scan');
+  // The instance's own CLIs, scanned once like the local page; suggestions are optional.
+  useEffect(() => {
+    if (!scanSupported) return;
+    let cancelled = false;
+    void catalog
+      .send({ op: 'cli-scan' })
+      .then((receipt) => {
+        const value = receipt.value as { detections?: LocalCliDetection[] } | undefined;
+        if (!cancelled) setDetections(Array.isArray(value?.detections) ? value.detections : []);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [scanSupported, deviceId]);
   const rail = useMemo(
     () => applyProviderOrder(cloudRailProviders(catalog.providers), catalog.providerOrder),
     [catalog.providers, catalog.providerOrder],
@@ -165,6 +184,24 @@ function CloudProviderCatalogPage({
   const list = pendingOrder ? applyProviderOrder(rail, pendingOrder) : rail;
   useEffect(() => setPendingOrder(null), [catalog.providerOrder]);
   const selected = list.find((p) => p.id === selectedId) ?? list[0] ?? null;
+  const railIds = new Set(list.map((p) => p.id));
+  const unlisted = useMemo(
+    () =>
+      new Set(
+        catalog.providers
+          .filter((p) => p.source === 'builtin' && !rail.some((row) => row.id === p.id))
+          .map((p) => p.id),
+      ),
+    [catalog.providers, rail],
+  );
+  // Same rule as the local page: installed, in the catalog, not connected and not in the rail.
+  const suggestions = detections
+    .filter((d) => d.installed && !railIds.has(d.providerId))
+    .map((d) => ({ detection: d, provider: catalog.providers.find((p) => p.id === d.providerId) }))
+    .filter(
+      (s): s is { detection: LocalCliDetection; provider: ProviderView } =>
+        !!s.provider && !s.provider.connected && !s.provider.removed,
+    );
   const itemFor = (p: ProviderView) =>
     auth.items.find((item) => item.id === `provider:${p.id}` || item.id === `builtin-key:${p.id}`);
   const disabled = !online || auth.requesting || auth.loading;
@@ -591,6 +628,28 @@ function CloudProviderCatalogPage({
                   className="flex flex-col gap-0.5"
                   rowClassName="provider-settings-sortable-row"
                 />
+                {suggestions.length > 0 && (
+                  <>
+                    <span
+                      className="px-2.5 pb-1 pt-3 text-11 font-medium uppercase"
+                      style={{ color: 'var(--text-tertiary)', letterSpacing: '0.5px' }}
+                    >
+                      {t('settings.providers.detect.groupLabel')}
+                    </span>
+                    {suggestions.map((s) => (
+                      <SuggestionRow
+                        key={s.detection.cli}
+                        detection={s.detection}
+                        provider={s.provider}
+                        disabled={!online}
+                        onClick={() => {
+                          setAddStart(s.provider.id);
+                          setAdding(true);
+                        }}
+                      />
+                    ))}
+                  </>
+                )}
               </div>
               <div
                 id="settings-search-settings-providers-addProvider"
@@ -602,7 +661,10 @@ function CloudProviderCatalogPage({
                   size="lg"
                   type="button"
                   disabled={!online}
-                  onClick={() => setAdding(true)}
+                  onClick={() => {
+                    setAddStart(null);
+                    setAdding(true);
+                  }}
                   className="w-full"
                 >
                   <Plus size={15} />
@@ -718,10 +780,15 @@ function CloudProviderCatalogPage({
         )}
         <CloudAddProviderDialog
           open={adding}
-          onOpenChange={setAdding}
+          onOpenChange={(next) => {
+            setAdding(next);
+            if (!next) setAddStart(null);
+          }}
           auth={auth}
           disabled={disabled}
           run={runAction}
+          unlisted={unlisted}
+          start={addStart}
         />
       </section>
     </ModelSettingsSourceContext.Provider>
@@ -772,6 +839,59 @@ function KeyForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** The local detection row: the instance's CLI is installed and its provider is not connected. */
+function SuggestionRow({
+  detection,
+  provider,
+  disabled,
+  onClick,
+}: {
+  detection: LocalCliDetection;
+  provider: ProviderView;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const { t } = useTranslation();
+  const cliName = localCliDisplayName(detection.cli);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={t(
+        detection.loggedIn
+          ? 'settings.providers.detect.hintLoggedIn'
+          : 'settings.providers.detect.hintInstalled',
+        { cli: cliName },
+      )}
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[var(--settings-menu-bg-hover)]"
+    >
+      <div
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg opacity-70"
+        style={{
+          backgroundColor: 'var(--settings-integration-avatar-bg)',
+          border: '1px solid var(--settings-integration-avatar-border)',
+          color: 'var(--settings-integration-avatar-icon)',
+        }}
+      >
+        {providerIcon(provider, 14)}
+      </div>
+      <span className="min-w-0 flex-1 truncate text-13" style={{ color: 'var(--text-secondary)' }}>
+        {providerDisplayName(provider, t)}
+      </span>
+      <span
+        className="flex h-[22px] shrink-0 items-center rounded-full border px-2.5 text-11 font-medium"
+        style={{
+          borderColor: 'var(--settings-btn-secondary-border)',
+          color: 'var(--text-secondary)',
+        }}
+      >
+        {t('settings.providers.detect.action')}
+      </span>
+    </button>
   );
 }
 

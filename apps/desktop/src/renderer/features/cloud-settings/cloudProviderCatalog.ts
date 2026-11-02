@@ -246,5 +246,6 @@ export function useCloudProviderCatalog({
     source,
     load,
     write,
+    send,
   };
 }

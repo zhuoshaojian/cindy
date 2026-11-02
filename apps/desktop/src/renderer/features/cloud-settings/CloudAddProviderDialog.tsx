@@ -43,11 +43,29 @@ const FIELD_PLACEHOLDER: Record<string, string> = {
   models: 'settings.providers.custom.fields.modelIdPlaceholder',
 };
 
-export function cloudAddChoices(items: readonly ManagementItem[]): Choice[] {
+/**
+ * @param unlisted Built-in providers not shown in the rail; their sign-in is offered here,
+ *   as the local wizard offers a built-in subscription that is not connected.
+ */
+export function cloudAddChoices(
+  items: readonly ManagementItem[],
+  unlisted: ReadonlySet<string> = new Set(),
+): Choice[] {
   const choices: Choice[] = [];
   for (const item of items) {
     const id = item.id;
-    if (id === 'add:api-preset') {
+    if (id.startsWith('provider:') && unlisted.has(id.slice('provider:'.length))) {
+      const action = item.actions.find((a) => a.intent === 'authorize' && !a.fields.length);
+      if (action)
+        choices.push({
+          key: id,
+          item,
+          action,
+          group: 'subscription',
+          name: item.label,
+          logo: id.slice('provider:'.length),
+        });
+    } else if (id === 'add:api-preset') {
       const action = item.actions.find((a) => a.intent === 'create');
       const preset = action?.fields.find((field) => field.name === 'preset');
       for (const option of preset?.options ?? [])
@@ -130,19 +148,24 @@ export function CloudAddProviderDialog({
   auth,
   disabled,
   run,
+  unlisted,
+  start,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   auth: Auth;
   disabled: boolean;
   run: (item: ManagementItem, action: Action, values?: Record<string, string>) => Promise<Phase>;
+  unlisted?: ReadonlySet<string>;
+  /** Provider id to begin with, as a local CLI suggestion opens the wizard at its sign-in. */
+  start?: string | null;
 }) {
   const { t } = useTranslation();
   const formId = useId();
   const [query, setQuery] = useState('');
   const [choice, setChoice] = useState<Choice | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
-  const choices = useMemo(() => cloudAddChoices(auth.items), [auth.items]);
+  const choices = useMemo(() => cloudAddChoices(auth.items, unlisted), [auth.items, unlisted]);
   useEffect(() => {
     if (open) return;
     setQuery('');
@@ -166,6 +189,17 @@ export function CloudAddProviderDialog({
     const phase = await run(picked.item, picked.action, { ...submitted, ...picked.fixed });
     if (phase === 'succeeded') onOpenChange(false);
   };
+  useEffect(() => {
+    if (!open || !start) return;
+    const picked = choices.find(
+      (c) =>
+        c.group === 'subscription' && (c.key === `provider:${start}` || c.key === `add:${start}`),
+    );
+    if (!picked) return;
+    setChoice(picked);
+    if (!picked.action.fields.length) void submit(picked, {});
+    // Only when opened for a suggestion; later choice changes are the user's.
+  }, [open, start]);
   const q = query.trim().toLowerCase();
   const visible = q ? choices.filter((c) => c.name.toLowerCase().includes(q)) : choices;
   const meta = {

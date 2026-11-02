@@ -77,6 +77,16 @@ const providers = [
     connected: true,
   },
   {
+    id: 'anthropic',
+    name: 'Anthropic',
+    source: 'builtin',
+    agents: ['claude-code'],
+    auth: { method: 'oauth' },
+    routing: {},
+    models: { 'claude-code': [model('opus')] },
+    connected: false,
+  },
+  {
     id: 'gemini',
     name: 'Gemini',
     source: 'builtin',
@@ -89,6 +99,21 @@ const providers = [
 ] as unknown as ProviderView[];
 
 const items: ManagementItem[] = [
+  {
+    id: 'provider:anthropic',
+    label: 'Anthropic',
+    status: 'disconnected',
+    group: 'management.currentProviders',
+    actions: [
+      {
+        id: 'a0',
+        label: 'management.actions.authorize',
+        intent: 'authorize',
+        fields: [],
+        expiresAt: 9e15,
+      },
+    ],
+  },
   {
     id: 'add:xai',
     label: 'xAI',
@@ -167,8 +192,33 @@ function setup(options: { unsupported?: boolean } = {}) {
         providers,
         providerOrder: ['web-1', 'openai'],
         visibility,
-        supportedOps: ['list', 'visibility-set', 'order', 'model-call', 'effort', 'model-edit'],
+        supportedOps: [
+          'list',
+          'visibility-set',
+          'order',
+          'model-call',
+          'effort',
+          'model-edit',
+          'cli-scan',
+        ],
         efforts: { 'codex:*': { 'm-1': 'high' } },
+      };
+    if (request.op === 'cli-scan')
+      return {
+        ok: true,
+        ownerGeneration: 3,
+        catalogChanged: false,
+        value: {
+          detections: [
+            {
+              cli: 'claude-cli',
+              providerId: 'anthropic',
+              installed: true,
+              loggedIn: true,
+              sharedWithCindy: false,
+            },
+          ],
+        },
       };
     if (request.op === 'model-call')
       return {
@@ -305,9 +355,30 @@ describe('cloud model panel', () => {
   });
 });
 
+describe('instance CLI suggestions', () => {
+  it('suggests the instance CLI provider and starts its sign-in on the instance', async () => {
+    const { manage } = setup();
+    fireEvent.click(
+      await screen.findByRole('button', { name: /settings.providers.detect.action/ }),
+    );
+    await waitFor(() =>
+      expect(manage).toHaveBeenCalledWith(
+        expect.objectContaining({ operation: 'run', actionId: 'a0' }),
+      ),
+    );
+  });
+});
+
 describe('cloud provider helpers', () => {
   it('uses the local rail rule', () => {
     expect(cloudRailProviders(providers).map((p) => p.id)).toEqual(['openai', 'web-1']);
+  });
+  it('offers a built-in sign-in only when that provider is not in the rail', () => {
+    expect(cloudAddChoices(items).some((c) => c.key === 'provider:anthropic')).toBe(false);
+    expect(
+      cloudAddChoices(items, new Set(['anthropic'])).find((c) => c.key === 'provider:anthropic')
+        ?.group,
+    ).toBe('subscription');
   });
   it('expands API presets into rows and keeps custom endpoints last', () => {
     expect(cloudAddChoices(items).map((choice) => [choice.group, choice.name])).toEqual([
