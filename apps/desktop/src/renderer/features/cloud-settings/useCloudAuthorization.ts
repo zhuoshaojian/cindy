@@ -75,7 +75,8 @@ export function useCloudAuthorization(
     finish(result);
     return result;
   };
-  const load = async () => {
+  /** Resolves with the listed items, so a caller can run a fresh action right away. */
+  const load = async (): Promise<ManagementItem[] | undefined> => {
     if (!current() || !client.manage) return;
     const seq = ++sequence.current;
     setLoading(true);
@@ -101,7 +102,7 @@ export function useCloudAuthorization(
           setItems(visible);
           setFailure(undefined);
           setSelected((old) => (visible.some((item) => item.id === old) ? old : visible[0]?.id));
-          return;
+          return visible;
         }
         if (result.nextOffset <= offset) throw new Error('INVALID_PAGE');
         offset = result.nextOffset;

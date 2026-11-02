@@ -1,11 +1,23 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GripVertical, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  GripVertical,
+  KeyRound,
+  LogOut,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 import {
   isCustomRoutedProvider,
   isOrganizationManagedProvider,
+  storedCustomProviderId,
+  type CustomProviderConfig,
   type ProviderView,
 } from '@cindy/model-providers';
+import type { MobileCodexRateLimitsResult } from '@cindy/maker-shared/device-link-contract';
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -22,7 +34,12 @@ import { hasProviderLogo, ProviderLogoMark } from '@/components/icons/ProviderLo
 import { SortableList } from '@/components/sidebar/SortableList';
 import { ProviderListEntry } from '@/components/settings/ProviderListEntry';
 import { ConnectedPill, ProviderAccountHeader } from '@/components/settings/ProviderAccountHeader';
-import { OAuthBrowserLink, OAuthDeviceCodeCard } from '@/components/settings/OAuthDeviceCodeCard';
+import { AddProviderWizard, type WizardEntry } from '@/components/settings/AddProviderWizard';
+import { ProviderAccountUsageModule } from '@/components/settings/ProviderAccountUsageModule';
+import { ProviderConnectionDialog } from '@/components/settings/ProviderConnectionDialog';
+import { ProviderSetupSourceContext } from '@/components/settings/providerSetupSource';
+import { providerWeeklyQuotaSource } from '@/components/new-chat/useProviderWeeklyQuota';
+import { CodexResetCredits } from '@/components/status/CodexResetCredits';
 import { SettingsTextInput } from '@/components/settings/SettingsTextInput';
 import { buildUnionRows, UnifiedModelList } from '@/components/settings/UnifiedModelList';
 import { ModelSettingsSourceContext } from '@/components/settings/modelSettingsSource';
@@ -30,6 +47,7 @@ import { useDeviceProviderSubscriptionCard } from '@/components/settings/useProv
 import { QuotaHoverCard } from '@/components/status/QuotaHoverCard';
 import { ProviderShareEntryButton } from '@/features/provider-share/ProviderShareEntryButton';
 import { ProviderShareManagePage } from '@/features/provider-share/ProviderShareManagePage';
+import { SubscriptionFastSetting } from '@/features/provider-share/SubscriptionFastSetting';
 import { ProviderSharePasteButton } from '@/features/provider-share/ProviderSharePasteDialog';
 import {
   ProviderShareReceivedDetail,
@@ -43,6 +61,8 @@ import type { ReceivedSnapshot } from '@/features/provider-share/providerShareSt
 import { providerShareGate } from '@/features/provider-share/providerShareFormat';
 import { useProviderSharePendingRequests } from '@/features/provider-share/providerShareStore';
 import { useDeviceProviders } from '@/hooks/useDeviceProviders';
+import { useCodexRateLimitReset } from '@/hooks/useCodexRateLimitReset';
+import { providerViewToCustomProviderConfig } from '@/lib/customProviders';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { providerDisplayName } from '@/lib/providerDisplayName';
 import { providerMonogram } from '@/lib/providerModels';
@@ -53,7 +73,15 @@ import {
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import type { ManagementItem, ManagementResult } from '../../../shared/settingsManagement';
-import type { CloudProviderSettingsRequest } from '../../../shared/cloudProviderSettings';
+import {
+  CLOUD_PROVIDER_SETUP_ITEM,
+  type CloudProviderSettingsRequest,
+  type CloudProviderSettingsWriteReceipt,
+} from '../../../shared/cloudProviderSettings';
+import type { ByokStatus, ModelAccessStatus } from '../../../shared/modelAccess';
+import type { ProviderAccountUsageResult } from '../../../shared/providerAccountUsage';
+import type { DetectedProviderDraft } from '../../../shared/providerDetection';
+import { isBuiltinApiKeyProviderId } from '../../../shared/providerSecrets';
 import { MANAGED_LLAMACPP_PROVIDER_ID } from '../../../shared/llamaCpp';
 import {
   MANAGED_LMSTUDIO_PROVIDER_ID,
@@ -67,7 +95,8 @@ import { remoteProviderGroupOf } from '../../../shared/remoteProviderGroups';
 import { CloudProviderAuthorization } from './CloudProviderAuthorization';
 import { CloudAddProviderDialog } from './CloudAddProviderDialog';
 import { CloudXdQuota } from './CloudXdQuota';
-import { useCloudProviderCatalog } from './cloudProviderCatalog';
+import { useCloudProviderCatalog, type CloudProviderWrite } from './cloudProviderCatalog';
+import { CloudLoginPrompt, useCloudProviderSetup } from './cloudProviderSetup';
 import { useCloudAuthorization, type CloudAuthorizationProps } from './useCloudAuthorization';
 
 type Action = ManagementItem['actions'][number];
@@ -127,6 +156,62 @@ function CustomTag({ label }: { label: string }) {
     >
       {label}
     </span>
+  );
+}
+
+function ReconnectRequiredPill() {
+  const { t } = useTranslation();
+  return (
+    <span
+      className="flex h-[22px] shrink-0 select-none items-center gap-1 rounded-full px-2.5 text-11 font-medium"
+      style={{
+        backgroundColor: 'var(--settings-btn-secondary-bg)',
+        color: 'var(--settings-section-desc)',
+      }}
+    >
+      <RefreshCw size={11} />
+      {t('settings.providers.openai.reconnectRequired')}
+    </span>
+  );
+}
+
+function isManagedLocalProvider(id: string): boolean {
+  return id === MANAGED_OLLAMA_PROVIDER_ID || id === MANAGED_LLAMACPP_PROVIDER_ID;
+}
+
+/** The local rule for built-in connections that can be removed from the list. */
+function supportsConnectionManagement(p: ProviderView): boolean {
+  return (
+    p.source === 'builtin' &&
+    p.id !== 'xd' &&
+    (['openai', 'anthropic', 'xai'].includes(p.id) ||
+      (p.auth.method === 'oauth' && !!p.auth.oauth) ||
+      (p.auth.method === 'apiKey' && isBuiltinApiKeyProviderId(p.id)))
+  );
+}
+
+/** The subscription badge with the plan name, as the local header shows it. */
+function CloudSubscriptionTag({
+  provider,
+  deviceId,
+  product,
+}: {
+  provider: ProviderView;
+  deviceId: string;
+  product: string;
+}) {
+  const { t } = useTranslation();
+  const plan = useDeviceProviderSubscriptionCard(provider, deviceId)?.planLabel;
+  return (
+    <CustomTag
+      label={
+        plan
+          ? plan.toLowerCase().startsWith(product.toLowerCase())
+            ? plan
+            : `${product} ${plan}`
+          : t('settings.providers.models.subscriptionProduct', { product })
+      }
+    />
   );
 }
 
@@ -296,6 +381,126 @@ function CloudProviderCatalogPage({
       return phase;
     });
 
+  const setupApi = useCloudProviderSetup({
+    supported:
+      catalog.supportedOps.includes('setup-stage') &&
+      auth.items.some((item) => item.id === CLOUD_PROVIDER_SETUP_ITEM),
+    send: catalog.send,
+    auth,
+  });
+  const setup = setupApi.source;
+  const [nativeLogin, setNativeLogin] = useState<string | null>(null);
+  const [wizard, setWizard] = useState<null | {
+    entry?: WizardEntry;
+    detected?: DetectedProviderDraft;
+  }>(null);
+  const [dialog, setDialog] = useState<
+    | null
+    | { mode: 'create'; draft?: DetectedProviderDraft }
+    | { mode: 'edit'; config: CustomProviderConfig }
+  >(null);
+  const editProvider = async (p: ProviderView) => {
+    if (!setup) return;
+    try {
+      // The full view (endpoints included) comes from the instance; keys stay there.
+      const view = await setup.readProvider(p.id);
+      if (!view) throw new Error('NOT_FOUND');
+      setDialog({ mode: 'edit', config: providerViewToCustomProviderConfig(view) });
+    } catch {
+      toast.error(t('cloudSettings.readFailed'));
+    }
+  };
+
+  // Cindy AI credential state and actions of the instance, as the local header reads them.
+  const [xdStatus, setXdStatus] = useState<ModelAccessStatus | null>(null);
+  const [xdBusy, setXdBusy] = useState<string | null>(null);
+  const xdSupported = catalog.supportedOps.includes('xd');
+  const xdSelected = selected?.id === 'xd';
+  useEffect(() => {
+    if (!xdSupported || !xdSelected) return;
+    let cancelled = false;
+    void catalog
+      .send({ op: 'xd', action: 'status' })
+      .then((receipt) => {
+        if (!cancelled) setXdStatus(receipt.value as ModelAccessStatus);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [xdSupported, xdSelected, deviceId, catalog.providers]);
+  const xdAction = async (action: 'retry' | 'rotate' | 'disconnect') => {
+    if (
+      action !== 'retry' &&
+      !(await confirm({
+        title: t(
+          `settings.providers.xd.${action === 'rotate' ? 'rotate' : 'disconnect'}Confirm.title`,
+        ),
+        description: t(
+          `settings.providers.xd.${action === 'rotate' ? 'rotate' : 'disconnect'}Confirm.description`,
+        ),
+        confirmText: t(
+          action === 'rotate'
+            ? 'settings.providers.xd.rotateConfirm.confirm'
+            : 'settings.providers.button.disconnect',
+        ),
+        cancelText: t('settings.connections.codex.logoutConfirm.cancel'),
+      }))
+    )
+      return;
+    setXdBusy(action);
+    try {
+      const receipt = await catalog.send({ op: 'xd', action });
+      setXdStatus(receipt.value as ModelAccessStatus);
+      if (action === 'rotate') toast.success(t('settings.providers.xd.rotateSuccess'));
+    } catch {
+      if (action === 'rotate') toast.error(t('settings.providers.xd.rotateFailed'));
+    } finally {
+      setXdBusy(null);
+    }
+  };
+
+  // Organization connections: the instance's enterprise configuration state and refresh.
+  const [byokState, setByokState] = useState<'ready' | 'pending' | 'unavailable' | null>(null);
+  const [byokBusy, setByokBusy] = useState(false);
+  const byokSupported = catalog.supportedOps.includes('byok');
+  const managedId = selected && isOrganizationManagedProvider(selected) ? selected.id : null;
+  const byokStateOf = (status: unknown, id: string) =>
+    (status as ByokStatus | null)?.providers?.find((item) => item.providerId === id)?.state ??
+    'unavailable';
+  useEffect(() => {
+    setByokState(null);
+    if (!byokSupported || !managedId) return;
+    let disposed = false;
+    const read = () =>
+      void catalog
+        .send({ op: 'byok', action: 'status' })
+        .then((receipt) => {
+          if (!disposed) setByokState(byokStateOf(receipt.value, managedId));
+        })
+        .catch(() => undefined);
+    read();
+    const timer = setInterval(read, 5_000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, [byokSupported, managedId, deviceId]);
+  const refreshByok = async () => {
+    if (byokBusy || !managedId) return;
+    setByokBusy(true);
+    try {
+      const receipt = await catalog.send({ op: 'byok', action: 'retry' });
+      setByokState(byokStateOf(receipt.value, managedId));
+      if ((receipt.value as ByokStatus | null)?.state === 'failed')
+        toast.error(t('settings.providers.byok.refreshFailed'));
+    } catch {
+      toast.error(t('settings.providers.byok.refreshFailed'));
+    } finally {
+      setByokBusy(false);
+    }
+  };
+
   if (shareProviderId) {
     const provider = catalog.providers.find((p) => p.id === shareProviderId);
     return (
@@ -326,39 +531,156 @@ function CloudProviderCatalogPage({
     const disconnect = actions.find((a) => a.intent === 'disconnect');
     const connectKey = actions.find((a) => a.intent === 'connect' && a.fields.length);
     const remove = actions.find((a) => a.intent === 'delete');
-    const owns = !!item && auth.operationItem === item.id;
+    const loginRunning = auth.busy && auth.operationItem === CLOUD_PROVIDER_SETUP_ITEM;
+    const owns =
+      (!!item && auth.operationItem === item.id) || (loginRunning && nativeLogin === p.id);
+    const loggingIn = owns && auth.busy;
     const reconnectRequired = p.openAiAccount?.reconnectRequired === true;
-    const primary =
-      owns && auth.busy
-        ? {
-            label: t('settings.providers.button.cancel'),
-            onClick: () => void auth.operate('cancel'),
-          }
-        : authorize && (!p.connected || reconnectRequired)
-          ? {
-              label: t(
-                reconnectRequired
-                  ? 'settings.providers.openai.reconnect'
-                  : 'settings.providers.button.authorize',
-              ),
-              onClick: () => void runAction(item!, authorize),
-            }
-          : connectKey && !p.connected
+    const managed = isOrganizationManagedProvider(p);
+    const builtinKey =
+      p.source === 'builtin' && p.auth.method === 'apiKey' && isBuiltinApiKeyProviderId(p.id);
+    const customApiKey =
+      p.source === 'user' &&
+      !managed &&
+      !(p.auth.method === 'oauth' && (!!p.auth.oauth || !!p.auth.native));
+    const customOAuth = p.source === 'user' && !managed && !customApiKey;
+    // The instance's own Claude Code / Codex / Grok sign-in, as the local headers offer it.
+    const native = p.source === 'builtin' && ['anthropic', 'openai', 'xai'].includes(p.id);
+    const signIn = (method?: 'browser' | 'device') => {
+      if (!setup) {
+        if (authorize) void runAction(item!, authorize);
+        return;
+      }
+      setNativeLogin(p.id);
+      void setupApi
+        .nativeLogin(
+          p.id === 'anthropic' ? 'claude' : p.id === 'openai' ? 'codex' : 'xai',
+          p.id === 'xai' ? method : undefined,
+        )
+        .then((result) => {
+          if (!result.ok && result.reason !== 'login_cancelled')
+            toast.error(t('settings.providers.wizard.authorizeFailed', { name: p.name }));
+        })
+        .catch(() => toast.error(t('settings.providers.wizard.authorizeFailed', { name: p.name })))
+        .finally(() => {
+          setNativeLogin(null);
+          void catalog.load();
+        });
+    };
+    const xd = p.id === 'xd' ? xdStatus : null;
+    const xdServerManaged = xd?.state === 'ok' && xd.source === 'server';
+    const status: { kind: 'connected' | 'reconnect-required' | 'neutral'; label?: string } | null =
+      p.id === 'xd'
+        ? xd?.state === 'unsupported'
+          ? { kind: 'neutral', label: t('settings.providers.xd.sync.unsupported') }
+          : xd?.state === 'syncing'
+            ? { kind: 'neutral', label: t('settings.providers.xd.sync.syncing') }
+            : xd?.state === 'failed'
+              ? null
+              : p.connected
+                ? { kind: 'connected' }
+                : {
+                    kind: 'neutral',
+                    label: t(
+                      xd?.state === 'disabled'
+                        ? 'settings.providers.xd.sync.disabled'
+                        : 'settings.providers.xd.sync.autoProvision',
+                    ),
+                  }
+        : managed
+          ? byokState === 'ready' || (!byokState && p.agents.length)
+            ? { kind: 'connected' }
+            : { kind: 'neutral', label: t(`settings.providers.byok.${byokState ?? 'pending'}`) }
+          : builtinKey || customApiKey
             ? {
-                label: t('settings.providers.builtinApiKey.saveKey'),
-                onClick: () => setKeyFormFor(p.id),
+                kind: 'neutral',
+                label: t(
+                  p.connected
+                    ? 'settings.providers.pill.configured'
+                    : 'settings.providers.pill.unconfigured',
+                ),
               }
-            : disconnect && p.connected
+            : reconnectRequired
+              ? { kind: 'reconnect-required' }
+              : p.connected
+                ? { kind: 'connected' }
+                : native || customOAuth || authorize
+                  ? {
+                      kind: 'neutral',
+                      label: t(
+                        loggingIn
+                          ? 'settings.providers.pill.connecting'
+                          : 'settings.providers.pill.disconnected',
+                      ),
+                    }
+                  : null;
+    const cancelLogin = () =>
+      void auth.operate('cancel').finally(() => {
+        setNativeLogin(null);
+      });
+    const deviceFlow = p.auth.method === 'oauth' && p.auth.oauth?.flow === 'device-code';
+    const primary: { label: string; onClick: () => void; disabled?: boolean } | null = loggingIn
+      ? { label: t('settings.providers.button.cancel'), onClick: cancelLogin }
+      : managed
+        ? byokSupported
+          ? {
+              label: t('settings.providers.byok.refresh'),
+              onClick: () => void refreshByok(),
+              disabled: byokBusy,
+            }
+          : null
+        : p.id === 'xd'
+          ? null
+          : p.connected && !reconnectRequired
+            ? customApiKey && !disconnect
+              ? null
+              : disconnect
+                ? {
+                    label: t('settings.providers.button.disconnect'),
+                    onClick: () => void runAction(item!, disconnect),
+                  }
+                : null
+            : customApiKey && setup
               ? {
-                  label: t('settings.providers.button.disconnect'),
-                  onClick: () => void runAction(item!, disconnect),
+                  label: t('settings.providers.custom.editAria'),
+                  onClick: () => void editProvider(p),
                 }
-              : null;
-    const canRename = p.id !== 'xd' && !isOrganizationManagedProvider(p);
+              : native && (setup || authorize)
+                ? {
+                    label: t(
+                      p.id === 'anthropic'
+                        ? 'settings.providers.localAccount.useClaude'
+                        : p.id === 'openai'
+                          ? reconnectRequired
+                            ? 'settings.providers.openai.reconnect'
+                            : 'settings.providers.openai.connect'
+                          : 'settings.providers.button.authorize',
+                    ),
+                    onClick: () => signIn('browser'),
+                  }
+                : authorize
+                  ? {
+                      label: t(
+                        reconnectRequired
+                          ? 'settings.providers.openai.reconnect'
+                          : deviceFlow
+                            ? 'settings.providers.wizard.authorizeWithDeviceCode'
+                            : 'settings.providers.button.authorize',
+                      ),
+                      onClick: () => void runAction(item!, authorize),
+                    }
+                  : connectKey && !p.connected
+                    ? {
+                        label: t('settings.providers.builtinApiKey.saveKey'),
+                        onClick: () => setKeyFormFor(p.id),
+                      }
+                    : null;
+    const canRename = p.id !== 'xd' && !managed;
+    const canEdit = !!setup && (customApiKey || (customOAuth && !p.auth.native));
     const builtinRemovable =
-      p.source === 'builtin' && p.id !== 'xd' && !isOrganizationManagedProvider(p);
-    // Same confirmation and feedback as the local page; deleting is never one click.
+      p.source === 'builtin' && p.id !== 'xd' && !managed && supportsConnectionManagement(p);
     const removeProvider = async () => {
+      // Same confirmation and feedback as the local page; deleting is never one click.
       const ollama = p.id === MANAGED_OLLAMA_PROVIDER_ID;
       const ok = await confirm({
         ...(remove && !ollama ? { presentation: 'standard' as const } : {}),
@@ -374,9 +696,17 @@ function CloudProviderCatalogPage({
         cancelText: t('settings.providers.custom.deleteConfirm.cancel'),
       });
       if (!ok) return;
-      if (remove) {
-        if ((await runAction(item!, remove)) === 'succeeded')
-          toast.success(t('settings.providers.custom.toast.deleted'));
+      if (remove || (setup && p.source === 'user')) {
+        // A custom connection and its keys are deleted on the instance.
+        const deleted = remove
+          ? (await runAction(item!, remove)) === 'succeeded'
+          : await setup!.deleteCustomProvider(p.id).then(
+              () => true,
+              () => false,
+            );
+        if (deleted) toast.success(t('settings.providers.custom.toast.deleted'));
+        else if (!remove) toast.error(t('settings.providers.custom.toast.deleteFailed'));
+        if (!remove) void catalog.load();
         return;
       }
       // A built-in connection is hidden only after its login is gone.
@@ -402,77 +732,45 @@ function CloudProviderCatalogPage({
               p.agents[0] === 'claude-code' ? 'Claude Code' : p.agents[0] === 'pi' ? 'Pi' : 'Codex',
           })
         : null;
-    // Same subtitles as the local headers for Cindy AI and organization connections.
+    const accountLine = (source: string, identity?: string | null) =>
+      [t(`settings.providers.openai.accountSource.${source}`), identity]
+        .filter(Boolean)
+        .join(' · ');
+    // The local headers' subtitles, by provider kind.
     const subtitle =
       p.id === 'xd'
         ? t('settings.providers.xd.simpleSubtitle')
-        : isOrganizationManagedProvider(p)
+        : managed
           ? t('settings.providers.byok.managed')
-          : p.source === 'user'
-            ? customProviderSubtitleForDisplay(p)
-            : providerSubtitleForDisplay(p, '');
-    const prompt = owns ? auth.prompt : undefined;
+          : p.id === 'anthropic' && p.source === 'builtin'
+            ? providerSubtitleForDisplay(p, t('settings.providers.anthropic.modelLabel'), {
+                fallback: t('settings.providers.anthropic.subtitle'),
+              })
+            : p.id === 'openai' && p.source === 'builtin'
+              ? p.openAiAccount
+                ? accountLine(p.openAiAccount.source, p.openAiAccount.identity)
+                : t('settings.providers.openai.subtitle')
+              : p.id === 'xai' && p.source === 'builtin'
+                ? providerSubtitleForDisplay(p, t('settings.providers.xai.modelLabel'), {
+                    fallback: t('settings.providers.xai.subtitle'),
+                  })
+                : builtinKey
+                  ? t('settings.providers.builtinApiKey.subtitle')
+                  : p.id === MANAGED_OLLAMA_PROVIDER_ID || p.id === MANAGED_LLAMACPP_PROVIDER_ID
+                    ? t('settings.providers.local.subtitle')
+                    : customOAuth || (p.source === 'builtin' && p.auth.oauth)
+                      ? p.openAiAccount
+                        ? accountLine(p.openAiAccount.source, p.openAiAccount.identity)
+                        : p.subscriptionAccount
+                          ? accountLine('oauth', p.subscriptionAccount.identity)
+                          : t('settings.providers.genericOAuth.subtitle')
+                      : p.source === 'user'
+                        ? customProviderSubtitleForDisplay(p)
+                        : providerSubtitleForDisplay(p, '');
+    const prompt = owns ? <CloudLoginPrompt auth={auth} disabled={disabled} /> : null;
     const detail =
-      prompt?.kind === 'device' && prompt.userCode ? (
-        <OAuthDeviceCodeCard
-          deviceCode={{
-            verificationUrl: prompt.url,
-            userCode: prompt.userCode,
-            expiresAt: prompt.expiresAt,
-          }}
-          onOpen={auth.open}
-        />
-      ) : prompt ? (
-        <div className="flex flex-col gap-2">
-          <OAuthBrowserLink url={prompt.url} onOpen={auth.open} />
-          {prompt.kind === 'callback' && (
-            <form
-              className="flex flex-col gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (auth.callback.trim()) void auth.operate('respond');
-              }}
-            >
-              <SettingsTextInput
-                aria-label={t('cloudSettings.authCallback')}
-                type="password"
-                autoComplete="off"
-                value={auth.callback}
-                onChange={auth.setCallback}
-                disabled={disabled}
-              />
-              <div>
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  size="md"
-                  disabled={disabled || !auth.callback.trim()}
-                >
-                  {t('cloudSettings.authContinue')}
-                </Button>
-              </div>
-            </form>
-          )}
-        </div>
-      ) : owns && auth.operation?.phase === 'unknown' ? (
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            size="md"
-            disabled={disabled}
-            onClick={() => void auth.operate('status')}
-          >
-            {t('cloudSettings.authCheck')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            disabled={disabled}
-            onClick={() => void auth.operate('cancel')}
-          >
-            {t('settings.providers.button.cancel')}
-          </Button>
-        </div>
+      owns && (auth.prompt || auth.operation?.phase === 'unknown') ? (
+        prompt
       ) : keyFormFor === p.id && connectKey && item ? (
         <KeyForm
           disabled={disabled || auth.busy}
@@ -482,6 +780,24 @@ function CloudProviderCatalogPage({
               setKeyFormFor(null);
           }}
         />
+      ) : p.id === 'xai' && native && !p.connected && !loggingIn && setup ? (
+        <Button variant="secondary" size="md" disabled={disabled} onClick={() => signIn('device')}>
+          {t('settings.connections.xai.deviceLogin')}
+        </Button>
+      ) : p.id === 'xd' && xd?.state === 'failed' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="max-w-[400px] text-13 leading-relaxed text-[var(--text-secondary)]">
+            {t('settings.providers.xd.asset.syncFailed')}
+          </p>
+          <Button
+            variant="secondary"
+            size="md"
+            disabled={disabled}
+            onClick={() => void xdAction('retry')}
+          >
+            {t('settings.providers.xd.sync.retry')}
+          </Button>
+        </div>
       ) : undefined;
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -491,11 +807,19 @@ function CloudProviderCatalogPage({
           subtitle={`${subtitle}${singleAgent ? ` · ${singleAgent}` : ''}`}
           badges={
             <>
+              {p.id === 'xd' && xd?.accountTier === 'free' && (
+                <span
+                  data-testid="cindy-ai-free-tier-badge"
+                  className="inline-flex shrink-0 items-center rounded-full bg-[var(--surface-chip)] px-2 py-[1px] text-11 font-medium leading-[1.45] text-[var(--text-secondary)]"
+                >
+                  {t('settings.providers.xd.accountTier.free')}
+                </span>
+              )}
               {subscriptionProduct && (
-                <CustomTag
-                  label={t('settings.providers.models.subscriptionProduct', {
-                    product: subscriptionProduct,
-                  })}
+                <CloudSubscriptionTag
+                  provider={p}
+                  deviceId={deviceId}
+                  product={subscriptionProduct}
                 />
               )}
               {p.suspended && <CustomTag label={t('settings.providers.pill.suspended')} />}
@@ -503,12 +827,20 @@ function CloudProviderCatalogPage({
           }
           actions={
             <>
-              {p.connected && !reconnectRequired && <ConnectedPill />}
+              {status?.kind === 'connected' ? (
+                <ConnectedPill />
+              ) : status?.kind === 'reconnect-required' ? (
+                <ReconnectRequiredPill />
+              ) : status?.label ? (
+                <span role="status" className="text-12 text-[var(--text-tertiary)]">
+                  {status.label}
+                </span>
+              ) : null}
               {primary && (
                 <Button
                   variant="secondary"
                   size="md"
-                  disabled={disabled || (auth.busy && !owns)}
+                  disabled={primary.disabled || disabled || (auth.busy && !owns)}
                   onClick={primary.onClick}
                 >
                   {primary.label}
@@ -537,10 +869,43 @@ function CloudProviderCatalogPage({
                     {t('settings.providers.pill.rename')}
                   </DropdownMenuItem>
                 )}
-                {connectKey && p.connected && (
+                {canEdit && (
+                  <DropdownMenuItem
+                    disabled={!online || loggingIn}
+                    onClick={() => void editProvider(p)}
+                  >
+                    <Pencil size={18} className="mr-2.5" />
+                    {t('settings.providers.custom.editAria')}
+                  </DropdownMenuItem>
+                )}
+                {connectKey && p.connected && (!setup || builtinKey) && (
                   <DropdownMenuItem disabled={!online} onClick={() => setKeyFormFor(p.id)}>
                     <Pencil size={18} className="mr-2.5" />
                     {t('settings.providers.builtinApiKey.replaceKey')}
+                  </DropdownMenuItem>
+                )}
+                {/* Cindy AI credentials, as on the local page (the key itself stays on the instance). */}
+                {xdServerManaged && (
+                  <DropdownMenuItem disabled={!online} onClick={() => void xdAction('retry')}>
+                    <RefreshCw size={14} className="mr-2.5 text-[var(--text-tertiary)]" />
+                    {t('settings.providers.xd.sync.refresh')}
+                  </DropdownMenuItem>
+                )}
+                {xdServerManaged && (
+                  <DropdownMenuItem
+                    disabled={!online || xdBusy !== null}
+                    onClick={() => void xdAction('rotate')}
+                  >
+                    <KeyRound size={14} className="mr-2.5 text-[var(--text-tertiary)]" />
+                    {xdBusy === 'rotate'
+                      ? t('settings.providers.xd.sync.rotating')
+                      : t('settings.providers.xd.sync.rotate')}
+                  </DropdownMenuItem>
+                )}
+                {p.id === 'xd' && p.connected && xd && (
+                  <DropdownMenuItem disabled={!online} onClick={() => void xdAction('disconnect')}>
+                    <LogOut size={14} className="mr-2.5 text-[var(--text-tertiary)]" />
+                    {t('settings.providers.button.disconnect')}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -560,7 +925,7 @@ function CloudProviderCatalogPage({
                       : 'settings.providers.menu.disableProvider',
                   )}
                 </DropdownMenuItem>
-                {(remove || builtinRemovable) && (
+                {(remove || builtinRemovable || (setup && p.source === 'user')) && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -580,16 +945,23 @@ function CloudProviderCatalogPage({
           data-testid="provider-detail-scroll"
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain [&>*]:shrink-0"
         >
-          {owns && auth.operation && auth.busy && !prompt && (
+          {owns && auth.operation && auth.busy && !auth.prompt && (
             <p role="status" className="px-5 pb-2 text-13 text-[var(--text-secondary)]">
               {t(`cloudSettings.authPhase.${auth.operation.phase}`)}
             </p>
           )}
           {detail && <div className="px-5 pb-4">{detail}</div>}
+          {p.subscriptionFastPolicy && (
+            <div className="px-5 pb-4">
+              <SubscriptionFastSetting key={p.id} provider={p} deviceId={deviceId} />
+            </div>
+          )}
           {p.id === 'xd' ? (
-            <CloudXdQuota deviceId={deviceId} online={online} />
+            xd?.state === 'failed' ? null : (
+              <CloudXdQuota deviceId={deviceId} online={online} />
+            )
           ) : (
-            <CloudProviderQuota provider={p} deviceId={deviceId} />
+            <CloudProviderQuota provider={p} deviceId={deviceId} catalog={catalog} />
           )}
           {children}
         </div>
@@ -745,8 +1117,12 @@ function CloudProviderCatalogPage({
                           provider={s.provider}
                           disabled={!online}
                           onClick={() => {
-                            setAddStart(s.provider.id);
-                            setAdding(true);
+                            if (setup)
+                              setWizard({ entry: { kind: 'builtin', providerId: s.provider.id } });
+                            else {
+                              setAddStart(s.provider.id);
+                              setAdding(true);
+                            }
                           }}
                         />
                       ))}
@@ -764,6 +1140,10 @@ function CloudProviderCatalogPage({
                     type="button"
                     disabled={!online}
                     onClick={() => {
+                      if (setup) {
+                        setWizard({});
+                        return;
+                      }
                       setAddStart(null);
                       setAdding(true);
                     }}
@@ -863,8 +1243,11 @@ function CloudProviderCatalogPage({
                                         : 'settings.providers.detail.emptyModels',
                                     )
                               }
+                              compactWhenEmpty={isManagedLocalProvider(selected.id)}
+                              compact={isManagedLocalProvider(selected.id)}
                               {...(isBuiltinRefreshableProviderId(selected.id) ||
-                              isCustomRoutedProvider(selected)
+                              (selected.source === 'user' &&
+                                selected.id !== MANAGED_LLAMACPP_PROVIDER_ID)
                                 ? {
                                     onRefresh: () => void refreshModels(selected),
                                     refreshing: refreshing === selected.id,
@@ -886,6 +1269,57 @@ function CloudProviderCatalogPage({
                 )}
               </div>
             </div>
+          )}
+          {/* The local wizard and connection form, writing the instance. */}
+          {setup && (
+            <ProviderSetupSourceContext.Provider value={setup}>
+              {wizard && (
+                <AddProviderWizard
+                  providers={catalog.providers}
+                  entry={wizard.entry}
+                  detected={wizard.detected}
+                  onReturnCustom={(draft) => {
+                    setWizard(null);
+                    setDialog({ mode: 'create', draft });
+                  }}
+                  onOpenCustomForm={() => {
+                    setWizard(null);
+                    setDialog({ mode: 'create' });
+                  }}
+                  onClose={() => setWizard(null)}
+                  onDone={async (providerId) => {
+                    await catalog.load();
+                    setWizard(null);
+                    if (providerId) setSelectedId(providerId);
+                  }}
+                />
+              )}
+              {dialog && (
+                <ProviderConnectionDialog
+                  draft={dialog.mode === 'create' ? dialog.draft : undefined}
+                  onDetected={(detected) => {
+                    setDialog(null);
+                    setWizard({ detected });
+                  }}
+                  initial={dialog.mode === 'edit' ? dialog.config : undefined}
+                  catalogModels={
+                    dialog.mode === 'edit'
+                      ? catalog.providers.find(
+                          (p) =>
+                            p.source === 'user' &&
+                            storedCustomProviderId(p.id) === dialog.config.id,
+                        )?.models
+                      : undefined
+                  }
+                  existingIds={catalog.providers.map((p) => p.id)}
+                  onClose={() => setDialog(null)}
+                  onSaved={() => {
+                    setDialog(null);
+                    void catalog.load();
+                  }}
+                />
+              )}
+            </ProviderSetupSourceContext.Provider>
           )}
           <CloudAddProviderDialog
             open={adding}
@@ -1193,17 +1627,118 @@ function CloudRemoteAccessRow({
   );
 }
 
-/** The subscription quota of the instance's account for this provider, as on the local page. */
-function CloudProviderQuota({ provider, deviceId }: { provider: ProviderView; deviceId: string }) {
+/** The instance's Codex rate limits, read like the local panel's (no push updates). */
+function useCloudCodexRateLimits(
+  send: (request: CloudProviderWrite) => Promise<CloudProviderSettingsWriteReceipt>,
+  providerId: string,
+  enabled: boolean,
+) {
+  const [snapshot, setSnapshot] = useState<MobileCodexRateLimitsResult | null>(null);
+  const sequence = useRef(0);
+  const refresh = useCallback(() => {
+    if (!enabled) return;
+    const id = ++sequence.current;
+    void send({ op: 'codex-limits', ...(providerId !== 'openai' ? { providerId } : {}) })
+      .then((receipt) => {
+        const next = receipt.value as MobileCodexRateLimitsResult | null;
+        if (id !== sequence.current || !next) return;
+        if (providerId !== 'openai' && next.providerId !== providerId) return;
+        setSnapshot(next);
+      })
+      .catch(() => undefined);
+  }, [enabled, providerId, send]);
+  useEffect(() => {
+    setSnapshot(null);
+    refresh();
+  }, [refresh]);
+  return { snapshot: enabled ? snapshot : null, refresh };
+}
+
+/** The local header's usage module: subscription quota (with Codex resets) or account balance. */
+function CloudProviderQuota({
+  provider,
+  deviceId,
+  catalog,
+}: {
+  provider: ProviderView;
+  deviceId: string;
+  catalog: ReturnType<typeof useCloudProviderCatalog>;
+}) {
+  const { t } = useTranslation();
   const account = useDeviceProviderSubscriptionCard(provider, deviceId);
-  if (!account) return null;
+  const resetEnabled =
+    !!account &&
+    catalog.supportedOps.includes('codex-limits') &&
+    providerWeeklyQuotaSource({ ...provider, suspended: false }) === 'codex';
+  const limits = useCloudCodexRateLimits(catalog.send, provider.id, resetEnabled);
+  const manualReset = useCodexRateLimitReset(
+    limits.snapshot,
+    limits.refresh,
+    provider.id,
+    async (idempotencyKey, providerId) =>
+      (
+        await catalog.send({
+          op: 'codex-reset',
+          idempotencyKey,
+          ...(providerId && providerId !== 'openai' ? { providerId } : {}),
+        })
+      ).value as never,
+  );
+  const usageReader = useMemo(
+    () =>
+      catalog.supportedOps.includes('account-usage')
+        ? async ({ providerId, forceRefresh }: { providerId: string; forceRefresh: boolean }) =>
+            (await catalog.send({ op: 'account-usage', providerId, forceRefresh }))
+              .value as ProviderAccountUsageResult
+        : undefined,
+    [catalog.supportedOps, catalog.send],
+  );
+  if (!account)
+    return usageReader ? (
+      <ProviderAccountUsageModule provider={provider} reader={usageReader} />
+    ) : null;
+  const subscriptionProduct =
+    provider.access?.kind === 'subscription' ? provider.access.product : null;
+  const claude = provider.id === 'anthropic' || provider.auth.native === 'claude';
+  const xai = provider.id === 'xai' || provider.auth.native === 'xai';
   return (
     <div
       data-testid="provider-usage-module"
       className="border-t px-1 py-2"
       style={{ borderColor: 'var(--settings-theme-card-border)' }}
     >
-      <QuotaHoverCard variant="embedded" account={account} />
+      <QuotaHoverCard
+        variant="embedded"
+        hideIdentity={Boolean(subscriptionProduct)}
+        account={account}
+        dashboardLabel={
+          claude
+            ? t('settings.providers.usage.openClaudeUsage')
+            : xai
+              ? t('settings.providers.xai.asset.openUsage')
+              : undefined
+        }
+        onOpenDashboard={
+          claude
+            ? () => void window.electronAPI.openExternal('https://claude.ai/settings/usage')
+            : xai
+              ? () => void window.electronAPI.openExternal('https://grok.com')
+              : undefined
+        }
+      >
+        {resetEnabled ? (
+          <CodexResetCredits
+            providerId={provider.id}
+            onChanged={limits.refresh}
+            variant="embedded"
+            snapshot={limits.snapshot}
+            busy={manualReset.busy}
+            canReset={manualReset.canReset}
+            canRetry={manualReset.canRetry}
+            onReset={(credit) => void manualReset.reset(credit)}
+          />
+        ) : null}
+      </QuotaHoverCard>
     </div>
   );
 }
