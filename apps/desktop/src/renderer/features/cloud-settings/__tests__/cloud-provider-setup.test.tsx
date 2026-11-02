@@ -126,7 +126,14 @@ const setupItem = {
 
 afterEach(cleanup);
 
-function setup({ holdFirstRun = false }: { holdFirstRun?: boolean } = {}) {
+function setup({
+  holdFirstRun = false,
+  holdFirstList = false,
+}: { holdFirstRun?: boolean; holdFirstList?: boolean } = {}) {
+  let releaseList = () => undefined as void;
+  const heldList = new Promise<void>((resolve) => {
+    releaseList = resolve;
+  });
   let release = () => undefined as void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -220,6 +227,8 @@ function setup({ holdFirstRun = false }: { holdFirstRun?: boolean } = {}) {
       // Every list issues fresh single-use tickets, as the instance does.
       if (request.operation === 'list') {
         lists += 1;
+        // The page's first ticket list is still on its way.
+        if (holdFirstList && lists === 1) await heldList;
         const ticket = {
           ...setupItem.actions[0]!,
           id: `00000000-0000-4000-8000-${String(lists).padStart(12, '0')}`,
@@ -243,7 +252,7 @@ function setup({ holdFirstRun = false }: { holdFirstRun?: boolean } = {}) {
       deviceId="cloud-device-000000000000000000000001"
     />,
   );
-  return { invoke, manage, stages, runs, release };
+  return { invoke, manage, stages, runs, release, releaseList };
 }
 
 describe('cloud provider setup with the local wizard', () => {
@@ -302,6 +311,16 @@ describe('cloud provider setup with the local wizard', () => {
         .value,
     ).toBe('https://gateway.example.test/v1');
     expect(invoke.mock.calls.map((call) => call[2][0].op)).toContain('provider-view');
+  });
+});
+
+describe('adding before the ticket list is read', () => {
+  it('opens the local wizard instead of the older runtimes dialog', async () => {
+    const { releaseList } = setup({ holdFirstList: true });
+    fireEvent.click(await screen.findByRole('button', { name: /settings.providers.addProvider/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('settings.providers.wizard.stepModels')).toBeTruthy();
+    releaseList();
   });
 });
 

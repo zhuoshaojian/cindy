@@ -399,6 +399,27 @@ function CloudProviderCatalogPage({
     | { mode: 'create'; draft?: DetectedProviderDraft }
     | { mode: 'edit'; config: CustomProviderConfig }
   >(null);
+  // A runtime with the setup ticket always gets the local wizard: a click before its ticket
+  // list is read waits for it instead of opening the older runtimes' dialog.
+  const openingAdd = useRef(false);
+  const openAdd = async (providerId: string | null) => {
+    if (openingAdd.current) return;
+    openingAdd.current = true;
+    try {
+      const ready =
+        !!setup ||
+        (catalog.supportedOps.includes('setup-stage') &&
+          !!(await auth.load())?.some((item) => item.id === CLOUD_PROVIDER_SETUP_ITEM));
+      if (ready) {
+        setWizard(providerId ? { entry: { kind: 'builtin', providerId } } : {});
+        return;
+      }
+      setAddStart(providerId);
+      setAdding(true);
+    } finally {
+      openingAdd.current = false;
+    }
+  };
   const editProvider = async (p: ProviderView) => {
     if (!setup) return;
     try {
@@ -1117,14 +1138,7 @@ function CloudProviderCatalogPage({
                           detection={s.detection}
                           provider={s.provider}
                           disabled={!online}
-                          onClick={() => {
-                            if (setup)
-                              setWizard({ entry: { kind: 'builtin', providerId: s.provider.id } });
-                            else {
-                              setAddStart(s.provider.id);
-                              setAdding(true);
-                            }
-                          }}
+                          onClick={() => void openAdd(s.provider.id)}
                         />
                       ))}
                     </>
@@ -1140,14 +1154,7 @@ function CloudProviderCatalogPage({
                     size="lg"
                     type="button"
                     disabled={!online}
-                    onClick={() => {
-                      if (setup) {
-                        setWizard({});
-                        return;
-                      }
-                      setAddStart(null);
-                      setAdding(true);
-                    }}
+                    onClick={() => void openAdd(null)}
                     className="w-full"
                   >
                     <Plus size={15} />
