@@ -132,3 +132,22 @@ value, the reopened UI showed on and the instance file no longer contains the ke
 Dev preference file was byte-for-byte unchanged. This is real client acceptance on the owner
 instance, not a DeviceLink transport or third-party OAuth retest. Other instances remain on
 `0.1.120-cloud.2` until a separate fleet admission.
+
+## Fleet admission (2026-11-02)
+
+The owner authorized fleet admission after the real client acceptance. A fresh baseline
+(14 records, no active maintenance) preceded preparation; both roles loaded the candidate with
+their deployed schema. Immutable `cis-u121c1-1102-fleet-*` ConfigMaps were rolled out
+orchestrator then API, both ready and stable. New-claim defaults, placements and tenants now
+select `0.1.121-cloud.1`; cloud.1 joined native maintenance admission (12 to 13); the 12 other
+organization instances received exact approvals, and each verified profile at the 16-entry cap
+retired its oldest unreferenced approval. Backup, access, automation, settings web,
+invitations, credential pilot and legacy versions were unchanged.
+
+Both roles confirmed that the 10 running organization instances on `0.1.120-cloud.2` and the
+stopped auto-update instance report cloud.1 as available; the stopped instance with auto-update
+off has no maintenance enrollment and is not offered an upgrade; the owner is current. A dry-run
+new-claim manifest uses cloud.1 for main and init without creating an instance. Images, power
+state, auto-update preferences, resources, maintenance policies and Pod UIDs were unchanged; no
+instance was upgraded or restarted by admission. Running instances move in their own maintenance
+windows according to their auto-update preference. The personal instance is out of scope.
