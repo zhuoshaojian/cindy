@@ -277,11 +277,19 @@ function CloudProviderCatalogPage({
     request: Parameters<typeof catalog.write>[0],
     failure = 'settings.providers.models.accessWriteFailed',
   ) => {
-    if (!(await catalog.write(request))) toast.error(t(failure));
+    const ok = await catalog.write(request);
+    if (!ok) toast.error(t(failure));
+    return ok;
   };
-  const runAction = (item: ManagementItem, action: Action, values?: Record<string, string>) =>
+  const runAction = (
+    item: ManagementItem,
+    action: Action,
+    values?: Record<string, string>,
+    confirmed = false,
+  ) =>
     new Promise<Phase>(
-      (resolve) => void auth.run(item, action, values, { settled: (phase) => resolve(phase) }),
+      (resolve) =>
+        void auth.run(item, action, values, { confirmed, settled: (phase) => resolve(phase) }),
     ).then((phase) => {
       // The instance changed the catalog through its own handlers; reread it.
       void catalog.load();
@@ -349,17 +357,42 @@ function CloudProviderCatalogPage({
     const canRename = p.id !== 'xd' && !isOrganizationManagedProvider(p);
     const builtinRemovable =
       p.source === 'builtin' && p.id !== 'xd' && !isOrganizationManagedProvider(p);
+    // Same confirmation and feedback as the local page; deleting is never one click.
     const removeProvider = async () => {
+      const ollama = p.id === MANAGED_OLLAMA_PROVIDER_ID;
+      const ok = await confirm({
+        ...(remove && !ollama ? { presentation: 'standard' as const } : {}),
+        title: t(
+          ollama
+            ? 'settings.providers.local.deleteConfirmTitle'
+            : 'settings.providers.custom.deleteConfirm.title',
+        ),
+        description: ollama
+          ? t('settings.providers.local.deleteConfirmBody')
+          : t('settings.providers.custom.deleteConfirm.description', { name: p.name }),
+        confirmText: t('settings.providers.custom.deleteConfirm.confirm'),
+        cancelText: t('settings.providers.custom.deleteConfirm.cancel'),
+      });
+      if (!ok) return;
       if (remove) {
-        await runAction(item!, remove);
+        if ((await runAction(item!, remove)) === 'succeeded')
+          toast.success(t('settings.providers.custom.toast.deleted'));
         return;
       }
       // A built-in connection is hidden only after its login is gone.
-      if (p.connected && disconnect && (await runAction(item!, disconnect)) !== 'succeeded') return;
-      await writeOrToast(
-        { op: 'presentation', providerId: p.id, action: 'remove' },
-        'settings.providers.custom.toast.deleteFailed',
-      );
+      if (
+        p.connected &&
+        disconnect &&
+        (await runAction(item!, disconnect, undefined, true)) !== 'succeeded'
+      )
+        return;
+      if (
+        await writeOrToast(
+          { op: 'presentation', providerId: p.id, action: 'remove' },
+          'settings.providers.custom.toast.deleteFailed',
+        )
+      )
+        toast.success(t('settings.providers.custom.toast.deleted'));
     };
     const subscriptionProduct = p.access?.kind === 'subscription' ? p.access.product : null;
     const singleAgent =

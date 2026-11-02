@@ -18,10 +18,14 @@ vi.mock('react-i18next', async (original) => ({
     i18n: { language: 'en', resolvedLanguage: 'en' },
   }),
 }));
-vi.mock('@/components/ui/confirm-dialog-provider', () => ({
-  useConfirmDialog: () => ({ confirm: vi.fn(async () => true) }),
+const dialogs = vi.hoisted(() => ({
+  confirm: vi.fn<(options: unknown) => Promise<boolean>>(async () => true),
 }));
-vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+vi.mock('@/components/ui/confirm-dialog-provider', () => ({
+  useConfirmDialog: () => ({ confirm: dialogs.confirm }),
+}));
+const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
+vi.mock('@/lib/toast', () => ({ toast: toasts }));
 vi.mock('@/hooks/useModelPricing', () => ({
   useGatewayModelPricing: () => null,
   useReferenceModelPricing: () => null,
@@ -181,7 +185,9 @@ const items: ManagementItem[] = [
 
 afterEach(cleanup);
 
-function setup(options: { unsupported?: boolean; withoutShare?: boolean } = {}) {
+function setup(
+  options: { unsupported?: boolean; withoutShare?: boolean; extraItems?: ManagementItem[] } = {},
+) {
   let visibility = {
     status: 'ready',
     revision: 'r1',
@@ -284,7 +290,11 @@ function setup(options: { unsupported?: boolean; withoutShare?: boolean } = {}) 
       },
     ),
   });
-  const manage = vi.fn(async () => ({ kind: 'page', section: 'providers', items }));
+  const manage = vi.fn(async (request: { operation: string }) =>
+    request.operation === 'list'
+      ? { kind: 'page', section: 'providers', items: [...items, ...(options.extraItems ?? [])] }
+      : { kind: 'operation', operationId: 'op', phase: 'succeeded' },
+  );
   const client = { manage } as unknown as CloudSettingsClient;
   render(
     <CloudProvidersSettings
@@ -371,6 +381,77 @@ describe('cloud instance providers page', () => {
         }),
       ),
     );
+  });
+});
+
+describe('deleting a provider on the instance', () => {
+  const openMenu = async (name: string) => {
+    const row = (await screen.findAllByText(name)).find((node) =>
+      node.closest('.provider-settings-sortable-row'),
+    );
+    fireEvent.click(row!);
+    fireEvent.keyDown(
+      await screen.findByRole('button', { name: 'settings.providers.detail.moreActionsAria' }),
+      { key: 'ArrowDown' },
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: 'settings.providers.custom.deleteAria' }),
+    );
+  };
+  const removals = (invoke: ReturnType<typeof setup>['invoke']) =>
+    invoke.mock.calls.filter((call) => call[2][0].op === 'presentation');
+
+  it('asks first and keeps a built-in provider when cancelled', async () => {
+    dialogs.confirm.mockResolvedValueOnce(false);
+    const { invoke } = setup();
+    await openMenu('OpenAI');
+    await waitFor(() => expect(dialogs.confirm).toHaveBeenCalled());
+    expect(dialogs.confirm.mock.calls.at(-1)![0]).toMatchObject({
+      title: 'settings.providers.custom.deleteConfirm.title',
+      confirmText: 'settings.providers.custom.deleteConfirm.confirm',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(removals(invoke)).toHaveLength(0);
+  });
+
+  it('removes a built-in provider after confirmation, like the local page', async () => {
+    const { invoke } = setup();
+    await openMenu('OpenAI');
+    await waitFor(() =>
+      expect(removals(invoke).map((call) => call[2][0])).toEqual([
+        { op: 'presentation', providerId: 'openai', action: 'remove', ownerGeneration: 3 },
+      ]),
+    );
+    await waitFor(() =>
+      expect(toasts.success).toHaveBeenCalledWith('settings.providers.custom.toast.deleted'),
+    );
+  });
+
+  it('never runs the instance delete action before confirmation', async () => {
+    dialogs.confirm.mockResolvedValueOnce(false);
+    const { manage } = setup({
+      extraItems: [
+        {
+          id: 'provider:web-1',
+          label: 'My gateway',
+          status: 'connected',
+          group: 'management.currentProviders',
+          actions: [
+            {
+              id: 'd1',
+              label: 'management.actions.delete',
+              intent: 'delete',
+              fields: [],
+              expiresAt: 9e15,
+            },
+          ],
+        } as unknown as ManagementItem,
+      ],
+    });
+    await openMenu('My gateway');
+    await waitFor(() => expect(dialogs.confirm).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(manage.mock.calls.filter((call) => call[0].operation === 'run')).toHaveLength(0);
   });
 });
 
