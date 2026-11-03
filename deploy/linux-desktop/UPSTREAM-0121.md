@@ -353,8 +353,10 @@ one-off operation Pods from 19 October, which were deleted with them after their
 definitions were saved. Right before deletion every target was checked again against
 Deployment, Pod, StatefulSet, DaemonSet, Job and CronJob specs, the current policy and other
 ConfigMaps, exported to the private operation records with its content verified, and deleted
-with a UID precondition. `kubectl rollout undo` can no longer reach those revisions; a rollback
-recreates a ConfigMap from its saved copy.
+with a UID precondition. At the owner's request the exported copies and the two Pods' logs were
+then deleted as well; only the names, UIDs and deletion log are kept. Those 174 revisions can no
+longer be restored. A rollback can still use the current policy or the saved pre-cleanup cloud.6
+fleet policy, which was not part of this set.
 
 Only `cis-runtime-0108-r4dtsp-endpoints` and the two `cis-u121c6-1103-prune-*` policies remain.
 All 11 Deployments stayed ready, and both CIS roles again reported unchanged instance status
