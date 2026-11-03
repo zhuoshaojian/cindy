@@ -243,6 +243,8 @@ UI 检查 18 项（深浅色，简中，合成数据）通过。
 
 ## 模型供应商、插件与工具
 
+2026-11-03 用户说「准入」：`0.1.121-cloud.6` 已对全部组织实例准入并设为新领取默认，不强制升级，各实例按自己的自动更新与维护时间段更新，见 `deploy/linux-desktop/UPSTREAM-0121.md`。此后的供应商页修正只在 Mac 客户端，不需要新镜像。
+
 | 本地项目及配置 | 云页面状态 | 对齐结论与剩余工作 |
 | --- | --- | --- |
 | 供应商页布局（左栏、详情头、额度卡、模型列表、添加入口） | 已接入（cloud.2 + Dev .2/.3） | `CloudProvidersSettings` 复用本地 `ProviderListEntry`、`ProviderAccountHeader`、`UnifiedModelList`、`QuotaHoverCard`、`ProviderShareManagePage`；目录走实例私有通道 `cloud:provider-settings:v1`，旧运行时或非实例本人自动回落到授权列表。2026-11-02 本人实例真实截图与本地页逐项一致；差异见下一行 |

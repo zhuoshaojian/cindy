@@ -290,3 +290,33 @@ The final instance catalog, Fast policy, Cindy AI and organization states equal 
 Not exercised live: the third wizard step (needs a real key or sign-in), DeepSeek and Zhipu
 balances and the Claude and Grok usage links (no such connection on the instance), third-party
 sign-in and real API keys. Fleet admission has not been requested.
+
+## cloud.6 fleet admission (2026-11-03)
+
+The owner authorized fleet admission after the Mac Dev `.10` checks. A fresh baseline (14 records,
+no active maintenance) preceded preparation: 10 running organization instances on cloud.1 with
+auto-update on, the owner on cloud.6, two stopped organization instances (`0.1.113-cloud.9` with
+auto-update off, `0.1.119-cloud.5` with auto-update on) and the stopped personal instance, which is
+out of scope. The fleet policy script kept the cloud.1 fleet logic (startup probe templates,
+native bindings) and took the owner script's retirement check, which proves a retired approval
+changes neither an instance's update selection nor the new-claim image. Both roles loaded the
+candidate with their deployed schema, and immutable `cis-u121c6-1103-fleet-*` ConfigMaps were
+rolled out orchestrator then API, both ready and stable.
+
+New-claim defaults, placement and tenant select `0.1.121-cloud.6`; cloud.6 joined native
+maintenance admission (10 to 11; it was already a keyring image since the owner upgrade). The
+10 verified profiles received exact cloud.6 approvals and the 2 native instances follow native
+admission; the 9 profiles at the 16-entry cap each retired their oldest unreferenced approval
+(`0.1.97-cloud.4` qualified, `0.1.103` or `0.1.108`), and the stopped `0.1.119` instance kept its
+startup probe template. Backup, access, automation, settings web, invitations, credential
+pilot and legacy versions were unchanged.
+
+Both roles confirmed that the 10 running instances on cloud.1 and the stopped auto-update
+instance report cloud.6 as available, the stopped instance with auto-update off is not offered
+an upgrade, and the owner is current. A dry-run new-claim manifest uses cloud.6 for main and init
+without creating an instance. Images, power state, auto-update preferences, resources,
+maintenance policies and Pod UIDs of every record were unchanged and no maintenance was active;
+no instance was upgraded or restarted by admission. Running instances move in their own
+maintenance windows according to their auto-update preference. The cloud provider page changes
+after `948983cc61` (`ac61a8b763`, `1644842a42`, `78b7bc6a7e`) are Mac client only and need no
+new image.
