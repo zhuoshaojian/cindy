@@ -26,7 +26,10 @@ part of this source archive.
   receive 40px/no zoom; existing v2 users keep subsequent size/zoom preferences.
 - The Chrome launcher uses a separate personal browser profile and retains its
   sandbox and Secret Service password store. Terminal explicitly starts bash,
-  because the container account has a noninteractive passwd shell.
+  because the container account has a noninteractive passwd shell. Its dedicated
+  `terminal.bashrc` reads the user's existing `~/.bashrc`, then sets an unexported
+  `PS1` to `\u@cindy:\w\$ `. This shortens only this terminal's prompt; the real
+  hostname, user startup files, other shells and agent environments are unchanged.
 - [The cloud Plank patch](plank/README.md) hides the Preferences menu and disables
   its shared action, including CLI/D-Bus activation. The original default icon
   lock and existing user settings are preserved; application menus and clock
