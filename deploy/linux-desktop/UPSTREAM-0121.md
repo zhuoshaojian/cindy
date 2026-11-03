@@ -338,6 +338,9 @@ verified profile lists (16 to 5 or 6 each) changed. The kept older images (`0.1.
 `0.1.97-cloud.4`, `0.1.103`, `0.1.119-cloud.3`) are still referenced by live or recovery templates.
 Both roles then reported every instance's upgrade status identical to before the cleanup, new
 claims still use cloud.6 for main and init, and images, power state, auto-update preferences,
-resources, maintenance policies and Pod UIDs were unchanged. The previous
-`cis-u121c6-1103-fleet-*` ConfigMaps remain for rollback.
+resources, maintenance policies and Pod UIDs were unchanged. At the owner's request the
+pre-cleanup `cis-u121c6-1103-fleet-*` ConfigMaps were then deleted with UID preconditions: no
+Deployment template or Pod used them (only scaled-to-zero ReplicaSet history named them), and a
+byte-identical copy of each stays in the private operation records, so a rollback recreates the
+ConfigMap from that copy instead of `kubectl rollout undo`.
 
