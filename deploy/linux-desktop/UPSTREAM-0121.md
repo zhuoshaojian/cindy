@@ -344,3 +344,19 @@ Deployment template or Pod used them (only scaled-to-zero ReplicaSet history nam
 byte-identical copy of each stays in the private operation records, so a rollback recreates the
 ConfigMap from that copy instead of `kubectl rollout undo`.
 
+## Policy ConfigMap history cleanup (2026-11-03)
+
+At the owner's request, after reviewing the list, the historical `cis-*` ConfigMaps in
+`xdclaw-system` were removed: 174 of 179 (about 34 MB). 157 were referenced by nothing, 14
+(31 October to 2 November) only by scaled-to-zero ReplicaSet history, and 3 only by two finished
+one-off operation Pods from 19 October, which were deleted with them after their logs and
+definitions were saved. Right before deletion every target was checked again against
+Deployment, Pod, StatefulSet, DaemonSet, Job and CronJob specs, the current policy and other
+ConfigMaps, exported to the private operation records with its content verified, and deleted
+with a UID precondition. `kubectl rollout undo` can no longer reach those revisions; a rollback
+recreates a ConfigMap from its saved copy.
+
+Only `cis-runtime-0108-r4dtsp-endpoints` and the two `cis-u121c6-1103-prune-*` policies remain.
+All 11 Deployments stayed ready, and both CIS roles again reported unchanged instance status
+with new claims on cloud.6.
+
