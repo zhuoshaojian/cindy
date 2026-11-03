@@ -282,8 +282,10 @@ a save 0.1 s after typing the key and a save while the form showed the running d
 created the connection with the local toast, and the catalog carried no key. The same check
 found that adding right after opening the page, before the instance's ticket list was read,
 opened the older runtimes' dialog; `78b7bc6a7e` reads the list first and keeps that dialog for
-runtimes without the setup ticket (unit tested, Mac Dev `.10`, live check waits for its
-Keychain prompt). Every test connection was deleted on the instance and on the local profile.
+runtimes without the setup ticket (unit tested). With the Mac Dev `.10` three adds right after
+opening the page all showed the local wizard, and the immediate and during-detection keyed saves
+both created the connection again. Every test connection was deleted on the instance and on the
+local profile; the instance catalog equals the baseline.
 The final instance catalog, Fast policy, Cindy AI and organization states equal the baseline.
 Not exercised live: the third wizard step (needs a real key or sign-in), DeepSeek and Zhipu
 balances and the Claude and Grok usage links (no such connection on the instance), third-party
