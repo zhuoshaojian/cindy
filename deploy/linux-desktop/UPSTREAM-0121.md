@@ -320,3 +320,24 @@ no instance was upgraded or restarted by admission. Running instances move in th
 maintenance windows according to their auto-update preference. The cloud provider page changes
 after `948983cc61` (`ac61a8b763`, `1644842a42`, `78b7bc6a7e`) are Mac client only and need no
 new image.
+
+## Approval list cleanup (2026-11-03)
+
+At the owner's request the approval lists were cleaned after the cloud.6 admission. A fresh
+baseline (14 records, no active maintenance) preceded preparation. An approval was kept when it is
+cloud.6 or its digest appears in an instance's record, a live template (main or init image), a
+verified profile recovery source, a native maintenance template, the new-claim defaults,
+placements, tenants, invitations or the credential pilot; everything else was removed, from all of
+a profile's lists together. Before writing, the script proved per instance that the native and
+verified update selections and the new-claim image are unchanged, and both roles loaded the
+result with their deployed schema.
+
+Immutable `cis-u121c6-1103-prune-*` ConfigMaps were rolled out orchestrator then API, both ready
+and stable; only `keyringRuntimeImages` (16 to 8), `maintenanceRuntimeImages` (11 to 6) and the
+verified profile lists (16 to 5 or 6 each) changed. The kept older images (`0.1.97`,
+`0.1.97-cloud.4`, `0.1.103`, `0.1.119-cloud.3`) are still referenced by live or recovery templates.
+Both roles then reported every instance's upgrade status identical to before the cleanup, new
+claims still use cloud.6 for main and init, and images, power state, auto-update preferences,
+resources, maintenance policies and Pod UIDs were unchanged. The previous
+`cis-u121c6-1103-fleet-*` ConfigMaps remain for rollback.
+
