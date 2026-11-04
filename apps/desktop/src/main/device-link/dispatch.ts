@@ -809,16 +809,18 @@ function setSetupTransferRemoteHandler(handler: SetupTransferRemoteHandler | nul
 }
 
 /**
- * Cloud fork: one private same-account channel registered only by a managed cloud runtime.
- * Unregistered (every ordinary desktop), the channel keeps upstream's CHANNEL_NOT_ALLOWED.
+ * Cloud fork: private same-account channels registered only by a managed cloud runtime.
+ * Unregistered (every ordinary desktop), a channel keeps upstream's CHANNEL_NOT_ALLOWED.
  */
 export interface CloudPrivateInvokeHandler {
   channel: string;
   handle(controller: string, raw: unknown): Promise<unknown>;
 }
-let cloudPrivateInvokeHandler: CloudPrivateInvokeHandler | null = null;
+const cloudPrivateInvokeHandlers = new Map<string, CloudPrivateInvokeHandler>();
+/** Registers one channel; null removes them all (runtime teardown). */
 export function setCloudPrivateInvokeHandler(handler: CloudPrivateInvokeHandler | null): void {
-  cloudPrivateInvokeHandler = handler;
+  if (handler) cloudPrivateInvokeHandlers.set(handler.channel, handler);
+  else cloudPrivateInvokeHandlers.clear();
 }
 
 /** 组摘要只给同账号电脑：分享受邀者与共享任务访客是其他账号，看不到组内电脑。 */
@@ -4886,8 +4888,8 @@ async function executeRemoteInvoke(src: string, payload: InvokePayload | undefin
     return { ok: false, error: { code: 'ACCESS_REVOKED', message: 'access revoked by target device' } };
   }
   if (ordinaryPeer) noteControllerAccessAllowed(src);
-  const cloudPrivate = cloudPrivateInvokeHandler;
-  if (cloudPrivate && payload.channel === cloudPrivate.channel) {
+  const cloudPrivate = cloudPrivateInvokeHandlers.get(payload.channel);
+  if (cloudPrivate) {
     if (!isSameAccountController(src)) {
       return { ok: false, error: { code: 'CHANNEL_NOT_ALLOWED', message: `channel '${payload.channel}' not allowed` } };
     }
@@ -5384,7 +5386,7 @@ const __testing = {
     completedRemoteInvokeResults.clear();
     providerShareDenialLoggedAt.clear();
     providerGroupRemoteHandler = null;
-    cloudPrivateInvokeHandler = null;
+    cloudPrivateInvokeHandlers.clear();
     completedRemoteInvokeResultBytes = 0;
     inFlightRemoteInvokeResults.clear();
     inFlightRemoteInvokeBytes = 0;

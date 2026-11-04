@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IpcHandler, IpcHandlerRegistry } from '../maker-ipc/ipcHandlerRegistry.js';
 import type { ManagementExecution } from './management.js';
+import { CLOUD_IM_SETTINGS_CALLS } from '../../shared/cloudImSettings.js';
 
 // A closed, compiled service adapter. None of these names is accepted from the web.
 const channels = new Set([
@@ -84,6 +85,8 @@ const channels = new Set([
   'maker:xai-oauth:login',
   // Called with the Cindy AI key name only (disconnect on the providers page).
   'safe-storage-remove',
+  // The cloud IM settings page (cloud:im-settings:v1): settings only, no binding flows.
+  ...CLOUD_IM_SETTINGS_CALLS,
 ]);
 const registered = new Map<string, IpcHandler>();
 const events = new WeakMap<object, ManagementExecution>();

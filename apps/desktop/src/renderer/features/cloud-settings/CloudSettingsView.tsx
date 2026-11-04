@@ -32,7 +32,7 @@ import { createCloudSettingsClient, type CloudSettingsClient } from './client';
 import { CloudInstanceSection } from './CloudInstanceSection';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
-import { CloudImSettings, cloudImSettingsSummary } from './CloudImSettings';
+import { CloudImSettings, cloudImSettingsSummary, useCloudImDisplays } from './CloudImSettings';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
 import { CloudMcpAuthorization } from './CloudMcpAuthorization';
 import { CloudPluginAuthorization } from './CloudPluginAuthorization';
@@ -84,6 +84,8 @@ export function CloudSettingsPanel({
     {},
   );
   const [domains, setDomains] = useState<CloudSettingsDomain[]>([]);
+  // Re-read after every snapshot so the automatic route follows saved changes.
+  const imDisplays = useCloudImDisplays(deviceId, online && !trial && tab === 'im-bot', states);
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: 0 });
   }, [tab]);
@@ -451,16 +453,23 @@ export function CloudSettingsPanel({
                     {group === 'im-bot' ? (
                       botAuthorization && (
                         <CloudBotAuthorization
+                          deviceId={deviceId}
                           summary={(itemId) =>
                             // The collapsed row is one short line like the local "Pi · auto";
                             // the full automatic explanation stays in the expanded picker.
-                            cloudImSettingsSummary(itemId, states, t('hostSettings.card.automatic'))
+                            cloudImSettingsSummary(
+                              itemId,
+                              states,
+                              t('hostSettings.card.automatic'),
+                              imDisplays[itemId.replace(/^bot:/, '')],
+                            )
                           }
                           settings={(itemId, section) => (
                             <CloudImSettings
                               itemId={itemId}
                               section={section}
                               deviceId={deviceId}
+                              display={imDisplays[itemId.replace(/^bot:/, '')]}
                               states={states}
                               supportedDomains={domains}
                               loading={loading}

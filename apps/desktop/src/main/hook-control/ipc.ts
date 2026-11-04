@@ -1,4 +1,6 @@
 import { configureCloudHookManagement } from '../host-settings/managementBots.js';
+import { registerCloudDomainCall } from '../host-settings/managementCalls.js';
+import { CLOUD_HOOK_PROVIDER_ACTION_URL } from '../../shared/cloudImSettings.js';
 import { getInstanceConfig } from '../instance-runtime/config.js';
 import { AuthorizationBrowser, launchAuthorizationBrowser } from '../instance-runtime/authorization-browser.js';
 import { HookAuthorizationWindows } from '../instance-runtime/hook-authorization-windows.js';
@@ -828,6 +830,9 @@ type HookControlIpcHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => 
 
 /** Register one fixed hook-control channel with the shared sender guard. */
 function registerTrustedHookControlHandler(channel: string, handler: HookControlIpcHandler): void {
+  // The cloud settings page reaches the settings subset through its owner-checked channel;
+  // the handlers never read the event, and unlisted channels are not captured.
+  registerCloudDomainCall(channel, (...args) => handler(undefined as unknown as IpcMainInvokeEvent, ...args));
   ipcMain.handle(channel, (event, ...args) => {
     assertTrustedHookControlSender(event);
     return handler(event, ...args);
@@ -963,6 +968,23 @@ export function registerHookControlIpc(): void {
       );
     }
     return { hook: m.snapshot() };
+  });
+
+  // The cloud settings page opens provider links on the controller's computer, not here.
+  registerCloudDomainCall(CLOUD_HOOK_PROVIDER_ACTION_URL, (payload) => {
+    requireHookControl();
+    const provider = requireNeutralProvider(payload);
+    const action = requireString(requireObject(payload).action, 'action');
+    if (action !== 'connect' && action !== 'provider' && action !== 'add-to-group') {
+      throwIpcError('INVALID_PARAMS', `invalid ${providerDisplayName(provider)} open action`);
+    }
+    const url = ensureInstances().manager.providerActionUrl(provider, action);
+    if (!url) throwIpcError('INVALID_PARAMS', `${providerDisplayName(provider)} action is not available`);
+    try {
+      return { url: provider === 'telegram' ? validateTelegramExternalUrl(url) : validateXExternalUrl(url) };
+    } catch (err) {
+      throwIpcError('INVALID_PARAMS', err instanceof Error ? err.message : 'invalid link');
+    }
   });
 
   registerTrustedHookControlHandler(

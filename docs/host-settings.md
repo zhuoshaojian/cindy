@@ -116,6 +116,14 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 - **待迁移**：未能证明全新且尚未完成导入的旧 profile/owner 数据返回 `migrationPending`；只有有依据的新 profile 才解释为默认。inspection 不执行导入、不删旧键；完成初始化后，即使没有 Renderer 窗口也能从 Host 读取。
 - **运行态消费**：桌面通知最终发送入口和窗口创建期点击行为直接消费已就绪的 Host 值，迟到的旧 Renderer payload 不能覆盖正本。Agent Island 仅在既有受支持初始化分支订阅偏好，应用前检查已提交身份与切换边界；登出/reset 后暂停自动应用，待合法会话的原有启用入口恢复。headless/不支持的平台不因保存的开关启动原生岛，退出时解绑订阅。
 
+### 云设置页的私有通道（仅托管云实例）
+
+同账号控制端的云设置页经 DeviceLink 私有通道读写本实例，正文与设置不经过 CIS 中继或其数据库。通道只在云运行时注册；普通桌面和旧运行时回 `CHANNEL_NOT_ALLOWED`，云页保留旧卡片或只显示页标题。所有通道入口先校验实例主人与 owner generation，回执带 generation，切换账号后的迟到回执被丢弃。
+
+- `cloud:personalization:v1`：个人指令正文 `read` / `save` / `reset`，与本地编辑器一样按 revision 拒绝过期写入（`REVISION_CONFLICT`），恢复默认即 `clear`。日志不记录正文；Agent 设置工具读取正文仍需实例上的真人确认。
+- `cloud:im-settings:v1`：一次转发一个本地 IM 设置 handler，名单见 `shared/cloudImSettings.ts`，并编译进 cloud management 的封闭 call 集。覆盖官方 Slack/Telegram/X 的连接快照、工作目录映射、默认目录、目录偏好与上线播报、官方 Telegram 行为与群，个人 Telegram 人格/行为/群、智能通讯录开关、个人微信工作目录，以及个人机器人的连接状态（回执顶层的 secret/token/password/webhook 字符串置空）。
+- 发起绑定（开 Slack、添加/重新授权 workspace、关联 Telegram/X、Telegram 上线）仍走云授权票据，授权页在控制端打开；通道内 `set-enabled` 只接受 `false`，`telegramBot:set-online` 只接受下线。目录在实例的目录浏览器中选择，不在实例上弹窗，微信目录写入经私有 `cloud:wechat:working-dir-set` 复用本地路径校验。provider 链接（加群、bot 主页）由实例校验后返回，在控制端打开。
+
 ### 共用校验与纯读取边界
 
 外观工具 grammar 与持久 store 使用同一严格字段 validator；原 UI 仍先执行原有 clamp/round，再经过最终持久校验。通用 override writer 只对显式配置了 validator 的领域增加最终闸门，不顺带收紧其它 legacy store。inspection 使用有字节上限、拒绝文件软链接的读取 helper，仅 `ENOENT` 按缺失解释；坏文件、权限错误和超限不删除、不修复。新任务默认值与个性化文件通过已提交 owner 和当前 profile 纯定位，不经过会加载或迁移登录态的 getter。

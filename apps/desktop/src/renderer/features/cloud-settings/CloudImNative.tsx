@@ -1,0 +1,199 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from '@/lib/toast';
+import { extractIpcError } from '@/utils/ipcError';
+import { AddRemoteProjectDialog } from '@/components/new-chat/AddRemoteProjectDialog';
+import {
+  SettingsTargetProvider,
+  type SettingsTarget,
+} from '@/components/settings/settingsTarget';
+import {
+  TelegramBehaviorSettings,
+  TelegramGroupActivationSettings,
+  TelegramPersonaSettings,
+} from '@/components/settings/TelegramBehaviorSettings';
+import { WechatWorkingDirectory } from '@/components/settings/WechatBotSection';
+import { CLOUD_WECHAT_WORKING_DIR_SET } from '../../../shared/cloudImSettings';
+import type { ManagementItem } from '../../../shared/settingsManagement';
+import { createCloudImTarget, type CloudImAuthorization, type CloudImTarget } from './cloudImTarget';
+
+type Action = ManagementItem['actions'][number];
+export type CloudImSupport = 'probing' | 'ready' | 'unsupported';
+
+/**
+ * One target per instance for the native IM cards. Binding flows reuse the cloud authorization
+ * tickets of the bots list; a directory is chosen in the instance's directory browser.
+ */
+export function useCloudImTarget({
+  deviceId,
+  deviceName,
+  enabled,
+  items,
+  run,
+  cancelOperation,
+  operationItem,
+  operationActive,
+}: {
+  deviceId: string;
+  deviceName: string;
+  /** Online and the IM page is shown. */
+  enabled: boolean;
+  items: ManagementItem[];
+  run(item: ManagementItem, action: Action): Promise<void>;
+  cancelOperation(): Promise<void>;
+  operationItem?: string;
+  operationActive: boolean;
+}) {
+  const { t } = useTranslation();
+  const latest = useRef({ items, run, cancelOperation, operationItem, operationActive });
+  latest.current = { items, run, cancelOperation, operationItem, operationActive };
+  const [picker, setPicker] = useState<((path: string | null) => void) | null>(null);
+  const target = useMemo<CloudImTarget>(() => {
+    const authorization: CloudImAuthorization = {
+      async start(request) {
+        const id =
+          request.kind === 'provider'
+            ? `bot:official:${request.provider}`
+            : request.kind === 'slack-rebind'
+              ? `bot:official:slack:${request.teamId}`
+              : 'bot:official:slack';
+        const item = latest.current.items.find((entry) => entry.id === id);
+        const action = item?.actions.find((entry) => entry.intent === 'authorize');
+        if (!item || !action) throw new Error('[UNAVAILABLE] this connection cannot start now');
+        await latest.current.run(item, action);
+      },
+      async cancel(card) {
+        const { operationItem: own, operationActive: active } = latest.current;
+        const id = `bot:official:${card}`;
+        if (!active || !own || (own !== id && !own.startsWith(`${id}:`))) return false;
+        await latest.current.cancelOperation();
+        return true;
+      },
+    };
+    return createCloudImTarget(deviceId, {
+      authorization,
+      pickDirectory: () => new Promise((resolve) => setPicker(() => resolve)),
+    });
+  }, [deviceId]);
+  const [support, setSupport] = useState<CloudImSupport>('probing');
+  useEffect(() => {
+    setSupport('probing');
+  }, [target]);
+  useEffect(() => {
+    if (!enabled || support !== 'probing') return;
+    let current = true;
+    void target.api.hookControl
+      .get()
+      .then(() => current && setSupport('ready'))
+      .catch((error: unknown) => {
+        if (!current) return;
+        const code = extractIpcError(error)?.code;
+        // An older runtime keeps the earlier cards; other failures retry on the next visit.
+        if (code === 'DEVICE_LINK_CHANNEL_NOT_ALLOWED' || code === 'PERMISSION_DENIED')
+          setSupport('unsupported');
+      });
+    return () => {
+      current = false;
+    };
+  }, [enabled, support, target]);
+  const close = (path: string | null) => {
+    picker?.(path);
+    setPicker(null);
+  };
+  const directoryPicker = picker ? (
+    <AddRemoteProjectDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) close(null);
+      }}
+      initialDeviceId={deviceId}
+      fixedDeviceId={deviceId}
+      title={t('settings.ghosts.scopePicker.projectsForComputer', { device: deviceName })}
+      confirmText={t('newChat.folderPicker.selectFolder')}
+      onProjectAdded={(added) => {
+        close(added.kind === 'device-link' && added.deviceId === deviceId ? added.path : null);
+      }}
+    />
+  ) : null;
+  return { target, support, directoryPicker };
+}
+
+/** The local Telegram persona, behaviour and group sections against the instance. */
+export function CloudTelegramSettings({ target }: { target: SettingsTarget }) {
+  return (
+    <SettingsTargetProvider target={target}>
+      <TelegramPersonaSettings />
+      <div className="h-px w-full bg-[var(--border-default)]" />
+      <TelegramBehaviorSettings />
+      <div className="h-px w-full bg-[var(--border-default)]" />
+      <TelegramGroupActivationSettings />
+    </SettingsTargetProvider>
+  );
+}
+
+type WechatSettings = {
+  version: 1;
+  workingDir: string | null;
+  workingDirAvailable: boolean;
+  companionBotId?: string;
+};
+
+/** The local WeChat working directory row; the directory comes from the instance browser. */
+export function CloudWechatWorkingDirectory({
+  target,
+  disabled,
+}: {
+  target: CloudImTarget;
+  disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const { call } = target;
+  const [settings, setSettings] = useState<WechatSettings | null>(null);
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void call<WechatSettings>('wechatBot:get-channel-settings')
+      .then((next) => current && setSettings(next))
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [call]);
+  const update = useCallback(
+    async (write: () => Promise<WechatSettings | null>, success: string) => {
+      if (pending || disabled) return;
+      setPending(true);
+      try {
+        const next = await write();
+        if (!next) return;
+        setSettings(next);
+        toast.success(t(success));
+      } catch {
+        toast.error(t('settings.wechatBot.toasts.workingDirFailed'));
+      } finally {
+        setPending(false);
+      }
+    },
+    [disabled, pending, t],
+  );
+  return (
+    <WechatWorkingDirectory
+      settings={settings}
+      pending={pending || disabled}
+      onChoose={() =>
+        void update(async () => {
+          const chosen = await target.api.showOpenDirectoryDialog();
+          return chosen.canceled || !chosen.path
+            ? null
+            : call<WechatSettings>(CLOUD_WECHAT_WORKING_DIR_SET, chosen.path);
+        }, 'settings.wechatBot.toasts.workingDirSaved')
+      }
+      onReset={() =>
+        void update(
+          () => call<WechatSettings>('wechatBot:reset-working-directory'),
+          'settings.wechatBot.toasts.workingDirReset',
+        )
+      }
+    />
+  );
+}

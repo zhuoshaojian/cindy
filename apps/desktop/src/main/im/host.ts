@@ -297,53 +297,52 @@ export function registerTelegramBotConfigIpc(): void {
   registerCloudImCall('feishuBot:reconnect', () => feishuIm.reconnect());
   // 每个 handler 先验事件来自可信 app renderer(与 bootstrap 内敏感通道同口径):
   // 共享的 host.ipc.handle 适配器会丢弃 event, 所以这组通道直接走 ipcMain。
-  ipcMain.handle('telegramBot:get-behavior', (e) => {
-    assertTrustedAppRendererEvent(e);
-    return readTelegramBehavior();
-  });
-  ipcMain.handle('telegramBot:set-behavior', (e, patch) => {
-    assertTrustedAppRendererEvent(e);
-    return patchTelegramBehavior((patch ?? {}) as Parameters<typeof patchTelegramBehavior>[0]);
-  });
-  // 群聊节: 已知群列表(窗口表 distinct chat)+ per-chat 参与模式读写。
-  ipcMain.handle('telegramBot:list-groups', async (e) => {
-    assertTrustedAppRendererEvent(e);
-    const groups = await listTelegramKnownGroups(telegramIm.botContextId);
-    const activation = readTelegramBehavior().groupActivation ?? {};
-    return {
-      groups: groups.map((g) => ({
-        chatId: g.chatId,
-        chatName: g.chatName,
-        activation: activation[g.chatId] ?? 'mention',
-      })),
-    };
-  });
-  ipcMain.handle('telegramBot:set-group-activation', (e, payload) => {
-    assertTrustedAppRendererEvent(e);
-    const p = (payload ?? {}) as { chatId?: string; mode?: string };
-    const chatId = typeof p.chatId === 'string' && /^-?\d+$/.test(p.chatId) ? p.chatId : null;
-    const mode = p.mode === 'always' ? 'always' : 'mention';
-    if (!chatId) return readTelegramBehavior();
-    return setTelegramGroupActivation(chatId, mode);
-  });
-  // 人格配置(soul + 名字); 保存后可选把名字同步到 Telegram 资料页(setMyName)。
-  ipcMain.handle('telegramBot:get-persona', (e) => {
-    assertTrustedAppRendererEvent(e);
-    return readTelegramPersona();
-  });
-  ipcMain.handle('telegramBot:set-persona', async (e, payload) => {
-    assertTrustedAppRendererEvent(e);
-    const p = (payload ?? {}) as { botName?: string; soul?: string; syncProfile?: boolean };
-    const persona = patchTelegramPersona({
-      ...(typeof p.botName === 'string' ? { botName: p.botName } : {}),
-      ...(typeof p.soul === 'string' ? { soul: p.soul } : {}),
+  // The same domain functions back the owner's cloud settings page (cloud:im-settings:v1).
+  const handlers: Record<string, (payload: unknown) => unknown> = {
+    'telegramBot:get-behavior': () => readTelegramBehavior(),
+    'telegramBot:set-behavior': (patch) =>
+      patchTelegramBehavior((patch ?? {}) as Parameters<typeof patchTelegramBehavior>[0]),
+    // 群聊节: 已知群列表(窗口表 distinct chat)+ per-chat 参与模式读写。
+    'telegramBot:list-groups': async () => {
+      const groups = await listTelegramKnownGroups(telegramIm.botContextId);
+      const activation = readTelegramBehavior().groupActivation ?? {};
+      return {
+        groups: groups.map((g) => ({
+          chatId: g.chatId,
+          chatName: g.chatName,
+          activation: activation[g.chatId] ?? 'mention',
+        })),
+      };
+    },
+    'telegramBot:set-group-activation': (payload) => {
+      const p = (payload ?? {}) as { chatId?: string; mode?: string };
+      const chatId = typeof p.chatId === 'string' && /^-?\d+$/.test(p.chatId) ? p.chatId : null;
+      const mode = p.mode === 'always' ? 'always' : 'mention';
+      if (!chatId) return readTelegramBehavior();
+      return setTelegramGroupActivation(chatId, mode);
+    },
+    // 人格配置(soul + 名字); 保存后可选把名字同步到 Telegram 资料页(setMyName)。
+    'telegramBot:get-persona': () => readTelegramPersona(),
+    'telegramBot:set-persona': async (payload) => {
+      const p = (payload ?? {}) as { botName?: string; soul?: string; syncProfile?: boolean };
+      const persona = patchTelegramPersona({
+        ...(typeof p.botName === 'string' ? { botName: p.botName } : {}),
+        ...(typeof p.soul === 'string' ? { soul: p.soul } : {}),
+      });
+      let profileSynced: boolean | undefined;
+      if (p.syncProfile === true) {
+        profileSynced = await telegramIm.syncBotProfileName(persona.botName);
+      }
+      return { persona, ...(profileSynced !== undefined ? { profileSynced } : {}) };
+    },
+  };
+  for (const [channel, handler] of Object.entries(handlers)) {
+    registerCloudImCall(channel, handler);
+    ipcMain.handle(channel, (e, payload) => {
+      assertTrustedAppRendererEvent(e);
+      return handler(payload);
     });
-    let profileSynced: boolean | undefined;
-    if (p.syncProfile === true) {
-      profileSynced = await telegramIm.syncBotProfileName(persona.botName);
-    }
-    return { persona, ...(profileSynced !== undefined ? { profileSynced } : {}) };
-  });
+  }
 }
 
 export const wechatCompatibilityPolicy = new WechatCompatibilityPolicyService({

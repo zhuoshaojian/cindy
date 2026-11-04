@@ -128,6 +128,8 @@ import { getUpdateStatus, isUpdateRelaunchImminent } from '../updateService';
 import { createLogger } from '../logger';
 import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer';
 import { throwIpcError } from '../utils/ipcValidate';
+import { registerCloudDomainCall } from '../host-settings/managementCalls';
+import { CLOUD_WECHAT_WORKING_DIR_SET } from '../../shared/cloudImSettings';
 import {
   readWechatChannelSettings,
   resetWechatWorkingDir,
@@ -520,6 +522,25 @@ export function startImOrchestrators(): void {
       return resetWechatWorkingDir();
     } catch {
       throw new Error('WECHAT_WORKING_DIR_UPDATE_FAILED');
+    }
+  });
+  // The owner's cloud settings page reads and resets the same settings, and sets a directory
+  // chosen in this instance's directory browser (there is no dialog to show here).
+  registerCloudDomainCall('wechatBot:get-channel-settings', () => readWechatChannelSettings());
+  registerCloudDomainCall('wechatBot:reset-working-directory', () => {
+    try {
+      return resetWechatWorkingDir();
+    } catch {
+      throwIpcError('INTERNAL', 'WECHAT_WORKING_DIR_UPDATE_FAILED');
+    }
+  });
+  registerCloudDomainCall(CLOUD_WECHAT_WORKING_DIR_SET, (selected) => {
+    if (typeof selected !== 'string' || selected.length > 4096)
+      throwIpcError('INVALID_PARAMS', 'a directory path is required');
+    try {
+      return writeWechatWorkingDir(selected as string);
+    } catch {
+      throwIpcError('INVALID_PARAMS', 'WECHAT_WORKING_DIR_INVALID');
     }
   });
 
