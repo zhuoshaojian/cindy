@@ -247,7 +247,7 @@ it('saves an admitted target route, rejects a local-only route and resets only t
   const client = createTrialCloudSettingsClient();
   const [state] = await client.read(['imFeishu']);
   const save = vi.fn(async (s, set, clear) => (await client.save(s, set, clear)).state);
-  const props = { itemId: 'bot:feishu', deviceId: 'cloud-target', disabled: false, save };
+  const props = { itemId: 'bot:feishu', deviceId: 'cloud-target', name: 'Cloud', disabled: false, save };
   const view = render(<CloudImSettings {...props} states={{ imFeishu: state }} />);
   expect(pickers.model.deviceId).toBe('cloud-target');
   expect(pickers.permission.deviceId).toBe('cloud-target');
@@ -296,6 +296,7 @@ it('keeps missing saved Telegram groups and never applies personal groups to off
   const save = vi.fn(async (_s: unknown, _set: Record<string, unknown>) => state);
   const props = {
     deviceId: 'cloud-target',
+    name: 'Cloud',
     states: { telegramGroups: state },
     section: 'telegram' as const,
     disabled: false,
@@ -339,6 +340,7 @@ it.each([
     const props = {
       itemId: `bot:${channel}`,
       deviceId: 'cloud-target',
+      name: 'Cloud',
       disabled: true,
       loading: true,
       retry,

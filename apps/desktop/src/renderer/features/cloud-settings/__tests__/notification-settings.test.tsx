@@ -87,7 +87,7 @@ it('saves, tests and removes the WeCom group webhook through target tickets', as
     />,
   );
   const section = await panel('wecom');
-  expect(within(section).queryByText('cloudSettings.imRemoteControlUnavailable')).toBeNull();
+  expect(within(section).queryByText('cloudSettings.desktopFallback:Cloud')).toBeNull();
   const input = within(section).getByLabelText('settings.notifications.wecomGroupLabel');
   expect(input.getAttribute('type')).toBe('password');
   fireEvent.change(input, { target: { value: 'https://example.invalid/hook' } });
@@ -196,8 +196,8 @@ it('edits Feishu and Discord announcements and gates Feishu task notices on the 
   expect(toast.error).not.toHaveBeenCalled();
 });
 
-// An older target lists no notification items: keep the explicit note, never a dead control.
-it('keeps the unavailable note on a target without notification items', async () => {
+// An older target lists no notification items: point to the instance's own page, never a dead control.
+it('opens the cloud desktop for notifications on a target without notification items', async () => {
   const client = createTrialCloudSettingsClient();
   const original = client.manage!;
   vi.spyOn(client, 'manage').mockImplementation(async (command) => {
@@ -208,7 +208,15 @@ it('keeps the unavailable note on a target without notification items', async ()
   });
   render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" trial />);
   const section = await panel('wecom');
-  expect(within(section).getByText('cloudSettings.imRemoteControlUnavailable')).toBeTruthy();
+  expect(within(section).getByText('cloudSettings.desktopFallback:Cloud')).toBeTruthy();
+  const openRemoteDesktop = vi.fn(async () => {});
+  Object.assign(window, { electronAPI: { openRemoteDesktop } });
+  fireEvent.click(
+    await waitFor(() =>
+      live('wecom').getByRole('button', { name: 'cloudSettings.openInCloudDesktop' }),
+    ),
+  );
+  expect(openRemoteDesktop).toHaveBeenCalledWith({ deviceId: 'cloud-test-device', name: 'Cloud' });
   expect(within(section).queryByLabelText('settings.notifications.wecomGroupLabel')).toBeNull();
   // Notification items never render as cards of their own.
   expect(screen.queryByText('WeCom group notifications')).toBeNull();

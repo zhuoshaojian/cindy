@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IpcHandler, IpcHandlerRegistry } from '../maker-ipc/ipcHandlerRegistry.js';
 import type { ManagementExecution } from './management.js';
 import { CLOUD_IM_SETTINGS_CALLS } from '../../shared/cloudImSettings.js';
+import { CLOUD_STORAGE_USAGE_CALLS } from '../../shared/cloudStorageUsage.js';
 
 // A closed, compiled service adapter. None of these names is accepted from the web.
 const channels = new Set([
@@ -87,6 +88,8 @@ const channels = new Set([
   'safe-storage-remove',
   // The cloud IM settings page (cloud:im-settings:v1): settings only, no binding flows.
   ...CLOUD_IM_SETTINGS_CALLS,
+  // Read-only storage totals of the cloud storage page (cloud:storage-usage:v1).
+  ...CLOUD_STORAGE_USAGE_CALLS,
 ]);
 const registered = new Map<string, IpcHandler>();
 const events = new WeakMap<object, ManagementExecution>();
