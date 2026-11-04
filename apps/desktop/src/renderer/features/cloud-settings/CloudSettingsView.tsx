@@ -503,7 +503,11 @@ export function CloudSettingsPanel({
                         />
                       ) : (
                         // Plugins are managed in the instance's own settings (2026-11-04 review).
-                        <CloudDesktopFallback deviceId={deviceId} name={name} />
+                        <CloudDesktopFallback
+                          deviceId={deviceId}
+                          name={name}
+                          description={t('cloudSettings.pluginsDesktopFallback')}
+                        />
                       )
                     ) : group === 'providers' ? (
                       providerAuthorization && (

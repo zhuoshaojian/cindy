@@ -587,7 +587,7 @@ export function NativeCloudSections(props: Props) {
     );
   if (tab === 'storage' && ready('databaseWarning'))
     return (
-      <StorageSectionFrame>
+      <StorageSectionFrame description={t('cloudSettings.storageDescription')}>
         {/* The instance disk is fixed in size (2026-11-04 product review); the preview has none. */}
         {!trial && (
           <CloudStorageUsage
@@ -606,6 +606,7 @@ export function NativeCloudSections(props: Props) {
           deviceId={deviceId}
           name={name}
           label={t('cloudSettings.storageCleanupTitle')}
+          description={t('cloudSettings.storageCleanupFallback')}
         />
       </StorageSectionFrame>
     );
