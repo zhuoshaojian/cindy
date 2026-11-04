@@ -45,6 +45,7 @@ import {
   PersonalizationPageTitle,
   UserPromptEditor,
 } from '@/components/settings/UserPromptSection';
+import { CloudUserPromptSection } from './CloudUserPromptSection';
 import { CloudAppearanceSettings } from './CloudAppearanceSettings';
 import {
   CloudAuxiliarySettings,
@@ -375,13 +376,8 @@ export function NativeCloudSections(props: Props) {
   if (tab === 'personalization')
     return (
       <>
-        {/* The prompt editor carries the page title; keep the title when it is absent. */}
-        {!ready('personalization') && (
-          <div className="pb-[14px]">
-            <PersonalizationPageTitle />
-          </div>
-        )}
-        {ready('personalization') &&
+        {/* A client that reports the prompt (the trial) keeps it; real instances answer over DeviceLink. */}
+        {ready('personalization') ? (
           section(
             'settings-search-target-personalization-user-prompt',
             <UserPromptEditor
@@ -401,7 +397,21 @@ export function NativeCloudSections(props: Props) {
                 await update('personalization', {}, ['userPrompt']);
               }}
             />,
-          )}
+          )
+        ) : trial ? (
+          <div className="pb-[14px]">
+            <PersonalizationPageTitle />
+          </div>
+        ) : (
+          <CloudUserPromptSection
+            deviceId={deviceId}
+            disabled={disabled}
+            onDirtyChange={(dirty) => changed('personalization', dirty)}
+            wrap={(content) =>
+              section('settings-search-target-personalization-user-prompt', content)
+            }
+          />
+        )}
         {ready('memory') &&
           section(
             'settings-search-target-personalization-memory',
