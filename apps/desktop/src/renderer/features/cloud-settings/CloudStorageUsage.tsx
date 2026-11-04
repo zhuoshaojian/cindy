@@ -83,17 +83,19 @@ export function CloudStorageUsage({
       refreshing={status === 'loading'}
       onRefresh={() => void load()}
       title={t('cloudSettings.storageTitle', { name })}
-      description={t('cloudSettings.storageDescription')}
+      description={
+        disk
+          ? t('cloudSettings.storageDisk', {
+              used: formatBytes(disk.totalBytes - disk.freeBytes),
+              total: formatBytes(disk.totalBytes),
+              free: formatBytes(disk.freeBytes),
+            })
+          : t('cloudSettings.storageDiskUnknown')
+      }
+      // The bar shows the instance disk, the figure that breaks the instance when full.
+      usagePercent={disk ? ((disk.totalBytes - disk.freeBytes) / disk.totalBytes) * 100 : null}
+      usageLabel={t('cloudSettings.storageDiskLabel')}
     >
-      {disk && (
-        <p className="mt-2 text-12 leading-[1.5] text-[var(--settings-section-title)]">
-          {t('cloudSettings.storageDisk', {
-            used: formatBytes(disk.totalBytes - disk.freeBytes),
-            total: formatBytes(disk.totalBytes),
-            free: formatBytes(disk.freeBytes),
-          })}
-        </p>
-      )}
       {low && (
         <p role="alert" className="mt-1 text-12 leading-[1.5] text-[var(--warning-fg)]">
           {t('cloudSettings.storageDiskLow')}
