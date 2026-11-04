@@ -14,9 +14,32 @@ import { cn } from '@/lib/utils';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 
 export function MessageNavRailCell() {
-  const { t } = useTranslation();
   const { enabled, isCustomized, setEnabled } = useMessageNavRailPreference();
 
+  return (
+    <MessageNavRailCellView
+      enabled={enabled}
+      isCustomized={isCustomized}
+      onChange={setEnabled}
+      onReset={() => setEnabled(true)}
+    />
+  );
+}
+
+export function MessageNavRailCellView({
+  enabled,
+  isCustomized,
+  disabled = false,
+  onChange,
+  onReset,
+}: {
+  enabled: boolean;
+  isCustomized: boolean;
+  disabled?: boolean;
+  onChange(next: boolean): void;
+  onReset(): void;
+}) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
       <div className="flex items-center gap-3">
@@ -38,10 +61,15 @@ export function MessageNavRailCell() {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <DefaultOverrideControls isCustomized={isCustomized} onReset={() => setEnabled(true)} />
+        <DefaultOverrideControls
+          isCustomized={isCustomized}
+          onReset={onReset}
+          disabled={disabled}
+        />
         <Switch
           checked={enabled}
-          onCheckedChange={setEnabled}
+          onCheckedChange={onChange}
+          disabled={disabled}
           aria-label={t('settings.messageNavRail.toggleAria')}
         />
       </div>

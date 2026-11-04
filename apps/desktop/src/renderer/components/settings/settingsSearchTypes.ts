@@ -3,6 +3,8 @@ import type { ImBotIdentity } from './imBotVisibility';
 
 export interface SettingsSearchContext extends ImBotIdentity {
   platform: string;
+  /** Only affirmative CIS membership admission enables cloud management search. */
+  canAccessCloudInstances?: boolean;
 }
 
 export interface SettingsSearchEntry {

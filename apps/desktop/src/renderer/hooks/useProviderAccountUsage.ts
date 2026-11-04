@@ -36,6 +36,11 @@ const REFRESH_INTERVAL_MS = 60_000;
 export function useProviderAccountUsage(
   provider: ProviderView | undefined,
   agent?: AgentKind,
+  /** Another device's account usage (the cloud instance settings page). */
+  reader?: (input: {
+    providerId: string;
+    forceRefresh: boolean;
+  }) => Promise<ProviderAccountUsageResult>,
 ): ProviderAccountUsageState {
   const supported =
     !!provider &&
@@ -66,11 +71,13 @@ export function useProviderAccountUsage(
         busy: true,
       }));
       try {
-        const next = await window.electronAPI.maker.fetchProviderAccountUsage({
-          providerId: provider.id,
-          forceRefresh,
-          ...(agent ? { agent } : {}),
-        });
+        const next = reader
+          ? await reader({ providerId: provider.id, forceRefresh })
+          : await window.electronAPI.maker.fetchProviderAccountUsage({
+              providerId: provider.id,
+              forceRefresh,
+              ...(agent ? { agent } : {}),
+            });
         if (id === requestId.current) setState({ identity, result: next, busy: false });
       } catch {
         // IPC 异常也结束等待；只保留同一查询身份的已有快照。

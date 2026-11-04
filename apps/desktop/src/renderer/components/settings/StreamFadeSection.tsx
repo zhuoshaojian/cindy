@@ -17,9 +17,23 @@ import { cn } from '@/lib/utils';
 import { useStreamFadePreference } from '@/hooks/useStreamFadePreference';
 
 export function StreamFadeSection() {
-  const { t } = useTranslation();
   const { preference, setPreference } = useStreamFadePreference();
-  const enabled = preference === 'on';
+  return (
+    <StreamFadeSectionView
+      enabled={preference === 'on'}
+      onChange={(next) => setPreference(next ? 'on' : 'off')}
+    />
+  );
+}
+
+export function StreamFadeSectionView({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange(value: boolean): void;
+}) {
+  const { t } = useTranslation();
 
   return (
     <div className="flex flex-col gap-[14px]">
@@ -48,7 +62,7 @@ export function StreamFadeSection() {
 
         <Switch
           checked={enabled}
-          onCheckedChange={(next) => setPreference(next ? 'on' : 'off')}
+          onCheckedChange={onChange}
           aria-label={t('settings.streamFade.toggleAria')}
         />
       </div>

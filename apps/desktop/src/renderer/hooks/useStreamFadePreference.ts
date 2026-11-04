@@ -19,6 +19,14 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import * as host from '@/state/hostDesktop/useStreamFadePreference';
+import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
+
+/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
+const hostDesktop = hasHostDesktopPreferences();
+export const getStreamFadePreference = hostDesktop ? host.getStreamFadePreference : getStreamFadePreferenceLocal;
+export const useStreamFadeEnabled = hostDesktop ? host.useStreamFadeEnabled : useStreamFadeEnabledLocal;
+export const useStreamFadePreference = hostDesktop ? host.useStreamFadePreference : useStreamFadePreferenceLocal;
 
 export type StreamFadePreference = 'on' | 'off';
 
@@ -41,7 +49,7 @@ function clearDefaultOverride(): void {
 let memoryValue: StreamFadePreference | null = null;
 
 /** 同步读——非 hook 路径用。 */
-export function getStreamFadePreference(): StreamFadePreference {
+function getStreamFadePreferenceLocal(): StreamFadePreference {
   if (memoryValue !== null) return memoryValue;
   try {
     const parsed = parsePreference(localStorage.getItem(STORAGE_KEY));
@@ -88,7 +96,7 @@ function subscribe(listener: () => void): () => void {
 }
 
 /** 消息渲染侧的轻量订阅:只关心 boolean,设置页切换后即时重渲。 */
-export function useStreamFadeEnabled(): boolean {
+function useStreamFadeEnabledLocal(): boolean {
   const [enabled, setEnabled] = useState(() => getStreamFadePreference() === 'on');
   useEffect(() => {
     const sync = () => setEnabled(getStreamFadePreference() === 'on');
@@ -97,7 +105,7 @@ export function useStreamFadeEnabled(): boolean {
   return enabled;
 }
 
-export function useStreamFadePreference(): {
+function useStreamFadePreferenceLocal(): {
   preference: StreamFadePreference;
   /** 是否存在用户 override(≠ 系统默认)。设置页据此显示「恢复默认」。 */
   isCustomized: boolean;

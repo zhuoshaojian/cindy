@@ -20,12 +20,18 @@ import { useProviderAccountUsage } from '../../hooks/useProviderAccountUsage';
 import { QuotaHoverCard } from '../status/QuotaHoverCard';
 import { buildDeepSeekUsageCard, buildZhipuUsageCard } from '../status/usageCardModel';
 
-export function ProviderAccountUsageModule({ provider }: { provider?: ProviderView }) {
+export function ProviderAccountUsageModule({
+  provider,
+  reader,
+}: {
+  provider?: ProviderView;
+  reader?: Parameters<typeof useProviderAccountUsage>[2];
+}) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const deepSeek = hasDeepSeekOfficialRouteView(provider);
   const zhipu = isZhipuCodingPlanProviderView(provider);
-  const usage = useProviderAccountUsage(deepSeek || zhipu ? provider : undefined);
+  const usage = useProviderAccountUsage(deepSeek || zhipu ? provider : undefined, undefined, reader);
   const dashboardUrl = usage.result?.dashboardUrl ?? getProviderAccountUsageDashboardUrlView(provider);
   if (!deepSeek && !zhipu) return null;
   const snapshot = usage.result?.status === 'ready' ? usage.result.snapshot : null;

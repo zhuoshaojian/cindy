@@ -18,6 +18,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import * as host from '@/state/hostDesktop/useLinkOpenPreference';
+import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
+
+/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
+const hostDesktop = hasHostDesktopPreferences();
+export const getLinkOpenPreference = hostDesktop ? host.getLinkOpenPreference : getLinkOpenPreferenceLocal;
+export const useLinkOpenPreference = hostDesktop ? host.useLinkOpenPreference : useLinkOpenPreferenceLocal;
 
 export type LinkOpenPreference = 'sidebar' | 'external';
 export type LinkOpenKind = 'web' | 'local';
@@ -98,7 +105,7 @@ function clearDefaultOverride(kind: LinkOpenKind): void {
 }
 
 /** 同步读——给消息流点击 handler 等非 hook 路径用。 */
-export function getLinkOpenPreference(kind: LinkOpenKind): LinkOpenPreference {
+function getLinkOpenPreferenceLocal(kind: LinkOpenKind): LinkOpenPreference {
   migrateLegacyIfNeeded();
   if (memoryValue[kind] !== null) return memoryValue[kind];
   try {
@@ -125,7 +132,7 @@ function notifyListeners(): void {
   listeners.forEach((fn) => fn());
 }
 
-export function useLinkOpenPreference(kind: LinkOpenKind): {
+function useLinkOpenPreferenceLocal(kind: LinkOpenKind): {
   preference: LinkOpenPreference;
   /** 是否存在用户 override(≠ 该开关当前系统默认)。设置页据此显示「恢复默认」。 */
   isCustomized: boolean;

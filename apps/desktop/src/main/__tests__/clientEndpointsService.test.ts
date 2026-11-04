@@ -35,6 +35,8 @@ const canLinkFile = (() => {
   }
 })();
 
+const distribution = vi.hoisted(() => ({ endpointPath: null as string | null }));
+vi.mock('../cloudPilotDistribution.js', () => ({ cloudPilotEndpointManifestPath: () => distribution.endpointPath }));
 const ipcOn = vi.hoisted(() => vi.fn());
 const netRequest = vi.hoisted(() => vi.fn());
 const showMessageBoxSync = vi.hoisted(() => vi.fn());
@@ -1696,5 +1698,64 @@ describe('getter / IPC', () => {
       authApiBaseUrl: 'https://auth.global.example.com',
     });
     expect(netRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+describe('signed Dev distribution endpoint configuration', () => {
+  it('loads only its bundled HTTPS manifest and retains CIS on same-realm login restore', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud-dev-endpoints-'));
+    distribution.endpointPath = path.join(root, 'endpoints.json');
+    const previousPackaged = app.isPackaged;
+    (app as { isPackaged: boolean }).isPackaged = true;
+    fs.writeFileSync(distribution.endpointPath, JSON.stringify({
+      ...JSON.parse(FULL_MANIFEST), cloudInstanceApiBaseUrl: 'https://cloud.example.com',
+    }));
+    try {
+      await expect(initClientEndpoints()).resolves.toBe(true);
+      expect(getClientEndpoint('cloudInstanceApiBaseUrl')).toBe('https://cloud.example.com');
+      const { getClientEndpointRealmConfig } = await import('../clientEndpointsService');
+      await loadClientEndpointsForRealm(getClientEndpointRealmConfig().buildRegion);
+      expect(getClientEndpoint('cloudInstanceApiBaseUrl')).toBe('https://cloud.example.com');
+      expect(netRequest).not.toHaveBeenCalled();
+      fs.writeFileSync(distribution.endpointPath, JSON.stringify({ schemaVersion: 1, authApiBaseUrl: 'http://localhost:1234' }));
+      resetClientEndpointsForTest();
+      await expect(initClientEndpoints()).resolves.toBe(false);
+    } finally {
+      distribution.endpointPath = null;
+      (app as { isPackaged: boolean }).isPackaged = previousPackaged;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// Source-dev regression: never edit and restore the repository endpoint file to
+// make CIS available. An explicit private manifest must survive a fresh startup
+// and account realm transitions; a different realm must not inherit its CIS URL.
+describe('private source-dev cloud endpoints', () => {
+  it('retains CIS on repeated startup and same-realm account switches only', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud-dev-private-endpoints-'));
+    const file = path.join(root, 'endpoint.json');
+    vi.stubEnv('XDT_ENDPOINT_MANIFEST_FILE', file);
+    vi.stubEnv('XDT_ENDPOINTS_CDN', '0');
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(FULL_MANIFEST), cloudInstanceApiBaseUrl: 'https://cis.example.com' }));
+    try {
+      for (let launch = 0; launch < 2; launch++) {
+        resetClientEndpointsForTest();
+        expect(await initClientEndpoints()).toBe(true);
+        const { buildRegion } = (await import('../clientEndpointsService')).getClientEndpointRealmConfig();
+        for (let account = 0; account < 3; account++) {
+          resetClientEndpointRealm();
+          await loadClientEndpointsForRealm(buildRegion);
+          activateClientEndpointRealm(buildRegion);
+          expect(getClientEndpointForRealm(buildRegion, 'cloudInstanceApiBaseUrl')).toBe('https://cis.example.com');
+        }
+        expect(() => getClientEndpointForRealm(buildRegion === 'cn' ? 'global' : 'cn', 'cloudInstanceApiBaseUrl')).toThrow(/not loaded/);
+        expect(netRequest).not.toHaveBeenCalled();
+      }
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

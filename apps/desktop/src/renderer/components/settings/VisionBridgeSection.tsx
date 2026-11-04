@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   classifyVisionCapability,
+  type ProviderView,
   type VisionCapability,
 } from '@cindy/model-providers';
 
@@ -23,7 +24,7 @@ import { useProviders } from '@/hooks/useProviders';
 import { createLogger } from '@/lib/logger';
 import { deriveModelsFromProviders } from '@/lib/providerModels';
 import { toast } from '@/lib/toast';
-import type { VisionBackendRef } from '../../../shared/visionBridgeSettings';
+import type { VisionBackendRef, VisionBridgeSettingsPatch } from '../../../shared/visionBridgeSettings';
 import { VISION_BRIDGE_SETTINGS_DEFAULTS } from '../../../shared/visionBridgeSettings';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 
@@ -151,6 +152,125 @@ export function VisionBridgeSection() {
     [pending, t, enabled, targetModels, primary, fallback, isCustomized, targetModelsCustomized],
   );
 
+  const resetAll = useCallback(async () => {
+    // reset 也是用户交互：设 interactedRef 防慢初始 GET 覆盖刚完成的 reset；
+    // 复用 pending 状态机，防止 reset in-flight 期间用户再触发 SET/其它交互覆盖 reset 结果。
+    if (pending) return;
+    interactedRef.current = true;
+    setPending(true);
+    try {
+      const next = await window.electronAPI.maker.visionBridgeSettingsReset();
+      setEnabled(next.enabled);
+      setTargetModels(next.targetModels);
+      setPrimary(next.primary);
+      setFallback(next.fallback);
+      setIsCustomized(next.isCustomized);
+      setTargetModelsCustomized(next.customizedKeys.includes('targetModels'));
+      lastKnownRef.current = {
+        enabled: next.enabled,
+        targetModels: next.targetModels,
+        primary: next.primary,
+        fallback: next.fallback,
+        isCustomized: next.isCustomized,
+        targetModelsCustomized: next.customizedKeys.includes('targetModels'),
+      };
+      toast.success(t('settings.defaults.restored'));
+    } catch (err) {
+      log.warn('visionBridgeSettingsReset failed', err);
+      toast.error(t('settings.defaults.restoreFailed'));
+    } finally {
+      setPending(false);
+    }
+  }, [pending, t]);
+
+  // 目标模型卡独立 reset：只恢复 targetModels（等默认值 → override 删除），
+  // 不清用户已配好的后端/开关（codex P2——reset 控件在目标模型卡里，用户只想
+  // 恢复勾选清单，不该连带清掉 primary/fallback 并关闭视觉桥）。
+  const resetTargetModels = useCallback(async () => {
+    if (pending) return;
+    interactedRef.current = true;
+    setPending(true);
+    try {
+      const next = await window.electronAPI.maker.visionBridgeSettingsSet({
+        targetModels: defaultTargetModels,
+      });
+      setTargetModels(next.targetModels);
+      setTargetModelsCustomized(next.customizedKeys.includes('targetModels'));
+      setIsCustomized(next.isCustomized);
+      lastKnownRef.current = {
+        ...(lastKnownRef.current ?? {
+          enabled: next.enabled,
+          primary: next.primary,
+          fallback: next.fallback,
+        }),
+        targetModels: next.targetModels,
+        targetModelsCustomized: next.customizedKeys.includes('targetModels'),
+        isCustomized: next.isCustomized,
+      };
+      toast.success(t('settings.defaults.restored'));
+    } catch (err) {
+      log.warn('visionBridge targetModels reset failed', err);
+      toast.error(t('settings.defaults.restoreFailed'));
+    } finally {
+      setPending(false);
+    }
+  }, [pending, t, defaultTargetModels]);
+
+  return (
+    <VisionBridgeSectionView
+      providers={providers}
+      providersLoading={providersLoading}
+      enabled={enabled}
+      targetModels={targetModels}
+      primary={primary}
+      fallback={fallback}
+      isCustomized={isCustomized}
+      targetModelsCustomized={targetModelsCustomized}
+      pending={pending}
+      persistPatch={persistPatch}
+      resetTargetModels={resetTargetModels}
+      markTargetModelsCustomized={() => setTargetModelsCustomized(true)}
+    />
+  );
+}
+
+export interface VisionBridgeSectionViewProps {
+  /** 模型目录:本机传 useProviders(),云实例传 useDeviceProviders(deviceId).providers。 */
+  providers: ProviderView[];
+  providersLoading: boolean;
+  /** 模型目录所在设备;省略 = 本机。转给本卡渲染的每个 ModelSelector。 */
+  deviceId?: string;
+  enabled: boolean;
+  targetModels: string[];
+  primary: VisionBackendRef | null;
+  fallback: VisionBackendRef | null;
+  isCustomized: boolean;
+  targetModelsCustomized: boolean;
+  pending: boolean;
+  persistPatch: (patch: VisionBridgeSettingsPatch) => Promise<boolean>;
+  resetTargetModels: () => Promise<void>;
+  /** 勾/取消目标模型时在 persistPatch 前乐观标记「已自定义」(本机行为)。 */
+  markTargetModelsCustomized?: () => void;
+}
+
+/** 视觉桥卡片的展示部分;本机与云实例设置传入各自的值、操作与模型目录。 */
+export function VisionBridgeSectionView({
+  providers,
+  providersLoading,
+  deviceId,
+  enabled,
+  targetModels,
+  primary,
+  fallback,
+  isCustomized,
+  targetModelsCustomized,
+  pending,
+  persistPatch,
+  resetTargetModels,
+  markTargetModelsCustomized,
+}: VisionBridgeSectionViewProps) {
+  const { t } = useTranslation();
+
   const toggleEnabled = useCallback(
     (next: boolean) => {
       void persistPatch({ enabled: next });
@@ -181,7 +301,7 @@ export function VisionBridgeSection() {
   const toggleTarget = useCallback(
     (modelId: string, capability: VisionCapability) => {
       // 用户一旦显式勾/取消，targetModels 视为已自定义（后续按用户选择，不再默认合并 no-vision）。
-      setTargetModelsCustomized(true);
+      markTargetModelsCustomized?.();
       // 首次 toggle 时 targetModels 是空数组（未自定义），但「有效勾选」含默认勾选的
       // no-vision 模型。必须以当前有效勾选全集 seed 显式列表再应用单行反转——
       // 否则取消一个默认勾选项会让其余默认勾选项全部消失（保存后 customized=true，
@@ -197,7 +317,7 @@ export function VisionBridgeSection() {
         : [...new Set([...seed, modelId])];
       void persistPatch({ targetModels: next });
     },
-    [targetModels, targetModelsCustomized, targetRows, isTargetDefaultChecked, persistPatch],
+    [targetModels, targetModelsCustomized, targetRows, isTargetDefaultChecked, persistPatch, markTargetModelsCustomized],
   );
 
   // 视觉后端候选：跨 agent 面（claude-code + codex + pi）并集，只保留可能读图的模型。
@@ -268,71 +388,7 @@ export function VisionBridgeSection() {
     [providers, isVisionUsableProvider],
   );
 
-  const resetAll = useCallback(async () => {
-    // reset 也是用户交互：设 interactedRef 防慢初始 GET 覆盖刚完成的 reset；
-    // 复用 pending 状态机，防止 reset in-flight 期间用户再触发 SET/其它交互覆盖 reset 结果。
-    if (pending) return;
-    interactedRef.current = true;
-    setPending(true);
-    try {
-      const next = await window.electronAPI.maker.visionBridgeSettingsReset();
-      setEnabled(next.enabled);
-      setTargetModels(next.targetModels);
-      setPrimary(next.primary);
-      setFallback(next.fallback);
-      setIsCustomized(next.isCustomized);
-      setTargetModelsCustomized(next.customizedKeys.includes('targetModels'));
-      lastKnownRef.current = {
-        enabled: next.enabled,
-        targetModels: next.targetModels,
-        primary: next.primary,
-        fallback: next.fallback,
-        isCustomized: next.isCustomized,
-        targetModelsCustomized: next.customizedKeys.includes('targetModels'),
-      };
-      toast.success(t('settings.defaults.restored'));
-    } catch (err) {
-      log.warn('visionBridgeSettingsReset failed', err);
-      toast.error(t('settings.defaults.restoreFailed'));
-    } finally {
-      setPending(false);
-    }
-  }, [pending, t]);
-
   const backendsCustomized = isCustomized;
-
-  // 目标模型卡独立 reset：只恢复 targetModels（等默认值 → override 删除），
-  // 不清用户已配好的后端/开关（codex P2——reset 控件在目标模型卡里，用户只想
-  // 恢复勾选清单，不该连带清掉 primary/fallback 并关闭视觉桥）。
-  const resetTargetModels = useCallback(async () => {
-    if (pending) return;
-    interactedRef.current = true;
-    setPending(true);
-    try {
-      const next = await window.electronAPI.maker.visionBridgeSettingsSet({
-        targetModels: defaultTargetModels,
-      });
-      setTargetModels(next.targetModels);
-      setTargetModelsCustomized(next.customizedKeys.includes('targetModels'));
-      setIsCustomized(next.isCustomized);
-      lastKnownRef.current = {
-        ...(lastKnownRef.current ?? {
-          enabled: next.enabled,
-          primary: next.primary,
-          fallback: next.fallback,
-        }),
-        targetModels: next.targetModels,
-        targetModelsCustomized: next.customizedKeys.includes('targetModels'),
-        isCustomized: next.isCustomized,
-      };
-      toast.success(t('settings.defaults.restored'));
-    } catch (err) {
-      log.warn('visionBridge targetModels reset failed', err);
-      toast.error(t('settings.defaults.restoreFailed'));
-    } finally {
-      setPending(false);
-    }
-  }, [pending, t, defaultTargetModels]);
 
   // 后端模型名称解析（无 providerId 限定：用第一个出现该 id 的名字）。
   const backendLabelFor = (ref: VisionBackendRef | null): string => {
@@ -450,6 +506,7 @@ export function VisionBridgeSection() {
             </div>
             <div className="min-w-0 flex-1">
               <ModelSelector
+                deviceId={deviceId}
                 providersOverride={visionProviders}
                 modelId={primary?.modelId ?? ''}
                 effort=""
@@ -504,6 +561,7 @@ export function VisionBridgeSection() {
             </div>
             <div className="min-w-0 flex-1">
               <ModelSelector
+                deviceId={deviceId}
                 providersOverride={visionProviders}
                 modelId={fallback?.modelId ?? ''}
                 effort=""

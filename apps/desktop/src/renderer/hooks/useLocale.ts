@@ -27,6 +27,14 @@ import {
   type SupportedLocale,
 } from '@/i18n';
 import { readStoredLocale, writeStoredLocale, effectiveOf, getEffectiveLocale } from '@/lib/localePreference';
+import * as host from '@/state/hostDesktop/useLocale';
+import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
+
+/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
+const hostDesktop = hasHostDesktopPreferences();
+export const bootstrapInitialLocale = hostDesktop ? host.bootstrapInitialLocale : bootstrapInitialLocaleLocal;
+export const LocaleProvider = hostDesktop ? host.LocaleProvider : LocaleProviderLocal;
+export const useLocale = hostDesktop ? host.useLocale : useLocaleLocal;
 
 interface LocaleContextValue {
   /** 用户的偏好选择 (含 'system')。 */
@@ -62,13 +70,13 @@ function applyLocale(loc: SupportedLocale): void {
  * initializing i18next synchronously here keeps even an early render failure
  * in the user's selected language.
  */
-export function bootstrapInitialLocale(): SupportedLocale {
+function bootstrapInitialLocaleLocal(): SupportedLocale {
   const effectiveLocale = getEffectiveLocale();
   applyLocale(effectiveLocale);
   return effectiveLocale;
 }
 
-export function LocaleProvider({ children }: { children: ReactNode }) {
+function LocaleProviderLocal({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<LocalePreference>(readStoredLocale);
   const [effectiveLocale, setEffectiveLocale] = useState<SupportedLocale>(getEffectiveLocale);
 
@@ -95,7 +103,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   return createElement(LocaleContext.Provider, { value }, children);
 }
 
-export function useLocale(): LocaleContextValue {
+function useLocaleLocal(): LocaleContextValue {
   const ctx = useContext(LocaleContext);
   if (ctx === undefined) {
     throw new Error('useLocale must be used within a LocaleProvider');

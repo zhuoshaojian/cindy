@@ -72,6 +72,7 @@ import {
 } from '@/state/modelVisibilityPrefs';
 import { LocalPackagingTag } from './LocalPackagingTag';
 import { ModelAdvancedDrawer } from './ModelAdvancedDrawer';
+import { useModelSettingsSource } from './modelSettingsSource';
 import {
   groupModelsForManagement,
   MANAGEMENT_KIND_ORDER,
@@ -306,11 +307,12 @@ function rowEnabled(
   row: UnionModelRow,
   agent: AgentKind,
   userProvider: boolean,
+  enabled: typeof isModelEnabled = isModelEnabled,
 ): boolean | null {
   const m = row.byAgent[agent];
   if (!m) return null;
   if (isAgentSelectableModel(m, { userProvider }) || rowHasVisibilitySwitch(row, userProvider)) {
-    return isModelEnabled(agent, providerId, m);
+    return enabled(agent, providerId, m);
   }
   return null;
 }
@@ -386,8 +388,13 @@ export function modelVisibilityTargets(
 }
 
 /** 普通模式的单开关显示值:任一可用 agent 开启即视为开(拨动才归一)。 */
-function rowAnyEnabled(providerId: string, row: UnionModelRow, userProvider: boolean): boolean {
-  return row.avail.some((a) => rowEnabled(providerId, row, a, userProvider) === true);
+function rowAnyEnabled(
+  providerId: string,
+  row: UnionModelRow,
+  userProvider: boolean,
+  enabled: typeof isModelEnabled = isModelEnabled,
+): boolean {
+  return row.avail.some((a) => rowEnabled(providerId, row, a, userProvider, enabled) === true);
 }
 
 /** 该行全部 avail agent 的真实目录 id(桥接投影两端 id 不同,写停用要两端一起写)。 */
@@ -472,6 +479,8 @@ export function UnifiedModelList({
   focusAgent?: AgentKind;
 }) {
   const { t } = useTranslation();
+  /** Another device's model settings (cloud instance page); null for this device. */
+  const source = useModelSettingsSource();
   const { confirm } = useConfirmDialog();
   const [query, setQuery] = useState('');
   const [managementView, setManagementView] = useState<ManagementView>('brand');
@@ -586,7 +595,15 @@ export function UnifiedModelList({
   }, []);
   // 订阅可见性 version:开关变更后 counts memo 必须重算(否则「全部开启/关闭」
   // 按钮方向与计数陈旧)。行内开关读取不 memo,天然新鲜;只有 counts 依赖它。
-  const visibilityVersion = useModelVisibilityVersion();
+  const localVisibilityVersion = useModelVisibilityVersion();
+  const visibilityVersion = source ? source.visibilityVersion : localVisibilityVersion;
+  const isEnabled = source?.isModelEnabled ?? isModelEnabled;
+  const writeModelDisable = useCallback(
+    (input: Parameters<Window['electronAPI']['maker']['setModelDisable']>[0]) =>
+      source ? source.setModelDisable(input) : window.electronAPI.maker.setModelDisable(input),
+    [source],
+  );
+  const localModels = provider.id === MANAGED_OLLAMA_PROVIDER_ID && !source;
 
   const selectionAvailable = provider.connected && !provider.suspended;
   const multiAgent = provider.agents.length > 1;
@@ -602,11 +619,11 @@ export function UnifiedModelList({
       modelManagementState(provider, {
         ids: rowModelIds(row),
         capability: isCapabilityRow(row, provider.source === 'user'),
-        savedSelected: rowAnyEnabled(provider.id, row, provider.source === 'user'),
+        savedSelected: rowAnyEnabled(provider.id, row, provider.source === 'user', isEnabled),
         disabled: rowDisabledEffective(row),
         paymentRequired: isRowPaymentRequired(row),
       }),
-    [provider, rowDisabledEffective, visibilityVersion],
+    [provider, rowDisabledEffective, visibilityVersion, isEnabled],
   );
   const focusedRow = useMemo(() => {
     if (!focusModelId) return null;
@@ -639,28 +656,26 @@ export function UnifiedModelList({
     (row: UnionModelRow, disabled: boolean) => {
       if (!disabled && !selectionAvailable) return;
       setPendingDisabled((prev) => ({ ...prev, [row.id]: disabled }));
-      void window.electronAPI.maker
-        .setModelDisable({
-          kind: 'model',
-          providerId: provider.id,
-          modelIds: rowModelIds(row),
-          disabled,
-        })
-        .catch(() => {
-          setPendingDisabled((prev) => {
-            // 只回滚仍属于本次请求的乐观态:IPC 在途期间用户可能又点了反向操作
-            // (覆盖了 prev[row.id]),无条件删除会把**后一次**的乐观态一并清掉,
-            // UI 回跳旧快照(PR #744 review 第五轮)。值已不同 = 已被更晚的操作
-            // 接管,本次失败的回滚不再适用。
-            if (prev[row.id] !== disabled) return prev;
-            const next = { ...prev };
-            delete next[row.id];
-            return next;
-          });
-          toast.error(t('settings.providers.models.accessWriteFailed'));
+      void writeModelDisable({
+        kind: 'model',
+        providerId: provider.id,
+        modelIds: rowModelIds(row),
+        disabled,
+      }).catch(() => {
+        setPendingDisabled((prev) => {
+          // 只回滚仍属于本次请求的乐观态:IPC 在途期间用户可能又点了反向操作
+          // (覆盖了 prev[row.id]),无条件删除会把**后一次**的乐观态一并清掉,
+          // UI 回跳旧快照(PR #744 review 第五轮)。值已不同 = 已被更晚的操作
+          // 接管,本次失败的回滚不再适用。
+          if (prev[row.id] !== disabled) return prev;
+          const next = { ...prev };
+          delete next[row.id];
+          return next;
         });
+        toast.error(t('settings.providers.models.accessWriteFailed'));
+      });
     },
-    [provider.id, selectionAvailable, t],
+    [provider.id, selectionAvailable, t, writeModelDisable],
   );
 
   const deleteInstalledModel = useCallback(
@@ -703,19 +718,25 @@ export function UnifiedModelList({
       for (const r of rows) next[r.id] = false;
       return next;
     });
-    void window.electronAPI.maker
-      .setModelDisable({ kind: 'reset', providerId: provider.id })
-      .catch(() => {
-        setPendingDisabled((prev) => {
-          const next = { ...prev };
-          for (const r of rows) {
-            if (next[r.id] === false) delete next[r.id];
-          }
-          return next;
-        });
-        toast.error(t('settings.providers.models.accessWriteFailed'));
+    void writeModelDisable({ kind: 'reset', providerId: provider.id }).catch(() => {
+      setPendingDisabled((prev) => {
+        const next = { ...prev };
+        for (const r of rows) {
+          if (next[r.id] === false) delete next[r.id];
+        }
+        return next;
       });
-  }, [hasLockedDisabledRow, unionRows, pendingDisabled, provider.id, selectionAvailable, t]);
+      toast.error(t('settings.providers.models.accessWriteFailed'));
+    });
+  }, [
+    hasLockedDisabledRow,
+    unionRows,
+    pendingDisabled,
+    provider.id,
+    selectionAvailable,
+    t,
+    writeModelDisable,
+  ]);
 
   /**
    * 该来源真实存在的**输出类型**:对话 + 各能力类型(图像 / 视频 / 语音…)。
@@ -866,13 +887,14 @@ export function UnifiedModelList({
       ) {
         return;
       }
-      const next = !rowAnyEnabled(provider.id, row, userProvider);
+      const next = !rowAnyEnabled(provider.id, row, userProvider, isEnabled);
       const targets = modelVisibilityTargets(provider, row, next);
-      if ((await setModelVisibilities(provider.id, targets, next)) === false) {
+      const write = source?.setModelVisibilities ?? setModelVisibilities;
+      if ((await write(provider.id, targets, next)) === false) {
         showVisibilityWriteFailure();
       }
     },
-    [provider, rowState, showVisibilityWriteFailure],
+    [provider, rowState, showVisibilityWriteFailure, isEnabled, source],
   );
 
   // Separate commands have stable meanings even when the selection is mixed. Adding all
@@ -881,13 +903,15 @@ export function UnifiedModelList({
     if (!visibilityWriteAvailable) return;
     const next = action === 'show';
     const rows = next
-      ? writableRows.filter((row) => !rowAnyEnabled(provider.id, row, provider.source === 'user'))
+      ? writableRows.filter(
+          (row) => !rowAnyEnabled(provider.id, row, provider.source === 'user', isEnabled),
+        )
       : writableRows;
     const targets = rows.flatMap((row) => modelVisibilityTargets(provider, row, next));
     const success =
       action === 'reset'
-        ? await resetModelVisibilities(provider.id, targets)
-        : await setModelVisibilities(provider.id, targets, next);
+        ? await (source?.resetModelVisibilities ?? resetModelVisibilities)(provider.id, targets)
+        : await (source?.setModelVisibilities ?? setModelVisibilities)(provider.id, targets, next);
     if (!success) showVisibilityWriteFailure();
   };
 
@@ -1009,7 +1033,7 @@ export function UnifiedModelList({
             />
           );
         })()}
-        {provider.id === MANAGED_OLLAMA_PROVIDER_ID && <LocalPackagingTag libraryName={row.id} />}
+        {localModels && <LocalPackagingTag libraryName={row.id} />}
         {capNote && (
           <Tip text={capNote}>
             <button
@@ -1441,7 +1465,7 @@ export function UnifiedModelList({
                               {t('settings.providers.models.enableModel')}
                             </Button>
                           )}
-                          {provider.id === MANAGED_OLLAMA_PROVIDER_ID && (
+                          {localModels && (
                             <Button
                               variant="secondary"
                               size="xs"
@@ -1477,7 +1501,7 @@ export function UnifiedModelList({
           setRowDisabled(row, !rowDisabledEffective(row));
           setAdvancedOpen(false);
         }}
-        {...(provider.id === MANAGED_OLLAMA_PROVIDER_ID
+        {...(localModels
           ? {
               onDeleteLocal: (row: UnionModelRow) => {
                 setAdvancedOpen(false);
