@@ -122,6 +122,10 @@ function nativeApi(): ModelPresentationPreferencesApi | undefined {
     }
   )?.modelPresentationPreferences;
 }
+/** Preload exposes the Host store only on a managed cloud instance. */
+export function hasHostModelPresentation(): boolean {
+  return !!nativeApi();
+}
 /** 一个 owner/generation 对应一条连接；所有调用等待 Host 持久回执，冲突只回读。 */
 export function connectHostModelPresentationPreferences(): () => void {
   const owner = getDataOwnerGeneration();
@@ -307,7 +311,19 @@ export async function ensureHostModelPresentationLoaded(): Promise<void> {
 export async function retryHostModelPresentationMigration(): Promise<void> {
   await connection?.retryMigration();
 }
-export async function commitHostModelPresentation(
+const pendingCommits = new Set<Promise<unknown>>();
+/** Local-store callers do not wait for the receipt; subscribers update when it arrives. */
+export function commitHostModelPresentation(
+  operation: ModelPresentationOperation,
+  isCurrent?: () => boolean,
+): Promise<ModelPresentationReceipt | null> {
+  const commit = commitToHost(operation, isCurrent);
+  pendingCommits.add(commit);
+  const settle = () => pendingCommits.delete(commit);
+  commit.then(settle, settle);
+  return commit;
+}
+async function commitToHost(
   operation: ModelPresentationOperation,
   isCurrent?: () => boolean,
 ): Promise<ModelPresentationReceipt | null> {
@@ -316,6 +332,10 @@ export async function commitHostModelPresentation(
   const state = connection;
   if (!isDataOwnerGenerationCurrent(owner) || !state || !current(state)) return null;
   return state.write(operation, isCurrent);
+}
+/** Wait until every commit started so far has its Host receipt (tests). */
+export async function __settleHostModelPresentationForTest(): Promise<void> {
+  while (pendingCommits.size) await Promise.allSettled([...pendingCommits]);
 }
 export function __resetHostModelPresentationForTest(): void {
   connection?.stop();

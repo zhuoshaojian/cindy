@@ -254,16 +254,12 @@ import { providerShareFavoriteSource, reconcileProviderShareFavorites } from '@/
 import { toast } from '@/lib/toast';
 import { setModelEngineOverride } from '@/state/modelEnginePrefs';
 
-import { createModelPresentationTestHost } from './modelPresentationTestHost';
-import { connectHostModelPresentationPreferences, ensureHostModelPresentationLoaded } from '../state/hostModelPresentationPreferences';
-
 const onProviderChange = vi.fn();
-let presentationHost: ReturnType<typeof createModelPresentationTestHost>;
 
 // Regression: plugin selection promises a request-local draft. The real dialog,
 // ModelSelector and row actions must never write engine/favorite defaults (unit).
 it('keeps plugin engine and favorite edits local after cancelling the real dialog', async () => {
-  const uid = await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex', effort: 'high' });
+  const uid = addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex', effort: 'high' });
   const baseline = listModelFavorites().map((item) => ({ ...item }));
   const onAnswer = vi.fn(async () => ({ handled: true, accepted: true }));
   const { unmount } = render(<PluginModelPickerDialog
@@ -327,16 +323,10 @@ async function openFlyoutForRow(row: HTMLElement): Promise<HTMLElement> {
   return screen.findByTestId('unified-model-config-flyout');
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   onProviderChange.mockClear();
   resetEnginePrefs();
   resetFavorites();
-  const host = createModelPresentationTestHost(window.localStorage);
-  presentationHost = host;
-  host.initialized();
-  host.install();
-  connectHostModelPresentationPreferences();
-  await ensureHostModelPresentationLoaded();
   resetRecentModels();
 });
 
@@ -346,13 +336,10 @@ describe('分享模型收藏', () => {
     hostDeviceId: 'host', deviceName: 'Host', status: 'active' as const, hostOnline: true, hostCapable: true,
     owner: { displayName: 'Owner', avatarUrl: null, region: 'global' as const },
   };
-  beforeEach(async () => {
-    presentationHost.select('recipient', 1);
-    presentationHost.initialized();
+  beforeEach(() => {
     setDataOwnerGeneration('recipient', 1);
     setModelFavoritesOwner('recipient');
-    await ensureHostModelPresentationLoaded();
-    await reconcileProviderShareFavorites({ ownerStamp: { dataOwnerId: 'recipient', ownerGeneration: 1 }, confirmedRegions: ['global'], received: [received] });
+    reconcileProviderShareFavorites({ ownerStamp: { dataOwnerId: 'recipient', ownerGeneration: 1 }, confirmedRegions: ['global'], received: [received] });
     remoteProvidersRef.providers = providersRef.providers.map((provider) => ({ ...provider as object, remoteInvocationEnabled: true }));
   });
   afterEach(() => {
@@ -377,7 +364,7 @@ describe('分享模型收藏', () => {
   it('存储写失败显示提示，收藏区不会出现未保存的条目', async () => {
     const failed = vi.spyOn(toast, 'error').mockImplementation(() => 'test');
     renderPanel({ deviceId: 'share:s1' });
-    presentationHost.options.failWrite = true;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
     await act(async () => fireEvent.click(within(rowFor('Opus 5')).getByRole('button', { name: '存为收藏' })));
     expect(failed).toHaveBeenCalledWith('newChat.modelSelector.unified.favoritesSaveFailed');
     expect(listModelFavorites()).toEqual([]);
@@ -443,7 +430,7 @@ describe('统一面板 · 打折 GPT-5.6 与 GPT-6 包月互切', () => {
   it.each(cases)(
     '$from.modelId → $to.modelId，Fast=$fast，失败可重试且不误报成功',
     async ({ from, to, fast }) => {
-      const uid = await addModelFavorite({
+      const uid = addModelFavorite({
         providerId: to.providerId,
         modelId: to.modelId,
         agent: 'codex',
@@ -528,7 +515,7 @@ describe('统一面板 · 配置应用与收尾一致', () => {
   );
 
   it.each([true, false])('普通模型恢复推荐成功=%s，只有成功才离开收藏', async (applied) => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -566,7 +553,7 @@ describe('统一面板 · 配置应用与收尾一致', () => {
 });
 
 describe('统一模型选择器面板', () => {
-  it('按分组陈列跨引擎联合列表,每行右侧常驻三元组', async () => {
+  it('按分组陈列跨引擎联合列表,每行右侧常驻三元组', () => {
     renderPanel();
     const list = screen.getByRole('listbox');
     expect(within(list).getByText('Opus 5')).toBeTruthy();
@@ -663,8 +650,8 @@ describe('统一模型选择器面板', () => {
   });
 
   it('official 策略忽略全局引擎偏好与收藏，只按目录推荐选择模型', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
-    await addModelFavorite({
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'cc',
@@ -739,7 +726,7 @@ describe('统一面板 · 会话内形态', () => {
     onCrossEngineSelect.mockClear();
   });
 
-  it('新任务即使已有草稿引擎和模型也不建立同 Harness 推荐分组', async () => {
+  it('新任务即使已有草稿引擎和模型也不建立同 Harness 推荐分组', () => {
     renderPanel({ vendorKey: 'codex', currentProviderId: 'xd', modelId: 'gpt-5.5' });
     const list = screen.getByRole('listbox');
     expect(within(list).queryByRole('group', { name: '推荐' })).toBeNull();
@@ -762,8 +749,8 @@ describe('统一面板 · 会话内形态', () => {
     expect(other?.className).not.toContain('bg-sidebar-item-hover');
   });
 
-  it('收藏置顶但不选中，推荐当前值优先并移除下方空供应商组', async () => {
-    const uid = await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex' });
+  it('收藏置顶但不选中，推荐当前值优先并移除下方空供应商组', () => {
+    const uid = addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex' });
     renderPanel({ actualRoute: true, sessionEngineFilter, currentProviderId: 'xd', modelId: 'gpt-5.5', selectedFavoriteUid: uid });
     const list = screen.getByRole('listbox');
     const groups = within(list).getAllByRole('group');
@@ -798,7 +785,7 @@ describe('统一面板 · 会话内形态', () => {
     }));
   });
 
-  it('当前引擎没有模型时仍能从默认全部视图选模，外部换引擎后回到全部', async () => {
+  it('当前引擎没有模型时仍能从默认全部视图选模，外部换引擎后回到全部', () => {
     const props = {
       modelId: 'missing-model',
       effort: 'medium',
@@ -817,7 +804,7 @@ describe('统一面板 · 会话内形态', () => {
 
 
   it('全部视图收藏行浮层仍可切 Harness', async () => {
-    await addModelFavorite({
+    addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'cc',
@@ -939,7 +926,7 @@ describe('统一面板 · 会话内形态', () => {
   );
 
   it('同引擎轨选中行:全局 override 指向别的引擎时仍显示并点选 live 引擎', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'codex');
+    setModelEngineOverride('xd', 'gpt-5.5', 'codex');
     renderPanel({
       sessionEngineFilter: {
         currentAgent: 'claude-code' as const,
@@ -1200,7 +1187,7 @@ describe('统一面板 · 会话内形态', () => {
   });
 
   it('真实引擎未知且挂着意图:点意图目标收藏仍走确认事务', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -1335,7 +1322,7 @@ describe('统一面板 · 恢复推荐应用到 live 配置', () => {
 
   it('草稿同引擎恢复推荐:走整行直通且不把推荐档重新写成 override', async () => {
     // 行落在 codex(= 草稿当前引擎,推荐引擎也是 codex),live 深度 low、Fast 开着。
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onEffortChange = vi.fn();
     const onFastModeChange = vi.fn();
     const onUnifiedSelect = vi.fn();
@@ -1368,7 +1355,7 @@ describe('统一面板 · 恢复推荐应用到 live 配置', () => {
   });
 
   it('草稿跨引擎恢复推荐:把删除 override 的语义完整传到草稿层', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onUnifiedSelect = vi.fn();
     renderPanel({
       vendorKey: 'cc',
@@ -1393,7 +1380,7 @@ describe('统一面板 · 恢复推荐应用到 live 配置', () => {
   });
 
   it('会话内同引擎:同样走实时回调,不走跨引擎事务', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onCrossEngineSelect = vi.fn();
     const onEffortChange = vi.fn();
     const onFastModeChange = vi.fn();
@@ -1422,7 +1409,7 @@ describe('统一面板 · 恢复推荐应用到 live 配置', () => {
 
   it('会话内跨引擎:走既有切换事务(带推荐引擎的 wire id 与推荐档)', async () => {
     // 会话在 cc 上跑 xd 的 GPT-5.5,而该行的推荐引擎是 codex → 恢复推荐 = 一次跨引擎切换。
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onCrossEngineSelect = vi.fn(() => true);
     renderPanel({
       sessionEngineFilter: {
@@ -1456,7 +1443,7 @@ describe('统一面板 · 恢复推荐应用到 live 配置', () => {
   });
 
   it('会话内跨引擎被取消:override 不落地,不留半套状态', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onCrossEngineSelect = vi.fn(() => false);
     const onFastModeChange = vi.fn();
     renderPanel({
@@ -1482,7 +1469,7 @@ describe('统一面板 · 恢复推荐应用到 live 配置', () => {
   });
 
   it('非 live 行不动实时状态(只清记忆,回归保护)', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onEffortChange = vi.fn();
     const onFastModeChange = vi.fn();
     // 选中的是 Opus 5,GPT-5.5 那一行不是 live 行。
@@ -1515,7 +1502,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   }
 
   it('删的不是当前选中锚点:行为不变,只删记录', async () => {
-    await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'cc', effort: 'low' });
+    addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'cc', effort: 'low' });
     const onUnifiedSelect = vi.fn();
     const onEffortChange = vi.fn();
     const onFastModeChange = vi.fn();
@@ -1537,7 +1524,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   });
 
   it('草稿选中的收藏:默认配置经既有选中链路写回草稿(favoriteUid 置空),记录同时删除', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'cc',
@@ -1573,7 +1560,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   });
 
   it('选中收藏后 live 配置已改:删收藏只删记录,不把后来的选择覆盖成旧收藏默认', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -1604,7 +1591,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   });
 
   it('选中收藏后只改了思维档:删收藏只删记录,不覆盖当前思维', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -1634,7 +1621,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   });
 
   it('选中收藏后只改了 Fast:删收藏只删记录,不覆盖当前 Fast', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -1664,7 +1651,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   });
 
   it('挂着待切换意图时删除回落到真实引擎的收藏:走切换事务清意图', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'cc',
@@ -1709,7 +1696,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   });
 
   it('真实引擎未知时删除选中收藏:走切换事务,不走同引擎 live 回落', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -1750,7 +1737,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   });
 
   it('会话内同引擎:深度 / Fast 经实时回调复位,记录同时删除', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -1785,7 +1772,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   });
 
   it('会话内跨引擎:走既有切换事务,事务真成功才删收藏', async () => {
-    const uid = await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'cc' });
+    const uid = addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'cc' });
     const onCrossEngineSelect = vi.fn(() => true);
     renderPanel({
       sessionEngineFilter: {
@@ -1818,7 +1805,7 @@ describe('统一面板 · 删除选中的收藏回落到模型默认', () => {
   });
 
   it('会话内跨引擎被拒:收藏原样保留,配置一点不动', async () => {
-    const uid = await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'cc' });
+    const uid = addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'cc' });
     const onCrossEngineSelect = vi.fn(() => false);
     const onEffortChange = vi.fn();
     const onFastModeChange = vi.fn();
@@ -1867,7 +1854,7 @@ describe('统一面板 · 同引擎实时写入成功才清存储', () => {
   }
 
   it('恢复推荐:深度写入失败 → override 保留,Fast 也不顺手关掉', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onEffortChange = vi.fn(() => false);
     const onFastModeChange = vi.fn();
     renderPanel({
@@ -1891,7 +1878,7 @@ describe('统一面板 · 同引擎实时写入成功才清存储', () => {
   });
 
   it('恢复推荐:Fast 写入失败 → override 同样保留', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onFastModeChange = vi.fn(async () => false);
     renderPanel({
       sessionEngineFilter: sameEngineSession(),
@@ -1912,7 +1899,7 @@ describe('统一面板 · 同引擎实时写入成功才清存储', () => {
   });
 
   it('恢复推荐:两笔都成功才清 override(成功路径回归)', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     renderPanel({
       sessionEngineFilter: sameEngineSession(),
       vendorKey: 'codex',
@@ -1933,7 +1920,7 @@ describe('统一面板 · 同引擎实时写入成功才清存储', () => {
   });
 
   it('删除选中收藏(会话同引擎):实时写入失败 → 收藏原样保留', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -1983,7 +1970,7 @@ describe('统一面板 · 两笔实时写入要么都落要么回滚', () => {
   }
 
   it('恢复推荐:Fast 写入失败 → 已落下的深度被写回原值,存储照旧不清', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onEffortChange = vi.fn();
     const onFastModeChange = vi.fn(async () => false);
     renderPanel({
@@ -2007,7 +1994,7 @@ describe('统一面板 · 两笔实时写入要么都落要么回滚', () => {
   });
 
   it('回滚本身也失败:两侧都脏,但存储仍然不清(行为明确,用户重试整段)', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     let effortCalls = 0;
     const onEffortChange = vi.fn(() => {
       effortCalls += 1;
@@ -2034,7 +2021,7 @@ describe('统一面板 · 两笔实时写入要么都落要么回滚', () => {
   });
 
   it('两笔都成功不触发回滚(成功路径回归)', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const onEffortChange = vi.fn(async () => true);
     renderPanel({
       sessionEngineFilter: sameEngineSession(),
@@ -2080,7 +2067,7 @@ describe('统一面板 · 改模型行的实时配置后收藏不再选中', () 
   }
 
   it('草稿:改模型行深度 → 经既有直通链路把 favoriteUid 置空(面板不收起)', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2120,7 +2107,7 @@ describe('统一面板 · 改模型行的实时配置后收藏不再选中', () 
   });
 
   it('会话:改模型行 Fast → 回传空锚点', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2154,7 +2141,7 @@ describe('统一面板 · 改模型行的实时配置后收藏不再选中', () 
   });
 
   it('实时写入失败 → 锚点原样保留(没改成配置就没有分家)', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2184,7 +2171,7 @@ describe('统一面板 · 改模型行的实时配置后收藏不再选中', () 
   });
 
   it('收藏行自己的编辑不清锚(回归保护:那是「编辑选中的这一条」)', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2237,7 +2224,7 @@ describe('统一面板 · 会话内选中收藏要真正应用', () => {
   }
 
   it('同模型不同配置的收藏:深度 / Fast 经实时回调应用,锚点随后记下', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2279,7 +2266,7 @@ describe('统一面板 · 会话内选中收藏要真正应用', () => {
   });
 
   it('同模型不同配置的收藏:实时写入失败 → 不记锚点', async () => {
-    await addModelFavorite({
+    addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2312,7 +2299,7 @@ describe('统一面板 · 会话内选中收藏要真正应用', () => {
   });
 
   it('换模型的选择被拒(取消 / 写穿失败)→ 不记锚点', async () => {
-    await addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' });
+    addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' });
     const onSessionFavoriteAnchorChange = vi.fn();
     renderPanel({
       sessionEngineFilter: {
@@ -2335,7 +2322,7 @@ describe('统一面板 · 会话内选中收藏要真正应用', () => {
   });
 
   it('换模型的选择成功 → 记下这条收藏的锚点', async () => {
-    const uid = await addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' });
+    const uid = addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' });
     const onSessionFavoriteAnchorChange = vi.fn();
     renderPanel({
       sessionEngineFilter: {
@@ -2380,7 +2367,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   }
 
   it('草稿选中的收藏改深度:live 回调收到新档,收藏副本同步更新', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2409,7 +2396,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   });
 
   it('选中收藏已不是 live 配置:改深度只更新收藏记录,不写回正在跑的配置', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2440,7 +2427,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   });
 
   it('选中收藏后只改了思维档:编辑深度只更新收藏记录,不写回正在跑的配置', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2471,7 +2458,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   });
 
   it('选中收藏后只改了 Fast:编辑 Fast 只更新收藏记录,不写回正在跑的配置', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2503,7 +2490,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   });
 
   it('草稿选中的收藏改 Fast:live 回调收到新值,收藏副本同步更新', async () => {
-    const uid = await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex' });
+    const uid = addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex' });
     const onFastModeChange = vi.fn();
     renderPanel({
       onUnifiedSelect: vi.fn(),
@@ -2528,7 +2515,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   });
 
   it('live 写入失败 → 收藏副本不留半套(这次编辑不落)', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2555,7 +2542,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   });
 
   it('非选中的收藏只改副本,不动正在跑的那一份(回归保护)', async () => {
-    await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex', effort: 'low' });
+    addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex', effort: 'low' });
     const onEffortChange = vi.fn();
     // 选中的是 Opus 5,那条收藏不是当前锚点。
     renderPanel({
@@ -2580,7 +2567,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
    * 跨引擎切换 —— 与深度 / Fast 是同一个病的第三个入口。
    */
   it('草稿选中的收藏改引擎:整份副本按新引擎写回草稿(锚点保持),副本同步更新', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2616,7 +2603,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   });
 
   it('会话内选中的收藏改引擎:走跨引擎切换事务,事务真成功才落副本', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2660,7 +2647,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   });
 
   it('会话内改引擎被取消:副本不动,这次编辑一点不落', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2691,7 +2678,7 @@ describe('统一面板 · 编辑选中的收藏同步到 live', () => {
   });
 
   it('非选中的收藏改引擎:只改副本,不动正在跑的那一份(回归保护)', async () => {
-    await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex', effort: 'low' });
+    addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex', effort: 'low' });
     const onUnifiedSelect = vi.fn();
     const onCrossEngineSelect = vi.fn();
     // 选中的是 Opus 5,那条收藏不是当前锚点。
@@ -2757,7 +2744,7 @@ describe('统一面板 · 恢复推荐删记忆键', () => {
   }
 
   it('恢复推荐后记忆槽里没有该键(不是写了一份「等于当前默认」的快照)', async () => {
-    await setModelEngineOverride('openai', 'gpt-5.6', 'cc');
+    setModelEngineOverride('openai', 'gpt-5.6', 'cc');
     const memory = makeMemory({
       effort: {
         'claude-code|openai|chatgpt/gpt-5.6': 'low',
@@ -2836,7 +2823,7 @@ describe('统一面板 · 恢复推荐删记忆键', () => {
   });
 
   it('注入方没有删除入口(device-link 镜像)→ 退回既有快照写法,行为不变', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const setEffort = vi.fn();
     const setFast = vi.fn();
     renderPanel({
@@ -2867,7 +2854,7 @@ describe('统一面板 · 恢复推荐删记忆键', () => {
  */
 describe('统一面板 · 会话内回传收藏锚点', () => {
   it('同引擎选中收藏 → 回传锚点(带这次落下的 wire id 与引擎)', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -2917,7 +2904,7 @@ describe('统一面板 · 会话内回传收藏锚点', () => {
   });
 
   it('跨引擎选中收藏:锚点随切换事务的入参交出去,由调用方按真实结果决定记不记', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'anthropic',
       modelId: 'claude-opus-5',
       agent: 'cc',
@@ -2963,7 +2950,7 @@ describe('统一面板 · 会话内回传收藏锚点', () => {
    * 锚点照记、界面照勾,任务却按记忆里的另一个 Fast 在跑。
    */
   it('跨引擎选中 Fast 收藏:副本的 Fast 开显式随事务交出', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -3007,7 +2994,7 @@ describe('统一面板 · 会话内回传收藏锚点', () => {
    * 面板退回选中模型行,之后删这条仍在用的收藏也走不到「先回落默认配置」那条路。
    */
   it('编辑选中收藏的引擎:锚点随事务交出去且仍是同一条收藏(带事务后的目标值)', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -3058,7 +3045,7 @@ describe('统一面板 · 会话内回传收藏锚点', () => {
   });
 
   it('编辑选中收藏的引擎被取消:锚点与收藏副本都一点不动', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -3149,7 +3136,7 @@ describe('统一面板 · 新会话选中直通', () => {
   });
 
   it('引擎 override 生效后,直通回传的是 override 后的引擎(不是推荐)', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'codex');
+    setModelEngineOverride('xd', 'gpt-5.5', 'codex');
     renderPanel({ onUnifiedSelect });
     await act(async () => {
       fireEvent.click(rowFor('GPT-5.5'));
@@ -3160,7 +3147,7 @@ describe('统一面板 · 新会话选中直通', () => {
   });
 
   it('选中收藏条目按该条副本配置回传,并带上锚点 uid', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -3185,8 +3172,8 @@ describe('统一面板 · 新会话选中直通', () => {
     });
   });
 
-  it('收藏配置是否匹配都只在模型本体标记选中', async () => {
-    const uid = await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex' });
+  it('收藏配置是否匹配都只在模型本体标记选中', () => {
+    const uid = addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'codex' });
     const { unmount } = render(
       React.createElement(ModelSelectorContent, {
         modelId: 'gpt-5.5',
@@ -3227,8 +3214,8 @@ describe('统一面板 · 新会话选中直通', () => {
     ).toBe(true);
   });
 
-  it('收藏配置已与任务不同，选中标记回到真实模型行', async () => {
-    const uid = await addModelFavorite({
+  it('收藏配置已与任务不同，选中标记回到真实模型行', () => {
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -3361,7 +3348,7 @@ describe('统一面板 · 实测回归', () => {
   });
 
   it('「恢复推荐」删掉 override,行与浮层当场回落推荐引擎', async () => {
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     renderPanel();
     expect(getModelEngineOverride('xd', 'gpt-5.5')).toBe('cc');
     const flyout = await openRowFlyout('GPT-5.5');
@@ -3390,7 +3377,7 @@ describe('统一面板 · 实测回归', () => {
     // 行落在 cc(override)上,而 cc 那条目录条目没有 Fast 能力 → 行上的生效 fast 恒 false;
     // 推荐引擎(codex)的记忆槽里却留着上次开的 Fast。按生效引擎的值当门就会漏掉这一路:
     // 恢复推荐后行翻回 codex,⚡ 当场复活。
-    await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+    setModelEngineOverride('xd', 'gpt-5.5', 'cc');
     const setFast = vi.fn();
     renderPanel({
       modelMemory: {
@@ -3429,7 +3416,7 @@ describe('统一面板 · 实测回归', () => {
     expect(wrapper.style.top).toBe('228px');
   });
 
-  it('列表带 min-h-0(面板高度受限时能收缩并滚到底)', async () => {
+  it('列表带 min-h-0(面板高度受限时能收缩并滚到底)', () => {
     renderPanel();
     expect(screen.getByRole('listbox').className).toContain('min-h-0');
     const panel = document.querySelector('[data-unified-model-panel]') as HTMLElement;
@@ -3437,7 +3424,7 @@ describe('统一面板 · 实测回归', () => {
   });
 
   it('rail 选中格用反色实心块,一眼看得出当前视图', async () => {
-    await addModelFavorite({ providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'cc' });
+    addModelFavorite({ providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'cc' });
     renderPanel();
     const all = screen.getByRole('button', { name: '全部' });
     expect(all.className).toContain('bg-[var(--accent-cta-bg)]');
@@ -3512,7 +3499,7 @@ describe('统一面板 · 合并行与 wire id', () => {
   });
 
   it('override 到 cc 后,记忆读写换成 bridge 壳的 wire id', async () => {
-    await setModelEngineOverride('openai', 'gpt-5.6', 'cc');
+    setModelEngineOverride('openai', 'gpt-5.6', 'cc');
     const getEffort = vi.fn(() => undefined);
     renderPanel({
       modelMemory: { getEffort, setEffort: vi.fn(), getFast: () => undefined, setFast: vi.fn() },
@@ -3521,7 +3508,7 @@ describe('统一面板 · 合并行与 wire id', () => {
     expect(getEffort.mock.calls).not.toContainEqual(['claude-code', 'openai', 'gpt-5.6']);
   });
 
-  it('全部模型优先显示来源，Cindy AI 保留单行本地简介', async () => {
+  it('全部模型优先显示来源，Cindy AI 保留单行本地简介', () => {
     renderPanel();
     const row = rowFor('GPT-5.6');
     expect(row.textContent).not.toContain('A very long English');
@@ -3541,7 +3528,7 @@ describe('统一面板 · 合并行与 wire id', () => {
     { providerId: 'openai', modelName: 'GPT-5.6', accountField: 'openAiAccount', named: true },
     { providerId: 'anthropic', modelName: 'Opus 5', accountField: 'subscriptionAccount', named: false },
     { providerId: 'anthropic', modelName: 'Opus 5', accountField: 'subscriptionAccount', named: true },
-  ])('全部和收藏显示识别出的账号，不重复已有账号名：$providerId / $named', async ({ providerId, modelName, accountField, named }) => {
+  ])('全部和收藏显示识别出的账号，不重复已有账号名：$providerId / $named', ({ providerId, modelName, accountField, named }) => {
     const original = providersRef.providers;
     const identity = 'recognized@example.test';
     providersRef.providers = original.map((value) => {
@@ -3555,20 +3542,20 @@ describe('统一面板 · 合并行与 wire id', () => {
     try {
       renderPanel();
       expect(rowFor(modelName).querySelector('[data-model-source-details]')?.textContent).toBe(`工作账号 · ${identity}`);
-      await act(async () => { fireEvent.click(within(rowFor(modelName)).getByRole('button', { name: '存为收藏' })); });
-      await act(async () => { fireEvent.click(document.querySelector('[data-rail-item="favorites"]')!); });
+      fireEvent.click(within(rowFor(modelName)).getByRole('button', { name: '存为收藏' }));
+      fireEvent.click(document.querySelector('[data-rail-item="favorites"]')!);
       expect(rowFor(modelName).querySelector('[data-model-source-details]')?.textContent).toBe(`工作账号 · ${identity}`);
     } finally {
       providersRef.providers = original;
     }
   });
 
-  it('收藏保持来源第二行，切到单供应商分栏恢复简介', async () => {
+  it('收藏保持来源第二行，切到单供应商分栏恢复简介', () => {
     renderPanel();
-    await act(async () => { fireEvent.click(within(rowFor('GPT-5.6')).getByRole('button', { name: '存为收藏' })); });
-    await act(async () => { fireEvent.click(document.querySelector('[data-rail-item="favorites"]')!); });
+    fireEvent.click(within(rowFor('GPT-5.6')).getByRole('button', { name: '存为收藏' }));
+    fireEvent.click(document.querySelector('[data-rail-item="favorites"]')!);
     expect(rowFor('GPT-5.6').querySelector('[data-model-source-details]')?.textContent).toBe('OpenAI');
-    await act(async () => { fireEvent.click(document.querySelector('[data-rail-item="provider:openai"]')!); });
+    fireEvent.click(document.querySelector('[data-rail-item="provider:openai"]')!);
     const providerRows = within(screen.getByRole('listbox')).getAllByText('GPT-5.6');
     for (const name of providerRows) {
       const row = name.closest('[data-unified-anchor]') as HTMLElement;
@@ -3577,12 +3564,12 @@ describe('统一面板 · 合并行与 wire id', () => {
     }
   });
 
-  it('没有折扣的行不渲染折扣徽标', async () => {
+  it('没有折扣的行不渲染折扣徽标', () => {
     renderPanel();
     expect(rowFor('GPT-5.6').querySelector('[data-discount-badge]')).toBeNull();
   });
 
-  it('服务端默认种子提到顶部「默认」小节并带标识', async () => {
+  it('服务端默认种子提到顶部「默认」小节并带标识', () => {
     renderPanel();
     const groups = screen.getAllByRole('group');
     // 夹具里没有 newSessionDefault 标记 → 不该凭空造出默认小节。
@@ -3835,7 +3822,7 @@ describe('统一选择器 · 旧偏好与配置变更回归', () => {
   });
 
   it('在另一任务修改收藏 Fast：旧任务显示实际配置，再点收藏才应用完整新配置', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -3862,7 +3849,7 @@ describe('统一选择器 · 旧偏好与配置变更回归', () => {
       screen.getByRole('listbox').querySelector('[data-model-selected="true"]');
     expect(selected()?.getAttribute('data-unified-anchor')).toBe('model::xd::gpt-5.5');
     await act(async () => {
-      await updateModelFavorite(uid, { fast: true });
+      updateModelFavorite(uid, { fast: true });
     });
     expect(selected()?.getAttribute('data-unified-anchor')).toBe('model::xd::gpt-5.5');
     expect(onFastModeChange).not.toHaveBeenCalled();
@@ -3905,7 +3892,7 @@ describe('统一选择器 · 旧偏好与配置变更回归', () => {
   });
 
   it('编辑收藏的异步 Fast 写入期间，改深度与删除收藏排队，落定后按顺序执行', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -3956,7 +3943,7 @@ describe('统一选择器 · 旧偏好与配置变更回归', () => {
 
 describe('统一面板 · 重选与草稿失败恢复', () => {
   it('重选同模型收藏仍经过来源修复，并原样带上深度和 Fast', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -3991,7 +3978,7 @@ describe('统一面板 · 重选与草稿失败恢复', () => {
     async (operation) => {
       const uid =
         operation === 'remove'
-          ? await addModelFavorite({
+          ? addModelFavorite({
               providerId: 'xd',
               modelId: 'gpt-5.5',
               agent: 'codex',
@@ -3999,7 +3986,7 @@ describe('统一面板 · 重选与草稿失败恢复', () => {
               fast: true,
             })
           : null;
-      await setModelEngineOverride('xd', 'gpt-5.5', 'cc');
+      setModelEngineOverride('xd', 'gpt-5.5', 'cc');
       let finish!: (value: boolean) => void;
       const onUnifiedSelect = vi.fn(
         () =>
@@ -4099,7 +4086,7 @@ describe('统一面板 · 推理滑杆一次拖动只写最终档', () => {
 
 describe('统一面板 · 清收藏锚点也等待回执', () => {
   it('普通模型改档后，草稿锚点写入失败不产生未处理错误，解锁后可重试', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'codex',
@@ -4462,7 +4449,7 @@ describe('harness configuration keeps the model menu open', () => {
 // 上一次修复的注释把那行的属性透传一起注释掉了,面板恒收到 selectedFavoriteUid=null)。
 describe('外层 ModelSelector · 取消当前选中的收藏先应用默认配置', () => {
   it('selectedFavoriteUid 透传到面板:删它是回落默认 + 清锚点,不是直接删记录', async () => {
-    const uid = await addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'cc', effort: 'low' });
+    const uid = addModelFavorite({ providerId: 'xd', modelId: 'gpt-5.5', agent: 'cc', effort: 'low' });
     const onUnifiedSelect = vi.fn();
     const onSessionFavoriteAnchorChange = vi.fn();
     function Picker() {
@@ -4535,7 +4522,7 @@ describe('统一面板 · 最近使用记录与陈列', () => {
   });
 
   it('收藏行(存的是旧 wire id)记的是归一化行身份', async () => {
-    await addModelFavorite({ providerId: 'openai', modelId: 'chatgpt/gpt-5.6', agent: 'cc' });
+    addModelFavorite({ providerId: 'openai', modelId: 'chatgpt/gpt-5.6', agent: 'cc' });
     renderPanel({ recordRecentUsage: true });
     const favRow = document.querySelector('[data-unified-anchor^="fav::"]');
     expect(favRow).not.toBeNull();
@@ -4703,7 +4690,7 @@ describe('统一面板 · 最近使用记录与陈列', () => {
   });
 
   it('已收藏的副本在最近视图里直接亮星,点星移除对应收藏', async () => {
-    await addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' });
+    addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' });
     recordRecentModel({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' }, 1000);
     renderPanel();
     await act(async () => {
@@ -4717,7 +4704,7 @@ describe('统一面板 · 最近使用记录与陈列', () => {
 
   it('星标先圈定来源 + 模型:另一型号的收藏即使三元组巧合一致也不误命中(2026-09-16 review P0)', async () => {
     // gpt-5.5 的收藏解析后与 gpt-5.6 的这条副本同引擎 / 同档 / 同 Fast —— 只有模型不同。
-    await addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.5', agent: 'codex' });
+    addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.5', agent: 'codex' });
     recordRecentModel({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' }, 1000);
     renderPanel();
     await act(async () => {
@@ -4738,7 +4725,7 @@ describe('统一面板 · 最近使用记录与陈列', () => {
   });
 
   it('点已标星的最近行 = 按收藏副本选中(锚点带上那条收藏的 uid)', async () => {
-    const uid = await addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' });
+    const uid = addModelFavorite({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' });
     expect(uid).not.toBe('');
     recordRecentModel({ providerId: 'openai', modelId: 'gpt-5.6', agent: 'codex' }, 1000);
     const onSessionFavoriteAnchorChange = vi.fn();
@@ -4780,7 +4767,7 @@ describe('统一面板 · 最近使用记录与陈列', () => {
   });
 
   it('在最近视图取消「当前选中的那份收藏」:与收藏视图同一口径——先把默认配置应用出去再删', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'xd',
       modelId: 'gpt-5.5',
       agent: 'cc',
@@ -4818,7 +4805,7 @@ describe('统一面板 · 最近使用记录与陈列', () => {
   });
 
   it('会话跨引擎:点已标星的最近行仍走切换事务,并把命中的收藏 uid 带过去', async () => {
-    const uid = await addModelFavorite({
+    const uid = addModelFavorite({
       providerId: 'anthropic',
       modelId: 'claude-opus-5',
       agent: 'cc',

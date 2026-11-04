@@ -108,7 +108,7 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 ### 本次新增的 profile 与 owner 正本
 
 - **Profile 桌面偏好**：主题/主题族、语言、sidebar 与 ghost panel 布局、桌面/飞书通知、点击/发送/链接行为、淡入、推荐、消息导航条、Agent Island 启用/音效/皮肤/显示目标、持久化网络调试，共 20 组、25 个公开叶子。正本迁入 `host-desktop-preferences.json`；自定义主题、音效文件和显示器身份仍仅存本机。目录以 `scope: profile` 和 `surface: hostDesktop` 区分所属 profile 与应用到 Host 桌面的展示语义。
-- **Owner 模型偏好**：模型显示 override、引擎偏好和收藏迁入 `host-model-presentation-preferences.json`。保留初始化默认规则、follow-catalog 记录、收藏顺序/身份与 seed 墓碑；不把它们错误迁为 profile，也不重复迁移已接入的 `providerModelMemory`。
+- **Owner 模型偏好（仅托管云实例）**：云实例上模型显示 override、引擎偏好和收藏迁入 `host-model-presentation-preferences.json`，让设置通道、网页控制台和设置工具在没有窗口时也能读写。保留初始化默认规则、follow-catalog 记录、收藏顺序/身份与 seed 墓碑；不把它们错误迁为 profile，也不重复迁移已接入的 `providerModelMemory`。普通桌面沿用上游 Renderer localStorage 与 Main 内存镜像，不迁移、不写这个文件，设置读取对这三项报告 `unavailable`。上游三个 store 保持原签名，只在云实例转交 Host：收藏与引擎写入和本机一样不等待回执，失败时提示并回到 Host 正本；云实例的 device-link 收藏请求由 Main 按 revision 直接读写该文件。
 - **本机桥**：仅执行 Host 同一 profile 的可信本地 Renderer，可经固定 preload/IPC 通道读取、一次性导入和保存。桌面与模型桥同时校验可信顶层 frame、实际 profile partition 与 Host 注册的窗口身份；仅本机主、副应用窗口可写，登记为只读的辅助窗不可写，remote viewer 明确排除，提交前重新校验。同步启动桥只读，避免重建缓存时闪回默认主题/语言。控制端、远控窗口、网页或工具参数不能冒充本机导入者。
 - **提交与缓存**：profile 写入受 profile stamp/revision 保护，owner 写入另受 owner/generation 保护；都在真实锁内 CAS 与原子提交。多窗口冲突只回读，不换 revision 重放旧整表。初始化标记不随恢复默认删除，旧 Renderer 数据不能重新覆盖；首次导入也尊重旧 owner 的 follow-catalog 墓碑和目标显式选择。兼容首帧缓存只能由成功 Host 提交单向更新，不是第二正本。remote viewer 仅监听 `theme` / `theme.familyId` 两项外观成功缓存，不捕获其它 legacy 偏好、不读完整 profile、不写入或导入；语言继续沿既有专用通知同步。
 - **待迁移**：未能证明全新且尚未完成导入的旧 profile/owner 数据返回 `migrationPending`；只有有依据的新 profile 才解释为默认。inspection 不执行导入、不删旧键；完成初始化后，即使没有 Renderer 窗口也能从 Host 读取。

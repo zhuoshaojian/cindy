@@ -1,5 +1,3 @@
-import { createModelPresentationTestHost } from './modelPresentationTestHost';
-import { ensureHostModelPresentationLoaded } from '@/state/hostModelPresentationPreferences';
 // @vitest-environment jsdom
 /**
  * 收藏另一台电脑上的模型(远程 Agent),用起来与本机收藏一样(model-selector-unified §1.5「远程收藏按
@@ -167,9 +165,8 @@ const C_SOURCE = agentDeviceFavoriteSource({ deviceId: 'device-c', providerId: '
 
 /** 设备互联:被控电脑 device-b 上的一份收藏(其他电脑的读写都记下来,应当一次都没有)。 */
 let remoteLists: Record<string, RemoteModelFavorite[]>;
-let preferenceHost: ReturnType<typeof createModelPresentationTestHost>;
 let invoke: ReturnType<typeof vi.fn>;
-beforeEach(async () => {
+beforeEach(() => {
   resetEnginePrefs();
   resetFavorites();
   catalogs.offline.clear();
@@ -204,10 +201,6 @@ beforeEach(async () => {
       onResponsivenessChanged: () => () => {},
     },
   });
-  const host = preferenceHost = createModelPresentationTestHost(window.localStorage);
-  host.initialized();
-  host.install();
-  await ensureHostModelPresentationLoaded();
 });
 
 afterEach(() => {
@@ -264,7 +257,7 @@ describe('本机任务:收藏另一台电脑上的模型', () => {
   });
 
   it('回到本机目录:收藏区列出它并带上电脑名,选中 = 在那台电脑运行', async () => {
-    await addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc', effort: 'low' });
+    addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc', effort: 'low' });
     const uid = listModelFavorites()[0]!.uid;
     const { onUnifiedSelect, onProviderChange } = renderPanel();
     const row = rowOf(favoritesGroup(), 'C Model');
@@ -288,7 +281,7 @@ describe('本机任务:收藏另一台电脑上的模型', () => {
   });
 
   it('在本机目录里取消这条收藏', async () => {
-    await addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
+    addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
     renderPanel();
     const row = rowOf(favoritesGroup(), 'C Model');
     await act(async () => {
@@ -298,7 +291,7 @@ describe('本机任务:收藏另一台电脑上的模型', () => {
   });
 
   it('已建任务:Agent 在本机时选中它 = 连运行位置一起换到那台电脑', async () => {
-    await addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
+    addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
     const onRelocate = vi.fn(async () => true);
     const { onProviderChange } = renderPanel(
       { onRelocate },
@@ -319,7 +312,7 @@ describe('本机任务:收藏另一台电脑上的模型', () => {
   });
 
   it('已建任务:Agent 已在那台电脑时切到那台的目录,由那里的会话链路选', async () => {
-    await addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
+    addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
     const onRelocate = vi.fn(async () => true);
     renderPanel(
       { onRelocate, selectedDeviceId: 'device-c' },
@@ -345,8 +338,8 @@ describe('本机任务:收藏另一台电脑上的模型', () => {
   });
 
   it('那台的目录读不到:置灰列出;目录里已没有这个模型:不显示,收藏保留', async () => {
-    await addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
-    await addModelFavorite({
+    addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
+    addModelFavorite({
       providerId: agentDeviceFavoriteSource({ deviceId: 'device-c', providerId: 'c-open' }),
       modelId: 'gone-model',
       agent: 'cc',
@@ -437,21 +430,19 @@ describe('收藏 / 全部聚合来源，供应商只筛自己的收藏', () => {
   const favoriteNames = () => [...favoritesGroup().querySelectorAll('[data-unified-anchor]')]
     .map((row) => row.textContent);
 
-  beforeEach(async () => {
-    preferenceHost.select('recipient', 1);
-    await ensureHostModelPresentationLoaded();
+  beforeEach(() => {
     setDataOwnerGeneration('recipient', 1);
     setModelFavoritesOwner('recipient');
-    await publish();
+    publish();
     for (const s of shares) {
       catalogs.byDevice[`share:${s.shareId}`] = [{
         ...(catalogs.local[0] as object), remoteInvocationEnabled: true,
         models: { 'claude-code': [{ id: 'a-model', name: `Shared ${s.shareId}`, efforts: ['low', 'high'], defaultEffort: 'high' }] },
       }];
     }
-    await addModelFavorite({ providerId: 'a-local', modelId: 'a-model', agent: 'cc' });
-    await addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
-    for (const s of shares) await addModelFavorite({
+    addModelFavorite({ providerId: 'a-local', modelId: 'a-model', agent: 'cc' });
+    addModelFavorite({ providerId: C_SOURCE, modelId: 'c-model', agent: 'cc' });
+    for (const s of shares) addModelFavorite({
       providerId: providerShareFavoriteSource(s), modelId: 'a-model', agent: 'cc', effort: 'low',
     });
   });
@@ -628,9 +619,7 @@ describe('Cindy AI(xd)来源行：只有本机自己的 Cindy AI 保留简介(#6
   const SHARED_LABEL = 'Cindy AI · 来自 Magi 的分享 · 供应商组 · 2 台电脑';
   const REMOTE_LABEL = 'Cindy AI · Studio';
 
-  beforeEach(async () => {
-    preferenceHost.select('recipient', 1);
-    await ensureHostModelPresentationLoaded();
+  beforeEach(() => {
     saved = { local: [...catalogs.local], byDevice: { ...catalogs.byDevice } };
     catalogs.local.push(xdProvider([['glm-5.3-flash', LOCAL]]));
     catalogs.byDevice['share:magi'] = [
@@ -642,13 +631,13 @@ describe('Cindy AI(xd)来源行：只有本机自己的 Cindy AI 保留简介(#6
     ];
     setDataOwnerGeneration('recipient', 1);
     setModelFavoritesOwner('recipient');
-    await reconcileProviderShareFavorites({
+    reconcileProviderShareFavorites({
       received: [xdShare], confirmedRegions: ['global'],
       ownerStamp: { dataOwnerId: 'recipient', ownerGeneration: 1 },
     });
-    await addModelFavorite({ providerId: 'xd', modelId: 'glm-5.3-flash', agent: 'cc' });
-    await addModelFavorite({ providerId: providerShareFavoriteSource(xdShare), modelId: 'qwen3.8-flash', agent: 'cc' });
-    await addModelFavorite({
+    addModelFavorite({ providerId: 'xd', modelId: 'glm-5.3-flash', agent: 'cc' });
+    addModelFavorite({ providerId: providerShareFavoriteSource(xdShare), modelId: 'qwen3.8-flash', agent: 'cc' });
+    addModelFavorite({
       providerId: agentDeviceFavoriteSource({ deviceId: 'device-c', providerId: 'xd' }),
       modelId: 'glm-5.2',
       agent: 'cc',

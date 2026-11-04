@@ -15,6 +15,7 @@ import { isRemoteDesktopViewer } from '../remote-desktop-viewer/registry.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 import { currentSettingsOwner, assertSettingsOwner } from './personalization.js';
 import {
+  hostOwnsModelPresentation,
   inspectModelPresentationPreferences,
   importLegacyModelPresentationPreferences,
   mutateModelPresentationPreferences,
@@ -140,6 +141,11 @@ export function registerModelPresentationPreferencesIpc(options: {
   allowWindow = options.isLocalWindow;
   if (registered) return;
   registered = true;
+  ipcMain.on(MODEL_PRESENTATION_CHANNELS.hostOwned, (event) => {
+    event.returnValue = hostOwnsModelPresentation();
+  });
+  // Ordinary desktops keep these preferences in renderer localStorage.
+  if (!hostOwnsModelPresentation()) return;
   const handlers = createModelPresentationPreferencesHandlers({
     assertLocal: assertLocalProfile,
     getOwner: currentSettingsOwner,

@@ -120,6 +120,8 @@ export interface ModelPresentationPreferencesApi {
   onChanged(listener: (owner: SettingsOwnerStamp | null) => void): () => void;
 }
 export const MODEL_PRESENTATION_CHANNELS = {
+  /** Synchronous: whether this Host keeps the preferences (a managed cloud instance). */
+  hostOwned: 'host-model-presentation:host-owned',
   get: 'host-model-presentation:get',
   importLegacy: 'host-model-presentation:import-legacy',
   mutate: 'host-model-presentation:mutate',

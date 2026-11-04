@@ -1,12 +1,3 @@
-import { createModelPresentationTestHost } from './modelPresentationTestHost';
-import { ensureHostModelPresentationLoaded } from '@/state/hostModelPresentationPreferences';
-import { getDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
-let favoriteHost: ReturnType<typeof createModelPresentationTestHost>;
-async function selectFavoritesOwner(id: string | null) {
-  favoriteHost.select(id, getDataOwnerGeneration().generation);
-  setModelFavoritesOwner(id);
-  await ensureHostModelPresentationLoaded();
-}
 // @vitest-environment jsdom
 /**
  * 远程 Agent 的收藏(model-selector-unified §1.5「远程收藏按被控电脑共享」):浏览另一台电脑的目录时,
@@ -58,13 +49,11 @@ const mountLocal = (deviceId: string | undefined, homeDeviceId: string | null = 
     { initialProps: { deviceId } },
   );
 
-beforeEach(async () => {
+beforeEach(() => {
   __resetForTest();
   window.localStorage.clear();
-  favoriteHost = createModelPresentationTestHost(window.localStorage);
-  favoriteHost.install();
   setDataOwnerGeneration('owner', 1);
-  await selectFavoritesOwner('owner');
+  setModelFavoritesOwner('owner');
 });
 afterEach(() => {
   cleanup();
@@ -73,12 +62,12 @@ afterEach(() => {
 });
 
 describe('favorites of another computer live in the home list', () => {
-  it('writes the encoded source into the home list and projects only that computer back', async () => {
-    await addModelFavorite(config);
+  it('writes the encoded source into the home list and projects only that computer back', () => {
+    addModelFavorite(config);
     const studio = mountLocal('device-c');
     expect(studio.result.current.items).toEqual([]);
-    await act(async () => {
-      await studio.result.current.store.add(config);
+    act(() => {
+      studio.result.current.store.add(config);
     });
     const stored = listModelFavorites();
     expect(stored).toHaveLength(2);
@@ -89,22 +78,22 @@ describe('favorites of another computer live in the home list', () => {
     // 另一台电脑看不到 device-c 的收藏;同配置在本机与 device-c 是两条。
     const office = mountLocal('device-d');
     expect(office.result.current.items).toEqual([]);
-    await act(async () => {
-      await studio.result.current.store.add(config);
+    act(() => {
+      studio.result.current.store.add(config);
     });
     expect(listModelFavorites()).toHaveLength(2);
   });
 
-  it('edits and removes only anchors that belong to that computer', async () => {
-    await addModelFavorite(config);
+  it('edits and removes only anchors that belong to that computer', () => {
+    addModelFavorite(config);
     const localUid = listModelFavorites()[0]!.uid;
     const studio = mountLocal('device-c');
-    await act(async () => {
-      await studio.result.current.store.add(config);
+    act(() => {
+      studio.result.current.store.add(config);
     });
     const uid = studio.result.current.items[0]!.uid;
-    await act(async () => {
-      await studio.result.current.store.update(uid, { effort: 'low', fast: true });
+    act(() => {
+      studio.result.current.store.update(uid, { effort: 'low', fast: true });
     });
     expect(listModelFavorites()[1]).toMatchObject({
       providerId: agentDeviceFavoriteSource({ deviceId: 'device-c', providerId: 'anthropic' }),
@@ -118,22 +107,22 @@ describe('favorites of another computer live in the home list', () => {
     // 本机那条的锚点不能经那台电脑的视图改动或删除。
     expect(() => studio.result.current.store.remove(localUid)).toThrow();
     expect(() => studio.result.current.store.update(localUid, { effort: 'low' })).toThrow();
-    await act(async () => {
-      await studio.result.current.store.remove(uid);
+    act(() => {
+      studio.result.current.store.remove(uid);
     });
     expect(listModelFavorites()).toEqual([expect.objectContaining(config)]);
   });
 
-  it('keeps the home view in list order and treats the home computer encoding as a plain favorite', async () => {
-    await addModelFavorite({
+  it('keeps the home view in list order and treats the home computer encoding as a plain favorite', () => {
+    addModelFavorite({
       ...config,
       providerId: agentDeviceFavoriteSource({ deviceId: 'device-c', providerId: 'anthropic' }),
     });
-    await addModelFavorite({
+    addModelFavorite({
       ...config,
       providerId: agentDeviceFavoriteSource({ deviceId: 'home-pc', providerId: 'openai' }),
     });
-    await addModelFavorite(config);
+    addModelFavorite(config);
     const home = mountLocal(undefined, 'home-pc');
     expect(home.result.current.items.map((item) => item.providerId)).toEqual([
       agentDeviceFavoriteSource({ deviceId: 'device-c', providerId: 'anthropic' }),
@@ -187,24 +176,24 @@ describe('favorites of another computer live in the home list', () => {
     expect(store.remove).toHaveBeenCalledWith('fav-2');
   });
 
-  it('fits the existing favorites wire protocol so a remote controller sees the entry', async () => {
+  it('fits the existing favorites wire protocol so a remote controller sees the entry', () => {
     const deviceId = '7f3c2a10-1b2c-4d5e-8f90-0123456789ab';
     const providerId = 'p'.repeat(256);
     const encoded = agentDeviceFavoriteSource({ deviceId, providerId });
     expect(encoded.length).toBeLessThanOrEqual(MODEL_FAVORITE_TEXT_MAX_LENGTH);
     const studio = mountLocal(deviceId);
-    await act(async () => {
-      await studio.result.current.store.add({ ...config, providerId });
+    act(() => {
+      studio.result.current.store.add({ ...config, providerId });
     });
     const onRequest = vi.fn<ModelFavoritesHostApi['onRequest']>().mockReturnValue(() => {});
     const reply = vi.fn<ModelFavoritesHostApi['reply']>();
-    vi.stubGlobal('electronAPI', { ...window.electronAPI,
+    vi.stubGlobal('electronAPI', {
       modelFavoritesHost: { onRequest, reply, ready: vi.fn(), changed: vi.fn() },
     });
     renderHook(() => useModelFavoritesHost());
     const request = onRequest.mock.calls[0]![0];
-    await act(async () =>
-      await request({
+    act(() =>
+      request({
         requestId: 'get',
         expiresAt: Date.now() + 1000,
         ownerStamp: { dataOwnerId: 'owner', ownerGeneration: 1 },

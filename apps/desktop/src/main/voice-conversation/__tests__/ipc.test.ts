@@ -50,33 +50,6 @@ vi.mock('../../maker-host/outbound-fetch.js', () => ({ outboundFetch: vi.fn() })
 vi.mock('../../appCapabilities.js', () => ({
   getAppCapabilities: () => ({ canUseCindyGateway: true }),
 }));
-// Model display preferences come from the Host file; serve readiness and changes from memory.
-const presentation = vi.hoisted(() => ({ ready: true, listeners: new Set<() => void>() }));
-vi.mock('../../maker-host/model-visibility-mirror.js', async () => {
-  const { createModelVisibilityMirror } = await import('../../../shared/modelVisibilityMirror.js');
-  const { emptyModelPresentationPreferences } =
-    await import('../../../shared/modelPresentationPreferences.js');
-  return createModelVisibilityMirror({
-    inspectModelPresentationPreferences: () =>
-      presentation.ready
-        ? {
-            status: 'ready',
-            revision: 'test',
-            initialized: true,
-            ownerStamp: { dataOwnerId: 'owner', ownerGeneration: 1 },
-            value: emptyModelPresentationPreferences(),
-          }
-        : { status: 'unavailable', revision: null, ownerStamp: null },
-    onModelPresentationPreferencesChanged: (listener) => {
-      presentation.listeners.add(listener);
-      return () => presentation.listeners.delete(listener);
-    },
-  });
-});
-const setPresentationReady = (ready: boolean) => {
-  presentation.ready = ready;
-  for (const listener of presentation.listeners) listener();
-};
 vi.mock('../../appSessionState.js', () => ({
   activeOwnerScopeKey: () => 'test-owner',
   isAppSessionBoundaryPending: () => h.boundary,
@@ -99,7 +72,7 @@ vi.mock('../dialogue.js', () => ({ CompanionCallDialogue: class {
 import { normalizeVoiceInputSettings } from '../../../shared/voiceInputData.js';
 import { registerVoiceConversationIpc } from '../index.js';
 import { outboundFetch } from '../../maker-host/outbound-fetch.js';
-import { clearModelVisibilityMirror } from '../../maker-host/model-visibility-mirror.js';
+import { clearModelVisibilityMirror, setModelVisibilityMirror } from '../../maker-host/model-visibility-mirror.js';
 const sender = (id = 1) => ({ sender: { id, once: vi.fn() } });
 const call = (name: string, ...args: unknown[]) =>
   h.handlers.get(`voice-conversation:${name}`)!(sender(), ...args);
@@ -112,7 +85,7 @@ beforeEach(() => {
   h.catalog = undefined;
   h.oauthToken.mockReset().mockReturnValue(null);
   h.readKey.mockReset().mockReturnValue(null);
-  setPresentationReady(true);
+  setModelVisibilityMirror({});
   vi.mocked(outboundFetch).mockReset();
   let settings = normalizeVoiceInputSettings({});
   registerVoiceConversationIpc({
@@ -192,13 +165,13 @@ it('uses the saved OpenRouter OAuth connection without exposing its credential t
 // PR #6768 unit regression: model discovery must wait for current-owner display
 // preferences. Existing IPC tests start with ready state and cannot catch this race.
 it('waits for display preferences before returning the speech picker catalog', async () => {
-  setPresentationReady(false);
+  clearModelVisibilityMirror();
   const ready = vi.fn();
   const pending = call('models') as Promise<unknown>;
   void pending.then(ready);
   await Promise.resolve();
   expect(ready).not.toHaveBeenCalled();
-  setPresentationReady(true);
+  setModelVisibilityMirror({});
   await expect(pending).resolves.toEqual([expect.objectContaining({ id: 'voice-test' })]);
 });
 

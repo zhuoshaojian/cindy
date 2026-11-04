@@ -6,7 +6,6 @@ import path from 'node:path';
 
 import type { ProviderView } from '@cindy/model-providers';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { emptyModelPresentationPreferences } from '../../../shared/modelPresentationPreferences.js';
 
 import {
   readBotModelChainSettingsState,
@@ -24,26 +23,16 @@ vi.mock('../createDesktopProviderService.js', () => ({
 
 vi.mock('../index.js', () => ({ getMakerIfReady: () => ({ listAvailableAgents: () => ['claude-code', 'codex', 'pi'] }) }));
 
-const owner = vi.hoisted(() => ({ root: '', profileRoot: '', key: 'owner-a:1' }));
-vi.mock('electron', () => ({ app: { getPath: () => owner.profileRoot } }));
-vi.mock('../../appSessionState.js', () => {
-  const session = () => ({ mode: 'cloud', dataOwnerId: owner.key.split(':')[0], generation: Number(owner.key.split(':')[1]) });
-  return {
-    getActiveAppSession: session,
-    peekCommittedAppSession: session,
-    isAppSessionBoundaryPending: () => false,
-    dataOwnerStorageKey: (id: string) => `test-${id}`,
-    activeOwnerScopeKey: () => owner.key,
-    ownerScopedUserDataPath: () => owner.root,
-  };
-});
+const owner = vi.hoisted(() => ({ root: '', key: 'owner-a:1' }));
+vi.mock('../../appSessionState.js', () => ({
+  getActiveAppSession: () => ({ dataOwnerId: owner.key }),
+  activeOwnerScopeKey: () => owner.key,
+  ownerScopedUserDataPath: () => owner.root,
+}));
 
 import { setModelVisibilityMirror } from '../model-visibility-mirror';
 import { setNewMakerDraftCache } from '../newMakerDefaultsCache';
-beforeEach(async () => {
-  owner.profileRoot = await testRoot();
-  owner.root = ''; owner.key = 'owner-a:1';
-  await seedHostVisibility({});
+beforeEach(() => {
   providerService.listProviders.mockReset().mockResolvedValue([]);
   setModelVisibilityMirror({}, { fallback: true });
   setNewMakerDraftCache({ selectedRoute: { harness: 'codex', providerId: 'openai', model: 'gpt-5.6-sol', effort: 'medium', fastMode: false }, lastByVendor: {}, effortByModel: {}, fastModeByModel: {} }, owner.key);
@@ -55,16 +44,6 @@ async function testRoot(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cindy-bot-model-chain-'));
   roots.push(root);
   return root;
-}
-
-/** 消费者从真实 Host 文件读取；旧 Renderer mirror 通知不再能修改偏好真源。 */
-async function seedHostVisibility(overrides: Record<string, boolean>): Promise<void> {
-  const dir = path.join(owner.profileRoot, 'owners', `test-${owner.key.split(':')[0]}`);
-  await fs.mkdir(dir, { recursive: true });
-  const preferences = emptyModelPresentationPreferences();
-  preferences.visibility.overrides = { ...overrides };
-  await fs.writeFile(path.join(dir, 'host-model-presentation-preferences.json'), JSON.stringify({ _initialized: true, preferences }));
-  setModelVisibilityMirror({});
 }
 
 afterEach(async () => {
@@ -143,14 +122,14 @@ describe('bot model chain settings store', () => {
     }] as ProviderView[];
     const selectedRoute = { harness: 'codex' as const, providerId: 'openai', model: 'gpt-5.6-luna', effort: 'medium', fastMode: false };
     const expected = [{ ...selectedRoute, effort: 'low' }];
-    await seedHostVisibility({ 'codex:openai:gpt-5.6-luna': true, 'codex:openai:gpt-5.6-sol': false });
+    setModelVisibilityMirror({ 'codex:openai:gpt-5.6-luna': true }, { fallback: false, followCatalogKeys: [] });
     setNewMakerDraftCache({ selectedRoute, lastByVendor: {}, effortByModel: {}, fastModeByModel: {} }, owner.key);
     expect((await readBotModelChainSettingsState({ rootPath, providers })).value.modelChain).toEqual(expected);
     expect(await readEffectiveBotModelChain({ modelChainOverride: null, model: 'gpt-5.6-sol', effort: 'low' }, { rootPath, providers })).toEqual(expected);
     setNewMakerDraftCache({ selectedRoute: { ...selectedRoute, providerId: null }, lastByVendor: {}, effortByModel: {}, fastModeByModel: {} }, owner.key);
     expect(await readEffectiveBotModelChain({ modelChainOverride: null }, { rootPath, providers })).toEqual(expected);
     expect(await fs.readdir(rootPath)).toEqual([]);
-    await seedHostVisibility({ 'codex:openai:gpt-5.6-luna': false, 'codex:openai:gpt-5.6-sol': false });
+    setModelVisibilityMirror({}, { fallback: false, followCatalogKeys: [] });
     expect(await readEffectiveBotModelChain({ modelChainOverride: null }, { rootPath, providers })).toEqual([]);
   });
 

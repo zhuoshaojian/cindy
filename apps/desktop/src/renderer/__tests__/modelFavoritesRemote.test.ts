@@ -5,66 +5,77 @@ import {
   addModelFavorite,
   __resetForTest,
 } from '@/state/modelFavorites';
-import { PreferenceMemoryStorage, createModelPresentationTestHost } from './modelPresentationTestHost';
-vi.mock('../lib/toast', () => ({ toast: { error: vi.fn() } }));
-vi.mock('../state/providerModelMemory', () => ({ hasAnyProviderModelOverride: () => false, hasProviderModelHistory: () => false }));
-let storage: PreferenceMemoryStorage;
-let host: ReturnType<typeof createModelPresentationTestHost>;
+let storage: Map<string, string>;
+let fail = false;
 beforeEach(() => {
+  storage = new Map();
+  fail = false;
+  vi.stubGlobal('window', {
+    localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (fail) throw new Error('disk full');
+        storage.set(key, value);
+      },
+      removeItem: (key: string) => storage.delete(key),
+    },
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
   __resetForTest();
-  storage = new PreferenceMemoryStorage();
-  vi.stubGlobal('window', { localStorage: storage });
-  host = createModelPresentationTestHost(storage); host.install();
-  host.select('owner'); setModelFavoritesOwner('owner');
+  setModelFavoritesOwner('owner');
 });
-afterEach(() => { __resetForTest(); vi.unstubAllGlobals(); });
+afterEach(() => {
+  __resetForTest();
+  vi.unstubAllGlobals();
+});
 const item = {
   providerId: 'account',
   modelId: 'model',
   agent: 'codex' as const,
   effort: 'high' as const,
 };
-it('remote reads and edits use the same persisted favorites as the local desktop', async () => {
-  const uid = await addModelFavorite(item);
-  const [original] = await accessHostModelFavorites('owner');
+it('remote reads and edits use the same persisted favorites as the local desktop', () => {
+  const uid = addModelFavorite(item);
+  const [original] = accessHostModelFavorites('owner');
   expect(original?.uid).toBe(uid);
-  await accessHostModelFavorites('owner', {
+  accessHostModelFavorites('owner', {
     kind: 'update',
     expected: original!,
     item: { ...item, fast: true },
   });
-  const saved = (await accessHostModelFavorites('owner'))[0]!;
+  const saved = accessHostModelFavorites('owner')[0]!;
   expect(saved.fast).toBe(true);
-  await accessHostModelFavorites('owner', { kind: 'remove', expected: saved });
-  expect(await accessHostModelFavorites('owner')).toEqual([]);
-  expect(host.files.get('owner')!.value.favorites.items).toEqual([]);
-  expect(storage.length).toBe(0);
+  accessHostModelFavorites('owner', { kind: 'remove', expected: saved });
+  expect(accessHostModelFavorites('owner')).toEqual([]);
+  expect([...storage.values()].some((value) => JSON.parse(value).items?.length)).toBe(false);
 });
-it('two controllers add independently without replacing the table; duplicate add is idempotent', async () => {
-  await accessHostModelFavorites('owner', { kind: 'add', item });
-  await accessHostModelFavorites('owner', { kind: 'add', item: { ...item, effort: 'low' } });
-  await accessHostModelFavorites('owner', { kind: 'add', item });
-  expect(await accessHostModelFavorites('owner')).toHaveLength(2);
+it('two controllers add independently without replacing the table; duplicate add is idempotent', () => {
+  accessHostModelFavorites('owner', { kind: 'add', item });
+  accessHostModelFavorites('owner', { kind: 'add', item: { ...item, effort: 'low' } });
+  accessHostModelFavorites('owner', { kind: 'add', item });
+  expect(accessHostModelFavorites('owner')).toHaveLength(2);
 });
-it('rejects a stale edit and never resurrects a removed favorite', async () => {
-  const [original] = await accessHostModelFavorites('owner', { kind: 'add', item });
-  await accessHostModelFavorites('owner', {
+it('rejects a stale edit and never resurrects a removed favorite', () => {
+  const [original] = accessHostModelFavorites('owner', { kind: 'add', item });
+  accessHostModelFavorites('owner', {
     kind: 'update',
     expected: original!,
     item: { ...item, effort: 'low' },
   });
-  await expect(accessHostModelFavorites('owner', { kind: 'remove', expected: original! })).rejects.toThrow(
+  expect(() => accessHostModelFavorites('owner', { kind: 'remove', expected: original! })).toThrow(
     'changed',
   );
-  const current = (await accessHostModelFavorites('owner'))[0]!;
-  await accessHostModelFavorites('owner', { kind: 'remove', expected: current });
-  await expect(accessHostModelFavorites('owner', { kind: 'update', expected: current, item })).rejects.toThrow('changed');
+  const current = accessHostModelFavorites('owner')[0]!;
+  accessHostModelFavorites('owner', { kind: 'remove', expected: current });
+  expect(() =>
+    accessHostModelFavorites('owner', { kind: 'update', expected: current, item }),
+  ).toThrow('changed');
 });
-it('rejects wrong-owner access and failed persistence without acknowledging success', async () => {
-  await expect(accessHostModelFavorites('different')).rejects.toThrow('owner');
-  await accessHostModelFavorites('owner');
-  host.options.failWrite = true;
-  await expect(accessHostModelFavorites('owner', { kind: 'add', item })).rejects.toThrow('save failed');
-  host.options.failWrite = false;
-  expect(await accessHostModelFavorites('owner')).toEqual([]);
+it('rejects wrong-owner access and failed persistence without acknowledging success', () => {
+  expect(() => accessHostModelFavorites('different')).toThrow('owner');
+  fail = true;
+  expect(() => accessHostModelFavorites('owner', { kind: 'add', item })).toThrow('disk full');
+  fail = false;
+  expect(accessHostModelFavorites('owner')).toEqual([]);
 });

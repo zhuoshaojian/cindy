@@ -142,7 +142,7 @@ export function useRemoteModelFavorites(deviceId?: string) {
       return write({
         kind: 'update',
         expected: before,
-        item: { ...item, effort: item.effort ?? undefined, fast: item.fast || undefined },
+        item: { ...item, effort: item.effort ?? undefined, fast: item.fast ? true : undefined },
       });
     },
     remove: (uid) => write({ kind: 'remove', expected: expected(uid) }),

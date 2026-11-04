@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { dataOwnerStorageKey } from '../appSessionState.js';
 import { createLogger } from '../logger.js';
+import { getInstanceConfig } from '../instance-runtime/config.js';
 import { withCrossProcessLock } from '../device-link/crossProcessLock.js';
 import { claimLegacyModelVisibilityOwner } from '../maker-host/model-visibility-owner-claim.js';
 import {
@@ -25,6 +26,7 @@ import {
   type ModelPresentationReceipt,
   type ModelPresentationRequest,
 } from '../../shared/modelPresentationPreferences.js';
+import { createModelVisibilityMirror } from '../../shared/modelVisibilityMirror.js';
 import { currentSettingsOwner } from './personalization.js';
 
 interface StoredPreferences {
@@ -243,6 +245,13 @@ export function createModelPresentationPreferencesStore(deps: Dependencies) {
   };
   return { inspect, importLegacy, mutate, commitHostPreferences, onChanged: store.onChanged };
 }
+/**
+ * Only a managed cloud instance keeps model visibility, favorites and engine choices in this
+ * Host file. Ordinary desktops keep them in renderer localStorage and never migrate.
+ */
+export function hostOwnsModelPresentation(): boolean {
+  return getInstanceConfig() !== null;
+}
 const preferences = createModelPresentationPreferencesStore({
   getOwner: currentSettingsOwner,
   // 检查路径不回退 getActiveAppSession，也不触发 legacy 修复。
@@ -255,10 +264,30 @@ const preferences = createModelPresentationPreferencesStore({
     ),
   getLegacyClaim: claimLegacyModelVisibilityOwner,
 });
+const hostOnly =
+  <A extends unknown[], R>(write: (...args: A) => Promise<R>) =>
+  (...args: A): Promise<R> =>
+    hostOwnsModelPresentation()
+      ? write(...args)
+      : Promise.reject(new OverrideSettingsError('SCOPE_CHANGED'));
 /** 无副作用本机原始状态；原始 ID 属于私有数据，不可直接序列化为云报告。 */
-export const inspectModelPresentationPreferences = preferences.inspect;
-export const importLegacyModelPresentationPreferences = preferences.importLegacy;
-export const mutateModelPresentationPreferences = preferences.mutate;
+export const inspectModelPresentationPreferences = (): ModelPresentationPreferencesSnapshot =>
+  hostOwnsModelPresentation()
+    ? preferences.inspect()
+    : { status: 'unavailable', revision: null, ownerStamp: null };
+export const importLegacyModelPresentationPreferences = hostOnly(preferences.importLegacy);
+export const mutateModelPresentationPreferences = hostOnly(preferences.mutate);
 export const onModelPresentationPreferencesChanged = preferences.onChanged;
 
-export const commitHostModelPresentationPreferences = preferences.commitHostPreferences;
+export const commitHostModelPresentationPreferences = hostOnly(preferences.commitHostPreferences);
+
+let hostMirror: ReturnType<typeof createModelVisibilityMirror> | null = null;
+/** The Main visibility table on a cloud instance; null where the renderer pushes it. */
+export function hostModelVisibilityMirror(): ReturnType<typeof createModelVisibilityMirror> | null {
+  if (!hostOwnsModelPresentation()) return null;
+  hostMirror ??= createModelVisibilityMirror({
+    inspectModelPresentationPreferences,
+    onModelPresentationPreferencesChanged,
+  });
+  return hostMirror;
+}

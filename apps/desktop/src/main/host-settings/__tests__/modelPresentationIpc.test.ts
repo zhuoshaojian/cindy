@@ -23,6 +23,8 @@ interface TestWindow {
 }
 const native = vi.hoisted(() => ({
   handlers: new Map<string, (event: IpcMainInvokeEvent, raw?: unknown) => unknown>(),
+  sync: new Map<string, (event: { returnValue?: unknown }) => void>(),
+  hostOwned: true,
   windows: new Map<number, TestWindow>(),
   access: new Map<number, 'read' | 'write'>(),
   viewers: new Set<number>(),
@@ -45,6 +47,8 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, handler: (event: IpcMainInvokeEvent, raw?: unknown) => unknown) =>
       native.handlers.set(channel, handler),
+    on: (channel: string, handler: (event: { returnValue?: unknown }) => void) =>
+      native.sync.set(channel, handler),
   },
 }));
 vi.mock('../../security/trustedAppRenderer', async (importOriginal) => {
@@ -72,6 +76,7 @@ vi.mock('../personalization', () => ({
   assertSettingsOwner: native.assertOwner,
 }));
 vi.mock('../model-presentation-preferences', () => ({
+  hostOwnsModelPresentation: () => native.hostOwned,
   inspectModelPresentationPreferences: native.inspect,
   importLegacyModelPresentationPreferences: native.importLegacy,
   mutateModelPresentationPreferences: native.mutate,
@@ -170,6 +175,11 @@ describe('native model preference IPC', () => {
     expect(error.message).not.toContain('secret-token');
     expect(error.message).not.toContain('/path');
   });
+  it('preload exposes nothing where the renderer stores stay local', () => {
+    const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn(), sendSync: vi.fn(() => false) };
+    expect(createModelPresentationPreferencesApi(ipc as unknown as IpcRenderer)).toBeUndefined();
+    expect(ipc.sendSync).toHaveBeenCalledWith(MODEL_PRESENTATION_CHANNELS.hostOwned);
+  });
   it('preload exposes fixed local channels and drops Electron event objects', async () => {
     let callback!: (...args: unknown[]) => void;
     const ipc = {
@@ -178,8 +188,9 @@ describe('native model preference IPC', () => {
         callback = cb;
       }),
       removeListener: vi.fn(),
+      sendSync: vi.fn(() => true),
     };
-    const api = createModelPresentationPreferencesApi(ipc as unknown as IpcRenderer);
+    const api = createModelPresentationPreferencesApi(ipc as unknown as IpcRenderer)!;
     await api.get();
     expect(ipc.invoke).toHaveBeenCalledWith(MODEL_PRESENTATION_CHANNELS.get);
     const listener = vi.fn();
@@ -283,6 +294,33 @@ describe('生产注册的模型偏好窗口授权', () => {
         return !!win && !win.destroyed && !!allowed && (access === 'read' || allowed === 'write');
       },
     });
+  });
+
+  it('云实例向 preload 报告由 Host 保存偏好', () => {
+    const event: { returnValue?: unknown } = {};
+    native.sync.get(MODEL_PRESENTATION_CHANNELS.hostOwned)!(event);
+    expect(event).toEqual({ returnValue: true });
+  });
+
+  it('普通桌面只登记查询通道，偏好仍留在 renderer', async () => {
+    const handlers = new Map(native.handlers);
+    const sync = new Map(native.sync);
+    vi.resetModules();
+    native.handlers.clear();
+    native.sync.clear();
+    native.hostOwned = false;
+    try {
+      const ipc = await import('../model-presentation-preferences-ipc');
+      ipc.registerModelPresentationPreferencesIpc({ isLocalWindow: () => true });
+      const event: { returnValue?: unknown } = {};
+      native.sync.get(MODEL_PRESENTATION_CHANNELS.hostOwned)!(event);
+      expect(event).toEqual({ returnValue: false });
+      expect([...native.handlers.keys()]).toEqual([]);
+    } finally {
+      native.hostOwned = true;
+      for (const [key, value] of handlers) native.handlers.set(key, value);
+      for (const [key, value] of sync) native.sync.set(key, value);
+    }
   });
 
   it('已登记的主窗和副应用窗可读写，只读辅助窗只能读取', async () => {

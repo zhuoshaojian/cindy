@@ -1,6 +1,3 @@
-import { PreferenceMemoryStorage, createModelPresentationTestHost } from './modelPresentationTestHost';
-import { getHostModelPresentationSnapshot } from '../state/hostModelPresentationPreferences';
-import { __testing as ownerTesting } from '../contexts/dataOwnerGeneration';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProviderView } from '@cindy/model-providers';
 
@@ -96,10 +93,23 @@ describe('local catalog recovery lifecycle', () => {
   it('recovers after the three startup attempts without another catalog event, preserving legacy off switches', async () => {
     const legacyKey = 'xdt:modelVisibilityPrefs:v1';
     const legacy = JSON.stringify({ 'pi:xd:hidden': false });
-    const storage = new PreferenceMemoryStorage(); storage.setItem(legacyKey, legacy);
-    Object.assign(events, { localStorage: storage });
-    const host = createModelPresentationTestHost(storage); host.install(); host.select('owner-a', 7);
-    host.claim.canInitialize = false; host.claim.profileOrigin = 'existing';
+    const saved = new Map<string, string>([[legacyKey, legacy]]);
+    const storage = {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => { saved.set(key, value); },
+      removeItem: (key: string) => { saved.delete(key); },
+    };
+    let exclusive = false;
+    const sync = vi.fn(async () => undefined);
+    Object.assign(events, { localStorage: storage, electronAPI: { maker: {
+      syncModelVisibility: sync,
+      claimLegacyModelVisibilityOwner: () => ({ dataOwnerId: 'owner-a', ownerGeneration: 7,
+        canWriteOwnerScoped: true, claimed: true, claimedByOtherOwner: false,
+        canInitialize: exclusive, profileOrigin: 'existing' }),
+    } } });
+    vi.stubGlobal('localStorage', storage);
+    vi.stubGlobal('navigator', { locks: { request: async (_key: string, run: () => boolean) => run() } });
+    vi.resetModules();
     const prefs = await vi.importActual<typeof import('@/state/modelVisibilityPrefs')>('@/state/modelVisibilityPrefs');
     const models = Array.from({ length: 29 }, (_,i) => ({ id: i === 0 ? 'hidden' : `model-${i}`, defaultEnabled: true }));
     const provider = { id: 'xd', agents: ['pi'], routing: {}, models: { pi: models } } as unknown as ProviderView;
@@ -117,12 +127,12 @@ describe('local catalog recovery lifecycle', () => {
       expect(getLocalCatalogFailure()?.reason).toBe('legacy-busy');
       await vi.advanceTimersByTimeAsync(2_000);
       expect(mocks.loadProviders).toHaveBeenCalledTimes(4);
-      host.claim.canInitialize = true;
+      exclusive = true;
       await vi.advanceTimersByTimeAsync(5_000);
       expect(mocks.commitProviders).toHaveBeenCalledExactlyOnceWith(1, catalog);
       expect(prefs.isModelEnabled('pi', 'xd', models[0]!)).toBe(false);
       expect(prefs.isModelEnabled('pi', 'xd', models[1]!)).toBe(true);
-      expect(storage.getItem(legacyKey)).toBe(legacy);
+      expect(saved.get(legacyKey)).toBe(legacy);
       expect(getLocalCatalogFailure()).toBeNull();
       expect(vi.getTimerCount()).toBe(0);
     } finally { prefs.__resetForTest(); }
@@ -346,11 +356,29 @@ describe('refreshLocalCatalogSnapshot', () => {
   it.each(['new', 'existing'] as const)('publishes a shared %s profile with no legacy preferences and preserves scoped choices', async (profileOrigin) => {
     const legacyKey = 'xdt:modelVisibilityPrefs:v1';
     const mapKey = `${legacyKey}.owner.owner-a`;
-    const storage = new PreferenceMemoryStorage();
-    storage.setItem(mapKey, JSON.stringify({ 'pi:xd:hidden': false }));
-    vi.stubGlobal('window', { localStorage: storage });
-    const host = createModelPresentationTestHost(storage); host.install();
-    host.claim.canInitialize = false; host.claim.profileOrigin = profileOrigin;
+    const saved = new Map<string, string>([[mapKey, JSON.stringify({ 'pi:xd:hidden': false })]]);
+    const storage = {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => { saved.set(key, value); },
+      removeItem: (key: string) => { saved.delete(key); },
+    };
+    const sync = vi.fn(async () => undefined);
+    const listeners = new Set<(event: StorageEvent) => void>();
+    vi.stubGlobal('navigator', { locks: { request: async (_key: string, run: () => boolean) => run() } });
+    vi.stubGlobal('localStorage', storage);
+    vi.stubGlobal('window', {
+      localStorage: storage,
+      addEventListener: (_type: string, listener: (event: StorageEvent) => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: (event: StorageEvent) => void) => listeners.delete(listener),
+      electronAPI: { maker: {
+        syncModelVisibility: sync,
+        claimLegacyModelVisibilityOwner: () => ({
+          dataOwnerId: 'owner-a', ownerGeneration: 1, canWriteOwnerScoped: true,
+          claimed: true, claimedByOtherOwner: false, canInitialize: false, profileOrigin,
+        }),
+      } },
+    });
+    vi.resetModules();
     const prefs = await vi.importActual<typeof import('@/state/modelVisibilityPrefs')>('@/state/modelVisibilityPrefs');
     prefs.__resetForTest();
     // The reset clears preference keys; restore the existing scoped choice.
@@ -369,14 +397,19 @@ describe('refreshLocalCatalogSnapshot', () => {
       expect(mocks.commitProviders).toHaveBeenCalledWith(expect.anything(), snapshot);
       expect(prefs.isModelEnabled('pi', 'xd', { id: 'recommended', defaultEnabled: true })).toBe(true);
       expect(prefs.isModelEnabled('pi', 'xd', { id: 'hidden', defaultEnabled: true })).toBe(false);
-      expect(storage.getItem(`${legacyKey}.migration-complete.owner.owner-a`)).toBeNull();
-      expect(host.snapshot()).toMatchObject({ status: 'ready', value: { visibility: { overrides: { 'pi:xd:hidden': false } } } });
-      // After a committed migration, old renderer keys cannot override the Host.
+      expect(saved.get(`${legacyKey}.migration-complete.owner.owner-a`)).toBeUndefined();
+      expect(sync).toHaveBeenLastCalledWith('owner-a', 1, { 'pi:xd:hidden': false },
+        expect.not.objectContaining({ pending: true }));
+
+      // A concurrent old window can create legacy data later: do not lose its
+      // choices or continue presenting uninitialized defaults as ready.
       storage.setItem(legacyKey, JSON.stringify({ 'pi:xd:recommended': false }));
-      await expect(refreshLocalCatalogSnapshot()).resolves.toBe(true);
-      expect(prefs.isModelEnabled('pi', 'xd', { id: 'recommended', defaultEnabled: true })).toBe(true);
+      for (const listener of listeners) listener({ key: legacyKey, storageArea: storage } as unknown as StorageEvent);
+      await vi.waitFor(() => expect(sync).toHaveBeenLastCalledWith('owner-a', 1,
+        { 'pi:xd:hidden': false }, expect.objectContaining({ pending: true })));
+      expect(prefs.isModelEnabled('pi', 'xd', { id: 'recommended', defaultEnabled: true })).toBe(false);
+      await expect(refreshLocalCatalogSnapshot()).resolves.toBe(false);
       expect(storage.getItem(legacyKey)).toBe(JSON.stringify({ 'pi:xd:recommended': false }));
-      expect(host.api.importLegacy).toHaveBeenCalledOnce();
     } finally {
       prefs.__resetForTest();
     }
@@ -386,22 +419,34 @@ describe('refreshLocalCatalogSnapshot', () => {
     ['storage', true], ['lock', true], ['storage', false], ['lock', false],
   ] as const)('propagates real %s initialization failures through preload (recovers: %s)', async (failure, recovers) => {
     vi.useFakeTimers();
-    const storage = new PreferenceMemoryStorage();
-    vi.stubGlobal('localStorage', storage);
-    vi.stubGlobal('window', { localStorage: storage });
-    const host = createModelPresentationTestHost(storage);
-    host.install();
-    // 权威已移到Host：导入的持久写/锁失败必须经真实Renderer回执路径传至preload重试。
-    host.options.failWrite = failure === 'storage';
-    let rejectLock = failure === 'lock';
-    host.options.beforeWrite = async () => {
-      if (rejectLock) throw new Error('lock unavailable');
+    const saved = new Map<string, string>();
+    let rejectWrite = false;
+    const storage = {
+      getItem: (key: string) => saved.get(key) ?? null,
+      removeItem: (key: string) => { saved.delete(key); },
+      setItem: (key: string, value: string) => {
+        if (rejectWrite) throw new Error('storage full');
+        saved.set(key, value);
+      },
     };
+    const sync = vi.fn(async () => undefined);
+    let rejectLock = false;
+    vi.stubGlobal('navigator', { locks: { request: async (_key: string, run: () => boolean) => {
+      if (rejectLock) throw new Error('lock unavailable');
+      return run();
+    } } });
+    vi.stubGlobal('localStorage', storage);
+    vi.stubGlobal('window', { localStorage: storage, electronAPI: { maker: {
+      syncModelVisibility: sync,
+      claimLegacyModelVisibilityOwner: () => ({
+        dataOwnerId: 'owner-a', ownerGeneration: 1, canWriteOwnerScoped: true,
+        claimed: true, claimedByOtherOwner: false, canInitialize: true, profileOrigin: 'new',
+      }),
+    } } });
     const prefs = await vi.importActual<typeof import('@/state/modelVisibilityPrefs')>('@/state/modelVisibilityPrefs');
     prefs.__resetForTest();
     try {
       await prefs.setModelVisibilityOwner('owner-a', 1, 'cloud');
-      vi.mocked(host.api.importLegacy).mockClear();
       const provider: ProviderView = {
         id: 'xd', name: 'Cindy AI', source: 'builtin', connected: true, agents: ['pi'],
         auth: { method: 'apiKey' }, routing: {}, models: { pi: [{
@@ -414,20 +459,16 @@ describe('refreshLocalCatalogSnapshot', () => {
       mocks.loadCapabilities.mockResolvedValue([['pi', { availableModels: provider.models.pi }]]);
       mocks.initializeVisibility.mockImplementation(prefs.migrateModelVisibilityDefaults);
       mocks.initializationFailure.mockImplementation(prefs.getModelVisibilityInitializationFailure);
-      host.options.failWrite = failure === 'storage';
+      rejectWrite = failure === 'storage';
       rejectLock = failure === 'lock';
       const preload = preloadLocalCatalogSnapshot();
       await vi.advanceTimersByTimeAsync(0);
       expect(mocks.loadProviders).toHaveBeenCalledTimes(1);
       expect(mocks.commitProviders).not.toHaveBeenCalled();
       expect(mocks.commitCapabilities).not.toHaveBeenCalled();
-      expect(host.api.importLegacy).toHaveBeenCalledOnce();
-      await expect(vi.mocked(host.api.importLegacy).mock.results[0]!.value).rejects.toThrow(failure === 'storage' ? 'write failed' : 'lock unavailable');
-      expect(getHostModelPresentationSnapshot()).toMatchObject({ status: 'pending-migration', initialized: false });
-      expect(host.api.mutate).not.toHaveBeenCalled();
-      expect(storage.length).toBe(0);
+      expect(sync).toHaveBeenLastCalledWith('owner-a', 1, {}, expect.objectContaining({ pending: true }));
 
-      if (recovers) { host.options.failWrite = false; rejectLock = false; }
+      if (recovers) { rejectWrite = false; rejectLock = false; }
       await vi.advanceTimersByTimeAsync(1000);
       await preload;
       expect(mocks.loadProviders).toHaveBeenCalledTimes(recovers ? 2 : 3);
@@ -435,21 +476,15 @@ describe('refreshLocalCatalogSnapshot', () => {
       expect(mocks.commitCapabilities).toHaveBeenCalledTimes(recovers ? 1 : 0);
       if (recovers) {
         expect(mocks.commitProviders).toHaveBeenLastCalledWith(2, providers);
-        expect(getHostModelPresentationSnapshot()).toMatchObject({ status: 'ready', initialized: true });
-        expect(host.api.mutate).toHaveBeenCalledWith(expect.objectContaining({ operation: expect.objectContaining({ kind: 'visibility-catalog' }) }));
-        expect(host.snapshot().status).toBe('ready');
+        expect(sync).toHaveBeenLastCalledWith('owner-a', 1, {},
+          expect.not.objectContaining({ pending: true }));
         expect(prefs.isModelEnabled('pi', 'xd', { id: 'recommended' })).toBe(true);
       } else {
         expect(mocks.warn).toHaveBeenCalledWith('local catalog snapshot preload failed after 3 attempts');
-        expect(getHostModelPresentationSnapshot()).toMatchObject({ status: 'pending-migration', initialized: false });
-        expect(host.api.mutate).not.toHaveBeenCalled();
-        expect(prefs.isModelEnabled('pi', 'xd', { id: 'recommended' })).toBe(false);
+        expect(sync).toHaveBeenLastCalledWith('owner-a', 1, {}, expect.objectContaining({ pending: true }));
       }
-      expect(host.api.importLegacy).toHaveBeenCalledTimes(recovers ? 2 : 3);
-      expect(storage.length).toBe(0);
     } finally {
       prefs.__resetForTest();
-      ownerTesting.reset();
     }
   });
 });

@@ -6,6 +6,9 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ forbidden: vi.fn(() => { throw new Error('forbidden runtime access'); }), cloud: false, log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('electron', () => ({ app: { getPath: state.forbidden }, ipcMain: { on: state.forbidden, handle: state.forbidden }, BrowserWindow: { getAllWindows: state.forbidden }, safeStorage: { isEncryptionAvailable: state.forbidden, decryptString: state.forbidden }, systemPreferences: { getMediaAccessStatus: state.forbidden } }));
 vi.mock('electron-store', () => ({ default: state.forbidden }));
+// Model presentation collections exist only in a managed cloud instance's Host file.
+const instance = vi.hoisted(() => ({ value: {} as object | null }));
+vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => instance.value }));
 vi.mock('../../logger.js', () => ({ createLogger: () => state.log }));
 vi.mock('../../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => state.log } }));
 vi.mock('../../appSessionState.js', () => ({ getActiveAppSession: state.forbidden, ownerScopedUserDataPath: state.forbidden, activeOwnerScopeKey: state.forbidden, getActiveDataOwnerPushStamp: state.forbidden, isAppSessionBoundaryPending: state.forbidden, dataOwnerStorageKey: (v: string) => v }));
@@ -44,7 +47,7 @@ function noWrites<T>(fn: () => T): T {
   const spies = methods.map(name => vi.spyOn(fs, name).mockImplementation(state.forbidden as never));
   try { return fn(); } finally { for (const spy of spies) { expect(spy).not.toHaveBeenCalled(); spy.mockRestore(); } }
 }
-beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'interaction-inspection-')); state.cloud = false; state.forbidden.mockClear(); });
+beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'interaction-inspection-')); state.cloud = false; state.forbidden.mockClear(); instance.value = {}; });
 afterEach(() => { expect(state.forbidden).not.toHaveBeenCalled(); vi.restoreAllMocks(); fs.rmSync(root, { recursive: true, force: true }); });
 
 describe('actual interaction preference readers', () => {
@@ -152,6 +155,12 @@ describe('actual interaction preference readers', () => {
 });
 
 describe('known persisted dynamic collections', () => {
+  it('reports model presentation as unavailable on an ordinary desktop', () => {
+    instance.value = null;
+    const result = noWrites(lists);
+    for (const name of ['modelVisibility', 'modelEngines', 'modelFavorites'])
+      expect(result[name]).toEqual({ status: 'unavailable' });
+  });
   it('reports empty/default and migration states honestly without enumerating workspaces', () => {
     const result = noWrites(lists);
     expect(result.modelVisibility).toEqual({ status: 'migrationPending' });

@@ -4,7 +4,7 @@
  * @vitest-environment jsdom
  */
 
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import path from 'node:path';
@@ -103,9 +103,6 @@ import {
   ToolsSection,
 } from '../GhostPluginDetailView';
 import { toGhostPluginDetail, type GhostPluginDetail } from '../lib/ghostPluginViewModel';
-import { createModelPresentationTestHost } from '../../../__tests__/modelPresentationTestHost';
-import { __resetHostModelPresentationForTest, ensureHostModelPresentationLoaded } from '@/state/hostModelPresentationPreferences';
-import { __testing as ownerTesting } from '@/contexts/dataOwnerGeneration';
 import { RemotePluginReadOnlyDetail } from '../RemotePluginReadOnlyDetail';
 
 const permissions: GhostPermissionItem[] = [
@@ -184,8 +181,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  __resetHostModelPresentationForTest();
-  ownerTesting.reset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   toastMocks.success.mockReset();

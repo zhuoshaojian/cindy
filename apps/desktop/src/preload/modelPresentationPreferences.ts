@@ -4,10 +4,12 @@ import {
   type ModelPresentationPreferencesApi,
 } from '../shared/modelPresentationPreferences';
 
-/** 仅固定本机 IPC：禁止经 device-link 转发控制端 localStorage。 */
+/** 仅固定本机 IPC：禁止经 device-link 转发控制端 localStorage。
+ * Only a managed cloud instance exposes it; elsewhere the renderer stores stay local. */
 export function createModelPresentationPreferencesApi(
-  ipc: Pick<IpcRenderer, 'invoke' | 'on' | 'removeListener'>,
-): ModelPresentationPreferencesApi {
+  ipc: Pick<IpcRenderer, 'invoke' | 'on' | 'removeListener' | 'sendSync'>,
+): ModelPresentationPreferencesApi | undefined {
+  if (ipc.sendSync(MODEL_PRESENTATION_CHANNELS.hostOwned) !== true) return undefined;
   return {
     get: () => ipc.invoke(MODEL_PRESENTATION_CHANNELS.get),
     importLegacy: (request) => ipc.invoke(MODEL_PRESENTATION_CHANNELS.importLegacy, request),

@@ -1220,7 +1220,8 @@ interface ElectronAPI {
   cloudLoginWindow: import('../shared/cloudLoginWindow').CloudLoginWindowApi;
   hostSettings: import('../shared/hostSettings').HostSettingsRendererApi;
   desktopPreferences: import('../shared/desktopPreferences').DesktopPreferencesRendererApi;
-  modelPresentationPreferences: import('../shared/modelPresentationPreferences').ModelPresentationPreferencesApi;
+  /** Only on a managed cloud instance; see renderer/state/hostModelPresentationStores. */
+  modelPresentationPreferences?: import('../shared/modelPresentationPreferences').ModelPresentationPreferencesApi;
 
   // lifecycle 兜底 catch 到瞬时网络错误时推一次。renderer 收到后由
   // systemNetworkErrorToast.ts 负责节流 + 多语言 toast。

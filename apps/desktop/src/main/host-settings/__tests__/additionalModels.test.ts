@@ -6,6 +6,8 @@ const context = vi.hoisted(() => ({ root: '', owner: 'first', generation: 1, pen
   connected: true, modelsPerAgent: 1, routeStamp: '1:0',
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('electron', () => ({ app: { getPath: () => context.root } }));
+// Model preference axes are Host settings only on a managed cloud instance.
+vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../logger.js', () => ({ createLogger: () => context.log }));
 vi.mock('../../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => context.log } }));
 vi.mock('../../appSessionState.js', () => ({

@@ -1,3 +1,4 @@
+/** 云实例：renderer 与 Host 偏好文件的连接、导入、CAS 与 owner 栅栏。 */
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import {
   createModelPresentationTestHost,
@@ -9,9 +10,11 @@ import {
   commitHostModelPresentation,
   getHostModelPresentationSnapshot,
   __resetHostModelPresentationForTest,
+  __settleHostModelPresentationForTest as settle,
 } from '../state/hostModelPresentationPreferences';
 import {
   addModelFavorite,
+  setModelFavoritesOwner,
   listModelFavorites,
   updateModelFavorite,
   removeModelFavorite,
@@ -31,6 +34,7 @@ import { emptyModelPresentationPreferences } from '../../shared/modelPresentatio
 vi.mock('../lib/toast', () => ({ toast: { error: vi.fn() } }));
 vi.mock('../i18n', () => ({ default: { t: (key: string) => key } }));
 vi.mock('../state/providerModelMemory', () => ({
+  MODEL_PRESET_SLOT_ID: '*',
   hasAnyProviderModelOverride: () => false,
   hasProviderModelHistory: () => false,
 }));
@@ -71,7 +75,8 @@ describe('renderer Host model connection', () => {
     );
     await start();
     expect(listModelFavorites().map((item) => item.uid)).toEqual(['fav-7']);
-    await updateModelFavorite('fav-7', { effort: 'low', fast: false });
+    updateModelFavorite('fav-7', { effort: 'low', fast: false });
+    await settle();
     expect(listModelFavorites()[0]).toEqual({
       uid: 'fav-7',
       providerId: 'example',
@@ -95,15 +100,17 @@ describe('renderer Host model connection', () => {
       new Promise((resolve) => {
         release = resolve;
       });
-    const write = addModelFavorite(config);
+    // The local-store signature returns the uid the Host assigns; the list waits for it.
+    expect(addModelFavorite(config)).toBe('fav-1');
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     expect(listModelFavorites()).toEqual([]);
     release();
-    expect(await write).toBe('fav-1');
-    expect(listModelFavorites()).toHaveLength(1);
+    await settle();
+    expect(listModelFavorites().map((item) => item.uid)).toEqual(['fav-1']);
     host.options.beforeWrite = null;
     host.options.failWrite = true;
-    expect(await setModelEngineOverride('example', 'model', 'cc')).toBe(false);
+    setModelEngineOverride('example', 'model', 'cc');
+    await settle();
     expect(getModelEngineOverride('example', 'model')).toBeUndefined();
     expect(await setModelVisibilities('example', [{ agent: 'pi', modelId: 'model' }], false)).toBe(
       false,
@@ -118,18 +125,18 @@ describe('renderer Host model connection', () => {
       new Promise((resolve) => {
         release = resolve;
       });
-    const first = setModelEngineOverride('example', 'first', 'pi');
+    setModelEngineOverride('example', 'first', 'pi');
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
-    const queued = setModelEngineOverride('example', 'queued', 'cc');
+    setModelEngineOverride('example', 'queued', 'cc');
     const winner = host.files.get('owner-a')!;
     winner.value.engines['example:winner'] = { agent: 'codex' };
     winner.revision++;
     release();
-    expect(await first).toBe(false);
-    expect(await queued).toBe(false);
+    await settle();
     expect(host.api.mutate).toHaveBeenCalledTimes(1);
     expect(getModelEngineOverride('example', 'winner')).toBe('codex');
     expect(getModelEngineOverride('example', 'first')).toBeUndefined();
+    expect(getModelEngineOverride('example', 'queued')).toBeUndefined();
   });
   it('generation invalidation during a request cannot publish into or write the next owner', async () => {
     host.initialized();
@@ -139,12 +146,12 @@ describe('renderer Host model connection', () => {
       new Promise((resolve) => {
         release = resolve;
       });
-    const write = addModelFavorite(config);
+    addModelFavorite(config);
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     host.select('owner-b');
     host.initialized();
     release();
-    expect(await write).toBe('');
+    await settle();
     expect(listModelFavorites()).toEqual([]);
     host.options.beforeWrite = null;
     await start();
@@ -162,11 +169,11 @@ describe('renderer Host model connection', () => {
       });
       return old;
     });
-    const write = setModelEngineOverride('example', 'model', 'pi');
+    setModelEngineOverride('example', 'model', 'pi');
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     host.select('owner-a', 2);
     release();
-    expect(await write).toBe(false);
+    await settle();
     expect(host.api.mutate).not.toHaveBeenCalled();
   });
   it.each(['{broken', '', '[]', 'null'])(
@@ -177,7 +184,9 @@ describe('renderer Host model connection', () => {
       expect(getHostModelPresentationSnapshot()?.status).toBe('pending-migration');
       expect(host.files.get('owner-a')?.initialized).toBe(false);
       expect(storage.getItem('xdt:modelFavorites:v1:owner-a')).toBe(raw);
-      expect(await addModelFavorite(config)).toBe('');
+      expect(addModelFavorite(config)).toBe('');
+      await settle();
+      expect(host.api.mutate).not.toHaveBeenCalled();
     },
   );
   it('a failed import conflict only re-reads, never substitutes a new revision to replay input', async () => {
@@ -198,10 +207,13 @@ describe('renderer Host model connection', () => {
   });
   it('reset marker prevents reimport and seed resurrection, including after reconnect', async () => {
     await start();
-    await seedDefaultFavorite(config);
+    seedDefaultFavorite(config);
+    await settle();
     const uid = listModelFavorites()[0]!.uid;
-    await removeModelFavorite(uid);
-    await seedDefaultFavorite(config);
+    removeModelFavorite(uid);
+    await settle();
+    seedDefaultFavorite(config);
+    await settle();
     expect(listModelFavorites()).toEqual([]);
     await commitHostModelPresentation({ kind: 'reset' });
     storage.setItem(
@@ -222,20 +234,25 @@ describe('renderer Host model connection', () => {
     expect(isModelEnabled('codex', 'example', { id: 'new', defaultEnabled: false })).toBe(false);
     await resetModelVisibilities('example', [{ agent: 'pi', modelId: 'new' }]);
     expect(isModelEnabled('pi', 'example', { id: 'new', defaultEnabled: false })).toBe(false);
-    await setModelEngineOverride('example', 'new', 'cc');
+    setModelEngineOverride('example', 'new', 'cc');
+    await settle();
     expect(getModelEngineOverride('example', 'new')).toBe('cc');
-    await clearModelEngineOverride('example', 'new');
+    clearModelEngineOverride('example', 'new');
+    await settle();
     expect(getModelEngineOverride('example', 'new')).toBeUndefined();
   });
-  it('no native API fails closed and never falls back to localStorage authority', async () => {
+  it('without the Host API (an ordinary desktop) the stores stay local and never connect', async () => {
     delete (window.electronAPI as unknown as Record<string, unknown>).modelPresentationPreferences;
     storage.setItem(
       'xdt:modelFavorites:v1:owner-a',
       JSON.stringify({ uidSeq: 8, items: [{ uid: 'fav-7', ...config }] }),
     );
     await start();
-    expect(await addModelFavorite(config)).toBe('');
-    expect(listModelFavorites()).toEqual([]);
-    expect(isModelEnabled('pi', 'example', { id: 'model' })).toBe(false);
+    setModelFavoritesOwner('owner-a');
+    expect(listModelFavorites().map((item) => item.uid)).toEqual(['fav-7']);
+    expect(getHostModelPresentationSnapshot()).toBeNull();
+    expect(host.api.get).not.toHaveBeenCalled();
+    expect(host.api.importLegacy).not.toHaveBeenCalled();
+    setModelFavoritesOwner(null);
   });
 });

@@ -10,7 +10,7 @@ import { inspectGhostErrandPrefs } from '../../cindy-brain/pluginTaskPrefsStore.
 import { inspectSidebarSettings } from '../../sidebarSettingsStore.js';
 import { SettingsReader } from '../../maker-host/plugins/settings-reader.js';
 import { createBuiltinPlugins } from '../../maker-host/plugins/builtin-plugins.js';
-import { createModelPresentationPreferencesStore } from '../model-presentation-preferences.js';
+import { createModelPresentationPreferencesStore, hostOwnsModelPresentation } from '../model-presentation-preferences.js';
 import { inspectSettingsJson, isSettingsRecord } from '../../maker-host/inspect-settings-json.js';
 import { validateNewTaskPreferenceHistory } from '../../../shared/newTaskPreferenceHistory.js';
 import { isImDefaultAgentKind, isImDefaultEffort, isImDefaultPermissionMode } from '../../../shared/imDefaultSettings.js';
@@ -40,6 +40,11 @@ export function inspectDynamicSettingsCollections(options: CollectionInspectionO
     try { inspect(); } catch { for (const name of names) collections[name] = { status: 'unreadable' }; }
   };
   run(['modelVisibility', 'modelEngines', 'modelFavorites'], () => {
+    // Ordinary desktops keep these in renderer localStorage; only an instance has the file.
+    if (!hostOwnsModelPresentation()) {
+      for (const name of ['modelVisibility', 'modelEngines', 'modelFavorites']) collections[name] = { status: 'unavailable' };
+      return;
+    }
     const owner = { dataOwnerId: options.ownerId, ownerGeneration: options.ownerGeneration };
     const state = createModelPresentationPreferencesStore({
       getOwner: () => owner,

@@ -1,12 +1,3 @@
-import { createModelPresentationTestHost } from './modelPresentationTestHost';
-import { ensureHostModelPresentationLoaded } from '@/state/hostModelPresentationPreferences';
-import { getDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
-let favoriteHost: ReturnType<typeof createModelPresentationTestHost>;
-async function selectFavoritesOwner(id: string | null) {
-  favoriteHost.select(id, getDataOwnerGeneration().generation);
-  setModelFavoritesOwner(id);
-  await ensureHostModelPresentationLoaded();
-}
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ProviderShareReceived } from '@cindy/device-link';
@@ -36,35 +27,32 @@ let push: (list: ProviderShareReceived[]) => void;
 let snapshot: ProviderShareReceivedSnapshot;
 let readSnapshot: () => Promise<ProviderShareReceivedSnapshot>;
 let commands: ProviderShareCommand[];
-const tick = async () => { await vi.advanceTimersByTimeAsync(0); };
+const tick = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
 
-beforeEach(async () => {
+beforeEach(() => {
   vi.useFakeTimers();
   resetProviderShareStoreForTests();
   __resetForTest();
   window.localStorage.clear();
-  favoriteHost = createModelPresentationTestHost(window.localStorage);
-  favoriteHost.install();
   setDataOwnerGeneration('recipient', 1);
-  await selectFavoritesOwner('recipient');
+  setModelFavoritesOwner('recipient');
   snapshot = { ownerStamp: { dataOwnerId: 'recipient', ownerGeneration: 1 }, confirmedRegions: [], received: [] };
   readSnapshot = async () => snapshot;
   commands = [];
-  Object.assign(window, { electronAPI: { ...window.electronAPI, providerShare: {
+  Object.assign(window, { electronAPI: { providerShare: {
     command: (command: ProviderShareCommand) => {
       commands.push(command);
       return command.action === 'received-snapshot' ? readSnapshot() : Promise.resolve(snapshot.received);
     },
     onReceivedChanged: (listener: typeof push) => { push = listener; return () => {}; },
   } } });
-  await addModelFavorite({ providerId: providerShareFavoriteSource(share), modelId: 'opus', agent: 'cc' });
+  addModelFavorite({ providerId: providerShareFavoriteSource(share), modelId: 'opus', agent: 'cc' });
 });
 afterEach(() => { resetProviderShareStoreForTests(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 it('retries failed cleanup with backoff without another share push and stops after success', async () => {
   snapshot = { ...snapshot, confirmedRegions: ['global'], received: [] };
-  favoriteHost.options.failWrite = true;
-  const writes = vi.spyOn(favoriteHost.api, 'mutate');
+  const writes = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
   ensureProviderShareReceivedStarted();
   await tick();
   expect(listModelFavorites()).toHaveLength(1);
@@ -73,7 +61,7 @@ it('retries failed cleanup with backoff without another share push and stops aft
   expect(writes).toHaveBeenCalledTimes(2);
   await vi.advanceTimersByTimeAsync(9_999);
   expect(writes).toHaveBeenCalledTimes(2);
-  writes.mockRestore(); favoriteHost.options.failWrite = false;
+  writes.mockRestore();
   await vi.advanceTimersByTimeAsync(1);
   expect(listModelFavorites()).toEqual([]);
   const requestCount = commands.length;
@@ -83,15 +71,14 @@ it('retries failed cleanup with backoff without another share push and stops aft
 
 it('uses persisted favorite regions after restart even when the main discovery marker was removed', async () => {
   snapshot = { ...snapshot, confirmedRegions: ['global'], received: [] };
-  favoriteHost.options.failWrite = true;
-  const writes = vi.spyOn(favoriteHost.api, 'mutate');
+  const writes = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
   ensureProviderShareReceivedStarted();
   await tick();
   expect(listModelFavorites()).toHaveLength(1);
-  writes.mockRestore(); favoriteHost.options.failWrite = false;
+  writes.mockRestore();
   resetProviderShareStoreForTests();
-  await selectFavoritesOwner(null);
-  await selectFavoritesOwner('recipient');
+  setModelFavoritesOwner(null);
+  setModelFavoritesOwner('recipient');
   snapshot = { ...snapshot, confirmedRegions: [], received: [] };
   commands = [];
   ensureProviderShareReceivedStarted();
@@ -107,17 +94,14 @@ it('uses persisted favorite regions after restart even when the main discovery m
 
 it('rereads the latest membership instead of retrying a stale deletion', async () => {
   snapshot = { ...snapshot, confirmedRegions: ['global'] };
-  favoriteHost.options.failWrite = true;
-  const writes = vi.spyOn(favoriteHost.api, 'mutate');
+  const writes = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
   ensureProviderShareReceivedStarted();
   await tick();
-  writes.mockRestore(); favoriteHost.options.failWrite = false;
+  writes.mockRestore();
   snapshot = { ...snapshot, received: [share] };
   await vi.advanceTimersByTimeAsync(5_000);
   expect(listModelFavorites()).toHaveLength(1);
-  const requestCount = commands.length;
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(commands).toHaveLength(requestCount);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 it('does not run an earlier account retry after switching owners', async () => {
@@ -126,8 +110,8 @@ it('does not run an earlier account retry after switching owners', async () => {
   await tick();
   expect(readSnapshot).toHaveBeenCalledTimes(1);
   setDataOwnerGeneration('other', 2);
-  await selectFavoritesOwner('other');
-  await addModelFavorite({ providerId: providerShareFavoriteSource(share), modelId: 'opus', agent: 'cc' });
+  setModelFavoritesOwner('other');
+  addModelFavorite({ providerId: providerShareFavoriteSource(share), modelId: 'opus', agent: 'cc' });
   await vi.advanceTimersByTimeAsync(60_000);
   expect(readSnapshot).toHaveBeenCalledTimes(1);
   expect(listModelFavorites()).toHaveLength(1);
@@ -135,11 +119,10 @@ it('does not run an earlier account retry after switching owners', async () => {
 
 it('retries when temporarily unreadable storage prevents discovering favorite regions', async () => {
   snapshot = { ...snapshot, confirmedRegions: ['global'] };
-  favoriteHost.options.failRead = true;
-  await selectFavoritesOwner('recipient');
+  const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('storage unavailable'); });
   ensureProviderShareReceivedStarted();
   await tick();
-  favoriteHost.options.failRead = false;
+  read.mockRestore();
   await vi.advanceTimersByTimeAsync(5_000);
   expect(commands).toContainEqual({ action: 'received-snapshot', favoriteRecovery: {
     ownerStamp: { dataOwnerId: 'recipient', ownerGeneration: 1 }, regions: ['global'],
@@ -210,8 +193,8 @@ it('does not apply a superseded membership reply or an earlier account response'
   readSnapshot = () => new Promise((resolve) => { finish = resolve; });
   push([]);
   setDataOwnerGeneration('other', 2);
-  await selectFavoritesOwner('other');
-  await addModelFavorite({ providerId: providerShareFavoriteSource(share), modelId: 'opus', agent: 'cc' });
+  setModelFavoritesOwner('other');
+  addModelFavorite({ providerId: providerShareFavoriteSource(share), modelId: 'opus', agent: 'cc' });
   finish({ ...snapshot, confirmedRegions: ['global'], received: [] });
   await tick();
   expect(listModelFavorites()).toHaveLength(1);

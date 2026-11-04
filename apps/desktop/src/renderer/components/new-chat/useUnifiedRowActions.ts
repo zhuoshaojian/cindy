@@ -21,7 +21,6 @@ import type { FavoriteStore } from '@/state/useRemoteModelFavorites';
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { getDataOwnerGeneration, isDataOwnerGenerationCurrent } from '@/contexts/dataOwnerGeneration';
 
 import { clampEffortToSupported, type UnifiedModelEntry } from '@cindy/model-providers';
 
@@ -271,10 +270,6 @@ type ActionName =
   | 'selectRow';
 
 export function useUnifiedRowActions(options: UnifiedRowActionsOptions): UnifiedRowActions {
-  const preferenceOwner = getDataOwnerGeneration();
-  const preferencesCurrent = () => isDataOwnerGenerationCurrent(preferenceOwner);
-  const commitPreference = async (action: () => void | Promise<boolean>): Promise<boolean> =>
-    preferencesCurrent() && await action() !== false;
   // 同一个面板一次只提交一份配置,避免后发请求先完成再被旧回执覆盖;锁覆盖确认、写入、
   // 回滚和收藏收尾。在途时控件看上去可点就一定接得住:新的点击进队列,不静默丢弃 ——
   // 深度 / Fast 按「行 + 维度」各留最新一笔,其余动作只留最新一个,按先后顺序依次提交。
@@ -284,7 +279,7 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
   // 深度 / Fast 写入在途(含排队)时,目标值先画在那一行上:滑杆松手即停在新档,
   // 不回弹到旧值再等回执。整条写入链空闲(或失败)即清除,之后以真实状态为准。
   const [optimistic, setOptimistic] = useState<UnifiedOptimisticConfig | null>(null);
-  const queue = useRef(new Map<string, { name: ActionName; args: unknown[]; isCurrent: () => boolean }>());
+  const queue = useRef(new Map<string, { name: ActionName; args: unknown[] }>());
   // 排队的只是参数:上一笔落定后等一次渲染再提交,走最新一次渲染的动作,拿到上一笔
   // 刚写入的实时值,而不是点击那一刻闭包里的旧值。
   const latestRuns = useRef<Partial<Record<ActionName, (args: unknown[]) => ActionResult>>>({});
@@ -312,7 +307,6 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
       const next = queue.current.get(key)!;
       queue.current.delete(key);
       busy.current = false;
-      if (!next.isCurrent()) continue;
       latestRuns.current[next.name]?.(next.args);
       if (busy.current) return;
     }
@@ -328,7 +322,7 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
     adjustmentOf?: (...args: A) => UnifiedOptimisticConfig,
   ) => {
     const run = (...args: A): ActionResult => {
-      if (options.interactionDisabled || !preferencesCurrent()) {
+      if (options.interactionDisabled) {
         queue.current.clear();
         return false;
       }
@@ -351,7 +345,7 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
           .then((outcome) => {
             if (pendingTimer !== null) clearTimeout(pendingTimer);
             // 这笔没写成时丢掉排队项:调用方已提示失败,不在失败后悄悄接着改。
-            if (outcome === false || !mounted.current || !preferencesCurrent()) queue.current.clear();
+            if (outcome === false || !mounted.current) queue.current.clear();
             if (!mounted.current) {
               busy.current = false;
               return outcome;
@@ -369,7 +363,7 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
     };
     latestRuns.current[name] = (queued) => run(...(queued as A));
     return (...args: A): ActionResult => {
-      if (options.interactionDisabled || !preferencesCurrent()) return false;
+      if (options.interactionDisabled) return false;
       if (!busy.current) return run(...args);
       const target = adjustmentOf?.(...args);
       const key = target
@@ -377,7 +371,7 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
         : 'other';
       // 先删再插:被替换的项移到队尾,排队顺序始终等于最后一次点击的先后。
       queue.current.delete(key);
-      queue.current.set(key, { name, args, isCurrent: preferencesCurrent });
+      queue.current.set(key, { name, args });
       if (target) mergeOptimistic(target);
       return undefined;
     };
@@ -404,23 +398,11 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
     onBeforeRemoveFavorite,
   } = options;
 
-  const backingFavorites: FavoriteStore = options.favoriteStore ?? {
+  const favoriteStore: FavoriteStore = options.favoriteStore ?? {
     get: getModelFavorite,
-    add: async config => { if (!await addModelFavorite(config)) throw new Error('Favorite save failed'); },
-    update: async (uid, patch) => { if (!await updateModelFavorite(uid, patch)) throw new Error('Favorite save failed'); },
-    remove: async uid => { if (!await removeModelFavorite(uid)) throw new Error('Favorite save failed'); },
-  };
-
-  const guardFavorite = async (write: () => void | Promise<void>) => {
-    if (!preferencesCurrent()) throw new Error('Model preference owner changed');
-    await write();
-    if (!preferencesCurrent()) throw new Error('Model preference owner changed');
-  };
-  const favoriteStore: FavoriteStore = {
-    get: backingFavorites.get,
-    add: config => guardFavorite(() => backingFavorites.add(config)),
-    update: (uid, patch) => guardFavorite(() => backingFavorites.update(uid, patch)),
-    remove: uid => guardFavorite(() => backingFavorites.remove(uid)),
+    add: config => { addModelFavorite(config); },
+    update: updateModelFavorite,
+    remove: removeModelFavorite,
   };
   const favoriteWrite = (write: () => void | Promise<void>): void | Promise<void> => {
     try {
@@ -615,8 +597,8 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
      * 的收藏就走不到「先回落默认配置」那条路。
      */
     favoriteUid: string | null;
-    onApplied: () => ActionResult;
-  }): Promise<void | boolean> => {
+    onApplied: () => void | Promise<void>;
+  }): Promise<void | false> => {
     if (!sessionEngineFilter) return Promise.resolve();
     return runLive(() =>
       (sessionEngineFilter.onCrossEngineConfigure ?? sessionEngineFilter.onCrossEngineSelect)({
@@ -867,12 +849,12 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
           }),
         ).then((applied) => {
           if (!applied) return false;
-          return commitPreference(() => (options.engineStore?.set ?? setModelEngineOverride)(anchor.providerId, anchor.modelId, engine));
+          (options.engineStore?.set ?? setModelEngineOverride)(anchor.providerId, anchor.modelId, engine);
         });
       }
       return;
     }
-    return commitPreference(() => (options.engineStore?.set ?? setModelEngineOverride)(anchor.providerId, anchor.modelId, engine));
+    (options.engineStore?.set ?? setModelEngineOverride)(anchor.providerId, anchor.modelId, engine);
   };
 
   const applyEffort: UnifiedRowActions['applyEffort'] = (anchor, entry, config, effort) => {
@@ -1006,8 +988,8 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
     );
 
     /** 「跟随推荐」的持久化部分:删 override + 删掉当前与推荐引擎两格的深度 / Fast 记忆。 */
-    const resetStoredConfig = async (): Promise<boolean> => {
-      if (!await commitPreference(() => (options.engineStore?.clear ?? clearModelEngineOverride)(anchor.providerId, anchor.modelId)) || !preferencesCurrent()) return false;
+    const resetStoredConfig = (): void => {
+      (options.engineStore?.clear ?? clearModelEngineOverride)(anchor.providerId, anchor.modelId);
       // ★ 删,不是写快照(2026-08-17 review H3)。记忆表是 override 表:表里没有该键
       // ⇒ 跟随当前版本的目录默认。此前这里把**这一版**的 defaultEffort 快照写回记忆槽,
       // 于是服务端之后改了推荐档,点过「恢复推荐」的用户被钉死在旧值上 —— 与
@@ -1037,7 +1019,6 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
           modelMemory?.setFast(slot.agent, anchor.providerId, slot.wireModelId, false);
         }
       }
-      return true;
     };
 
     // 非 live 行:改的只是「下次选它用什么」,清记忆就够了。
@@ -1115,7 +1096,7 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
       ...(config.effort ? { effort: config.effort } : {}),
       ...(config.fast ? { fast: config.fast } : {}),
     });
-    if (result) return result.then(() => { onFavoriteFlash(anchorKey(anchor)); return true; });
+    if (result) return result.then(() => { onFavoriteFlash(anchorKey(anchor)); });
     onFavoriteFlash(anchorKey(anchor));
   };
 
@@ -1137,7 +1118,7 @@ export function useUnifiedRowActions(options: UnifiedRowActionsOptions): Unified
     if (interactionDisabled || anchor.kind !== 'fav') return;
     const commit = () => {
       const result = favorites.remove(anchor.uid);
-      if (result) return result.then(() => { onBeforeRemoveFavorite(anchor); return true; });
+      if (result) return result.then(() => { onBeforeRemoveFavorite(anchor); });
       onBeforeRemoveFavorite(anchor);
     };
     // 删除前再次核对收藏仍是实时配置，避免覆盖后来从其他入口修改的值:
