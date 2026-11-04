@@ -501,3 +501,43 @@ With the Mac Dev `0.1.121-dev.cloud.20261102.13` (`c88fcff3bd`), against the own
 - Local page in the same Dev build is unchanged apart from this computer's own X binding state.
 - Not exercised live: starting a binding (authorization tickets are unchanged), Telegram offline,
   group activation with real groups. Fleet admission has not been requested.
+
+## cloud.10: the 2026-11-04 cloud settings review (2026-11-05)
+
+`2a190d5942` lets the MCP dialog and the storage overview serve another computer; `277b8473e0`
+applies the product review (instance-window-only settings leave the cloud page, MCP add, edit
+and delete, the owner-only read-only `cloud:storage-usage:v1` channel, the upgrade row and
+notice, cloud-desktop fallbacks, and the app behavior section hidden in the instance's own
+settings; see `docs/cloud-settings-parity.md`). Delivery `8faa08dd86`, run 41824162446: verify,
+candidate (native smoke on `0.1.121-cloud.10`) and cache passed; a disposable probe hit the
+qualified cache and was removed. The owner-only policy (`cis-u121c10-1104-own-*`) added the
+cloud.10 approval for the owner and the keyring list (11 → 12, no retirement); defaults,
+placements and tenants were unchanged and both roles offered cloud.10 to the owner only.
+
+The data probe measured 8.9 KB before launch. The upgrade completed on the first attempt: backup
+**3,711 files / 449,886,748 bytes**, databases and schedules unchanged, main and init on the
+delivered digest with the cache hit, released. The instance is ready on cloud.10 with zero
+restarts; the other 13 instances and new claims are unchanged, with no active operation.
+
+With the Mac Dev `0.1.121-dev.cloud.20261102.14` (`277b8473e0`), against the owner's instance:
+
+- The cloud page has no Appearance tab; General has no system notifications or send shortcut;
+  Personalization has no link opening, prompt suggestions or message rail. The local page in the
+  same build still shows them, and the local storage overview is unchanged.
+- MCP: a test server `Cindy c10 check` (`https://example.com/c10-mcp`) was added through the local
+  dialog (no token field, the credentials note shown), read back from the instance, renamed through
+  the edit dialog (prefilled name and URL), and deleted after the local confirmation; the list is
+  empty again, as before.
+- Storage: the instance reports its disk (6.73 GB used of 19.52 GB) and Cindy's totals (database
+  10.4 MB). The instance tab shows no upgrade button with no update and no stale "upgrade complete"
+  notice. Plugins and storage cleanup open the instance's remote desktop.
+- Through that remote desktop, the instance's own settings General page goes from notifications
+  straight to message input: the app behavior section (keep-awake, quit on close) is gone. The
+  instance was left on its home screen and the viewer closed.
+- Found and fixed in `c53570f10c` (Dev `.15`, client only): the cloud storage section still said the
+  data is on this computer and its bar measured the database instead of the instance disk; the
+  fallback text repeated the instance name. Once, the first remote desktop open left a second
+  viewer stuck connecting; it did not recur on two later opens.
+- Dev `.15` is installed; its live recheck waits for the Keychain prompt on this Mac.
+- Not exercised live: MCP endpoint change with saved credentials (refused by the instance, covered
+  by tests), the low-disk warning. Fleet admission has not been requested.
