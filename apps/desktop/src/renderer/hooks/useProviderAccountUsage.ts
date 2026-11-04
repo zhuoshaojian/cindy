@@ -41,6 +41,11 @@ export function useProviderAccountUsage(
   provider: ProviderView | undefined,
   agent?: AgentKind,
   deviceId: string | null = null,
+  /** Another device's account usage (the cloud instance settings page). */
+  reader?: (input: {
+    providerId: string;
+    forceRefresh: boolean;
+  }) => Promise<ProviderAccountUsageResult>,
 ): ProviderAccountUsageState {
   const owner = getDataOwnerGeneration();
   const [revision, setRevision] = useState(0);
@@ -84,9 +89,11 @@ export function useProviderAccountUsage(
           forceRefresh,
           ...(agent ? { agent } : {}),
         };
-        const next = deviceId
-          ? parseKimiAccountUsageResult(await window.electronAPI.deviceLink.invoke(deviceId, 'maker:usage:kimi-coding', [input]))
-          : await window.electronAPI.maker.fetchProviderAccountUsage(input);
+        const next = reader
+          ? await reader({ providerId: provider.id, forceRefresh })
+          : deviceId
+            ? parseKimiAccountUsageResult(await window.electronAPI.deviceLink.invoke(deviceId, 'maker:usage:kimi-coding', [input]))
+            : await window.electronAPI.maker.fetchProviderAccountUsage(input);
         if (id === requestId.current && isDataOwnerGenerationCurrent(owner)) setState({ identity, result: next, busy: false });
       } catch {
         // IPC 异常也结束等待；只保留同一查询身份的已有快照。
@@ -101,7 +108,7 @@ export function useProviderAccountUsage(
           }));
       }
     },
-    [provider?.id, agent, identity, supported, deviceId, owner],
+    [provider?.id, agent, identity, supported, deviceId, owner, reader],
   );
 
   useEffect(() => {

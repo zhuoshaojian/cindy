@@ -15,6 +15,16 @@ import { useNotificationSettings } from '@/hooks/useNotificationSettings';
 
 export function NotificationSection() {
   const { enabled, setEnabled } = useNotificationSettings();
+  return <NotificationSectionView enabled={enabled} onChange={setEnabled} />;
+}
+
+export function NotificationSectionView({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange(value: boolean): void;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -33,7 +43,8 @@ export function NotificationSection() {
         )}
       >
         <div className="flex min-w-0 flex-col gap-1">
-          <p id="settings-search-settings-notifications-sessionDoneLabel"
+          <p
+            id="settings-search-settings-notifications-sessionDoneLabel"
             className="text-13 font-medium text-[var(--settings-section-sublabel)]"
             style={{ letterSpacing: '0.12px' }}
           >
@@ -46,7 +57,7 @@ export function NotificationSection() {
 
         <Switch
           checked={enabled}
-          onCheckedChange={setEnabled}
+          onCheckedChange={onChange}
           aria-label={t('settings.notifications.sessionDoneAria')}
         />
       </div>

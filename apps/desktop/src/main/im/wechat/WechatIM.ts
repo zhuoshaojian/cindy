@@ -353,7 +353,8 @@ export class WechatIM extends BaseIM implements RichChannelIM {
     // Registered in Desktop Main with a trusted-renderer sender check.
   }
 
-  async authorize(): Promise<{ started: true }> {
+  async authorize(signal?: AbortSignal): Promise<{ started: true }> {
+    signal?.throwIfAborted();
     if (this.#deps.isCompatibilityDisabled() && !this.#compatibilityDisabled) {
       await this.setCompatibilityDisabled(true);
     }
@@ -373,6 +374,9 @@ export class WechatIM extends BaseIM implements RichChannelIM {
     this.cancelAuthorization();
     const abort = new AbortController();
     this.#authorizationAbort = abort;
+    const cancelOwn = () => { if (this.#authorizationAbort === abort) this.cancelAuthorization(); };
+    signal?.addEventListener('abort', cancelOwn, { once: true });
+    if (signal?.aborted) { cancelOwn(); signal.throwIfAborted(); }
     this.#setState({ ...this.#state, phase: 'authorizing', errorCode: undefined });
     const transport = this.#deps.createTransport({
       credentials: null,
@@ -428,6 +432,7 @@ export class WechatIM extends BaseIM implements RichChannelIM {
           });
         }
       } finally {
+        signal?.removeEventListener('abort', cancelOwn);
         if (this.#authorizationAbort === abort) this.#authorizationAbort = null;
       }
     })();

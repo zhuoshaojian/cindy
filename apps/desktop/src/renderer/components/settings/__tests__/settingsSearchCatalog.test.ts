@@ -29,6 +29,13 @@ const translations: Record<string, string> = {
 const t = ((key: string) => translations[key] ?? key) as unknown as TFunction;
 
 describe('settings search catalog', () => {
+  // Search is another entry point: login alone does not grant cloud access.
+  it.each([undefined, false, true])('requires affirmative cloud admission for search (%s)', (canAccessCloudInstances) => {
+    const documents = buildSettingsSearchDocuments(t, TAB_IDS, {
+      region: 'cn', mode: 'cloud', membershipKind: 'org', platform: 'darwin', canAccessCloudInstances,
+    });
+    expect(documents.some(({ entry }) => entry.tab === 'cloud-instances')).toBe(canAccessCloudInstances === true);
+  });
   it('normalizes mixed-width and repeated whitespace', () => {
     expect(normalizeSettingsSearchText('  Ａppearance\u00a0  ')).toBe('appearance');
   });
@@ -194,7 +201,18 @@ describe('settings search catalog', () => {
         const dynamicProviderAnchor =
           /^cindy-im-(slack|telegram|x)$/.test(target) &&
           source.includes('id={\`cindy-im-\${provider}\`}');
-        expect(source.includes('id="' + target + '"') || dynamicProviderAnchor, target).toBe(true);
+        // Local and cloud IM pages share one group section; its anchor is built from the group.
+        const dynamicGroupAnchor =
+          /^im-bot-group-(cindy|personal)$/.test(target) &&
+          source.includes('id={\`${idPrefix}im-bot-group-${group}\`}');
+        const prefixedChannelAnchor = source.includes('id={\`${idPrefix}' + target + '\`}');
+        expect(
+          source.includes('id="' + target + '"') ||
+            dynamicProviderAnchor ||
+            dynamicGroupAnchor ||
+            prefixedChannelAnchor,
+          target,
+        ).toBe(true);
       }
     }
     for (const [, target] of source.matchAll(/id="(settings-search-[^"]+)"/g)) {

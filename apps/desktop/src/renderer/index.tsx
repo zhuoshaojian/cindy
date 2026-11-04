@@ -15,7 +15,9 @@ const isRegionScreenshot = urlParams.get('regionScreenshot') === '1';
 const isRegionScreenshotEditor = urlParams.get('regionScreenshotEditor') === '1';
 const isRegionScreenshotPin = urlParams.get('regionScreenshotPin') === '1';
 
-void (isRecordingPreview
+void (urlParams.get('cloudLoginWindow') === '1'
+  ? import('./cloud-login-entry')
+  : isRecordingPreview
   ? import('./recording-preview-entry')
   : isRemoteDesktopViewer
   ? import('./remote-desktop-viewer-entry')

@@ -3,6 +3,7 @@ import { z as settingsSchema } from 'zod';
 import { deliverRoutineResult, listRoutineDeliveryTargets } from './routines/delivery.js';
 import { flushPluginUsageLifecycle } from './plugin-usage/current.js';
 import { registerAccessibilitySupportIpc } from './accessibility-support-ipc.js';
+import { randomUUID } from 'node:crypto';
 import { mcpAppSchemePrivilege, registerMcpAppProtocol } from './mcp-apps/sandboxProtocol.js';
 import { prepareImportedAutomation, finishImportedAutomation } from './bot-import/automationRuntime.js';
 import { ensureImportedAutomationReady, recoverCompanionImports } from './bot-import/host.js';
@@ -44,6 +45,11 @@ import {
   readCindyMakeSettings,
   writeCindyMakeSyncLatestBeforeBuild,
 } from './cindy-make/settingsStore.js';
+import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudManagementExecution } from './host-settings/managementCalls.js';
+import { presentManagementDeviceCode } from './host-settings/managementAuthorization.js';
+import { configureAdditionalSettingsRuntime } from './host-settings/additionalRuntime.js';
+import { initializeCloudDeviceLinkDefaults } from './instance-runtime/device-link-defaults.js';
+import { cindyManagedHomeDir, isCloudPilotDistribution } from './cloudPilotDistribution.js';
 import { retainProviderPresentationAfterAuthChange } from './maker-host/provider-presentation-store.js';
 import { codexAccountState } from './maker-host/codex-account-auth.js';
 import { syncSubscriptionAccountUsage } from './usage/subscriptionAccountUsage.js';
@@ -502,6 +508,13 @@ import {
   getDatabaseSizeWarningSettingsFilePath,
 } from './database-size-warning-settings';
 import { createDatabaseSizeWarningSettingsWatcher } from './database-size-warning-settings-watcher.js';
+import { registerHostSettingsIpc } from './host-settings/ipc.js';
+import { markCloudLoginWindow, isCloudLoginWindow } from './cloud-settings-client/login-window-registry.js';
+import { cloudLoginWindowLifecycle, registerCloudSettingsClientIpc } from './cloud-settings-client/runtime.js';
+import { registerDesktopPreferencesIpc } from './host-settings/desktopPreferencesIpc.js';
+import { isResourceUsageWebContentsId } from './resource-usage-window/registry.js';
+import { isTrustedAppearanceSettingsReadWindow } from './appearance-settings-reader.js';
+import { registerModelPresentationPreferencesIpc } from './host-settings/model-presentation-preferences-ipc.js';
 import { createLocalDbMaintenanceIpcHandlers } from './localDb/ipc/maintenance';
 import {
   createDialogueWorkspaceHandlers,
@@ -611,6 +624,17 @@ import {
 } from './remote-desktop/linuxClipboardNative';
 import { initHeartbeatService } from './heartbeatService';
 import { markStartupMilestone } from './startupTimeline';
+import { getInstanceConfig } from './instance-runtime/config.js';
+import { startProfileTelemetry } from './instance-runtime/profile-telemetry.js';
+import { instanceAuthReady, instanceDurableObservation, instanceAuthRealm, instanceLoginRequired, instanceLoginRecovered } from './instance-runtime/host.js';
+import { startAuthRecoveryControl } from './instance-runtime/auth-recovery.js';
+import { startInstanceStatus } from './instance-runtime/status.js';
+import { registerCloudProviderSettings } from './instance-runtime/providerSettingsRegistration.js';
+import { publishedPluginOauthIdentity } from './plugin-oauth/runtime.js';
+import { startCloudSettingsSnapshotPublisher } from './host-settings/snapshotRuntime.js';
+import { startCloudSettingsWebTransport } from './host-settings/webRuntime.js';
+
+let instanceBinariesReady = false;
 import { registerRemoteDesktopIpc } from './remote-desktop';
 import { initAnalyticsSettingsService, noteAuthColdStartState } from './analyticsSettingsService';
 import { initLogUploadService, scheduleStartupBackfill } from './log-upload';
@@ -936,6 +960,7 @@ import {
 import {
   isCustomProviderRuntimeKeyStorageKey,
   isRendererAccessibleSafeStorageKey,
+  providerSecretStorageKey,
   type ProviderSecretId,
 } from '../shared/providerSecrets.js';
 import {
@@ -1627,6 +1652,7 @@ function scheduleChatEmbeddingRuntimeReconcile(): Promise<void> {
   return chatEmbeddingRuntimeReconcile;
 }
 
+configureAdditionalSettingsRuntime({ chatEmbedding: { context: chatEmbeddingDefaultContext, available: isChatEmbeddingAvailable, reconcile: scheduleChatEmbeddingRuntimeReconcile } });
 setProviderAccessRuntimeRefreshListener(scheduleChatEmbeddingRuntimeReconcile);
 
 function broadcastChatEmbeddingSettingsChanged(): void {
@@ -1841,6 +1867,7 @@ function clearAccountBoundaryAbortMark(): void {
 
 async function teardownAuthAccountBoundary(reason: string): Promise<void> {
   remoteDesktopViewerWindows.reset();
+  cloudLoginWindowLifecycle.reset();
   const blockingFailures: unknown[] = [];
   // Goal timers can dispatch through the outgoing Maker while launch-fence
   // acquisition waits behind queued filesystem work. Invalidate them before
@@ -2630,6 +2657,7 @@ setAppSessionCommitBoundaryHook(() => {
   cancelClaudeCliLogin();
   clearAllSessionAttention();
   remoteDesktopViewerWindows.reset();
+  cloudLoginWindowLifecycle.reset();
   // 弹出的页签窗口带着旧 owner 的任务指派与 renderer 本地页签缓存:同步销毁,不让新 owner 看到旧内容。
   sidebarTabWindowsController.destroyAllWindows();
   clearAllSessionProviders();
@@ -3215,6 +3243,7 @@ ipcMain.handle('app-menu:set-locale', (_event, locale: unknown): { ok: true } =>
   refreshWindowsAppBadge();
   resourceUsageWindowController.setLocale(currentApplicationMenuLocale);
   remoteDesktopViewerWindows.setLocale(currentApplicationMenuLocale);
+  cloudLoginWindowLifecycle.setLocale(currentApplicationMenuLocale);
   rsbWindowController.setLocale(currentApplicationMenuLocale);
   sidebarTabWindowsController.setLocale(currentApplicationMenuLocale);
   refreshGhostLocalization(previousResolvedLocale);
@@ -3526,6 +3555,7 @@ function ensureWindowsTray(): boolean {
 
 function hideMainWindowToWindowsTray(mainWindow: BrowserWindow): void {
   if (ensureWindowsTray()) {
+    cloudLoginWindowLifecycle.reset();
     hideWindowToWindowsTray(mainWindow);
     return;
   }
@@ -4156,6 +4186,7 @@ const createWindow = () => {
     }
     resourceUsageWindowController.destroyWindow();
     remoteDesktopViewerWindows.reset();
+    cloudLoginWindowLifecycle.destroy();
     rsbWindowController.destroyWindow();
     sidebarTabWindowsController.destroyAllWindows();
     if (mainWindowRef === mainWindow) mainWindowRef = null;
@@ -4176,6 +4207,9 @@ const createWindow = () => {
     // can restore it without remounting the renderer.
     if (process.platform === 'darwin') {
       event.preventDefault();
+      // Native close hides this window rather than destroying it. Retire any
+      // cloud login, including a minimized one; ordinary minimize is unchanged.
+      cloudLoginWindowLifecycle.reset();
       resourceUsageWindowController.hideWithOwner();
       if (mainWindow.isFullScreen()) {
         mainWindow.once('leave-full-screen', () => {
@@ -4299,6 +4333,8 @@ const createWindow = () => {
         currentApplicationMenuLocale ?? getPreferredApplicationLocale(),
       );
       remoteDesktopViewerWindows.prewarm();
+      cloudLoginWindowLifecycle.setLocale(currentApplicationMenuLocale ?? getPreferredApplicationLocale());
+      cloudLoginWindowLifecycle.prewarm();
       // 侧栏「弹出」已改为按页签弹出(sidebar tab window):预热一扇未指派的隐藏
       // 窗口,弹出时直接指派 → 首份内容 → show。整栏子窗口(rsbWindowController)
       // 不再有用户入口,不再预热,避免启动期多养一个隐藏 renderer。
@@ -4573,6 +4609,39 @@ function parseOptionalDeviceLinkDeviceId(value: unknown): string | null | undefi
 }
 
 const registerIpcHandlers = () => {
+  registerHostSettingsIpc(broadcastDatabaseSizeWarningChanged);
+  registerCloudSettingsClientIpc({
+    title: () => t('cloudSettings.onboarding.initialize'),
+    isOpenSender: (sender) => isResourceUsageOpenSender({
+      sender, mainWindow: mainWindowRef,
+      senderWindow: BrowserWindow.fromWebContents(sender), isSecondaryAppWindow,
+    }),
+    createWindow: () => createResourceUsageWindow(undefined, {
+      title: t('cloudSettings.onboarding.initialize'),
+      preload: 'cloudLoginWindowPreload.js', query: 'cloudLoginWindow', hash: '/cloud-login-window',
+      width: 760, height: 720, minWidth: 600, minHeight: 640,
+      register: markCloudLoginWindow, loginCaptcha: true,
+    }),
+  });
+  const localPreferencesAccess = {
+    isLocalWindow(id: number, access: 'read' | 'write') {
+      const sender = webContents.fromId(id);
+      if (!sender || sender.isDestroyed()) return false;
+      const win = BrowserWindow.fromWebContents(sender);
+      if (!win || !isTrustedCindyRendererWindow(win)) return false;
+      const isWriter = win === mainWindowRef || isSecondaryAppWindow(win);
+      if (access === 'write') return isWriter;
+      if (isWriter) return true;
+      const isContent: boolean = isAppContentWindow(win);
+      return sender === rsbWindowController.getSidebarWebContents()
+        || sidebarTabWindowsController.slotForSender(sender) !== null
+        || isResourceUsageWebContentsId(id)
+        || isCloudLoginWindow(id)
+        || (!isContent && isTrustedAppearanceSettingsReadWindow(win));
+    },
+  };
+  registerDesktopPreferencesIpc(localPreferencesAccess);
+  registerModelPresentationPreferencesIpc(localPreferencesAccess);
   ipcMain.handle('database-size-warning:get-settings', (event) => {
     assertTrustedAppRendererEvent(event);
     const state = readDatabaseSizeWarningSettingsState();
@@ -5444,13 +5513,18 @@ const registerIpcHandlers = () => {
     if (isNativeProviderAuthBound('anthropic')) await readClaudeCliLoginStatus({ maxAgeMs: 30_000 });
     return { authorized: hasClaudeNativeLogin() };
   });
-  ipcMain.handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_LOGIN, async (event, loginKey?: string) => {
-    assertTrustedAppRendererEvent(event);
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_LOGIN, async (event, loginKeyInput?: unknown) => {
+    const loginKey = typeof loginKeyInput === 'string' ? loginKeyInput : undefined;
+    if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Electron.IpcMainInvokeEvent);
     const owner = activeOwnerScopeKey();
     if (isAppSessionBoundaryPending() || !getActiveAppSession().dataOwnerId)
       return { ok: false, reason: 'login_cancelled', authorized: false };
-    const signal = beginClaudeCliLogin(loginKey);
+    const management = cloudManagementExecution();
+    const key = management ? `cloud-${randomUUID()}` : loginKey;
+    const signal = beginClaudeCliLogin(key);
+    management?.onCancel(() => cancelClaudeCliLogin(key));
     const result = await runClaudeCliLogin(signal);
+    management?.assertCurrent();
     if (signal.aborted || owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending())
       return { ok: false, reason: 'login_cancelled', authorized: false };
     if (!result.ok) return { ok: false, reason: result.reason, authorized: false };
@@ -5463,10 +5537,9 @@ const registerIpcHandlers = () => {
     syncClaudeSubscriptionUsageForAuthChange();
     return { ok: true, authorized: hasClaudeNativeLogin() };
   });
-  ipcMain.handle(
-    MAKER_IPC_INVOKE.CLAUDE_OAUTH_LOGOUT,
-    async (event, ownerScope?: { dataOwnerId: string | null; ownerGeneration: number }) => {
-      assertTrustedAppRendererEvent(event);
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_LOGOUT, async (event, ownerScopeInput?: unknown) => {
+      if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Electron.IpcMainInvokeEvent);
+      const ownerScope = ownerScopeInput as { dataOwnerId: string | null; ownerGeneration: number } | undefined;
       const active = getActiveAppSession();
       const owner = activeOwnerScopeKey();
       if (
@@ -5565,10 +5638,15 @@ const registerIpcHandlers = () => {
 
   // xAI(SuperGrok 订阅)OAuth —— 与 claude-oauth 同形态。登录成功后 bridge 的 xai provider 立即可用
   // (buildHeaders 每请求现取 token);连接态由 renderer refetch listProviders 时现读 hasGrokOAuthLogin。
-  ipcMain.handle(MAKER_IPC_INVOKE.XAI_OAUTH_LOGIN, async (event, method?: 'browser' | 'device') => {
-    assertTrustedAppRendererEvent(event);
-    if (method !== undefined && method !== 'browser' && method !== 'device')
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(MAKER_IPC_INVOKE.XAI_OAUTH_LOGIN, async (rawEvent, methodInput?: unknown) => {
+    if (!isCloudManagementInvocation(rawEvent)) assertTrustedAppRendererEvent(rawEvent as Electron.IpcMainInvokeEvent);
+    const event = rawEvent as Electron.IpcMainInvokeEvent;
+    if (methodInput !== undefined && methodInput !== 'browser' && methodInput !== 'device')
       throwIpcError('INVALID_ARGUMENT', 'Invalid xAI login method');
+    const method = methodInput as 'browser' | 'device' | undefined;
+    // A cloud settings page shows the device code (or the browser link) on the controlling computer.
+    const management = cloudManagementExecution();
+    management?.onCancel(() => cancelGrokOAuthLogin());
     const owner = activeOwnerScopeKey();
     // reason 是 renderer 决定提示用的结构化数据,不抛 throwIpcError(规则 13 查询型例外)。
     // 登录成功即生效:订阅直连 handler 每请求经 buildHeaders 现取凭证,无需任何"就绪"步骤。
@@ -5578,6 +5656,10 @@ const registerIpcHandlers = () => {
         method === 'device'
           ? (code) => {
               if (owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending()) return;
+              if (management) {
+                presentManagementDeviceCode(code);
+                return;
+              }
               try {
                 if (!event.sender.isDestroyed())
                   event.sender.send(MAKER_PUSH.PROVIDER_OAUTH_PROGRESS, {
@@ -5603,10 +5685,9 @@ const registerIpcHandlers = () => {
       authorized: hasGrokOAuthLogin(),
     };
   });
-  ipcMain.handle(
-    MAKER_IPC_INVOKE.XAI_OAUTH_LOGOUT,
-    async (event, ownerScope?: { dataOwnerId: string | null; ownerGeneration: number }) => {
-      assertTrustedAppRendererEvent(event);
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(MAKER_IPC_INVOKE.XAI_OAUTH_LOGOUT, async (event, ownerScopeInput?: unknown) => {
+      if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Electron.IpcMainInvokeEvent);
+      const ownerScope = ownerScopeInput as { dataOwnerId: string | null; ownerGeneration: number } | undefined;
       const active = getActiveAppSession();
       const owner = activeOwnerScopeKey();
       if (
@@ -6091,14 +6172,17 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle(
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(
     'safe-storage-remove',
     async (
-      event: Electron.IpcMainInvokeEvent,
-      key: string,
+      event: unknown,
+      keyInput: unknown,
     ): Promise<{ success: boolean; error?: string }> => {
+      const key = keyInput as string;
       try {
-        assertTrustedAppRendererEvent(event);
+        // The cloud providers page removes only the Cindy AI key through its closed call.
+        if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Electron.IpcMainInvokeEvent);
+        else if (key !== providerSecretStorageKey('xd')) return { success: false, error: 'invalid key' };
         if (!isValidRendererKey(key)) {
           return { success: false, error: 'invalid key' };
         }
@@ -6164,22 +6248,22 @@ const registerIpcHandlers = () => {
     logError: (message, err) => builtinApiKeyLog.error(message, err),
   };
 
-  ipcMain.handle(
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(
     'builtin-api-key-has',
-    async (event: Electron.IpcMainInvokeEvent, providerId: unknown): Promise<boolean> => {
-      assertTrustedAppRendererEvent(event);
+    async (event: unknown, providerId: unknown): Promise<boolean> => {
+      if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Electron.IpcMainInvokeEvent);
       return builtinApiKeyHas(builtinApiKeyDeps, providerId);
     },
   );
 
-  ipcMain.handle(
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(
     'builtin-api-key-store',
     async (
-      event: Electron.IpcMainInvokeEvent,
+      event: unknown,
       providerId: unknown,
       value: unknown,
     ): Promise<void> => {
-      assertTrustedAppRendererEvent(event);
+      if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Electron.IpcMainInvokeEvent);
       builtinApiKeyStore(builtinApiKeyDeps, providerId, value);
       await retainProviderPresentationAfterAuthChange(
         builtinApiKeyPresentationId(providerId as string),
@@ -6187,14 +6271,15 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle(
+  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(
     'builtin-api-key-remove',
     async (
-      event: Electron.IpcMainInvokeEvent,
+      event: unknown,
       providerId: unknown,
-      ownerScope?: { dataOwnerId: string | null; ownerGeneration: number },
+      ownerScopeInput?: unknown,
     ): Promise<void> => {
-      assertTrustedAppRendererEvent(event);
+      if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Electron.IpcMainInvokeEvent);
+      const ownerScope = ownerScopeInput as { dataOwnerId: string | null; ownerGeneration: number } | undefined;
       const active = getActiveAppSession();
       if (
         isAppSessionBoundaryPending() ||
@@ -6854,6 +6939,8 @@ const registerIpcHandlers = () => {
     await registerMakerIpcsAfterSplash();
     startBinaryBackgroundUpdates();
 
+    instanceBinariesReady = true;
+
     return {
       claudeCode: { status: 'passed' as const, path: claudeRes.path },
       codex: { status: 'passed' as const, path: codexRes.path },
@@ -7258,7 +7345,7 @@ const registerIpcHandlers = () => {
         // Scan global (~/.claude/) first, then project (overrides on name
         // collision) — matches Claude Code's own discovery precedence and
         // covers Market-installed skills which always land in ~/.claude/skills/.
-        const home = os.homedir();
+        const home = cindyManagedHomeDir();
         const merged = new Map<
           string,
           { name: string; description?: string; source: 'user' | 'skill' }
@@ -9458,7 +9545,7 @@ app.on('ready', async () => {
   // node_modules, isInApplicationsFolder() always returns false, and
   // moveToApplicationsFolder() would actually move the dev binary into
   // /Applications and break the developer's workspace.
-  if (app.isPackaged && process.platform === 'darwin' && !app.isInApplicationsFolder()) {
+  if (app.isPackaged && !isCloudPilotDistribution() && process.platform === 'darwin' && !app.isInApplicationsFolder()) {
     const chosen = dialog.showMessageBoxSync({
       type: 'info',
       title: t('update.moveToApplications.title'),
@@ -10156,6 +10243,7 @@ app.on('ready', async () => {
   initHeartbeatService();
   // 设备互联(跨设备远程控制):登录后连 relay,登出即断;开关与设备列表 IPC 一并注册
   let updateRelaunchRemoteBusy = false;
+  if (getInstanceConfig()) initializeCloudDeviceLinkDefaults(app.getPath('userData'));
   initDeviceLinkService({
     onControlledStateChanged: refreshQuotaPanelsControlState,
     onUpdateRelaunchBusyChanged: (busy) => {
@@ -10164,6 +10252,31 @@ app.on('ready', async () => {
       if (transition.shouldNotify) notifyUpdateAutoRelaunchBusyStateChanged();
     },
   });
+  const instance = getInstanceConfig();
+  if (instance) {
+    const readInstanceReadiness = () => ({
+      auth: authManager.getCurrentUserId() === instance.membershipId && instanceAuthReady(authManager.getAccessToken()),
+      database: getCurrentDbClientUserId() === instance.membershipId && tryGetDbClient() !== null,
+      binaries: instanceBinariesReady,
+      maker: getMakerIfReady() !== null,
+      deviceLink: getDeviceLinkStatus() === 'online',
+    });
+    const stopRecovery = instance.authProtocol === 'resource-v1' ? await startAuthRecoveryControl({ identity: instance,
+      recover: input => authManager.recoverManagedInstanceLogin(input.requestId, input.refreshToken),
+      recovered: input => instanceLoginRecovered(input.requestId, input.refreshToken) }) : undefined;
+    if (stopRecovery) app.once('before-quit', stopRecovery);
+    const stopStatus = startInstanceStatus(instance, readInstanceReadiness, () => createLogger('instance-runtime').warn('runtime status unavailable'), publishedPluginOauthIdentity,
+      stopRecovery ? () => ({ version: 1, state: instanceLoginRequired() ? 'login-required' : readInstanceReadiness().auth ? 'ready' : 'pending' }) : undefined);
+    const stopProfileTelemetry = startProfileTelemetry({ deviceId: instance.deviceId, membershipId: instance.membershipId, realm: instanceAuthRealm, read: readInstanceReadiness, readAuth: instanceDurableObservation, onFailure: () => createLogger('instance-runtime').warn('profile observation unavailable') });
+    const stopSettingsSnapshot = startCloudSettingsSnapshotPublisher();
+    const stopSettingsWeb = startCloudSettingsWebTransport();
+    const stopProviderSettings = registerCloudProviderSettings();
+    app.once('will-quit', stopProviderSettings);
+    app.once('will-quit', stopSettingsWeb);
+    app.once('will-quit', stopSettingsSnapshot);
+    app.once('will-quit', stopProfileTelemetry);
+    app.once('will-quit', stopStatus);
+  }
   // 上次登出时没删干净的远程会话镜像缓存(文件锁 / 权限占用),开机再清一次。
   // 不阻塞启动关键路径,失败留在队列里等下一次(见 mirrorCachePurgeQueue)。
   // 但**缓存读**要等它落定:否则 renderer 的 hydrate 可能读到正在被删的那份明文,
@@ -10979,4 +11092,5 @@ function startReadyWorktreeMaintenance(): void {
   });
 }
 
+onQuit('cloud-login-window', () => cloudLoginWindowLifecycle.destroy(), 'sync');
 onQuit('remote-desktop-viewer', () => remoteDesktopViewerWindows.reset(), 'sync');

@@ -1,4 +1,7 @@
+import { openManagementAuthorization, attachManagementAuthorization } from '../host-settings/managementAuthorization.js';
+import { cloudManagementExecution } from '../host-settings/managementCalls.js';
 import { app } from 'electron';
+import { prepareHostSettingsSkill } from '../host-settings/cindy-settings-skill.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
@@ -132,6 +135,7 @@ export function codexAccountState(providerId: string): AuthState {
 export async function prepareCodexAccountHome(providerId: string, managedRoots: readonly string[], managedSkills: Awaited<ReturnType<NonNullable<AgentDeps['getManagedSkills']>>>): Promise<string> {
   if (!codexAccountState(providerId).authenticated) throw new Error('Codex account requires login');
   const home = codexAccountHome(providerId);
+  await prepareHostSettingsSkill();
   await Promise.all([prepareCodexGlobalSkillsLinks(home, { managedRoots, managedSkills }), prepareCodexGlobalRulesCopy(home)]);
   const plugins = await prepareCodexGlobalPluginsBridge(home, {
     capabilityRouting: DESKTOP_CAPABILITY_ROUTING_POLICY,
@@ -184,6 +188,7 @@ export async function loginCodexAccount(
     },
   };
   logins.set(home, operation);
+  attachManagementAuthorization(operation.cancel);
   const current = () =>
     !cancelled && isCurrent() && getActiveAppSession().generation === owner.generation;
   const staging = path.join(home, `login-${randomUUID()}`);
@@ -199,14 +204,23 @@ export async function loginCodexAccount(
     if (!current()) return { ok: false, reason: 'login_cancelled' };
     const exitCode = await new Promise<number | null>((resolve, reject) => {
       proc = spawn(binary.binaryPath!, ['login'], {
-        env: { ...process.env, CODEX_HOME: staging },
+        env: {
+          ...process.env,
+          CODEX_HOME: staging,
+          // The remote client owns this login page. Codex otherwise launches an
+          // untracked Chromium in the cloud even though its URL is also relayed.
+          // Linux webbrowser honors BROWSER; scope the no-op to this child only.
+          ...(process.platform === 'linux' && cloudManagementExecution()
+            ? { BROWSER: '/bin/true' }
+            : {}),
+        },
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: process.platform !== 'win32',
         windowsHide: true,
       });
-      // The CLI opens the browser itself; its manual fallback message is unconditional.
-      // Keep one validated URL for an explicit user action, never a second auto-open.
+      // Ordinary local login lets the CLI open its browser. Remote management
+      // forwards the unconditional fallback URL to the controlling client.
       let published = false;
       let outputActive = true;
       for (const stream of [proc.stdout, proc.stderr]) {
@@ -227,6 +241,7 @@ export async function loginCodexAccount(
                     !url.username && !url.password && !url.hash) {
                   published = true;
                   onBrowserUrl?.(url.href);
+                  if (cloudManagementExecution()) void openManagementAuthorization(url.href, async () => {}).catch(operation.cancel);
                 }
               }
             }

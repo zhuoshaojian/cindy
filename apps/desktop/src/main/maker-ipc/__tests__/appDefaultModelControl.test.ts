@@ -5,8 +5,13 @@ import { changeAppDefaultModel, configureAppDefaultModelSelection, inspectAppDef
 import { setNewMakerDraftCache, syncNewMakerDraftCache } from '../../maker-host/newMakerDefaultsCache';
 
 const host = vi.hoisted(() => ({ owner: 'owner:1', enabled: true, connected: true, agents: ['codex'],
-  enableSecond: false, providers: vi.fn(), remote: vi.fn() }));
+  enableSecond: false, providers: vi.fn(), remote: vi.fn(), cloud: false, commit: vi.fn() }));
 vi.mock('../../remote-agent/controller/deviceCatalog.js', () => ({ readRemoteProviderRoute: host.remote }));
+vi.mock('../../host-settings/new-task-defaults.js', () => ({
+  hostOwnsNewTaskDefaults: () => host.cloud,
+  inspectNewTaskDefaults: () => ({ status: 'ready', revision: 'revision-1' }),
+  commitNewTaskDefaults: host.commit,
+}));
 vi.mock('../../maker-host/index.js', () => ({ getMakerIfReady: () => ({ listAvailableAgents: () => host.agents }) }));
 vi.mock('../../maker-host/createDesktopProviderService.js', () => ({
   getDesktopProviderService: () => ({ listProviders: host.providers }),
@@ -24,6 +29,8 @@ const mirror = (selectedRoute: BotModelRoute = route, requestId?: string) => set
 const id = JSON.stringify(['codex', 'openai', 'luna']);
 
 beforeEach(() => {
+  host.cloud = false; host.commit.mockReset();
+  host.commit.mockImplementation(async (_mutation, options) => { options.assertCurrent(); return { revision: 'revision-saved' }; });
   host.enableSecond = false;
   host.owner = 'owner:1'; host.enabled = true; host.connected = true; host.agents = ['codex'];
   host.providers.mockImplementation(async () => [{ id: 'openai', source: 'builtin', connected: host.connected, agents: ['codex'], routing: { codex: { upstream: 'https://example.invalid', authStrategy: 'oauth-passthrough' } },
@@ -237,4 +244,32 @@ it('excludes disabled catalog models and validates explicit Fast requests', asyn
   configureAppDefaultModelSelection(selection => mirror(selection.route, selection.requestId));
   expect((await changeAppDefaultModel(id, 'low', () => {}, true)).current).toMatchObject({ effort: 'low', fastMode: true });
   await expect(changeAppDefaultModel(id, undefined, () => {}, 'ultrafast')).rejects.toThrow('Fast');
+});
+
+describe('managed cloud instance: the default is committed to the Host', () => {
+  beforeEach(() => { host.cloud = true; });
+  it('acknowledges only the persisted Host default, without a renderer mirror', async () => {
+    const dispatch = vi.fn(); configureAppDefaultModelSelection(dispatch);
+    expect(await changeAppDefaultModel(id, 'low')).toEqual({
+      current: { ...route, effort: 'low' }, saved: true, revision: 'revision-saved', application: 'next_task',
+    });
+    expect(host.commit).toHaveBeenCalledWith({ set: {
+      harness: 'codex', providerId: 'openai', modelId: 'luna', effort: 'low', fast: false,
+    } }, { expectedRevision: 'revision-1', assertCurrent: expect.any(Function) });
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+  it('does not fake a receipt when the save fails', async () => {
+    host.commit.mockRejectedValue(new Error('CONFLICT'));
+    await expect(changeAppDefaultModel(id)).rejects.toThrow('CONFLICT');
+  });
+  it('rechecks owner and caller inside the commit, not only before reading', async () => {
+    const assertCaller = vi.fn();
+    host.commit.mockImplementation(async (_mutation, options) => { host.owner = 'owner:2'; options.assertCurrent(); });
+    await expect(changeAppDefaultModel(id, undefined, assertCaller)).rejects.toThrow('账号');
+    expect(assertCaller).toHaveBeenCalledTimes(2);
+  });
+  it('does not write an unsupported effort', async () => {
+    await expect(changeAppDefaultModel(id, 'ultra')).rejects.toThrow('不可用');
+    expect(host.commit).not.toHaveBeenCalled();
+  });
 });

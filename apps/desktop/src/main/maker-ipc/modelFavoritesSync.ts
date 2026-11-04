@@ -22,10 +22,13 @@ import {
   isAppSessionBoundaryPending,
 } from '../appSessionState.js';
 import { isDeviceLinkInvoke } from '../device-link/invoke-context.js';
+import { hostOwnsModelPresentation } from '../host-settings/model-presentation-preferences.js';
+import { requestHostModelFavorites } from '../host-settings/model-favorites-host.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 
 /** The existing renderer store is authoritative. Dispatch once to ONE owner-fenced
- * app window and acknowledge persisted results, never maintain a second database. */
+ * app window and acknowledge persisted results, never maintain a second database.
+ * A managed cloud instance keeps favorites in its Host file and answers in Main. */
 export function registerModelFavoritesSync(
   broadcast: (channel: string, payload: unknown) => void,
 ): void {
@@ -70,6 +73,7 @@ export function registerModelFavoritesSync(
     } catch {
       throwIpcError('INVALID_PARAMS', 'Invalid favorite operation');
     }
+    if (hostOwnsModelPresentation()) return requestHostModelFavorites(operation);
     const owner = activeOwnerScopeKey();
     const host = [...hosts.values()].find((value) => !value.isDestroyed());
     if (!host) throwIpcError('DEVICE_LINK_UNAVAILABLE', 'Favorites host not ready');
