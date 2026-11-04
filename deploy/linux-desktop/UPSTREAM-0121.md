@@ -362,3 +362,55 @@ Only `cis-runtime-0108-r4dtsp-endpoints` and the two `cis-u121c6-1103-prune-*` p
 All 11 Deployments stayed ready, and both CIS roles again reported unchanged instance status
 with new claims on cloud.6.
 
+
+## cloud.7: model preferences local outside cloud instances (2026-11-04)
+
+`ba2cf17300` returns model visibility, favorites and engine choices to the upstream renderer
+stores and Main mirror on ordinary desktops. Only a managed cloud instance (`--cloud-instance`)
+keeps them in its Host file; preload exposes the Host store only there, the upstream modules
+delegate to it, and the instance answers device-link favorite requests in Main against the file
+revision (see `docs/host-settings.md`). Delivery `d7c138ee98`, run 41761324151: verify, candidate
+(native smoke on `0.1.121-cloud.7`, build inputs bound to `ba2cf17300`) and cache passed in about
+26 minutes; a disposable probe hit the qualified cache and was removed.
+
+The owner-only policy (`cis-u121c7-1104-own-*`) added the cloud.7 approval to the owner's profile
+and the keyring list (8 → 9, no retirement); native admission, defaults, placements, tenants,
+schedules and backup policy were unchanged, both roles loaded it with their deployed schema and
+rolled out ready, and only the owner was offered cloud.7.
+
+The owner upgrade from cloud.6 backed up **3,570 files / 452,036,647 bytes** and started main and
+init on the delivered digest, but the operator stopped in `recovery-hold`: its sealed data sample
+counted 2,927 messages and the candidate 2,928. The sample is taken in the source Pod when the
+stop is issued, and the source wrote one more row while shutting down: the database file was
+last modified before the backup and before the candidate started, the candidate's WAL holds no
+message rows, no message is newer than the seal, and the backup contains the row. The candidate
+had not written data the check guards against. CIS has no code path out of `recovery-hold`, so
+after the owner chose to complete it the recovery was done by hand, re-verifying image, PVC,
+identity, backup receipt, readiness and the sealed receipt before each step: the image-update
+annotation moved to `Verified` and the record hold was cleared (UID/resourceVersion and record
+version fences), the cloud.7 runtime accepted a `release` with the next sequence and stayed
+released with no unknown activity, then the operation was marked completed with its instance
+lock and the per-instance paused digest cleared and an audit event by
+`operator-forward-recovery`. The instance is ready on cloud.7 with zero restarts and the
+desktop intact; the other 13 instances and their Pods are unchanged and new claims stay on
+cloud.6. The operator sample needs to move after the source has fully exited before the next
+owner upgrade.
+
+With the Mac Dev `0.1.121-dev.cloud.20261102.11` (`ba2cf17300`):
+
+- Ordinary desktop: preload exposes no Host model store; the upstream stores created their
+  localStorage keys (the seeded default favorite returned), a model switch on the local providers
+  page went off and on with the explicit overrides in localStorage, and the profile's Host file
+  stayed byte-identical; localStorage was restored exactly.
+- Instance: the Host file kept its bytes and mtime across the upgrade, and the instance
+  renderer used the Host store (its writes reach `host-model-presentation:mutate`; its
+  localStorage keys did not change). Through the private channel a route was turned off, a write
+  with the old revision was rejected (`REVISION_CONFLICT`) and reset restored the original
+  revision. The Main visibility table followed the Host file (off, then back). Device-link
+  favorites were read, a favorite was added, a stale removal was rejected (`PRECONDITION_FAILED`)
+  and the added one removed; the file equals the baseline except `uidSeq` 3 → 4, which never
+  reuses an identifier by design.
+
+Seen during the test, unchanged from cloud.6: when another writer changes the Host file while the
+instance renderer commits its catalog scopes, that background commit loses the revision check and
+shows the save-failed toast on the instance screen. Fleet admission has not been requested.
