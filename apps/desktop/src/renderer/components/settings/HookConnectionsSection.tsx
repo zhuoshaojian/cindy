@@ -73,6 +73,7 @@ import { useHookWorkspacePrefs, WorkspacePrefsEditor } from './HookWorkspacePref
 import { HOOK_DEFAULT_PERMISSION_MODE } from './hookWorkspacePrefsLogic';
 import { ImChannelSettingsCard } from './ImChannelSettingsCard';
 import { useSettingsSearchNavigation } from './SettingsSearchNavigation';
+import { useSettingsTarget } from './settingsTarget';
 import {
   TelegramBehaviorSettings,
   TelegramGroupActivationSettings,
@@ -211,6 +212,8 @@ function DefaultWorkspaceRadio({
 
 export function HookConnectionsSection({ companion }: { companion?: { id: string; name: string } } = {}) {
   const { t } = useTranslation();
+  const { api } = useSettingsTarget();
+  const hookControl = api.hookControl;
   const { entry, activation } = useSettingsSearchNavigation();
   /** 飞书不可用时的去向因身份而异: 组织成员找管理员, 个人账号没有管理员可找。 */
   const personalAccount = useOptionalAuthUser()?.membershipKind === 'personal';
@@ -256,13 +259,13 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
 
   useEffect(() => {
     const requestedAtRevision = ++viewRevisionRef.current;
-    void window.electronAPI.hookControl
+    void hookControl
       .get()
       .then((res) => {
         if (viewRevisionRef.current === requestedAtRevision) applyView(res.hook);
       })
       .catch(() => {});
-    const unsubscribe = window.electronAPI.hookControl.onStatusChanged(applyPushedView);
+    const unsubscribe = hookControl.onStatusChanged(applyPushedView);
     return () => {
       viewRevisionRef.current += 1;
       unsubscribe();
@@ -303,7 +306,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
   const handleToggle = useCallback(
     (enabled: boolean) => {
       runSlackAuthAction(
-        () => window.electronAPI.hookControl.setEnabled(enabled),
+        () => hookControl.setEnabled(enabled),
         'settings.remoteControl.hook.toast.toggleFailed',
         enabled,
       );
@@ -332,8 +335,8 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
     selectingWorkingBindingId.current = bindingId ?? hookRef.current?.feishu.binding?.bindingId ?? null;
     setSelectingWorkingDevice(true);
     try {
-      if (bindingId === undefined) await window.electronAPI.hookControl.providerBindSelect('feishu');
-      else await window.electronAPI.hookControl.providerBindSelect('feishu', bindingId);
+      if (bindingId === undefined) await hookControl.providerBindSelect('feishu');
+      else await hookControl.providerBindSelect('feishu', bindingId);
       if (mountedRef.current && workingSelectionSequence.current === sequence) {
         toast.success(t('settings.remoteControl.hook.feishu.workingDeviceSet'));
       }
@@ -376,12 +379,12 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
     (mode: 'enable' | 'add' | 'rebind' | 'communications', teamId?: string) => {
       const action =
         mode === 'communications' && teamId
-          ? () => window.electronAPI.hookControl.setSlackCommunications(teamId, true)
+          ? () => hookControl.setSlackCommunications(teamId, true)
           : mode === 'enable'
-          ? () => window.electronAPI.hookControl.setEnabled(true)
+          ? () => hookControl.setEnabled(true)
           : mode === 'rebind' && teamId
-            ? () => window.electronAPI.hookControl.rebindTeam(teamId)
-            : () => window.electronAPI.hookControl.addBinding();
+            ? () => hookControl.rebindTeam(teamId)
+            : () => hookControl.addBinding();
       runSlackAuthAction(action, 'settings.remoteControl.hook.toast.actionFailed', true);
     },
     [runSlackAuthAction],
@@ -399,7 +402,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
     async (provider: NeutralCardProvider, alias: string | null) => {
       try {
         const requestedAtRevision = ++viewRevisionRef.current;
-        const res = await window.electronAPI.hookControl.setProviderDefaultWorkspace(
+        const res = await hookControl.setProviderDefaultWorkspace(
           provider,
           alias,
         );
@@ -415,7 +418,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
 
   const handleLifecycleAnnouncementToggle = useCallback(
     (enabled: boolean) => {
-      runHookAction(() => window.electronAPI.hookControl.setLifecycleAnnouncement(enabled), {
+      runHookAction(() => hookControl.setLifecycleAnnouncement(enabled), {
         localizedErrorOnly: true,
       });
     },
@@ -505,7 +508,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
       } else if (decision.multiUi) {
         // multi-team: 取消只作废这次"添加 workspace"尝试, 既有绑定不受影响
         runSlackAuthAction(
-          () => window.electronAPI.hookControl.cancelPendingBind(),
+          () => hookControl.cancelPendingBind(),
           'settings.remoteControl.hook.toast.actionFailed',
         );
       } else {
@@ -569,11 +572,11 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
    * 所以它同时出现在侧栏里; 改名、移除在侧栏做, 这里跟着变。
    */
   const handleAddProject = async () => {
-    const res = await window.electronAPI.showOpenDirectoryDialog();
+    const res = await api.showOpenDirectoryDialog();
     if (res.canceled || !res.path) return;
     try {
       const requestedAtRevision = ++viewRevisionRef.current;
-      const added = await window.electronAPI.hookControl.addProject(res.path as string);
+      const added = await hookControl.addProject(res.path as string);
       if (viewRevisionRef.current === requestedAtRevision) applyView(added.hook);
     } catch {
       toast.error(t('settings.remoteControl.hook.toast.addProjectFailed'));
@@ -608,7 +611,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
 
   const handleProviderToggle = (provider: NeutralCardProvider, enabled: boolean) => {
     if (enabled) setExpandedCard(provider);
-    runHookAction(() => window.electronAPI.hookControl.setProviderEnabled(provider, enabled));
+    runHookAction(() => hookControl.setProviderEnabled(provider, enabled));
   };
 
   const handleProviderOpen = (
@@ -617,8 +620,8 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
     scopeId?: string,
   ) => {
     void (scopeId
-      ? window.electronAPI.hookControl.openProviderAction(provider, action, scopeId)
-      : window.electronAPI.hookControl.openProviderAction(provider, action))
+      ? hookControl.openProviderAction(provider, action, scopeId)
+      : hookControl.openProviderAction(provider, action))
       .catch((err: unknown) => {
         toast.error(
           extractIpcError(err)?.message ?? t('settings.remoteControl.hook.toast.actionFailed'),
@@ -676,8 +679,8 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
       setSelectingWorkingDevice(false);
     }
     runHookAction(() => selectedBindingId === undefined
-      ? window.electronAPI.hookControl.providerBindRevoke(provider)
-      : window.electronAPI.hookControl.providerBindRevoke(provider, selectedBindingId));
+      ? hookControl.providerBindRevoke(provider)
+      : hookControl.providerBindRevoke(provider, selectedBindingId));
   };
 
   /**
@@ -716,7 +719,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
           current.communicationsEnabled === target.communicationsEnabled,
       );
     if (!ok || !mountedRef.current || !stillSameBinding) return;
-    runHookAction(() => window.electronAPI.hookControl.revokeTeam(target.teamId));
+    runHookAction(() => hookControl.revokeTeam(target.teamId));
   };
 
   // 数据未就绪不渲染任何内容(规则 7: 无 loading 态、不闪空状态)
@@ -1104,7 +1107,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
       });
       if (!ok) return;
       const requestedAtRevision = ++viewRevisionRef.current;
-      const result = await window.electronAPI.hookControl.setXCompanion(removing ? null : companion!.id, previous);
+      const result = await hookControl.setXCompanion(removing ? null : companion!.id, previous);
       if (viewRevisionRef.current === requestedAtRevision) applyView(result.hook);
     } catch {
       toast.error(t('settings.remoteControl.hook.toast.actionFailed'));
@@ -1186,12 +1189,12 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                 onClick={() => void handleCopyProviderLink('feishu')}>{t('settings.remoteControl.hook.binding.copyLink')}</Button> : null}
               {own?.actions.includes('cancel') ? <Button variant="secondary" size="xs" compact type="button"
                 data-settings-search-action="Start or cancel linking this bot account"
-                onClick={() => runHookAction(() => window.electronAPI.hookControl.providerBindCancel('feishu'))}>{t('settings.remoteControl.hook.feishu.cancel')}</Button> : null}
+                onClick={() => runHookAction(() => hookControl.providerBindCancel('feishu'))}>{t('settings.remoteControl.hook.feishu.cancel')}</Button> : null}
             </> : <>
               {(app.appType === 'store' && view.multiBindAvailable) || accounts.length === 0 ? <Button variant={accounts.length === 0 ? 'primary' : 'secondary'} size="xs" compact type="button"
                 data-settings-search-action="Start or cancel linking this bot account"
                 disabled={busy || !view.enabled || !view.available || view.status !== 'connected'}
-                onClick={() => runHookAction(() => window.electronAPI.hookControl.providerBindStart('feishu', app.appId))}>{t(`settings.remoteControl.hook.feishu.${accounts.length > 0 ? 'linkAnotherAccount' : 'connectBot'}`)}</Button> : null}
+                onClick={() => runHookAction(() => hookControl.providerBindStart('feishu', app.appId))}>{t(`settings.remoteControl.hook.feishu.${accounts.length > 0 ? 'linkAnotherAccount' : 'connectBot'}`)}</Button> : null}
             </>}
 
           </div>
@@ -1320,7 +1323,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                   size="xs"
                   compact
                   type="button"
-                  onClick={() => runHookAction(() => window.electronAPI.hookControl.providerBindCancel(provider))}
+                  onClick={() => runHookAction(() => hookControl.providerBindCancel(provider))}
                 >
                   {t(`settings.remoteControl.hook.${provider}.cancel`)}
                 </Button>
@@ -1375,7 +1378,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                   size="xs"
                   compact
                   type="button"
-                  onClick={() => runHookAction(() => window.electronAPI.hookControl.providerBindStart(provider))}
+                  onClick={() => runHookAction(() => hookControl.providerBindStart(provider))}
                 >
                   {t(
                     cs.state === 'none' || storeAccounts
@@ -1685,7 +1688,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                         type="button"
                         onClick={() =>
                           runSlackAuthAction(
-                            () => window.electronAPI.hookControl.rebindTeam(b.teamId),
+                            () => hookControl.rebindTeam(b.teamId),
                             'settings.remoteControl.hook.toast.actionFailed',
                             true,
                           )
@@ -1715,7 +1718,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                         checked={b.communicationsEnabled === true}
                         disabled={hook.status !== 'connected' || slackAuthActionPending || hook.pendingBind?.state === 'pending'}
                         onCheckedChange={(enabled) => runSlackAuthAction(
-                          () => window.electronAPI.hookControl.setSlackCommunications(b.teamId, enabled),
+                          () => hookControl.setSlackCommunications(b.teamId, enabled),
                           'settings.remoteControl.hook.toast.actionFailed',
                           true,
                         )}
@@ -1742,7 +1745,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                     type="button"
                     onClick={() =>
                       runSlackAuthAction(
-                        () => window.electronAPI.hookControl.cancelPendingBind(),
+                        () => hookControl.cancelPendingBind(),
                         'settings.remoteControl.hook.toast.actionFailed',
                       )
                     }
@@ -1786,7 +1789,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                       type="button"
                       onClick={() =>
                         runSlackAuthAction(
-                          () => window.electronAPI.hookControl.cancelPendingBind(),
+                          () => hookControl.cancelPendingBind(),
                           'settings.remoteControl.hook.toast.actionFailed',
                         )
                       }
@@ -1856,7 +1859,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                     type="button"
                     onClick={() =>
                       runSlackAuthAction(
-                        () => window.electronAPI.hookControl.cancelPendingBind(),
+                        () => hookControl.cancelPendingBind(),
                         'settings.remoteControl.hook.toast.actionFailed',
                       )
                     }
@@ -1874,7 +1877,7 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                   type="button"
                   onClick={() =>
                     runSlackAuthAction(
-                      () => window.electronAPI.hookControl.addBinding(),
+                      () => hookControl.addBinding(),
                       'settings.remoteControl.hook.toast.actionFailed',
                       true,
                     )
