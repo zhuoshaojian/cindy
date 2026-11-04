@@ -41,6 +41,7 @@ import { NativeCloudSections } from './NativeCloudSections';
 import type { CloudBotNotificationPreferences } from './CloudBotNotificationSettings';
 import { cloudSearchEntryAllowed } from './search';
 import type { SettingsSearchEntry } from '@/components/settings/settingsSearchTypes';
+import { CloudDesktopFallback } from './CloudDesktopFallback';
 const groups = TAB_IDS.filter((tab): tab is CloudSettingsTab => tab in CLOUD_SETTINGS_GROUPS);
 const card =
   'rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
@@ -259,7 +260,7 @@ export function CloudSettingsPanel({
       : group === 'im-bot'
         ? botAuthorization
         : group === 'ghosts'
-          ? pluginAuthorization
+          ? true
           : !domains.length || CLOUD_SETTINGS_GROUPS[group].some((d) => domains.includes(d)),
   );
   const allowSearchEntry = (entry: SettingsSearchEntry) =>
@@ -268,7 +269,7 @@ export function CloudSettingsPanel({
       : entry.tab === 'im-bot'
         ? botAuthorization && entry.id === 'im-bot'
         : entry.tab === 'ghosts'
-          ? pluginAuthorization && entry.id === 'ghosts'
+          ? entry.id === 'ghosts'
           : cloudSearchEntryAllowed(
               entry,
               domains.filter((domain) => !states[domain] || states[domain]?.status === 'ready'),
@@ -469,6 +470,7 @@ export function CloudSettingsPanel({
                               itemId={itemId}
                               section={section}
                               deviceId={deviceId}
+                              name={name}
                               display={imDisplays[itemId.replace(/^bot:/, '')]}
                               states={states}
                               supportedDomains={domains}
@@ -490,7 +492,7 @@ export function CloudSettingsPanel({
                         />
                       )
                     ) : group === 'ghosts' ? (
-                      pluginAuthorization && (
+                      pluginAuthorization ? (
                         <CloudPluginAuthorization
                           client={client}
                           name={name}
@@ -499,6 +501,9 @@ export function CloudSettingsPanel({
                           trial={trial}
                           refresh={epoch}
                         />
+                      ) : (
+                        // Plugins are managed in the instance's own settings (2026-11-04 review).
+                        <CloudDesktopFallback deviceId={deviceId} name={name} />
                       )
                     ) : group === 'providers' ? (
                       providerAuthorization && (
@@ -520,6 +525,7 @@ export function CloudSettingsPanel({
                         <NativeCloudSections
                           tab={group}
                           deviceId={deviceId}
+                          name={name}
                           states={states}
                           disabled={!online || loading || writing || !!failure}
                           cpuCount={cpuCount}

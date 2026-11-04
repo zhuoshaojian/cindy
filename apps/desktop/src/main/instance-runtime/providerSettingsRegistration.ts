@@ -1,3 +1,5 @@
+import { statfs } from 'node:fs/promises';
+import { app } from 'electron';
 import { storedCustomProviderId } from '@cindy/model-providers';
 import { resolveProviderLogoKind, type ProviderLogoRouting } from '@cindy/model-providers/branding';
 import { applyCustomModelEdit } from '../../shared/customModelEdit.js';
@@ -21,9 +23,10 @@ import { getInstanceConfig } from './config.js';
 import { createProviderSettingsChannel } from './providerSettingsChannel.js';
 import { createPersonalizationChannel } from './personalizationChannel.js';
 import { createImSettingsChannel } from './imSettingsChannel.js';
+import { createStorageUsageChannel } from './storageUsageChannel.js';
 import { createProviderSetup, setProviderSetup } from './providerSetup.js';
 
-/** Managed cloud instances only: the owner's cloud settings page manages providers, the prompt and IM settings over DeviceLink. */
+/** Managed cloud instances only: the owner's cloud settings page manages providers, the prompt and IM settings, and reads storage usage over DeviceLink. */
 export function registerCloudProviderSettings(): () => void {
   const instance = getInstanceConfig();
   if (!instance) return () => {};
@@ -94,6 +97,18 @@ export function registerCloudProviderSettings(): () => void {
       isInstanceOwner,
       owner: currentSettingsOwner,
       call: (channel, args, execution) => callCloudManagement(channel, args, execution),
+    }),
+  );
+  // Read-only storage totals and the instance disk for the owner's cloud storage page.
+  setCloudPrivateInvokeHandler(
+    createStorageUsageChannel({
+      isInstanceOwner,
+      owner: currentSettingsOwner,
+      call: (channel, args, execution) => callCloudManagement(channel, args, execution),
+      async disk() {
+        const volume = await statfs(app.getPath('userData'));
+        return { totalBytes: volume.blocks * volume.bsize, freeBytes: volume.bavail * volume.bsize };
+      },
     }),
   );
   return () => {

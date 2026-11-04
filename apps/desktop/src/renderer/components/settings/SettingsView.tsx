@@ -147,6 +147,7 @@ function SettingsViewContent() {
   const [searchActivation, setSearchActivation] = useState(0);
   const { mode, dataOwnerId, user } = useAuth();
   const canAccessCloudInstances = useCloudInstanceAccess() === 'allowed';
+  const managedCloudInstance = window.electronAPI?.hostSettings?.hostOwned === true;
   const menuWidth = outletContext?.sidebarWidth ?? DEFAULT_SETTINGS_MENU_WIDTH;
   const isMac = window.electronAPI?.platform === 'darwin';
   const [helpAssistantOpen, setHelpAssistantOpen] = useState(false);
@@ -340,6 +341,7 @@ function SettingsViewContent() {
       asrProvider: voiceModelSelection.selection.asrProvider,
     } : undefined,
     canAccessCloudInstances,
+    managedCloudInstance,
   }), [locale, wallpaperMotionAvailable, mode, user?.membershipKind, voiceModelSelection.ready, voiceModelSelection.selection, voiceRefinementEnabled, speakerFilterStatus?.supported, speakerFilterStatus?.enrolled, agentIslandEnabled, agentIslandSupported, agentIslandSoundEnabled, agentIslandLiveActivitySupported, agentIslandLiveActivity, canAccessCloudInstances]);
   const requestedEntry = resolveSettingsSearchEntry(activeTab, searchParams.get('section'));
   const searchEntry = piExtensionsPanelOpen || (requestedEntry?.isVisible && !requestedEntry.isVisible(searchContext))
@@ -457,14 +459,19 @@ function SettingsViewContent() {
                     {/* Section — App Behavior(「应用行为」)
                         「保持电脑唤醒」跨平台生效,故 section 常驻;其中
                         「后台窗口首次左键点击仅激活不透传」仅 mac/win 有效,由
-                        WindowBehaviorSection 内部按平台隐藏该行。 */}
-                    <section
-                      id={generalSettings.windowBehavior.targetId}
-                      className="py-[18px]"
-                      aria-label={t(generalSettings.windowBehavior.titleKey)}
-                    >
-                      <WindowBehaviorSection />
-                    </section>
+                        WindowBehaviorSection 内部按平台隐藏该行。
+                        A managed cloud instance (Linux) would show only keep-awake and the close
+                        choice: its container never sleeps, and its runtime keeps Cindy from being
+                        closed, so a "quit" choice there must not be offered. */}
+                    {!managedCloudInstance && (
+                      <section
+                        id={generalSettings.windowBehavior.targetId}
+                        className="py-[18px]"
+                        aria-label={t(generalSettings.windowBehavior.titleKey)}
+                      >
+                        <WindowBehaviorSection />
+                      </section>
+                    )}
 
                     {/* Section — Composer send shortcut (应用级、本地输入偏好)。 */}
                     <section

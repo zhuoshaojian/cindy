@@ -449,6 +449,13 @@ describe('SettingsView Escape', () => {
     expect(instanceList).not.toHaveBeenCalled();
   });
 
+  // 2026-11-04 product review: the instance's remote desktop must not offer keep-awake or quit.
+  it.each([false, true])('shows app behavior only outside a managed cloud instance (%s)', (hostOwned) => {
+    vi.stubGlobal('electronAPI', { platform: 'linux', hostSettings: { hostOwned } });
+    renderSettings('/settings');
+    expect(!!document.getElementById('settings-window-behavior')).toBe(!hostOwned);
+    expect(document.getElementById('settings-search-target-general-language')).toBeTruthy();
+  });
   it('does not fetch cloud instances from a signed-out settings deep link', () => {
     const instanceList = vi.fn();
     vi.stubGlobal('electronAPI', { ...window.electronAPI, platform: 'darwin', cloudSettings: { instanceList } });

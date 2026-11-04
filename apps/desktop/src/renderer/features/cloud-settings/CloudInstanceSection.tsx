@@ -18,6 +18,7 @@ import {
   stableInstanceState as stableState,
   instanceStatus,
   canRequestUpgrade,
+  upgradeNoticeVisible,
   upgradeProgressKey,
 } from './instanceState';
 
@@ -353,12 +354,13 @@ export function CloudInstanceSection({
                   : tr(view.manualUpgrade || view.latestVersion ? 'noUpdate' : 'unknown')}
               </span>
             </Row>
-            {view.upgradeOperation && (
+            {view.upgradeOperation && upgradeNoticeVisible(view.upgradeOperation) && (
               <p role="status" className={description}>
                 {tr(upgradeProgressKey(view.upgradeOperation.phase))}
               </p>
             )}
-            {view.manualUpgrade && (
+            {/* Without an update the available-version row already says so; no inert button. */}
+            {view.manualUpgrade && (view.updateAvailable || view.upgradeOperation?.active) && (
               <Row
                 title={tr('upgradeNow')}
                 detail={tr(dirty.current ? 'upgradeSaveFirst' : 'upgradeDescription')}

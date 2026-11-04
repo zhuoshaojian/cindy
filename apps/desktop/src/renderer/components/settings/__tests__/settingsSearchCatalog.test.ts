@@ -547,4 +547,21 @@ describe('settings search catalog', () => {
     }
     expect(ids()).not.toContain('imBot.cindy');
   });
+
+  // A managed cloud instance's own settings must not offer keep-awake or a quit-on-close choice.
+  it('hides app behavior entries in a managed cloud instance', () => {
+    const ids = (managedCloudInstance?: boolean) =>
+      buildSettingsSearchDocuments(t, TAB_IDS, {
+        platform: 'linux',
+        region: 'cn',
+        mode: 'cloud',
+        membershipKind: 'personal',
+        managedCloudInstance,
+      }).map(({ entry }) => entry.id);
+    for (const id of ['settings.devices.keepAwake', 'settings.windowBehavior.closeBehavior.label']) {
+      expect(ids()).toContain(id);
+      expect(ids(false)).toContain(id);
+      expect(ids(true)).not.toContain(id);
+    }
+  });
 });

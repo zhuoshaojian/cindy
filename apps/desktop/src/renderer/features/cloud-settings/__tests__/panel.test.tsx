@@ -143,6 +143,16 @@ describe('shared native cloud settings', () => {
     await waitFor(() => expect(switches[1].matches(':disabled')).toBe(false));
     expect(switches[3].matches(':disabled')).toBe(true);
     expect(save.mock.calls[0][1]).toEqual({ maker: false });
+    // Turning Cindy memory back on must not save the agent switches as customized.
+    fireEvent.click(switches[1]);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    await ready(switches[0]);
+    fireEvent.click(switches[0]);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(3));
+    expect(save.mock.calls[2][1]).toEqual({ maker: true });
+    expect(save.mock.calls[2][2]).toBeUndefined();
+    await ready(switches[0]);
+    expect(switches[1].getAttribute('aria-checked')).toBe('false');
   });
   it('removes obsolete global compaction controls and reads only current domains', async () => {
     let read: MockInstance<CloudSettingsClient['read']>;
@@ -201,61 +211,35 @@ describe('shared native cloud settings', () => {
     expect(shell.textContent).toContain('settings.terminalShell.unavailable');
     expect(save).not.toHaveBeenCalled();
   });
-  it('saves and resets link preferences independently through the cloud adapter', async () => {
+  // 2026-11-04 product review: these only change the instance's own window.
+  it('leaves instance-window-only preferences to the remote desktop', async () => {
     const { save } = setup();
-    const links = await screen.findByRole('radiogroup', {
-      name: 'settings.linkOpen.web.ariaLabel',
-    });
-    const sidebar = within(links).getByRole('radio', { name: 'settings.linkOpen.options.sidebar' });
-    await ready(sidebar);
-    fireEvent.click(sidebar);
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    await ready(sidebar);
-    expect(save.mock.calls[0][0].domain).toBe('desktopChat');
-    expect(save.mock.calls[0][1]).toEqual({ webLinkOpenPreference: 'sidebar' });
-    const section = document.querySelector('#settings-search-target-personalization-link-open')!;
-    fireEvent.click(
-      within(section as HTMLElement).getByRole('button', { name: 'settings.defaults.restore' }),
-    );
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
-    expect(save.mock.calls[1].slice(1)).toEqual([{}, ['webLinkOpenPreference']]);
-    await ready(sidebar);
-    expect((await save.mock.results[1].value).state.value.localLinkOpenPreference).toBe('sidebar');
-  });
-  it('uses target Linux shortcut semantics and writes only the remote composer field', async () => {
-    const { save } = setup();
+    await screen.findByText('settings.memory.title');
+    expect(screen.queryByRole('tab', { name: 'settings.tabs.appearance' })).toBeNull();
+    for (const text of [
+      'settings.linkOpen.title',
+      'settings.promptRecommendation.label',
+      'settings.messageNavRail.cell.label',
+    ])
+      expect(screen.queryByText(text)).toBeNull();
     await general();
-    const toggle = screen.getByRole('switch', { name: 'settings.composer.sendShortcut.ariaLabel' });
-    await ready(toggle);
-    fireEvent.click(toggle);
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    expect(save.mock.calls[0][0].domain).toBe('desktopChat');
-    expect(save.mock.calls[0][1]).toEqual({ composerSendShortcut: 'modifier-enter' });
-    await ready(toggle);
-    fireEvent.click(
-      within(document.querySelector('#settings-composer')!).getByRole('button', {
-        name: 'settings.defaults.restore',
-      }),
-    );
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
-    expect(save.mock.calls[1].slice(1)).toEqual([{}, ['composerSendShortcut']]);
+    expect(screen.queryByText('settings.composer.title')).toBeNull();
+    expect(
+      screen.queryByRole('switch', { name: 'settings.notifications.sessionDoneAria' }),
+    ).toBeNull();
+    expect(screen.getByText('settings.language.title')).toBeTruthy();
+    expect(save).not.toHaveBeenCalled();
   });
-  it('keeps controls and their search entries absent when the cloud does not advertise desktop preferences', async () => {
+  it('keeps controls absent when the cloud does not advertise desktop preferences', async () => {
     setup((client) => {
       const connect = client.connect;
       client.connect = async () => {
         const cap = await connect();
-        return {
-          ...cap,
-          domains: cap.domains.filter((d) => d !== 'desktopChat' && d !== 'desktopGeneral'),
-        };
+        return { ...cap, domains: cap.domains.filter((d) => d !== 'desktopGeneral') };
       };
     });
     await screen.findByText('settings.memory.title');
-    expect(screen.queryByText('settings.linkOpen.title')).toBeNull();
-    expect(screen.queryByText('settings.promptRecommendation.label')).toBeNull();
     await general();
-    expect(screen.queryByText('settings.composer.title')).toBeNull();
     expect(screen.queryByText('settings.language.title')).toBeNull();
   });
   // The page title lived only inside the prompt editor, so it vanished with the prompt.
@@ -296,14 +280,28 @@ describe('shared native cloud settings', () => {
       const connect = client.connect;
       client.connect = async () => {
         const cap = await connect();
-        return { ...cap, domains: cap.domains.filter((d) => supported || d !== 'desktopChat') };
+        return { ...cap, domains: cap.domains.filter((d) => supported || d !== 'terminal') };
       };
     });
-    await screen.findByText('settings.linkOpen.title');
+    await screen.findByText('settings.terminalShell.title');
     supported = false;
     fireEvent.click(screen.getByRole('button', { name: 'cloudSettings.reload' }));
-    await waitFor(() => expect(screen.queryByText('settings.linkOpen.title')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('settings.terminalShell.title')).toBeNull());
     expect(save).not.toHaveBeenCalled();
+  });
+  // 2026-11-04 product review: without plugin management here, the category is not a dead end.
+  it('opens the cloud desktop for plugins when the page cannot manage them', async () => {
+    setup((client) => {
+      const connect = client.connect;
+      client.connect = async () => {
+        return { ...(await connect()), pluginAuthorization: undefined };
+      };
+    });
+    await screen.findByText('settings.memory.title');
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.ghosts' }));
+    expect(
+      await screen.findByRole('button', { name: 'cloudSettings.openInCloudDesktop' }),
+    ).toBeTruthy();
   });
   it('filters automation search by the individual capability', () => {
     for (const [id, domain] of [
@@ -327,33 +325,36 @@ describe('shared native cloud settings', () => {
     const search = screen.getByRole('combobox', { name: 'settings.search.ariaLabel' });
     fireEvent.change(search, { target: { value: 'shortcuts' } });
     expect(screen.queryAllByRole('option')).toHaveLength(0);
-    expect(screen.getByRole('tab', { name: 'settings.tabs.appearance' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'settings.tabs.appearance' })).toBeNull();
     expect(screen.getByRole('tab', { name: 'settings.tabs.providers' })).toBeTruthy();
     const allowed = SETTINGS_SEARCH_ENTRIES.filter((e) =>
       cloudSearchEntryAllowed(e, [...CLOUD_SETTINGS_DOMAINS], false),
     );
     expect(allowed.some((e) => e.id === 'settings.agentResource.preset')).toBe(true);
-    for (const id of ['general.language', 'general.composer', 'personalization.linkOpen'])
-      expect(allowed.some((e) => e.id === id)).toBe(true);
+    expect(allowed.some((e) => e.id === 'general.language')).toBe(true);
     // A cloud instance cannot reach the user's Android devices: no ADB entry or domain.
     expect(CLOUD_SETTINGS_DOMAINS).not.toContain('androidTools');
     expect(allowed.some((e) => e.tab === 'computer-use' && /android/i.test(e.id))).toBe(false);
-    for (const id of [
-      'settings.appearance.themeLabel',
-      'settings.appearance.font.uiSize.label',
-      'settings.about.analyticsLabel',
-    ])
-      expect(allowed.some((e) => e.id === id)).toBe(true);
-    // Device setup, files and local-only terminal fonts are not target settings.
+    expect(allowed.some((e) => e.id === 'settings.about.analyticsLabel')).toBe(true);
+    // Device setup, files and settings that only change the instance's own window are not
+    // target settings.
     for (const denied of [
       'general.appearance',
+      'general.notifications',
+      'general.composer',
+      'settings.composer.sendShortcut.label',
+      'personalization.linkOpen',
+      'settings.promptRecommendation.label',
+      'settings.appearance.themeLabel',
+      'settings.appearance.font.uiSize.label',
+      'appearance.streamFade',
       'settings.computerUse.android.adb.title',
       'settings.appearance.wallpaper.title',
       'settings.appearance.localThemes.title',
       'settings.appearance.font.terminalFamily.label',
       'settings.about.storage.cleanupLabel',
     ])
-      expect(allowed.some((e) => e.id === denied)).toBe(false);
+      expect(allowed.some((e) => e.id === denied), denied).toBe(false);
   });
   it('does not write any settings just by opening every supported category', async () => {
     const { save } = setup();
@@ -364,30 +365,4 @@ describe('shared native cloud settings', () => {
     }
     expect(save).not.toHaveBeenCalled();
   });
-});
-
-// Regression: shared controls must persist only their own target field, then remove that override.
-it('saves target notifications and stream fade without changing unrelated cloud fields', async () => {
-  const { client, save } = setup();
-  await general();
-  const notifications = screen.getByRole('switch', {
-    name: 'settings.notifications.sessionDoneAria',
-  });
-  await ready(notifications);
-  fireEvent.click(notifications);
-  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-  expect(save.mock.calls[0][1]).toEqual({ notificationsEnabled: false });
-  fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.appearance' }));
-  const fade = await screen.findByRole('switch', { name: 'settings.streamFade.toggleAria' });
-  await ready(fade);
-  fireEvent.click(fade);
-  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
-  await ready(fade);
-  // Like the local section there is no reset control; switching back to the default clears it.
-  expect(screen.queryByRole('button', { name: 'settings.defaults.restore' })).toBeNull();
-  fireEvent.click(fade);
-  await waitFor(() => expect(save).toHaveBeenCalledTimes(3));
-  const [chat] = await client.read(['desktopChat']);
-  expect(chat.customizedKeys).toEqual([]);
-  expect(chat.value).toMatchObject({ streamFadePreference: 'on', composerSendShortcut: 'enter' });
 });

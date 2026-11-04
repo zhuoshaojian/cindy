@@ -18,6 +18,8 @@ export interface SettingsSearchContext extends ImBotIdentity {
   wallpaperMotionAvailable?: boolean;
   /** Only affirmative CIS membership admission enables cloud management search. */
   canAccessCloudInstances?: boolean;
+  /** This app is a managed cloud instance's own Cindy, seen through its remote desktop. */
+  managedCloudInstance?: boolean;
 }
 
 export interface SettingsSearchEntry {

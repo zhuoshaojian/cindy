@@ -18,6 +18,7 @@ import {
 } from '@/hooks/useTelegramBot';
 import type { useCloudAuthorization } from './useCloudAuthorization';
 import type { CloudImTarget } from './cloudImTarget';
+import { CloudDesktopFallback } from './CloudDesktopFallback';
 
 /** The status call each local card reads; replies come with saved credentials removed. */
 const statusCalls = {
@@ -57,6 +58,7 @@ export type PersonalBotChannel = (typeof personalBotChannels)[number];
  */
 export function CloudPersonalBotSettings({
   channel,
+  deviceId,
   targetName,
   item,
   disabled,
@@ -74,6 +76,8 @@ export function CloudPersonalBotSettings({
   readStatus,
 }: {
   channel: PersonalBotChannel;
+  /** The instance, for settings left to its own page. */
+  deviceId: string;
   targetName: string;
   item: ManagementItem;
   disabled: boolean;
@@ -175,12 +179,7 @@ export function CloudPersonalBotSettings({
     <p className="text-12 leading-[1.6] text-[var(--settings-section-desc)]">{fallback}</p>
   );
   const unsupported = (label: string) => (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-13 font-medium text-[var(--settings-section-title)]">{t(label)}</h3>
-      <p className="text-12 leading-[1.6] text-[var(--settings-section-desc)]">
-        {t('cloudSettings.imRemoteControlUnavailable')}
-      </p>
-    </section>
+    <CloudDesktopFallback deviceId={deviceId} name={targetName} label={t(label)} />
   );
   const notifications = (label: string) =>
     notificationSettings === undefined ? unsupported(label) : notificationSettings;
