@@ -35,6 +35,7 @@ shutil.copytree(artifact / 'plank/source', layer / 'usr/share/doc/cindy-plank/so
 for name in ['cindy-linux-desktop', 'cindy-dock-terminal', 'cindy-dock-chrome']:
     install(desktop / name, 'usr/local/bin/' + name, 0o755)
 install(desktop / 'xfce-session', 'usr/local/lib/cindy/xfce-session', 0o755)
+install(desktop / 'terminal.bashrc', 'usr/local/lib/cindy/terminal.bashrc')
 install(desktop / 'seccomp.json', 'usr/local/lib/cindy/seccomp.json')
 for name in ['apply-appearance.py', 'apply-dock.py', 'apply-dock-apps.py']:
     install(desktop / name, 'usr/local/share/cindy/appearance/' + name)
