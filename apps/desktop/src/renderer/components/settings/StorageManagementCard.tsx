@@ -609,14 +609,21 @@ type DbSlimmingPhase =
 
 
 /** 存储空间页框架:页标题与说明 + 各分区。云实例设置复用同一框架。 */
-export function StorageSectionFrame({ children }: { children: ReactNode }) {
+export function StorageSectionFrame({
+  children,
+  description,
+}: {
+  children: ReactNode;
+  /** 另一台电脑的存储页用自己的说明。 */
+  description?: ReactNode;
+}) {
   const { t } = useTranslation();
   return (
     <SettingsSection
       variant="page"
       id="settings-storage-section"
       title={t(storageManagementCardSettings.storage.sectionKey)}
-      description={t('settings.about.storage.overviewDescription')}
+      description={description ?? t('settings.about.storage.overviewDescription')}
     >
       {children}
     </SettingsSection>

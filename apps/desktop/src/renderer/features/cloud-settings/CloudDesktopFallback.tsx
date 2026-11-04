@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -12,11 +12,14 @@ export function CloudDesktopFallback({
   deviceId,
   name,
   label,
+  description,
 }: {
   deviceId: string;
   /** The instance's display name. */
   name: string;
   label?: string;
+  /** What to change there; defaults to a generic note. */
+  description?: ReactNode;
 }) {
   const { t } = useTranslation();
   const [opening, setOpening] = useState(false);
@@ -34,7 +37,7 @@ export function CloudDesktopFallback({
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 flex-1 text-12 leading-[1.6] text-[var(--settings-section-desc)]">
-          {t('cloudSettings.desktopFallback', { name })}
+          {description ?? t('cloudSettings.desktopFallback')}
         </p>
         <Button
           variant="secondary"

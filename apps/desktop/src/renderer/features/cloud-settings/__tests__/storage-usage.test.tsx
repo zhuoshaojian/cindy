@@ -31,6 +31,9 @@ it('shows the instance disk and totals in the local overview, read-only', async 
   expect(await screen.findByText(/cloudSettings\.storageDisk/)).toBeTruthy();
   expect(screen.getByText(/cloudSettings\.storageTitle/).textContent).toContain('Cloud A');
   expect(screen.queryByRole('alert')).toBeNull();
+  // The bar shows the instance disk (40% used), not the database against its warning threshold.
+  const bar = screen.getByRole('progressbar', { name: 'cloudSettings.storageDiskLabel' });
+  expect(bar.getAttribute('aria-valuenow')).toBe('40');
   const invoke = vi.mocked(window.electronAPI.deviceLink.invoke);
   expect(invoke).toHaveBeenCalledWith('cloud-a', 'cloud:storage-usage:v1', [{ op: 'read' }]);
   fireEvent.click(
