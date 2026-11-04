@@ -87,6 +87,7 @@ export function SettingsView() {
   const [searchActivation, setSearchActivation] = useState(0);
   const { mode, dataOwnerId, user } = useAuth();
   const canAccessCloudInstances = useCloudInstanceAccess() === 'allowed';
+  const managedCloudInstance = window.electronAPI?.hostSettings?.hostOwned === true;
   const menuWidth = outletContext?.sidebarWidth ?? DEFAULT_SETTINGS_MENU_WIDTH;
   const isMac = window.electronAPI?.platform === 'darwin';
   const [helpAssistantOpen, setHelpAssistantOpen] = useState(false);
@@ -253,6 +254,7 @@ export function SettingsView() {
     membershipKind: user?.membershipKind ?? null,
     platform: window.electronAPI?.platform ?? '',
     canAccessCloudInstances,
+    managedCloudInstance,
   }), [mode, user?.membershipKind, canAccessCloudInstances]);
   const requestedEntry = resolveSettingsSearchEntry(activeTab, searchParams.get('section'));
   const searchEntry = piExtensionsPanelOpen || (requestedEntry?.isVisible && !requestedEntry.isVisible(searchContext))
@@ -367,14 +369,19 @@ export function SettingsView() {
                     {/* Section — App Behavior(「应用行为」)
                         「保持电脑唤醒」跨平台生效,故 section 常驻;其中
                         「后台窗口首次左键点击仅激活不透传」仅 mac/win 有效,由
-                        WindowBehaviorSection 内部按平台隐藏该行。 */}
-                    <section
-                      id="settings-window-behavior"
-                      className="py-[18px]"
-                      aria-label={t('settings.sections.windowBehavior')}
-                    >
-                      <WindowBehaviorSection />
-                    </section>
+                        WindowBehaviorSection 内部按平台隐藏该行。
+                        A managed cloud instance (Linux) would show only keep-awake and the close
+                        choice: its container never sleeps, and its runtime keeps Cindy from being
+                        closed, so a "quit" choice there must not be offered. */}
+                    {!managedCloudInstance && (
+                      <section
+                        id="settings-window-behavior"
+                        className="py-[18px]"
+                        aria-label={t('settings.sections.windowBehavior')}
+                      >
+                        <WindowBehaviorSection />
+                      </section>
+                    )}
 
                     {/* Section — Composer send shortcut (应用级、本地输入偏好)。 */}
                     <section

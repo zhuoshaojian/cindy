@@ -357,7 +357,12 @@ it('does not resubmit an uncertain request and recovers persisted progress on ex
   fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
   await screen.findByText('正在备份云实例…');
   expect(screen.queryByRole('alert')).toBeNull();
-  f.value.upgradeOperation = { ...f.value.upgradeOperation, phase: 'completed', active: false };
+  f.value.upgradeOperation = {
+    ...f.value.upgradeOperation,
+    phase: 'completed',
+    active: false,
+    updatedAtMs: Date.now(),
+  };
   f.value.version = '0.1.108-cloud.10-cn-amd64';
   f.value.latestVersion = null;
   f.value.updateAvailable = false;
@@ -365,7 +370,24 @@ it('does not resubmit an uncertain request and recovers persisted progress on ex
   await screen.findByText('云实例升级完成。');
   expect(screen.getByText('0.1.108-cloud.10-cn-amd64')).toBeTruthy();
   expect(screen.getByText('暂无可用更新')).toBeTruthy();
-  expect(screen.getByRole('button', { name: '立即升级' }).hasAttribute('disabled')).toBe(true);
+  // 2026-11-04 product review: no inert upgrade button when there is nothing to install.
+  expect(screen.queryByRole('button', { name: '立即升级' })).toBeNull();
+});
+it('stops showing an upgrade that ended long ago, but keeps a held one', async () => {
+  const f = await setup({ running: true, manualUpgrade: true });
+  f.value.upgradeOperation = {
+    operationId: 'user-old',
+    phase: 'completed',
+    active: false,
+    updatedAtMs: Date.now() - 31 * 60_000,
+  };
+  fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
+  await waitFor(() => expect(f.client.instance).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText('云实例升级完成。')).toBeNull();
+  expect(screen.queryByRole('status')).toBeNull();
+  f.value.upgradeOperation = { ...f.value.upgradeOperation, phase: 'recovery-hold' };
+  fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
+  await screen.findByRole('status');
 });
 it.each(['zh-CN', 'zh-TW', 'en', 'ja', 'ko'])(
   'localizes the immediate upgrade action and queue in %s',

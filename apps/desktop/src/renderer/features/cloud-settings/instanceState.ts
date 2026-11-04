@@ -41,6 +41,18 @@ export const canRequestUpgrade = (view: CloudInstanceView) =>
   view.desiredState === 'running' &&
   view.runtimeState === 'running';
 
+// The last upgrade record stays on the instance. Show an ended one only briefly; an active or
+// held upgrade stays visible until it changes.
+export const UPGRADE_NOTICE_MS = 30 * 60_000;
+export const upgradeNoticeVisible = (
+  operation: CloudInstanceView['upgradeOperation'],
+  now = Date.now(),
+) =>
+  !!operation &&
+  (operation.active ||
+    operation.phase === 'recovery-hold' ||
+    now - operation.updatedAtMs < UPGRADE_NOTICE_MS);
+
 export const upgradeProgressKey = (phase: string) =>
   phase === 'requested'
     ? 'upgradeQueued'

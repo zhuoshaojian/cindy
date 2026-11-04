@@ -45,7 +45,7 @@ import {
   readCindyMakeSettings,
   writeCindyMakeSyncLatestBeforeBuild,
 } from './cindy-make/settingsStore.js';
-import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudManagementExecution } from './host-settings/managementCalls.js';
+import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudManagementExecution, registerCloudDomainCall } from './host-settings/managementCalls.js';
 import { presentManagementDeviceCode } from './host-settings/managementAuthorization.js';
 import { configureAdditionalSettingsRuntime } from './host-settings/additionalRuntime.js';
 import { initializeCloudDeviceLinkDefaults } from './instance-runtime/device-link-defaults.js';
@@ -4683,6 +4683,8 @@ const registerIpcHandlers = () => {
     assertTrustedAppRendererEvent(event);
     return collectCurrentDatabaseSizeWarningStatus();
   });
+  // The owner's cloud storage page reads the same total (cloud runtime only).
+  registerCloudDomainCall('database-size-warning:measure', () => collectCurrentDatabaseSizeWarningStatus());
 
   // Find the primary app window, skipping transient utility BrowserWindows like
   // the voice-input overlay (minimizable:false, maximizable:false). Electron's
@@ -8935,6 +8937,7 @@ const registerIpcHandlers = () => {
       assertTrustedAppRendererEvent(event);
       return storageHandlers.stats();
     });
+    registerCloudDomainCall('cindy-media:storage-stats', () => storageHandlers.stats());
     ipcMain.handle('cindy-media:storage-scan', (event, params: { draftUrls: string[]; scope?: 'remote-media' }) => {
       assertTrustedAppRendererEvent(event);
       return storageHandlers.scan(params);
