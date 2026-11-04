@@ -198,6 +198,51 @@ export function AgentResourceSection() {
   if (!settings) return null;
 
   return (
+    <AgentResourceSectionView
+      settings={settings}
+      activePreset={activePreset}
+      applyingPreset={applyingPreset}
+      applyPreset={applyPreset}
+      maxDraft={maxDraft}
+      setMaxDraft={setMaxDraft}
+      persist={persist}
+      reset={() => {
+        if (applyingPreset) return;
+        void window.electronAPI.maker
+          .agentResourceSettingsReset()
+          .then((next) => {
+            applyServerState(next);
+            toast.success(t('settings.defaults.restored'));
+          })
+          .catch(() => toast.error(t('settings.defaults.restoreFailed')));
+      }}
+    />
+  );
+}
+
+/** Shared native view. Local and cloud controllers provide the same state/actions. */
+export function AgentResourceSectionView({
+  settings,
+  activePreset,
+  applyingPreset,
+  applyPreset,
+  maxDraft,
+  setMaxDraft,
+  persist,
+  reset,
+}: {
+  settings: Wire;
+  activePreset: PresetId | null;
+  applyingPreset: boolean;
+  applyPreset: (id: PresetId) => Promise<void>;
+  maxDraft: string | null;
+  setMaxDraft: (value: string | null) => void;
+  persist: (key: SettingKey, value: number | string | boolean) => void;
+  reset: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
     <div className="flex flex-col gap-[14px]">
       {/* min-h 锁住标题行高度:DefaultOverrideControls 未自定义时返回 null,若不预留
           高度,首次改动让「已自定义」+ 恢复按钮(30px)出现会把整段往下顶,列表抖一下。 */}
@@ -208,18 +253,7 @@ export function AgentResourceSection() {
         <DefaultOverrideControls
           isCustomized={Boolean(settings.isCustomized)}
           disabled={applyingPreset}
-          onReset={() => {
-            if (applyingPreset) return;
-            void window.electronAPI.maker
-              .agentResourceSettingsReset()
-              .then((next) => {
-                applyServerState(next);
-                toast.success(t('settings.defaults.restored'));
-              })
-              .catch(() => {
-                toast.error(t('settings.defaults.restoreFailed'));
-              });
-          }}
+          onReset={reset}
         />
       </div>
 

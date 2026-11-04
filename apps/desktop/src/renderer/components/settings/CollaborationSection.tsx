@@ -33,10 +33,7 @@ interface CollaborationSettings {
   isCustomized?: boolean;
 }
 
-type CollaborationSettingKey =
-  | 'workerSoftLimit'
-  | 'workerHardLimit'
-  | 'workerIdleReleaseMinutes';
+type CollaborationSettingKey = 'workerSoftLimit' | 'workerHardLimit' | 'workerIdleReleaseMinutes';
 
 export function CollaborationSection() {
   const { t } = useTranslation();
@@ -55,7 +52,7 @@ export function CollaborationSection() {
   }, []);
 
   const persist = (key: CollaborationSettingKey, value: number) => {
-    setSettings((prev) => prev ? { ...prev, [key]: value, isCustomized: true } : prev);
+    setSettings((prev) => (prev ? { ...prev, [key]: value, isCustomized: true } : prev));
     void window.electronAPI.localDb.orcaWorkflows
       .setCollaborationSetting?.(key, value)
       .then((next) => setSettings(next as CollaborationSettings))
@@ -71,6 +68,35 @@ export function CollaborationSection() {
   }
 
   return (
+    <CollaborationSectionView
+      settings={settings}
+      persist={persist}
+      reset={() => {
+        void window.electronAPI.localDb.orcaWorkflows
+          .resetCollaborationSettings?.()
+          .then((next) => {
+            setSettings(next as CollaborationSettings);
+            toast.success(t('settings.defaults.restored'));
+          })
+          .catch(() => toast.error(t('settings.defaults.restoreFailed')));
+      }}
+    />
+  );
+}
+
+/** Shared native view. Local and cloud controllers provide the same state/actions. */
+export function CollaborationSectionView({
+  settings,
+  persist,
+  reset,
+}: {
+  settings: CollaborationSettings;
+  persist: (key: CollaborationSettingKey, value: number) => void;
+  reset: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
     <div className="flex flex-col gap-[14px]">
       {/* min-h 锁住标题行高度:DefaultOverrideControls 未自定义时返回 null,若不预留
           高度,首次改动让「已自定义」+ 恢复按钮(30px)出现会把整段往下顶,列表抖一下。 */}
@@ -78,20 +104,7 @@ export function CollaborationSection() {
         <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
           {t('settings.collaboration.title')}
         </h2>
-        <DefaultOverrideControls
-          isCustomized={Boolean(settings.isCustomized)}
-          onReset={() => {
-            void window.electronAPI.localDb.orcaWorkflows
-              .resetCollaborationSettings?.()
-              .then((next) => {
-                setSettings(next as CollaborationSettings);
-                toast.success(t('settings.defaults.restored'));
-              })
-              .catch((err) => {
-                toast.error(err instanceof Error ? err.message : t('settings.defaults.restoreFailed'));
-              });
-          }}
-        />
+        <DefaultOverrideControls isCustomized={Boolean(settings.isCustomized)} onReset={reset} />
       </div>
 
       <div className={CARD_CLASS}>

@@ -14,6 +14,8 @@ export interface SettingsSearchContext extends ImBotIdentity {
   agentIsland?: { supported: boolean; enabled: boolean; soundEnabled?: boolean };
   /** Selector visibility only; never expose the user's custom media URL to search. */
   wallpaperMotionAvailable?: boolean;
+  /** Only affirmative CIS membership admission enables cloud management search. */
+  canAccessCloudInstances?: boolean;
 }
 
 export interface SettingsSearchEntry {

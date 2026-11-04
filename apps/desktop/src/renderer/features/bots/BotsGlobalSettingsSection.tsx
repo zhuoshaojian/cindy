@@ -24,11 +24,10 @@ import {
   subscribeBotGlobalModel,
 } from './botStore';
 import { BotModelChainEditor } from './BotModelChainEditor';
+import type { BotModelRoute } from '../../../shared/botModelChain';
 
 export function BotsGlobalSettingsSection() {
   const { t } = useBotTranslation();
-  const modelSetting = useSettingDefinition(additionalSettings.botModel, t);
-  const replySetting = useSettingDefinition(additionalSettings.botReplyTarget, t);
   // Re-render derived defaults when the shared picker inputs change, including
   // when the empty-chain editor has no ModelSelector mounted yet.
   useProviders();
@@ -59,6 +58,44 @@ export function BotsGlobalSettingsSection() {
   };
 
   return (
+    <BotsGlobalSettingsSectionView
+      modelChain={modelChain}
+      pending={pending}
+      notice={notice}
+      onChange={(next) => changeModelChain(() => setBotGlobalModelChain(next))}
+      onRestoreDefault={customized !== false
+        ? () => changeModelChain(resetBotGlobalModelChain, true)
+        : undefined}
+      replyTarget={replyTarget}
+    />
+  );
+}
+
+/**
+ * 伙伴全局设置的展示部分。deviceId 指定模型目录所在的设备(云实例设置传目标实例);
+ * 不传 replyTarget 时不显示「显示回复对应的消息」(它只保存在本机界面)。
+ */
+export function BotsGlobalSettingsSectionView({
+  modelChain,
+  pending,
+  notice,
+  onChange,
+  onRestoreDefault,
+  deviceId,
+  replyTarget,
+}: {
+  modelChain: BotModelRoute[];
+  pending: boolean;
+  notice: string | null;
+  onChange: (next: BotModelRoute[]) => void;
+  onRestoreDefault?: () => void;
+  deviceId?: string;
+  replyTarget?: { enabled: boolean; setEnabled: (next: boolean) => void };
+}) {
+  const { t } = useBotTranslation();
+  const modelSetting = useSettingDefinition(additionalSettings.botModel, t);
+  const replySetting = useSettingDefinition(additionalSettings.botReplyTarget, t);
+  return (
     <div className="flex flex-col gap-[14px]">
       <h2 className={SETTINGS_SECTION_TITLE_CLASS}>{t('bots.globalSettings.title')}</h2>
 
@@ -71,11 +108,10 @@ export function BotsGlobalSettingsSection() {
               primaryHint: modelSetting.description,
             }}
             disabled={pending}
+            deviceId={deviceId}
             value={modelChain}
-            onChange={(next) => changeModelChain(() => setBotGlobalModelChain(next))}
-            onRestoreDefault={customized !== false
-              ? () => changeModelChain(resetBotGlobalModelChain, true)
-              : undefined}
+            onChange={onChange}
+            onRestoreDefault={onRestoreDefault}
           />
         </fieldset>
         {notice ? (
@@ -85,20 +121,22 @@ export function BotsGlobalSettingsSection() {
         ) : null}
       </div>
 
-      <div className={SETTINGS_CARD_CLASS}>
-        <div {...replySetting.anchorProps} className={SETTINGS_ROW_CLASS}>
-          <div className="min-w-0 flex-1">
-            <p className={SETTINGS_ROW_LABEL_CLASS}>{replySetting.title}</p>
-            <p className={SETTINGS_ROW_HINT_CLASS}>{replySetting.description}</p>
+      {replyTarget ? (
+        <div className={SETTINGS_CARD_CLASS}>
+          <div {...replySetting.anchorProps} className={SETTINGS_ROW_CLASS}>
+            <div className="min-w-0 flex-1">
+              <p className={SETTINGS_ROW_LABEL_CLASS}>{replySetting.title}</p>
+              <p className={SETTINGS_ROW_HINT_CLASS}>{replySetting.description}</p>
+            </div>
+            <Switch {...replySetting.controlProps}
+              aria-label={replySetting.title}
+              className="shrink-0"
+              checked={replyTarget.enabled}
+              onCheckedChange={(value) => replyTarget.setEnabled(value === true)}
+            />
           </div>
-          <Switch {...replySetting.controlProps}
-            aria-label={replySetting.title}
-            className="shrink-0"
-            checked={replyTarget.enabled}
-            onCheckedChange={(value) => replyTarget.setEnabled(value === true)}
-          />
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

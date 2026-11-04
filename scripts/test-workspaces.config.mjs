@@ -159,6 +159,8 @@ const mobileGuardInclude = [
 // for a new source scan to silently become part of the ordinary unit gate.
 const desktopGuardInclude = [
   'src/renderer/components/settings/__tests__/settingsSearchCatalog.guard.test.ts',
+  // Cloud snapshot coverage is a cross-repository protocol contract.
+  'src/shared/__tests__/settingsReadCatalog.test.ts',
   // Cross-file host/engine prompt ownership and remote-authorization isolation.
   'src/main/plugin-oauth/__tests__/runtimePrompt.test.ts',
   // Cross-hook voice stop/refine ownership and composer hydration race wiring.

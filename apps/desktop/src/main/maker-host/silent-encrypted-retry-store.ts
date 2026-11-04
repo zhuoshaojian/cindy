@@ -1,3 +1,4 @@
+import { validateAdditionalSettingsOverrides } from '../../shared/settingsEditableCatalog.js';
 /**
  * Main-side source of truth for silent invalid_encrypted_content recovery.
  *
@@ -17,7 +18,15 @@ import {
   type OverrideSettingsState,
 } from './override-settings-file.js';
 
+import { inspectSettingsFile, isSettingBoolean, validateOptionalSettingsFields } from './settings-inspection.js';
+
 const log = desktopMakerLogger.child('silent-encrypted-retry-store');
+
+export function inspectSilentEncryptedRetrySettings() {
+  return inspectSettingsFile({ filePath: settingsFilePath, defaults: DEFAULTS, normalize,
+    validate: (raw) => validateOptionalSettingsFields(raw, { enabled: isSettingBoolean }),
+  });
+}
 
 export interface SilentEncryptedRetrySettings {
   enabled: boolean;
@@ -40,6 +49,7 @@ function normalize(raw: unknown): SilentEncryptedRetrySettings {
 }
 
 const store = createOverrideSettingsFile<SilentEncryptedRetrySettings>({
+  validateOverrides: raw => validateAdditionalSettingsOverrides('silentEncryptedRetry', raw),
   filePath: settingsFilePath,
   defaults: DEFAULTS,
   normalize,
@@ -66,3 +76,5 @@ export function resetSilentEncryptedRetrySettings(): SilentEncryptedRetrySetting
 
 /** New-computer setup: values the user changed here (docs/product-rules/new-device-setup-migration.md). */
 export const silentEncryptedRetryPortableSettings = portableOverrideSettings(store);
+/** Internal Host settings adapter; no new IPC or persistence location. */
+export function getSilentEncryptedRetrySettingsStore() { return store; }

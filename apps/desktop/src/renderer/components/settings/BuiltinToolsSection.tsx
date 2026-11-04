@@ -197,6 +197,42 @@ export function BuiltinToolsSection({ workingDir }: BuiltinToolsSectionProps) {
   if (!plugins) return null;
 
   return (
+    <BuiltinToolsSectionView
+      plugins={plugins}
+      pendingIds={pendingIds}
+      effectiveWorkingDir={effectiveWorkingDir}
+      handleToggle={handleToggle}
+      handleClearOverride={handleClearOverride}
+      scopePicker={
+        <ScopePicker
+          effectiveWorkingDir={effectiveWorkingDir}
+          activeSessionWorkingDir={activeProjectWorkingDir}
+          recentWorkdirs={recentWorkdirs}
+          onPick={setSelectedScope}
+        />
+      }
+    />
+  );
+}
+
+export function BuiltinToolsSectionView({
+  plugins,
+  pendingIds,
+  effectiveWorkingDir,
+  handleToggle,
+  handleClearOverride,
+  scopePicker,
+}: {
+  plugins: BuiltinToolListItem[];
+  pendingIds: Set<string>;
+  effectiveWorkingDir?: string | null;
+  handleToggle: (id: string, next: boolean, label: string) => void;
+  handleClearOverride: (id: string, label: string) => void;
+  scopePicker?: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+
+  return (
     <div className="flex flex-col gap-[14px]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1 min-w-0">
@@ -207,12 +243,7 @@ export function BuiltinToolsSection({ workingDir }: BuiltinToolsSectionProps) {
             {t(builtinToolsSettings.title.descriptionKey)}
           </p>
         </div>
-        <ScopePicker
-          effectiveWorkingDir={effectiveWorkingDir}
-          activeSessionWorkingDir={activeProjectWorkingDir}
-          recentWorkdirs={recentWorkdirs}
-          onPick={setSelectedScope}
-        />
+        {scopePicker}
       </div>
 
       <div
@@ -445,7 +476,10 @@ function ScopePicker({
                 <div className="flex items-center gap-1.5">
                   <span className="truncate">{basename(dir)}</span>
                 </div>
-                <span title={dir} className="truncate text-12 leading-[1.33] text-[var(--cmd-palette-item-meta)]">
+                <span
+                  title={dir}
+                  className="truncate text-12 leading-[1.33] text-[var(--cmd-palette-item-meta)]"
+                >
                   {dir}
                 </span>
               </div>

@@ -11,7 +11,7 @@ import { aboutSettings } from './AboutSection.settings-search';
  * 卡片样式与 NotificationSection / FeishuBotSection 同级 (rounded-xl / Board border)。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 
@@ -27,7 +27,12 @@ import { useAnalyticsSettings } from '@/hooks/useAnalyticsSettings';
 import { useLogUploadSettings } from '@/hooks/useLogUploadSettings';
 import { OpenLogsRow, UploadLogsRow } from '@/components/log-support/LogSupportActions';
 import { PiKernelVersionRow } from './PiKernelVersionRow';
-import { HARNESS_MENU_ITEM_CLASS, HarnessMenuFootnote, HarnessVersionMenuItem, HarnessVersionMenuRow } from './HarnessVersionMenuRow';
+import {
+  HARNESS_MENU_ITEM_CLASS,
+  HarnessMenuFootnote,
+  HarnessVersionMenuItem,
+  HarnessVersionMenuRow,
+} from './HarnessVersionMenuRow';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
 import { LEGAL_LINKS } from '../../../shared/legalLinks';
@@ -77,7 +82,10 @@ const DESKTOP_SOCIAL_LINKS = [
   },
 ] as const;
 
-function useAgentBinaryVersion(kind: UpdatableAgentKind): { state: AgentVersionState; check: () => void } {
+function useAgentBinaryVersion(kind: UpdatableAgentKind): {
+  state: AgentVersionState;
+  check: () => void;
+} {
   const [state, setState] = useState<AgentVersionState>(INITIAL);
   const mounted = useRef(false);
   const checkPending = useRef(false);
@@ -111,7 +119,12 @@ function useAgentBinaryVersion(kind: UpdatableAgentKind): { state: AgentVersionS
         },
         () => {
           if (mounted.current) {
-            setState((prev) => ({ ...prev, checking: false, checkFailed: true, updateAvailable: false }));
+            setState((prev) => ({
+              ...prev,
+              checking: false,
+              checkFailed: true,
+              updateAvailable: false,
+            }));
           }
         },
       )
@@ -322,7 +335,9 @@ function AgentVersionRow({
       </DropdownMenuItem>
       {state.checkedAt && (
         <HarnessMenuFootnote>
-          {t('settings.about.harnessCheckedAt', { time: new Date(state.checkedAt).toLocaleString(i18n.language) })}
+          {t('settings.about.harnessCheckedAt', {
+            time: new Date(state.checkedAt).toLocaleString(i18n.language),
+          })}
         </HarnessMenuFootnote>
       )}
     </HarnessVersionMenuRow>
@@ -333,24 +348,9 @@ export function AboutSection() {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-          {t('settings.about.title')}
-        </h2>
-        <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
-          {t('settings.about.description')}
-        </p>
-      </div>
-
-      {/* Info Card */}
-      <div id={aboutSettings.appVersionLabel.targetId}
-        className={cn(
-          'flex flex-col rounded-xl',
-          'bg-[var(--settings-theme-card-bg)]',
-          'border border-[var(--settings-theme-card-border)]',
-        )}
-      >
+    <AboutSectionView
+      card={
+        <>
         {CURRENT_CINDY_REGION === 'cn' && (
           <>
             <InfoRow
@@ -379,10 +379,43 @@ export function AboutSection() {
         </div>
         <Divider />
         <LegalLinksRows />
-      </div>
-
+        </>
+      }
+    >
       {/* 存储空间(媒体总仓占用 / 清理 / 体检) */}
       <SocialLinksPanel />
+    </AboutSectionView>
+  );
+}
+
+/** 关于页框架:页标题 + 信息卡片(card)+ 卡片下方内容(children)。云实例设置复用同一框架。 */
+export function AboutSectionView({ card, children }: { card: ReactNode; children?: ReactNode }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
+          {t('settings.about.title')}
+        </h2>
+        <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
+          {t('settings.about.description')}
+        </p>
+      </div>
+
+      {/* Info Card */}
+      <div
+        id={aboutSettings.appVersionLabel.targetId}
+        className={cn(
+          'flex flex-col rounded-xl',
+          'bg-[var(--settings-theme-card-bg)]',
+          'border border-[var(--settings-theme-card-border)]',
+        )}
+      >
+        {card}
+      </div>
+
+      {children}
     </div>
   );
 }
@@ -660,6 +693,31 @@ function AnalyticsToggleRow() {
   };
 
   return (
+    <AnalyticsToggleView
+      customized={state.analyticsEnabledCustomized}
+      enabled={state.analyticsEnabled}
+      disabled={state.loading || saving}
+      handleReset={handleReset}
+      handleToggle={handleToggle}
+    />
+  );
+}
+
+export function AnalyticsToggleView({
+  customized,
+  enabled,
+  disabled,
+  handleReset,
+  handleToggle,
+}: {
+  customized: boolean;
+  enabled: boolean;
+  disabled: boolean;
+  handleReset: () => Promise<void>;
+  handleToggle: (next: boolean) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  return (
     <div className="flex flex-col gap-1.5 px-[18px] py-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
@@ -672,13 +730,13 @@ function AnalyticsToggleRow() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <DefaultOverrideControls
-            isCustomized={state.analyticsEnabledCustomized}
-            disabled={state.loading || saving}
+            isCustomized={customized}
+            disabled={disabled}
             onReset={handleReset}
           />
           <Switch data-setting-id={aboutSettings.analyticsLabel.id}
-            checked={state.analyticsEnabled}
-            disabled={state.loading || saving}
+            checked={enabled}
+            disabled={disabled}
             onCheckedChange={handleToggle}
             aria-label={t(aboutSettings.analyticsLabel.titleKey)}
           />
@@ -700,7 +758,6 @@ function AnalyticsToggleRow() {
  *     在 mount 时同步一次,toggle 变化时立即同步
  */
 function DebugLogToggleRow() {
-  const { t } = useTranslation();
   const { enabled, setEnabled } = useExperimentalFlag('debug-network');
   const lockedOn = import.meta.env.DEV;
   const effectiveEnabled = lockedOn ? true : enabled;
@@ -709,6 +766,19 @@ function DebugLogToggleRow() {
     void window.electronAPI?.ccSetDebugNet?.(effectiveEnabled);
   }, [effectiveEnabled]);
 
+  return <DebugLogToggleView enabled={effectiveEnabled} disabled={lockedOn} onChange={setEnabled} />;
+}
+
+export function DebugLogToggleView({
+  enabled,
+  disabled,
+  onChange,
+}: {
+  enabled: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-1.5 px-[18px] py-4">
       <div className="flex items-center justify-between gap-3">
@@ -716,9 +786,9 @@ function DebugLogToggleRow() {
           {t(aboutSettings.debugLogLabel.titleKey)}
         </span>
         <Switch data-setting-id={aboutSettings.debugLogLabel.id}
-          checked={effectiveEnabled}
-          disabled={lockedOn}
-          onCheckedChange={setEnabled}
+          checked={enabled}
+          disabled={disabled}
+          onCheckedChange={onChange}
           aria-label={t(aboutSettings.debugLogLabel.titleKey)}
         />
       </div>
@@ -779,6 +849,34 @@ function CrashAutoUploadToggleRow() {
   const disabled = state.loading || saving || blocked;
 
   return (
+    <CrashAutoUploadToggleView
+      customized={state.crashAutoUploadCustomized}
+      enabled={state.crashAutoUploadEnabled}
+      disabled={disabled}
+      resetting={state.loading || saving}
+      handleReset={handleReset}
+      handleToggle={handleToggle}
+    />
+  );
+}
+
+export function CrashAutoUploadToggleView({
+  customized,
+  enabled,
+  disabled,
+  resetting,
+  handleReset,
+  handleToggle,
+}: {
+  customized: boolean;
+  enabled: boolean;
+  disabled: boolean;
+  resetting: boolean;
+  handleReset: () => Promise<void>;
+  handleToggle: (next: boolean) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  return (
     <div className="flex flex-col gap-1.5 px-[18px] py-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
@@ -791,12 +889,12 @@ function CrashAutoUploadToggleRow() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <DefaultOverrideControls
-            isCustomized={state.crashAutoUploadCustomized}
-            disabled={state.loading || saving}
+            isCustomized={customized}
+            disabled={resetting}
             onReset={handleReset}
           />
           <Switch data-setting-id={aboutSettings.logUploadCrashAutoLabel.id}
-            checked={state.crashAutoUploadEnabled}
+            checked={enabled}
             disabled={disabled}
             onCheckedChange={handleToggle}
             aria-label={t(aboutSettings.logUploadCrashAutoLabel.titleKey)}
@@ -807,7 +905,7 @@ function CrashAutoUploadToggleRow() {
   );
 }
 
-function InfoRow({
+export function InfoRow({
   label,
   value,
   title = value,
@@ -835,7 +933,7 @@ function InfoRow({
   );
 }
 
-function Divider() {
+export function Divider() {
   return (
     <div
       aria-hidden

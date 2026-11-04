@@ -11,6 +11,7 @@ import { Check, ChevronDown } from 'lucide-react';
 import type { ClassicalReplyStyleId } from '@cindy/maker-shared/classical-reply';
 import { classicalStyleOptions, languageSettings } from './LanguageSection.settings-search';
 import { SelectParts as Select } from '@/components/ui/select';
+import '@/components/ui/segmented-control.css';
 
 import { cn } from '@/lib/utils';
 import { useLocale } from '@/hooks/useLocale';
@@ -36,6 +37,7 @@ interface PillSelectProps<T extends string> {
   onChange: (value: T) => void;
   ariaLabel: string;
   className: string;
+  disabled?: boolean;
 }
 
 function PillSelect<T extends string>({
@@ -45,9 +47,10 @@ function PillSelect<T extends string>({
   onChange,
   ariaLabel,
   className,
+  disabled,
 }: PillSelectProps<T>) {
   return (
-    <Select.Root value={value} onValueChange={(next) => onChange(next as T)}>
+    <Select.Root value={value} onValueChange={(next) => onChange(next as T)} disabled={disabled}>
       <Select.Trigger
         data-setting-id={settingId}
         aria-label={ariaLabel}
@@ -100,8 +103,38 @@ function PillSelect<T extends string>({
 }
 
 export function LanguageSection() {
-  const { t } = useTranslation();
   const { locale, effectiveLocale, setLocale, classicalStyle, setClassicalStyle } = useLocale();
+  return (
+    <LanguageSectionView
+      locale={locale}
+      effectiveLocale={effectiveLocale}
+      onChange={setLocale}
+      classicalStyle={classicalStyle}
+      onClassicalStyleChange={setClassicalStyle}
+    />
+  );
+}
+
+/**
+ * The section body for a given preference. The cloud instance settings page renders it
+ * for the instance's language; without a style handler the classical style picker is hidden.
+ */
+export function LanguageSectionView({
+  locale,
+  effectiveLocale,
+  onChange: setLocale,
+  classicalStyle,
+  onClassicalStyleChange: setClassicalStyle,
+  disabled = false,
+}: {
+  locale: LocalePreference;
+  effectiveLocale?: string;
+  onChange(next: LocalePreference): void;
+  classicalStyle?: ClassicalReplyStyleId;
+  onClassicalStyleChange?(next: ClassicalReplyStyleId): void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
   const classical = isClassicalLocale(locale) ? locale : null;
 
   const chooseLanguage = (option: LanguageOption) => {
@@ -129,7 +162,7 @@ export function LanguageSection() {
       >
         <div
           id={languageSettings.language.targetId}
-          className="flex flex-row items-center justify-between gap-6 py-4"
+          className="cindy-segmented-row py-4"
         >
           <div className="min-w-0 flex-1">
             <p
@@ -152,13 +185,14 @@ export function LanguageSection() {
             onChange={chooseLanguage}
             ariaLabel={t('settings.language.ariaLabel')}
             className="w-[320px]"
+            disabled={disabled}
           />
         </div>
 
         {classical ? (
           <div
             id={languageSettings.classical.targetId}
-            className="flex flex-row items-center justify-between gap-6 border-t border-[var(--settings-theme-card-border)] py-4"
+            className="cindy-segmented-row border-t border-[var(--settings-theme-card-border)] py-4"
           >
             <div className="min-w-0 flex-1">
               <p
@@ -182,18 +216,22 @@ export function LanguageSection() {
                 onChange={setLocale}
                 ariaLabel={t('settings.language.classical.scriptAriaLabel')}
                 className="w-[112px]"
+                disabled={disabled}
               />
-              <PillSelect<ClassicalReplyStyleId>
-                data-setting-id={languageSettings.classical.id}
-                value={classicalStyle}
-                options={classicalStyleOptions.map((style) => ({
-                  value: style.value,
-                  label: t(style.labelKey),
-                }))}
-                onChange={setClassicalStyle}
-                ariaLabel={t('settings.language.classical.styleAriaLabel')}
-                className="min-w-0 flex-1"
-              />
+              {classicalStyle && setClassicalStyle ? (
+                <PillSelect<ClassicalReplyStyleId>
+                  data-setting-id={languageSettings.classical.id}
+                  value={classicalStyle}
+                  options={classicalStyleOptions.map((style) => ({
+                    value: style.value,
+                    label: t(style.labelKey),
+                  }))}
+                  onChange={setClassicalStyle}
+                  ariaLabel={t('settings.language.classical.styleAriaLabel')}
+                  className="min-w-0 flex-1"
+                  disabled={disabled}
+                />
+              ) : null}
             </div>
           </div>
         ) : null}
