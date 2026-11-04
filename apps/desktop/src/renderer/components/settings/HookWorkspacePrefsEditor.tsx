@@ -45,6 +45,7 @@ import { extractIpcError } from '@/utils/ipcError';
 import { useAgentCapabilities, type AgentCapabilities } from '@/hooks/useAgentCapabilities';
 import { ModelSelector } from '@/components/new-chat/ModelSelector';
 import { useModelRouteDevices } from '@/hooks/useModelRouteDevices';
+import { useSettingsTarget } from './settingsTarget';
 import { agentDeviceModelMemoryAccessors } from '@/state/agentDeviceModelMemory';
 import { PermissionSelector } from '@/components/new-chat/PermissionSelector';
 import type { MakerVendor } from '@/lib/ccAgent.types';
@@ -149,6 +150,7 @@ export function useHookWorkspacePrefs(
   provider: HookPrefsProvider = 'slack',
 ): HookWorkspacePrefsState {
   const { t } = useTranslation();
+  const { api } = useSettingsTarget();
   const [prefsView, setPrefsView] = useState<HookPrefsView | ProviderPrefsView | null>(null);
   /** 'unavailable' = 快照读不到(server 太旧 / 通道缺失 / 内部错), 提示 + 重试。 */
   const [loadError, setLoadError] = useState<'unavailable' | null>(null);
@@ -165,14 +167,14 @@ export function useHookWorkspacePrefs(
    */
   const fetchImDefaults = useCallback(async (): Promise<void> => {
     try {
-      const state: ImDefaultSettingsState = await window.electronAPI.maker.imDefaultSettingsGet(
+      const state: ImDefaultSettingsState = await api.imDefaultSettingsGet(
         provider === 'slack' ? 'slack' : undefined,
       );
       setImDefaults({ agentKind: state.agentKind, agents: state.agents });
     } catch {
       /* 读不到就保持上一份(解析退回内置默认), 不影响目录行其它字段 */
     }
-  }, [provider]);
+  }, [api, provider]);
 
   const neutral = isNeutralPrefsProvider(provider);
   const neutralView = neutral && hook !== null ? hook[provider as NeutralPrefsProvider] : null;
@@ -207,8 +209,8 @@ export function useHookWorkspacePrefs(
     const revision = ++fetchRevisionRef.current;
     try {
       const res = isNeutralPrefsProvider(provider)
-        ? await window.electronAPI.hookControl.getProviderWorkspacePrefs(provider)
-        : await window.electronAPI.hookControl.getWorkspacePrefs();
+        ? await api.hookControl.getProviderWorkspacePrefs(provider)
+        : await api.hookControl.getWorkspacePrefs();
       if (revision !== fetchRevisionRef.current) return;
       const nextPrefs: HookPrefsView | ProviderPrefsView = res.prefs;
       if (
@@ -228,7 +230,7 @@ export function useHookWorkspacePrefs(
       // GET 已改走本机文件, 不应再出现 HOOK_NOT_CONNECTED; 仍静默以免旧桌面误报。
       if (code !== 'HOOK_NOT_CONNECTED') setLoadError('unavailable');
     }
-  }, [provider]);
+  }, [api, provider]);
 
   useEffect(() => {
     let active = true;
@@ -250,10 +252,10 @@ export function useHookWorkspacePrefs(
       setLoadError(null);
     };
     const offPrefs = isNeutralPrefsProvider(provider)
-      ? window.electronAPI.hookControl.onProviderPrefsChanged((view) => {
+      ? api.hookControl.onProviderPrefsChanged((view) => {
           if (view.provider === provider) applyIncoming(view);
         })
-      : window.electronAPI.hookControl.onPrefsChanged(applyIncoming);
+      : api.hookControl.onPrefsChanged(applyIncoming);
     // The ready-edge effect below performs the initial prefs fetch (only when
     // reachable). The subscription set up here just needs to exist first so no
     // server push is missed before that fetch resolves.
@@ -267,7 +269,7 @@ export function useHookWorkspacePrefs(
     // 初次拉取同样受 latest-wins 守卫(Copilot review): 回复未归时若已收到其它
     // 窗口的写入广播(revision 已前进), 旧快照不得回滚新状态。
     const initialSourcesRevision = providerSourceRevisionRef.current;
-    void window.electronAPI.hookControl
+    void api.hookControl
       .getWorkspaceProviderSources()
       .then((res) => {
         if (active && providerSourceRevisionRef.current === initialSourcesRevision) {
@@ -277,7 +279,7 @@ export function useHookWorkspacePrefs(
       .catch(() => {});
     // 多窗口同步(codex review): 会话副窗也能开设置页, 其它窗口写入时以广播的
     // 全量条目为准刷新(与 prefs.state 的 latest-wins 快照语义一致)。
-    const offProviderSources = window.electronAPI.hookControl.onWorkspaceProviderSourcesChanged(
+    const offProviderSources = api.hookControl.onWorkspaceProviderSourcesChanged(
       (entries) => {
         providerSourceRevisionRef.current += 1;
         setProviderSources(entries);
@@ -290,7 +292,7 @@ export function useHookWorkspacePrefs(
       offPrefs();
       offProviderSources();
     };
-  }, [fetchPrefs, provider]);
+  }, [api, fetchPrefs, provider]);
 
   // 唯一的拉取触发点: 初次挂载、断线 -> 重连成功、或 Telegram 绑定身份变化时,
   // 拉取对应 provider 的快照。readyIdentity 为 null(provider 未连接/未绑定)时
@@ -370,7 +372,7 @@ export function useHookWorkspacePrefs(
     (alias: string, providerId: string | null, agentDeviceId?: string | null) => {
       const teamId = multiTeam ? selectedTeamId : null;
       const revision = ++providerSourceRevisionRef.current;
-      return window.electronAPI.hookControl
+      return api.hookControl
         .setWorkspaceProviderSource({ channel: provider, teamId, workspace: alias, providerId,
           ...(agentDeviceId !== undefined ? { agentDeviceId } : {}) })
         .then((res) => {
@@ -384,7 +386,7 @@ export function useHookWorkspacePrefs(
           return false;
         });
     },
-    [provider, multiTeam, selectedTeamId, t],
+    [api, provider, multiTeam, selectedTeamId, t],
   );
 
   const applyPatch = useCallback(
@@ -401,8 +403,8 @@ export function useHookWorkspacePrefs(
       const mutationRevision = ++mutationRevisionRef.current;
       setPendingWs(workspace);
       const request = isNeutralPrefsProvider(provider)
-        ? window.electronAPI.hookControl.setProviderWorkspacePrefs(provider, workspace, patch)
-        : window.electronAPI.hookControl.setWorkspacePrefs(
+        ? api.hookControl.setProviderWorkspacePrefs(provider, workspace, patch)
+        : api.hookControl.setWorkspacePrefs(
             workspace,
             patch,
             multiTeam ? selectedTeamId : undefined,
@@ -444,7 +446,7 @@ export function useHookWorkspacePrefs(
           if (mutationRevision === mutationRevisionRef.current) setPendingWs(null);
         });
     },
-    [fetchPrefs, t, multiTeam, provider, selectedTeamId, applyProviderSource],
+    [api, fetchPrefs, t, multiTeam, provider, selectedTeamId, applyProviderSource],
   );
 
   const bound = providerBindingConfirmed && activePrefsView?.bound === true;
@@ -518,11 +520,18 @@ export function WorkspacePrefsEditor({
   maxVisibleModelRows?: number;
 }) {
   const { t } = useTranslation();
+  // Another computer's settings list that computer's models; shared agents are its own choice.
+  const { deviceId: targetDeviceId } = useSettingsTarget();
   const agentDeviceId = state.agentDeviceFor(alias);
-  const routeDevices = useModelRouteDevices({ controlledDeviceId: null, leadAgentDeviceId: agentDeviceId });
-  const claudeCaps = useAgentCapabilities('claude-code', agentDeviceId ?? undefined);
-  const codexCaps = useAgentCapabilities('codex', agentDeviceId ?? undefined);
-  const piCaps = useAgentCapabilities('pi', agentDeviceId ?? undefined);
+  const catalogDeviceId = targetDeviceId ?? agentDeviceId;
+  // Route locations are this computer's choice; another computer's settings list its models.
+  const routeDevices = useModelRouteDevices({
+    controlledDeviceId: null,
+    leadAgentDeviceId: targetDeviceId ? null : agentDeviceId,
+  });
+  const claudeCaps = useAgentCapabilities('claude-code', catalogDeviceId ?? undefined);
+  const codexCaps = useAgentCapabilities('codex', catalogDeviceId ?? undefined);
+  const piCaps = useAgentCapabilities('pi', catalogDeviceId ?? undefined);
   const capsByAgent = useMemo(
     () =>
       ({
@@ -544,7 +553,7 @@ export function WorkspacePrefsEditor({
   const disabled = !state.editable || state.pendingWs === alias;
   const vendorKey = toVendorKey(eff.agentKind.id);
 
-  const pickerAgents = useModelPickerAgents(vendorKey === 'cc' ? 'claude-code' : vendorKey === 'pi' ? 'pi' : 'codex', agentDeviceId);
+  const pickerAgents = useModelPickerAgents(vendorKey === 'cc' ? 'claude-code' : vendorKey === 'pi' ? 'pi' : 'codex', catalogDeviceId);
 
   /** 落一个模型选择(分段行与 flat 行共用): 随手写入 (agent, model) 配对并校准 effort。 */
   const applyModel = (next: string) => {
@@ -567,7 +576,15 @@ export function WorkspacePrefsEditor({
           路由 —— 「选 A 落 B」的根因(选了来源没地方存)已消除。 */}
       <PrefsField label={t('settings.tina.prefs.modelLabel')} className="flex-1 basis-[220px]">
         <ModelSelector
-          remoteAgent={routeDevices.devices && { devices: routeDevices.devices, selectedDeviceId: agentDeviceId }}
+          {...(targetDeviceId
+            ? // The other computer's own catalog; choosing an execution location stays there.
+              { deviceId: targetDeviceId, remoteAgent: undefined }
+            : {
+                remoteAgent: routeDevices.devices && {
+                  devices: routeDevices.devices,
+                  selectedDeviceId: agentDeviceId,
+                },
+              })}
           fastModeConfigurable={false}
           unifiedAgents={pickerAgents}
           onUnifiedSelect={({ engine, modelId, providerId, effort, agentDevice }) => state.applyPatch(
@@ -597,7 +614,7 @@ export function WorkspacePrefsEditor({
           // (PrefsSelect 的 modelLabel 回落裸 id)行为一致; 派发侧另有回落并记日志。
           unknownModelLabel={(id) => id}
           // 非选中行 hover 配置(推理强度/Fast)与 composer 共用同一份模型级全局预设。
-          modelMemory={agentDeviceId ? agentDeviceModelMemoryAccessors(agentDeviceId) : {
+          modelMemory={catalogDeviceId ? agentDeviceModelMemoryAccessors(catalogDeviceId) : {
             getEffort: getProviderModelEffort,
             setEffort: setProviderModelEffort,
             setChoice: setProviderModelChoice,
