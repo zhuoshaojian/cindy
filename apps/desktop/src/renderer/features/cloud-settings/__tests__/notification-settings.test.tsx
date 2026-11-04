@@ -77,7 +77,7 @@ it('saves, tests and removes the WeCom group webhook through target tickets', as
   const manage = vi.spyOn(client, 'manage');
   const prefs = preferences();
   render(
-    <CloudBotAuthorization
+    <CloudBotAuthorization deviceId="cloud-test-device"
       client={client}
       online
       active
@@ -153,7 +153,7 @@ it('edits Feishu and Discord announcements and gates Feishu task notices on the 
   const manage = vi.spyOn(client, 'manage');
   const prefs = preferences();
   render(
-    <CloudBotAuthorization
+    <CloudBotAuthorization deviceId="cloud-test-device"
       client={client}
       online
       active
@@ -206,7 +206,7 @@ it('keeps the unavailable note on a target without notification items', async ()
       ? { ...result, items: result.items.filter((item) => item.group !== BOT_NOTIFICATION_GROUP) }
       : result;
   });
-  render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+  render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" trial />);
   const section = await panel('wecom');
   expect(within(section).getByText('cloudSettings.imRemoteControlUnavailable')).toBeTruthy();
   expect(within(section).queryByLabelText('settings.notifications.wecomGroupLabel')).toBeNull();
@@ -217,17 +217,17 @@ it('keeps the unavailable note on a target without notification items', async ()
 it('drops the webhook input when the target goes offline', async () => {
   const client = createTrialCloudSettingsClient();
   const props = { client, active: true, name: 'Cloud', trial: true };
-  const view = render(<CloudBotAuthorization {...props} online />);
+  const view = render(<CloudBotAuthorization deviceId="cloud-test-device" {...props} online />);
   const section = await panel('wecom');
   fireEvent.change(within(section).getByLabelText('settings.notifications.wecomGroupLabel'), {
     target: { value: 'https://example.invalid/hook' },
   });
-  view.rerender(<CloudBotAuthorization {...props} online={false} />);
+  view.rerender(<CloudBotAuthorization deviceId="cloud-test-device" {...props} online={false} />);
   // The bot's own connect form keeps its existing offline behaviour; the webhook input goes.
   expect(screen.queryByLabelText('settings.notifications.wecomGroupLabel')).toBeNull();
   expect(screen.queryByText('WeCom group notifications')).toBeNull();
   // The typed URL is not kept for when the target returns.
-  view.rerender(<CloudBotAuthorization {...props} online />);
+  view.rerender(<CloudBotAuthorization deviceId="cloud-test-device" {...props} online />);
   expect(
     (
       (await waitFor(() =>
@@ -248,7 +248,7 @@ it('reports a failed WeCom save and keeps the webhook unconfigured', async () =>
   );
   const prefs = preferences();
   render(
-    <CloudBotAuthorization
+    <CloudBotAuthorization deviceId="cloud-test-device"
       client={client}
       online
       active
@@ -296,7 +296,7 @@ it('reports a failed WeCom save and keeps the webhook unconfigured', async () =>
 // The URL is stored by the target instance, not on this computer.
 it('names the target instance in the WeCom webhook hint', async () => {
   render(
-    <CloudBotAuthorization
+    <CloudBotAuthorization deviceId="cloud-test-device"
       client={createTrialCloudSettingsClient()}
       online
       active

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode, type SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from '@/lib/toast';
 import { WechatBotSectionView } from '@/components/settings/WechatBotSection';
 import { WecomBotSectionView } from '@/components/settings/WecomBotSection';
 import { FeishuBotSectionView } from '@/components/settings/FeishuBotSection';
@@ -13,8 +14,32 @@ import { OWNER_USER_ID_PATTERN as DISCORD_OWNER_USER_ID_PATTERN } from '@/hooks/
 import {
   OWNER_USER_ID_PATTERN as TELEGRAM_OWNER_USER_ID_PATTERN,
   BOT_TOKEN_PATTERN as TELEGRAM_BOT_TOKEN_PATTERN,
+  describeTelegramStatusFailure,
 } from '@/hooks/useTelegramBot';
 import type { useCloudAuthorization } from './useCloudAuthorization';
+import type { CloudImTarget } from './cloudImTarget';
+
+/** The status call each local card reads; replies come with saved credentials removed. */
+const statusCalls = {
+  telegram: 'telegramBot:get-status',
+  discord: 'discordBot:get-status',
+  wecom: 'wecomBot:get-status',
+  feishu: 'feishuBot:get-state',
+  dingtalk: 'dingtalkBot:get-state',
+} as const;
+type RemoteStatus = {
+  status?: unknown;
+  ownerUserId?: string | null;
+  ownerOpenId?: string | null;
+  botUsername?: string | null;
+  appId?: string | null;
+  appKey?: string | null;
+  botId?: string | null;
+};
+const transportStatus = (value: unknown): DiscordBotTransportStatus | null =>
+  value && typeof value === 'object' && typeof (value as { kind?: unknown }).kind === 'string'
+    ? (value as DiscordBotTransportStatus)
+    : null;
 
 export const personalBotChannels = [
   'wechat',
@@ -45,6 +70,8 @@ export function CloudPersonalBotSettings({
   pending,
   run,
   cancel,
+  workingDirectory,
+  readStatus,
 }: {
   channel: PersonalBotChannel;
   targetName: string;
@@ -61,9 +88,26 @@ export function CloudPersonalBotSettings({
   pending: boolean;
   run: ReturnType<typeof useCloudAuthorization>['run'];
   cancel(): Promise<void>;
+  /** The instance's WeChat working directory row; absent on runtimes without the IM channel. */
+  workingDirectory?: ReactNode;
+  /** Reads the same connection status as the local card; absent on older runtimes. */
+  readStatus?: CloudImTarget['call'];
 }) {
   const { t } = useTranslation();
   const [values, setValues] = useState<Record<string, string>>({});
+  const [remote, setRemote] = useState<RemoteStatus | null>(null);
+  const [togglingOnline, setTogglingOnline] = useState(false);
+  const statusCall = channel === 'wechat' ? null : statusCalls[channel];
+  useEffect(() => {
+    if (!readStatus || !statusCall || !expanded) return;
+    let current = true;
+    void readStatus<RemoteStatus>(statusCall)
+      .then((next) => current && setRemote(next && typeof next === 'object' ? next : null))
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [readStatus, statusCall, expanded, item.status]);
   const validationError = null;
   useEffect(() => {
     // The controller lives above the native accordion, unlike the old form.
@@ -141,10 +185,13 @@ export function CloudPersonalBotSettings({
   const notifications = (label: string) =>
     notificationSettings === undefined ? unsupported(label) : notificationSettings;
   const idle = item.status === 'disconnected' || item.status === 'available';
+  const remoteTransport = transportStatus(remote?.status);
   const status: DiscordBotTransportStatus =
     pending || item.status === 'connecting'
       ? { kind: 'connecting' }
-      : item.status === 'connected'
+      : remoteTransport
+        ? remoteTransport
+        : item.status === 'connected'
         ? { kind: 'connected', appId: '' }
         : item.status === 'conflict' || item.status === 'offline'
           ? { kind: 'conflict', appId: '' }
@@ -159,7 +206,8 @@ export function CloudPersonalBotSettings({
     idPrefix: 'cloud-',
     canDisconnect: !!disconnectAction,
     canReconnect: !!reconnectAction,
-    connectionDetails: details,
+    // With the instance's own status the local card shows its own account details.
+    connectionDetails: remote ? undefined : details,
   };
   let view: ReactNode;
   switch (channel) {
@@ -169,7 +217,7 @@ export function CloudPersonalBotSettings({
           {...common}
           messageTargetName={targetName}
           authorizationAvailable={!!authorizeAction}
-          workingDirectory={unsupported('settings.wechatBot.workingDir.title')}
+          workingDirectory={workingDirectory ?? unsupported('settings.wechatBot.workingDir.title')}
           controller={{
             state: {
               phase: pending
@@ -204,7 +252,7 @@ export function CloudPersonalBotSettings({
             setBotId: set('botId'),
             secret: value('secret'),
             setSecret: set('secret'),
-            ownerUserId: '',
+            ownerUserId: remote?.ownerUserId ?? '',
             status,
             validationError,
             isSaving: pending,
@@ -237,11 +285,16 @@ export function CloudPersonalBotSettings({
             setAppId: set('appId'),
             appSecret: value('appSecret'),
             setAppSecret: set('appSecret'),
-            status: status.kind === 'connecting' ? 'testing' : status.kind,
+            status:
+              status.kind === 'connecting'
+                ? 'testing'
+                : typeof remote?.status === 'string'
+                  ? (remote.status as FeishuBotStatus)
+                  : status.kind,
             errorMessage: null,
             hasSavedCreds: configured,
             hasLoadedState: true,
-            ownerOpenId: null,
+            ownerOpenId: remote?.ownerOpenId ?? null,
             validationError,
             isSaving: pending,
             isClearing: false,
@@ -263,7 +316,7 @@ export function CloudPersonalBotSettings({
             appSecret: value('appSecret'),
             setAppSecret: set('appSecret'),
             hasSecret: configured,
-            ownerUserId: '',
+            ownerUserId: remote?.ownerUserId ?? '',
             status,
             validationError,
             isSaving: pending,
@@ -285,7 +338,7 @@ export function CloudPersonalBotSettings({
           controller={{
             token: value('token'),
             setToken: set('token'),
-            ownerUserId: value('ownerUserId'),
+            ownerUserId: value('ownerUserId') || (remote?.ownerUserId ?? ''),
             setOwnerUserId: set('ownerUserId'),
             status,
             validationError,
@@ -306,23 +359,62 @@ export function CloudPersonalBotSettings({
         <TelegramBotSectionView
           {...common}
           telegramSettings={telegramSettings}
-          canToggleOnline={item.status === 'offline' && !!reconnectAction}
+          canToggleOnline={
+            readStatus
+              ? (item.status === 'offline' && !!reconnectAction) || item.status === 'connected'
+              : item.status === 'offline' && !!reconnectAction
+          }
           controller={{
             token: value('token'),
             setToken: set('token'),
-            ownerUserId: value('ownerUserId'),
+            ownerUserId: value('ownerUserId') || (remote?.ownerUserId ?? ''),
             setOwnerUserId: set('ownerUserId'),
-            status: item.status === 'offline' && !pending ? { kind: 'offline', appId: '' } : status,
-            botUsername: null,
+            status:
+              remoteTransport && !pending
+                ? (remoteTransport as TelegramBotTransportStatus)
+                : item.status === 'offline' && !pending
+                  ? { kind: 'offline', appId: '' }
+                  : status,
+            botUsername: remote?.botUsername ?? null,
             validationError,
             isSaving: pending,
             isDisconnecting: false,
-            isTogglingOnline: false,
+            isTogglingOnline: togglingOnline,
             canConnect: valid && !pending,
             connect,
             disconnect,
             setOnline: async (online) => {
-              if (online) await reconnect();
+              if (online) {
+                await reconnect();
+                return;
+              }
+              // Going offline keeps the token, like the local switch; it opens no page.
+              if (!readStatus || disabled || togglingOnline) return;
+              setTogglingOnline(true);
+              try {
+                const result = await readStatus<{ status?: TelegramBotTransportStatus }>(
+                  'telegramBot:set-online',
+                  { online: false },
+                );
+                setRemote(await readStatus<RemoteStatus>('telegramBot:get-status'));
+                // Like the local switch, only reaching offline counts as success.
+                if (result?.status?.kind === 'offline')
+                  toast.success(t('logic.toasts.telegramBotWentOffline'));
+                else
+                  toast.error(
+                    t('logic.toasts.telegramBotToggleOnlineFailed', {
+                      message: result?.status ? describeTelegramStatusFailure(result.status, t) : '',
+                    }),
+                  );
+              } catch (error) {
+                toast.error(
+                  t('logic.toasts.telegramBotToggleOnlineFailed', {
+                    message: error instanceof Error ? error.message : String(error),
+                  }),
+                );
+              } finally {
+                setTogglingOnline(false);
+              }
             },
           }}
         />

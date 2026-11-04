@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ModelSelector } from '@/components/new-chat/ModelSelector';
 import {
@@ -20,6 +21,8 @@ import {
   type ImDefaultSettingsChannel,
 } from '../../../shared/imDefaultSettings';
 import type { CloudSettingsDomain, CloudSettingsState } from '../../../shared/cloudSettings';
+import type { ImDefaultSettingsState } from '../../../shared/imDefaultSettings';
+import { createCloudImCaller } from './cloudImTarget';
 
 const channels = {
   feishu: 'imFeishu',
@@ -30,6 +33,7 @@ const channels = {
   wecom: 'imWecom',
 } as const;
 const routeKey = (agent: ImDefaultAgentKind) => (agent === 'claude-code' ? 'claudeCode' : agent);
+const vendorOf = (agent: ImDefaultAgentKind) => (agent === 'claude-code' ? 'cc' : agent);
 type Props = {
   itemId: string;
   section?: 'defaults' | 'telegram';
@@ -41,6 +45,8 @@ type Props = {
   supportedDomains?: readonly CloudSettingsDomain[];
   retry?(): void;
   retryDisabled?: boolean;
+  /** The instance's own display of the channel defaults (resolved automatic route), when reported. */
+  display?: ImDefaultSettingsState | null;
   save(
     state: CloudSettingsState,
     set: Record<string, unknown>,
@@ -60,6 +66,7 @@ export function CloudImSettings({
   supportedDomains,
   retry,
   retryDisabled = false,
+  display,
 }: Props) {
   const { t } = useTranslation();
   const channel = itemId.replace(/^bot:/, '') as keyof typeof channels;
@@ -130,6 +137,11 @@ export function CloudImSettings({
   // Retain explicitly configured groups absent from the current discovery page.
   for (const id of always) if (!knownGroups.has(id)) knownGroups.set(id, id);
   const available = !loading && !readFailed && supported && state && value && active;
+  // Like the local picker, the automatic route shows the model it resolves to ("Auto · 高").
+  const shown =
+    display && value && active && !active.modelId && display.automaticModel
+      ? { agentKind: display.agentKind, route: display.agents[display.agentKind] }
+      : null;
   return (
     <div className="flex min-w-0 flex-col gap-6">
       {section === 'defaults' && !available && (
@@ -237,25 +249,35 @@ export function CloudImSettings({
             modelPicker={
               <ModelSelector
                 deviceId={deviceId}
-                modelId={active.modelId}
-                effort={active.effort}
+                modelId={shown?.route.model ?? active.modelId}
+                effort={shown?.route.effort ?? active.effort}
                 disabled={disabled}
                 fastModeConfigurable={false}
                 unifiedAgents={agents}
                 configurationEnabled={false}
                 recordRecentUsage={false}
                 currentProviderId={active.providerId}
-                vendorKey={value.agentKind === 'claude-code' ? 'cc' : value.agentKind}
+                vendorKey={vendorOf(shown?.agentKind ?? value.agentKind)}
                 triggerVariant="field"
                 popoverSide="bottom"
                 onModelChange={(id) =>
-                  select(value.agentKind, id, active.providerId, active.effort)
+                  select(shown?.agentKind ?? value.agentKind, id, active.providerId, active.effort)
                 }
                 onEffortChange={(effort) =>
-                  select(value.agentKind, active.modelId, active.providerId, effort)
+                  select(
+                    shown?.agentKind ?? value.agentKind,
+                    shown?.route.model ?? active.modelId,
+                    active.providerId,
+                    effort,
+                  )
                 }
                 onProviderChange={(provider, id, effort) =>
-                  select(value.agentKind, id ?? active.modelId, provider, effort ?? active.effort)
+                  select(
+                    shown?.agentKind ?? value.agentKind,
+                    id ?? shown?.route.model ?? active.modelId,
+                    provider,
+                    effort ?? active.effort,
+                  )
                 }
                 onUnifiedSelect={({ engine, modelId, providerId, effort }) =>
                   select(engine === 'cc' ? 'claude-code' : engine, modelId, providerId, effort)
@@ -297,9 +319,16 @@ export function cloudImSettingsSummary(
   itemId: string,
   states: Props['states'],
   automaticLabel: string,
+  display?: ImDefaultSettingsState | null,
 ): ImDefaultSettingsSummary | null {
   const domain = channels[itemId.replace(/^bot:/, '') as keyof typeof channels];
   if (!domain) return null;
+  // The instance's display wire is what the local collapsed row shows ("Pi · auto").
+  if (display?.automaticModel)
+    return {
+      agentKind: display.agentKind,
+      model: display.agents[display.agentKind].model || automaticLabel,
+    };
   const state = states[domain];
   const parsed =
     state?.status === 'ready' ? additionalSettingsSchemas[domain].safeParse(state.value) : null;
@@ -318,4 +347,31 @@ export function cloudImSettingsSummary(
     agentKind: value.agentKind,
     model: route.modelId ? (choice?.label ?? route.modelId) : automaticLabel,
   };
+}
+
+/**
+ * The instance's display of each personal channel's defaults over its IM channel. Older
+ * runtimes return nothing and the cards keep the stored snapshot.
+ */
+export function useCloudImDisplays(deviceId: string, enabled: boolean, revision: unknown) {
+  const [displays, setDisplays] = useState<Partial<Record<string, ImDefaultSettingsState>>>({});
+  useEffect(() => {
+    setDisplays({});
+  }, [deviceId]);
+  useEffect(() => {
+    if (!enabled || !deviceId) return;
+    let current = true;
+    const call = createCloudImCaller(deviceId);
+    for (const channel of Object.keys(channels))
+      void call<ImDefaultSettingsState>('maker:im-default-settings:get', channel)
+        .then((state) => {
+          if (current && state && typeof state === 'object')
+            setDisplays((old) => ({ ...old, [channel]: state }));
+        })
+        .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [deviceId, enabled, revision]);
+  return displays;
 }

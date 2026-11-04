@@ -12,7 +12,7 @@ export function cloudBotActionLabel(item: ManagementItem, action: Action) {
   if (action.intent === 'connect' && channel === 'feishu') return 'settings.feishuBot.bind';
   if (action.intent === 'reconnect') return 'settings.feishuBot.saved.reconnect';
   if (action.intent === 'connect') return `settings.${channel}Bot.connect`;
-  if (action.label === 'management.actions.create') return 'common.add';
+  if (action.label === 'management.actions.create') return 'settings.remoteControl.hook.multi.addWorkspace';
   return action.intent === 'disconnect'
     ? 'settings.providers.button.disconnect'
     : 'settings.providers.button.authorize';
