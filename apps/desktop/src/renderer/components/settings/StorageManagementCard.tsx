@@ -72,6 +72,8 @@ export function StorageOverviewView({
   title,
   description,
   children,
+  usagePercent,
+  usageLabel,
 }: {
   databaseBytes: number | null;
   mediaBytes: number | null;
@@ -85,6 +87,9 @@ export function StorageOverviewView({
   description?: ReactNode;
   /** 说明下方的补充行。 */
   children?: ReactNode;
+  /** 进度条改为表示别的占用(如另一台电脑的磁盘);不传时为数据库相对提醒阈值。 */
+  usagePercent?: number | null;
+  usageLabel?: string;
 }) {
   const { t } = useTranslation();
   const fixedCacheBytes = legacyImagesBytes !== null && chatAttachmentsBytes !== null
@@ -93,9 +98,11 @@ export function StorageOverviewView({
   const totalBytes = databaseBytes !== null && mediaBytes !== null && fixedCacheBytes !== null
     ? databaseBytes + mediaBytes + fixedCacheBytes
     : null;
-  const overviewPercent = databaseBytes === null || warningThresholdGiB <= 0
-    ? null
-    : Math.min(100, (databaseBytes / (warningThresholdGiB * GIB_BYTES)) * 100);
+  const overviewPercent = usagePercent !== undefined
+    ? usagePercent
+    : databaseBytes === null || warningThresholdGiB <= 0
+      ? null
+      : Math.min(100, (databaseBytes / (warningThresholdGiB * GIB_BYTES)) * 100);
   return (
     <div
       className={cn(
@@ -114,7 +121,7 @@ export function StorageOverviewView({
         {children}
         <div id="settings-search-settings-about-storage-databaseSectionTitle"
           role="progressbar"
-          aria-label={t('settings.about.storage.databaseSectionTitle')}
+          aria-label={usageLabel ?? t('settings.about.storage.databaseSectionTitle')}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={overviewPercent ?? undefined}
@@ -626,7 +633,14 @@ type DbSlimmingPhase =
 
 
 /** 存储空间页框架:页标题与说明 + 各分区。云实例设置复用同一框架。 */
-export function StorageSectionFrame({ children }: { children: ReactNode }) {
+export function StorageSectionFrame({
+  children,
+  description,
+}: {
+  children: ReactNode;
+  /** 另一台电脑的存储页用自己的说明。 */
+  description?: ReactNode;
+}) {
   const { t } = useTranslation();
   return (
     <div id="settings-storage-section" className="flex flex-col gap-3">
@@ -636,7 +650,7 @@ export function StorageSectionFrame({ children }: { children: ReactNode }) {
             {t('settings.about.storage.title')}
           </h2>
           <p className="mt-1 text-13 leading-[1.5] text-[var(--settings-section-desc)]">
-            {t('settings.about.storage.overviewDescription')}
+            {description ?? t('settings.about.storage.overviewDescription')}
           </p>
         </div>
       </div>
