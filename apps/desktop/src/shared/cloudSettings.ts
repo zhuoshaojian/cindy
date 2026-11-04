@@ -8,17 +8,17 @@ import { SETTINGS_WEB_MAX_CHOICES, settingsWebReadResultSchema } from './setting
  * Authorization and lifecycle operations use their existing dedicated commands. */
 // UI projection only. Remote commands use settingsWeb/settingsManagement.
 export const CLOUD_SETTINGS_GROUPS = {
+  // Settings that only change the instance's own window (notifications, the send shortcut,
+  // appearance, link opening, prompt suggestions, the message rail) are left to its remote
+  // desktop, per the 2026-11-04 product review.
   general: [
     'desktopGeneral',
-    'desktopChat',
-    'desktopNotifications',
     'botModelChain',
     'collaboration',
     'agentResource',
     'gitSafety',
     'lsp',
   ],
-  appearance: ['desktopGeneral', 'appearance', 'desktopChat'],
   personalization: [
     'personalization',
     'memory',
@@ -30,7 +30,6 @@ export const CLOUD_SETTINGS_GROUPS = {
     'chatEmbedding',
     'silentEncryptedRetry',
     'terminal',
-    'desktopChat',
   ],
   providers: [],
   'im-bot': [

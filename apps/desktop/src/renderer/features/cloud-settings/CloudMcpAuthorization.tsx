@@ -6,7 +6,10 @@ import { FormField } from '@/components/ui/form-field';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { SettingsTextInput } from '@/components/settings/SettingsTextInput';
 import { McpTokenField } from '@/components/settings/McpTokenField';
-import { McpRow } from '@/components/settings/McpServersSection';
+import { McpAddRow, McpRow } from '@/components/settings/McpServersSection';
+import { McpServerDialog, type McpServerPersistence } from '@/components/settings/McpServerDialog';
+import { toast } from '@/lib/toast';
+import type { CustomMcpConfig } from '../../../shared/customMcp';
 import type { ManagementItem, ManagementResult } from '../../../shared/settingsManagement';
 import type { CloudAuthorizationProps } from './useCloudAuthorization';
 
@@ -27,6 +30,9 @@ export function CloudMcpAuthorization({
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   const [items, setItems] = useState<ManagementItem[]>([]);
+  // The instance's "Add MCP" entry; absent on runtimes that cannot create servers here.
+  const [createItem, setCreateItem] = useState<ManagementItem>();
+  const [dialog, setDialog] = useState<{ item?: ManagementItem; config?: CustomMcpConfig }>();
   const [selected, setSelected] = useState<string>();
   const [failure, setFailure] = useState<string>();
   const [loading, setLoading] = useState(false);
@@ -56,6 +62,7 @@ export function CloudMcpAuthorization({
     setLoading(true);
     try {
       const all: ManagementItem[] = [];
+      let create: ManagementItem | undefined;
       let offset = 0;
       for (let n = 0; n < 128; n++) {
         const page = await client.manage({ operation: 'list', section: 'mcp', offset });
@@ -63,9 +70,13 @@ export function CloudMcpAuthorization({
         if (page.kind !== 'page' || page.section !== 'mcp' || (page.offset ?? 0) !== offset)
           throw Error('INVALID_PAGE');
         all.push(...page.items.filter((item) => !!getAction(item, 'management.setToken')));
+        create ??= page.items.find(
+          (item) => item.id === 'mcp:create' && !!getAction(item, 'management.actions.create'),
+        );
         if (page.nextOffset === undefined) {
           if (new Set(all.map((i) => i.id)).size !== all.length) throw Error('INVALID_PAGE');
           setItems(all);
+          setCreateItem(create);
           setFailure(undefined);
           return;
         }
@@ -140,6 +151,84 @@ export function CloudMcpAuthorization({
       if (current()) setFailure('authUnknown');
     }
   };
+  /** One ticket run to its end, for the shared MCP dialog and the row's delete. */
+  const runAndWait = async (item: ManagementItem, action: Action, values: Record<string, string>) => {
+    if (!current() || locked.current || !client.manage) throw Error('BUSY');
+    locked.current = true;
+    setPending(true);
+    setFailure(undefined);
+    const id = crypto.randomUUID();
+    try {
+      publish({ kind: 'operation', operationId: id, phase: 'running' });
+      let result = accept(
+        await client.manage({ operation: 'run', actionId: action.id, operationId: id, values }),
+        id,
+      ) as Operation;
+      for (let n = 0; n < 150 && ['running', 'waiting'].includes(result.phase); n++) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        if (!current()) throw Error('SCOPE_CHANGED');
+        result = accept(await client.manage({ operation: 'status', operationId: id }), id) as Operation;
+      }
+      if (result.phase !== 'succeeded') throw Error(result.phase);
+    } catch (error) {
+      // A reported outcome is shown by its phase; a lost reply may still be running.
+      const phase = error instanceof Error ? error.message : '';
+      if (current() && !['failed', 'cancelled', 'expired'].includes(phase)) setFailure('authUnknown');
+      throw error;
+    } finally {
+      values = {};
+      locked.current = false;
+      if (current()) {
+        setPending(false);
+        void load();
+      }
+    }
+  };
+  const fieldsOf = (config: CustomMcpConfig) => ({
+    name: config.name,
+    url: config.url,
+    transport: config.transport,
+  });
+  const persistence = (item?: ManagementItem): McpServerPersistence => ({
+    async create(config) {
+      const action = createItem && getAction(createItem, 'management.actions.create');
+      if (!createItem || !action) throw Error('UNAVAILABLE');
+      await runAndWait(createItem, action, fieldsOf(config));
+    },
+    async update(config) {
+      const action = item && getAction(item, 'management.actions.edit');
+      if (!item || !action) throw Error('UNAVAILABLE');
+      await runAndWait(item, action, fieldsOf(config));
+    },
+    credentialsNote: (
+      <p className="text-12 leading-[1.5] text-[var(--settings-section-desc)]">
+        {t('cloudSettings.mcpCredentialsAfterSave', { name })}
+        {/* The instance refuses to send saved credentials to a changed endpoint. */}
+        {item &&
+          (getAction(item, 'management.removeToken') ||
+            getAction(item, 'management.removeHeader')) &&
+          ` ${t('cloudSettings.mcpClearCredentialsBeforeUrl')}`}
+      </p>
+    ),
+  });
+  const remove = async (item: ManagementItem) => {
+    const action = getAction(item, 'management.actions.delete');
+    if (!action) return;
+    const ok = await confirm({
+      presentation: 'standard',
+      title: t('settings.mcp.deleteConfirm.title', { name: item.label }),
+      description: t('settings.mcp.deleteConfirm.message'),
+      confirmText: t('settings.mcp.deleteConfirm.confirm'),
+      cancelText: t('settings.mcp.cancel'),
+    });
+    if (!ok) return;
+    try {
+      await runAndWait(item, action, {});
+      toast.success(t('settings.mcp.toast.deleted'));
+    } catch {
+      toast.error(t('settings.mcp.toast.deleteFailed'));
+    }
+  };
   useEffect(() => {
     if (!online || !operation) return;
     if (['succeeded', 'failed', 'cancelled', 'expired'].includes(operation.phase)) {
@@ -203,6 +292,26 @@ export function CloudMcpAuthorization({
                   transport: field('transport') === 'sse' ? 'sse' : 'http',
                   headers: {},
                 }}
+                onEdit={
+                  edit && online && !busy
+                    ? () =>
+                        setDialog({
+                          item,
+                          config: {
+                            id: item.id,
+                            name: item.label,
+                            url: field('url') ?? '',
+                            transport: field('transport') === 'sse' ? 'sse' : 'http',
+                            headers: {},
+                          },
+                        })
+                    : undefined
+                }
+                onDelete={
+                  getAction(item, 'management.actions.delete') && online && !busy
+                    ? () => void remove(item)
+                    : undefined
+                }
                 actions={
                   <Button
                     variant="secondary"
@@ -222,12 +331,26 @@ export function CloudMcpAuthorization({
             </div>
           );
         })}
-        {!items.length && (
+        {!items.length && !createItem && (
           <p className="px-5 py-4 text-13 text-[var(--text-secondary)]">
             {t(loading ? 'cloudSettings.loading' : 'bots.capabilities.empty_mcp')}
           </p>
         )}
+        {createItem && online && (
+          <div className={items.length ? 'border-t border-[var(--settings-theme-card-border)]' : ''}>
+            <McpAddRow onClick={() => !busy && setDialog({})} />
+          </div>
+        )}
       </div>
+      {dialog && (
+        <McpServerDialog
+          initial={dialog.config}
+          existingIds={items.map((item) => item.id)}
+          persistence={persistence(dialog.item)}
+          onClose={() => setDialog(undefined)}
+          onSaved={() => setDialog(undefined)}
+        />
+      )}
       <p className="text-12 text-[var(--text-tertiary)]">{t('cloudSettings.mcpScope', { name })}</p>
       {trial && (
         <p className="text-12 text-[var(--text-tertiary)]">{t('cloudSettings.authTrial')}</p>

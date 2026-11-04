@@ -23,6 +23,7 @@ import {
 import type { CloudSettingsDomain, CloudSettingsState } from '../../../shared/cloudSettings';
 import type { ImDefaultSettingsState } from '../../../shared/imDefaultSettings';
 import { createCloudImCaller } from './cloudImTarget';
+import { CloudDesktopFallback } from './CloudDesktopFallback';
 
 const channels = {
   feishu: 'imFeishu',
@@ -38,6 +39,8 @@ type Props = {
   itemId: string;
   section?: 'defaults' | 'telegram';
   deviceId: string;
+  /** The instance's display name. */
+  name: string;
   states: Partial<Record<CloudSettingsDomain, CloudSettingsState>>;
   disabled: boolean;
   loading?: boolean;
@@ -58,6 +61,7 @@ export function CloudImSettings({
   itemId,
   section = 'defaults',
   deviceId,
+  name,
   states,
   disabled,
   save,
@@ -176,14 +180,11 @@ export function CloudImSettings({
       )}
       {section === 'telegram' && (
         <>
-          <section className="flex flex-col gap-2">
-            <h3 className="text-13 font-medium text-[var(--settings-section-title)]">
-              {t('settings.telegramBot.persona.title')}
-            </h3>
-            <p className="text-12 text-[var(--settings-section-desc)]">
-              {t('cloudSettings.imRemoteControlUnavailable')}
-            </p>
-          </section>
+          <CloudDesktopFallback
+            deviceId={deviceId}
+            name={name}
+            label={t('settings.telegramBot.persona.title')}
+          />
           {(['telegramBehavior', 'telegramGroups'] as const)
             .filter((domain) => states[domain]?.status !== 'ready')
             .map((domain) => (

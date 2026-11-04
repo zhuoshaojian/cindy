@@ -263,6 +263,7 @@ export function CloudBotAuthorization(
                     key={`${item.id}:${form?.id ?? 'no-form'}:${props.online}:${props.active}`}
                     item={item}
                     channel={channel}
+                    deviceId={props.deviceId}
                     targetName={props.name}
                     disabled={
                       disabled ||
