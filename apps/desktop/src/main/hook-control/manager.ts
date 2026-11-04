@@ -316,6 +316,11 @@ export interface HookControlManager {
     provider: NeutralHookProvider,
     action: 'connect' | 'provider' | 'add-to-group',
   ): Promise<boolean>;
+  /** The same link without opening it, for a controller that opens it on its own computer. */
+  providerActionUrl(
+    provider: NeutralHookProvider,
+    action: 'connect' | 'provider' | 'add-to-group',
+  ): string | null;
   getProviderWorkspacePrefs(provider: NeutralHookProvider): Promise<ProviderPrefsView>;
   setProviderWorkspacePrefs(
     provider: NeutralHookProvider,
@@ -3403,6 +3408,11 @@ export function createHookControlManager(deps: HookControlManagerDeps): HookCont
       if (!url) return false;
       await lane.config.openUrl(url);
       return true;
+    },
+    providerActionUrl(provider, action) {
+      const lane = laneByProvider.get(provider);
+      if (lane === undefined || lane.binding === null) return null;
+      return lane.config.actionUrl(action, lane.binding) || null;
     },
     getProviderWorkspacePrefs(provider) {
       const lane = laneByProvider.get(provider);

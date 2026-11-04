@@ -14,7 +14,9 @@ import { ImBotSettingsFrame, ImBotGroupSection } from '@/components/settings/ImB
 import {
   ChannelStatusBadge,
   HookConnectionsDescription,
+  HookConnectionsSection,
 } from '@/components/settings/HookConnectionsSection';
+import { SettingsTargetProvider } from '@/components/settings/settingsTarget';
 import {
   useCloudAuthorization,
   supportedBotActions,
@@ -28,10 +30,17 @@ import {
   BOT_NOTIFICATION_GROUP,
   BOT_NOTIFICATION_ITEMS,
 } from '../../../shared/cloudBotNotifications';
+import {
+  CloudTelegramSettings,
+  CloudWechatWorkingDirectory,
+  useCloudImTarget,
+} from './CloudImNative';
 
 /** Same accordion and group layout as local IM settings; only cloud tickets are executed. */
 export function CloudBotAuthorization(
   props: CloudAuthorizationProps & {
+    /** Target device; the native IM cards call it over its private DeviceLink channel. */
+    deviceId: string;
     settings?(itemId: string, section?: 'defaults' | 'telegram'): ReactNode;
     summary?(itemId: string): ImDefaultSettingsSummary | null;
     notificationPreferences?: CloudBotNotificationPreferences;
@@ -67,6 +76,20 @@ export function CloudBotAuthorization(
     if (!wecomEditing) setWecomWebhook('');
   }, [wecomEditing]);
   const disabled = !props.online || requesting || loading;
+  // Runtimes with the IM channel get the local cards; older ones keep the ticket cards below.
+  const native = useCloudImTarget({
+    deviceId: props.deviceId,
+    deviceName: props.name,
+    // The trial has no instance to call; it keeps the ticket cards.
+    enabled: props.online && props.active && !props.trial,
+    items,
+    run: (item, action) => run(item, action, {}, { confirmed: true }),
+    cancelOperation: () => operate('cancel'),
+    operationItem,
+    operationActive: busy,
+  });
+  const nativeIm = native.support === 'ready';
+  const officialOperation = operationItem?.startsWith('bot:official:') ?? false;
   // Notification items belong inside their channel card. An older target lists none,
   // and its cards keep the explicit "not available" note.
   const notificationsSupported = items.some((item) => item.group === BOT_NOTIFICATION_GROUP);
@@ -142,6 +165,66 @@ export function CloudBotAuthorization(
             item.group !== BOT_NOTIFICATION_GROUP &&
             (item.group === 'management.officialBots') === (group === 'cindy'),
         );
+        if (group === 'cindy' && nativeIm)
+          return (
+            <ImBotGroupSection key={group} group={group} idPrefix="cloud-">
+              {officialOperation && (operation || prompt) && (
+                <div className="flex flex-col gap-2">
+                  {operation && (
+                    <p role="status" className="text-13 text-[var(--text-secondary)]">
+                      {t(`cloudSettings.authPhase.${operation.phase}`)}
+                    </p>
+                  )}
+                  {prompt &&
+                    (prompt.kind === 'device' && prompt.userCode ? (
+                      <OAuthDeviceCodeCard
+                        deviceCode={{
+                          verificationUrl: prompt.url,
+                          userCode: prompt.userCode,
+                          expiresAt: prompt.expiresAt,
+                        }}
+                        onOpen={open}
+                      />
+                    ) : (
+                      <OAuthBrowserLink url={prompt.url} onOpen={open} />
+                    ))}
+                  {operation?.phase === 'unknown' && (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        disabled={disabled}
+                        onClick={() => void operate('status')}
+                      >
+                        {t('cloudSettings.authCheck')}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        disabled={disabled}
+                        onClick={() => void operate('cancel')}
+                      >
+                        {t('settings.providers.button.cancel')}
+                      </Button>
+                    </div>
+                  )}
+                  {prompt && props.trial && (
+                    <Button variant="secondary" size="md" onClick={() => void operate('respond')}>
+                      {t('cloudSettings.authTrialComplete')}
+                    </Button>
+                  )}
+                </div>
+              )}
+              <fieldset
+                disabled={!props.online || !props.active}
+                className="m-0 min-w-0 border-0 p-0"
+              >
+                <SettingsTargetProvider key={props.deviceId} target={native.target}>
+                  <HookConnectionsSection />
+                </SettingsTargetProvider>
+              </fieldset>
+            </ImBotGroupSection>
+          );
         if (!entries.length) return null;
         if (group === 'personal') {
           const rank = (id: string) => {
@@ -197,7 +280,23 @@ export function CloudBotAuthorization(
                     }
                     defaults={props.settings?.(item.id)}
                     summary={props.summary?.(item.id)}
-                    telegramSettings={props.settings?.(item.id, 'telegram')}
+                    telegramSettings={
+                      nativeIm ? (
+                        <CloudTelegramSettings key={props.deviceId} target={native.target} />
+                      ) : (
+                        props.settings?.(item.id, 'telegram')
+                      )
+                    }
+                    workingDirectory={
+                      nativeIm ? (
+                        <CloudWechatWorkingDirectory
+                          key={props.deviceId}
+                          target={native.target}
+                          disabled={disabled || !props.active}
+                        />
+                      ) : undefined
+                    }
+                    readStatus={nativeIm ? native.target.call : undefined}
                     notificationSettings={notificationSettings(channel)}
                     run={run}
                     cancel={() => operate('cancel')}
@@ -383,7 +482,8 @@ export function CloudBotAuthorization(
           </ImBotGroupSection>
         );
       })}
-      {!loading && !failure && !items.length && <p>{t('cloudSettings.noFields')}</p>}
+      {!loading && !failure && !items.length && !nativeIm && <p>{t('cloudSettings.noFields')}</p>}
+      {native.directoryPicker}
       {props.trial && (
         <p className="text-12 text-[var(--text-tertiary)]">{t('cloudSettings.authTrial')}</p>
       )}

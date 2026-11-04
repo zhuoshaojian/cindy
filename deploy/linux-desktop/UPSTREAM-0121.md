@@ -463,3 +463,41 @@ With the Mac Dev `0.1.121-dev.cloud.20261102.12` (`d55ef4c2e1`):
   values, which would leave a customized default behind; their Host code is unchanged from cloud.7
   and covered by tests. Fleet admission has not been requested.
 
+
+## cloud.9: cloud prompt and IM cards over private channels (2026-11-04)
+
+`feba50bcfa` lets the local IM cards (official Hook connections and directory preferences, Telegram
+persona, behaviour and groups) take their calls from a settings target that defaults to this
+computer; `c88fcff3bd` adds the owner-only `cloud:personalization:v1` and `cloud:im-settings:v1`
+channels on the runtime and renders the local cards on the cloud page (see
+`docs/host-settings.md` and `docs/cloud-settings-parity.md`). Delivery `735d3ff58c`, run
+41806981261: verify, candidate (native smoke on `0.1.121-cloud.9`) and cache passed; a disposable
+probe hit the qualified cache and was removed. The owner-only policy (`cis-u121c9-1104-own-*`) added
+the cloud.9 approval for the owner and the keyring list (10 → 11, no retirement); defaults,
+placements and tenants were unchanged and both roles offered cloud.9 to the owner only.
+
+The data probe measured 8.9 KB before launch. The upgrade completed on the first attempt: backup
+**3,714 files / 449,947,054 bytes**, databases and schedules unchanged, no source exit rows, main
+and init on the delivered digest with the cache hit, released and observed for five minutes. The
+instance is ready on cloud.9 with zero restarts; the other 13 instances, their StatefulSets and
+Pods and new claims are unchanged, with no active operation.
+
+With the Mac Dev `0.1.121-dev.cloud.20261102.13` (`c88fcff3bd`), against the owner's instance:
+
+- IM page: the official section is the local `HookConnectionsSection` with the instance's own
+  bindings (Slack workspace and transport, Telegram and X accounts, how-to, public-reply warning,
+  retract, workspace mapping with default and per-directory model/permission, add directory), and
+  the personal Telegram card has persona, behaviour, groups and the contacts hint; per-card text
+  differs from the local page only by account data and the instance's resolved automatic model
+  (`Codex · gpt-6.1-sol`, `GPT-6.1-Sol · 中`).
+- Writes, each restored: Telegram bot name typed and cleared (instance reads back `"Cindy c9
+  check"`, then `""`); Slack lifecycle announcement on and back off; official workspace
+  `/home/cindy` added through the instance directory browser and removed (`{}` again); WeChat
+  working directory set to `/home/cindy` and reset (settings file removed as before).
+- Prompt: the page shows the instance prompt; saving `[cloud9-check]` wrote
+  `host-personalization.json`, a save with a stale revision answered `REVISION_CONFLICT` and
+  changed nothing, and reset cleared the override. The file did not exist before; it now holds no
+  override, which behaves as the default. The other three Host preference files are unchanged.
+- Local page in the same Dev build is unchanged apart from this computer's own X binding state.
+- Not exercised live: starting a binding (authorization tickets are unchanged), Telegram offline,
+  group activation with real groups. Fleet admission has not been requested.

@@ -25,6 +25,17 @@ CIS 校验修正 `b427a3c3` 已部署；六类 IM 读取、侧边栏与设置入
 只读目录包含大量硬件按键映射及退役兼容字段；字段数不是独立界面选项数，也不能据此宣称全部可写。
 本文的“未接入”是实现缺口，只有明确的平台/托管限制才可归为“有意不同”。
 
+## IM 页与个人指令远程读写（2026-11-04，源码）
+
+用户对照本地页指出：云端官方 X 只有「断开」，Slack workspace 单独成卡且按钮显示 `common.add`，个人 Telegram 人格与群聊、个人微信工作目录显示「暂不支持」，自动模型显示「选择模型」。本轮按「本地组件不改行为、只把直接调用本机接口的位置改成可替换目标」处理：
+
+- 本地组件：`HookConnectionsSection`、`HookWorkspacePrefsEditor`、`TelegramBehaviorSettings`（人格/行为/群/通讯录提示）改从 `settingsTarget` 取接口，缺省仍是本机 `window.electronAPI`，行为不变；`WechatWorkingDirectory` 导出供云页复用。源码门禁测试确保这些组件除打开外部链接外不再直接调用本机接口。
+- 云页：新运行时（探测 `cloud:im-settings:v1` 成功）直接渲染本地官方 IM 区块与 Telegram/微信区块；连接快照每 2.5 秒轮询，其它视图写后回读。开启/添加/重新授权/关联等授权动作映射到既有云授权票据，取消优先取消票据。个人机器人用实例自身状态显示已连接账号详情（Bot 用户名、用户 ID 等）。自动模型改读实例的显示快照（`maker:im-default-settings:get`），选择器与收起行显示实际解析的模型（如 `Pi · auto`、`Auto · 高`）。
+- 旧运行时或试用：保留原票据卡片与 CIS 域；`common.add` 改为「添加 Slack workspace」。
+- 仍不同：个人 Telegram「我的其他设备」列表（以实例为视角的设备列表需单独设计）、个人微信与官方 X 的伙伴绑定。
+
+验证与实测见 `deploy/linux-desktop/UPSTREAM-0121.md` 的 cloud.9 记录。
+
 ## 本地页面结构对齐（2026-10-30 晚，源码）
 
 本轮在测试客户端里逐分区截取本地与云实例设置，并按 `SettingsView` 逐节比对后补齐。
@@ -227,7 +238,7 @@ UI 检查 18 项（深浅色，简中，合成数据）通过。
 | 侧栏主列表样式 | 源码接入 | 共用本地两档分段控件，写 `desktopGeneral.sidebarMainMode` |
 | 插件面板恢复位置 | 待核对实际入口 | `ghostPanelRestoreMode` 已有远端字段，不由字段存在推断当前本地外观页有控件 |
 | 回复动效 `streamFadePreference` | 已接入并通过两项之一的真实闭环 | 复用 StreamFadeSection，实际放“外观”；保留系统 reduced-motion 优先级，恢复只清该项 |
-| 个人指令正文 | 待接入 | 当前真实协议只开放元数据；正文有独立披露/确认边界。试用编辑器不算真实可读写 |
+| 个人指令正文 | 源码接入（cloud.9 + Dev .13） | 实例私有通道 `cloud:personalization:v1` 读写完整正文，revision 冲突与恢复默认同本地；正文不经 CIS。旧运行时只显示页标题 |
 | 记忆 `maker/claudeCode/codex/pi` 开关 | 已接入 | 复用四项开关及恢复默认，仍需逐项写入验收 |
 | 记忆清除/内容操作 | 待接入 | 云端传入的 `handleMakerReset/handleReset` 为空；不能把“恢复开关默认”当成记忆内容清除 |
 | Subagent：Claude 路由、Codex 智能路由 | 源码接入 | 共用 `SubagentModelSectionView`，供应商与模型一并保存；目标 choices 不含已存来源时显示断开 |
@@ -291,7 +302,7 @@ UI 检查 18 项（深浅色，简中，合成数据）通过。
 | 自动模式当前有效模型预览 | 待接入 | 旧远端结果只给保存配置，不能凭控制端目录猜当前模型，也不能将未返回预览报成“没有可用模型” |
 | 跨设备 Agent 默认路由 | 待接入，保护现有配置 | 旧合同没有 `agentDeviceId`；检测到已保存跨设备路由时不开放该域编辑，防止保存时丢失设备绑定 |
 | 个人微信：默认模型在卡片中的位置 | 源码已共用 | 由同一个 `WechatBotSectionView` 将默认模型置于连接区上方；实际 Dev 页面待验收 |
-| 个人微信：工作目录选择/显示/恢复 | 待接入 | 本地 `WechatWorkingDirectory`，云端没有对应控制器和远端目录选择 |
+| 个人微信：工作目录选择/显示/恢复 | 源码接入（cloud.9 + Dev .13） | 共用本地 `WechatWorkingDirectory`；目录在实例目录浏览器中选择，经 `cloud:im-settings:v1` 写入并复用本地路径校验 |
 | 个人微信：渠道与伙伴绑定/解除 | 待接入 | 本地 `companionBotId` 会切换卡片内容；云管理条目不能表达此状态，不应仍展示普通个人默认模型 |
 | 个人微信：权限能力提示 | 不一致 | 本地按 Agent `turnPermissionPolicy` 判提示，云 View 未传 warning；远端适配还硬编码排除 Pi。不能把这一差异宣称为沿用本地能力判断 |
 | 个人微信：授权中、待确认、已绑定、需重授权 | 展示已共用、状态投影待补 | 共用本地确认、等待、取消、重新绑定、解绑交互；旧管理列表不能区分所有本地 phase，不以通用 connected/error 推断完整授权状态 |
@@ -306,20 +317,20 @@ UI 检查 18 项（深浅色，简中，合成数据）通过。
 | Discord：Token、Owner User ID、连接/恢复/断开 | 展示已共用 | `DiscordBotSectionView` 共用表单、格式校验、连接恢复卡与一次断开确认；未知回执仍走远端查询，不重复写入 |
 | Discord：任务生命周期播报 | 已接入（cloud.2；接口级真实读写） | 管理条目 `notify:discord` 的 edit 下拉；共用 `DiscordLifecycleSettings`，与本地一样仅在已保存凭据后显示 |
 | 个人 Telegram：Token、Owner User ID、连接/断开 | 展示已共用 | `TelegramBotSectionView` 共用表单、格式校验和连接卡；断开按明确票据执行，不用断开冒充保留绑定的下线 |
-| 个人 Telegram：上线/下线、恢复已保存连接 | 待完整接入 | 本地 `ConnectedCard`/`setOnline`，云端通用断开不能替代下线 |
+| 个人 Telegram：上线/下线、恢复已保存连接 | 源码接入（cloud.9 + Dev .13） | 下线经 IM 通道 `telegramBot:set-online`（只接受下线）保留 token；上线仍走授权票据 |
 | 个人 Telegram：同一机器人远端设备列表及控制 | 待接入 | 本地 `TelegramRemoteDevices`，不是顶层云实例列表 |
-| 个人 Telegram：机器人名称 | 待接入 | `telegramPersona.botName` 有合同但无原生云控件 |
-| 个人 Telegram：Soul | 待接入 | `telegramPersona.soul` 有合同但无原生云控件 |
+| 个人 Telegram：机器人名称 | 源码接入（cloud.9 + Dev .13） | 共用本地 `TelegramPersonaSettings`，读写实例 `telegramBot:get/set-persona`，含同步资料页 |
+| 个人 Telegram：Soul | 源码接入（cloud.9 + Dev .13） | 同上 |
 | 个人 Telegram：表情回应 | 源码接入、真实域可读 | `telegramBehavior.emojiReactions`；本轮未保存 |
 | 个人 Telegram：群聊引用策略 | 源码接入、真实域可读 | `telegramBehavior.replyQuoteGroup`；不修改官方 Telegram |
 | 个人 Telegram：私聊引用策略 | 源码接入、真实域可读 | `telegramBehavior.replyQuoteDm`；本轮未保存 |
-| 个人 Telegram：群激活模式 | 源码接入、当前域 unavailable | 显式 always 与发现列表合并；未验收群实际触发，不丢未列出的已保存群 |
+| 个人 Telegram：群激活模式 | 源码接入（cloud.9 + Dev .13） | 新运行时改用本地 `TelegramGroupActivationSettings` 读实例已知群列表与智能通讯录开关；旧运行时仍走 `telegramGroups` 域 |
 | 官方 Slack：多工作区绑定列表、逐条授权 | 部分接入 | 列表分页不能截断；连接操作不等于目录/模型设置 |
-| 官方 Hook：目录别名新增/修改/删除、选择实际路径 | 待接入 | 本地 `HookConnectionsSection` 的工作目录编辑；不得传入控制端路径 |
-| 官方 Hook：默认工作目录 | 待接入 | Slack/Telegram/X 按各自作用域处理，不同渠道不能相互覆盖 |
-| 官方 Hook：每目录 Agent/模型/来源/思考/权限 | 待接入 | `WorkspacePrefsEditor`；不复用个人渠道默认域 |
-| 官方 Hook：任务生命周期播报 | 待接入 | `officialHooks.lifecycleAnnouncement` 有合同但无原生云控件 |
-| 官方 Telegram 群/引用/表情策略 | 待接入 | 官方与个人为两套架构；不以个人群组表修改官方连接 |
+| 官方 Hook：目录别名新增/修改/删除、选择实际路径 | 源码接入（cloud.9 + Dev .13） | 云页直接渲染本地 `HookConnectionsSection`；路径在实例目录浏览器中选择 |
+| 官方 Hook：默认工作目录 | 源码接入（cloud.9 + Dev .13） | 同上，`set-provider-default-workspace` 按渠道写入 |
+| 官方 Hook：每目录 Agent/模型/来源/思考/权限 | 源码接入（cloud.9 + Dev .13） | 共用 `WorkspacePrefsEditor`，模型目录与能力读实例；共享供应商的远程 Agent 选择在云页不显示 |
+| 官方 Hook：任务生命周期播报 | 源码接入（cloud.9 + Dev .13） | 本地开关，经 IM 通道写实例 |
+| 官方 Telegram 群/引用/表情策略 | 源码接入（cloud.9 + Dev .13） | 本地官方 Telegram 区块，经 `maker:hook-control:telegram-*` 读写实例 |
 | 官方 X：伙伴归属/绑定解除 | 待接入 | 本地已有独立确认及身份归属，不能用一般断开操作替代 |
 | 官方地址覆盖及其他高级字段 | 待接入/按本地可见范围 | 凭据/内部地址不公开在验收记录，不能将只读 configured 标记当成字段值 |
 

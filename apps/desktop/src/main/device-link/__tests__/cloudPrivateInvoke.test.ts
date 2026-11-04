@@ -1,6 +1,7 @@
 /**
- * Cloud fork: the private provider-settings channel exists only when a managed cloud runtime
- * registers it, serves same-account computers only and keeps upstream behavior otherwise.
+ * Cloud fork: the private cloud channels (provider settings, prompt, IM settings) exist only when
+ * a managed cloud runtime registers them, serve same-account computers only and keep upstream
+ * behavior otherwise.
  */
 import { providerShareGuestPeer } from '@cindy/device-link';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -100,6 +101,27 @@ describe('cloud private invoke channel', () => {
       ok: false,
       error: { code: 'IPC_ERROR', message: '[INTERNAL] cloud request failed' },
     });
+  });
+
+  it('routes each registered channel to its own handler and clears them together', async () => {
+    const providers = vi.fn(async () => 'providers');
+    const prompt = vi.fn(async () => 'prompt');
+    setCloudPrivateInvokeHandler({ channel: CHANNEL, handle: providers });
+    setCloudPrivateInvokeHandler({ channel: 'cloud:personalization:v1', handle: prompt });
+    await expect(
+      runInvoke('same-account-mac', { channel: 'cloud:personalization:v1', args: [{ op: 'read' }] }),
+    ).resolves.toEqual({ ok: true, result: 'prompt' });
+    await expect(
+      runInvoke('same-account-mac', { channel: CHANNEL, args: [{ op: 'list' }] }),
+    ).resolves.toEqual({ ok: true, result: 'providers' });
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(providers).toHaveBeenCalledTimes(1);
+    setCloudPrivateInvokeHandler(null);
+    for (const channel of [CHANNEL, 'cloud:personalization:v1'])
+      await expect(runInvoke('same-account-mac', { channel, args: [{}] })).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'CHANNEL_NOT_ALLOWED' },
+      });
   });
 
   it('does not open any other unlisted channel', async () => {
