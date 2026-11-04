@@ -536,8 +536,12 @@ With the Mac Dev `0.1.121-dev.cloud.20261102.14` (`277b8473e0`), against the own
   instance was left on its home screen and the viewer closed.
 - Found and fixed in `c53570f10c` (Dev `.15`, client only): the cloud storage section still said the
   data is on this computer and its bar measured the database instead of the instance disk; the
-  fallback text repeated the instance name. Once, the first remote desktop open left a second
-  viewer stuck connecting; it did not recur on two later opens.
-- Dev `.15` is installed; its live recheck waits for the Keychain prompt on this Mac.
+  fallback text repeated the instance name. The extra viewer page seen after the first open is
+  the viewer's hidden prewarmed spare (upstream `RemoteDesktopViewerWindows.prewarm`), which never
+  connects; it is not a second window.
+- Dev `.15` (`c53570f10c`) recheck: the cloud storage section says the data is on the cloud
+  instance, the overview bar shows the instance disk (6.73 of 19.52 GB, about 34%), and plugins
+  and storage cleanup each say what to change on the cloud desktop and open it. The local storage
+  page text is unchanged from `.14`. The viewer was closed afterwards.
 - Not exercised live: MCP endpoint change with saved credentials (refused by the instance, covered
   by tests), the low-disk warning. Fleet admission has not been requested.
