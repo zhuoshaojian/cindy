@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const toastMocks = vi.hoisted(() => ({
@@ -40,8 +40,6 @@ import {
   COMPOSER_SEND_SHORTCUT_STORAGE_KEY,
   _resetComposerSendShortcutPreferenceForTests,
 } from '@/hooks/useComposerSendShortcutPreference';
-import { installDesktopPreferencesHarness, settleDesktopPreferences } from '../../../__tests__/desktopPreferencesHarness';
-let host: ReturnType<typeof installDesktopPreferencesHarness>;
 import { ComposerSendShortcutSection } from '../ComposerSendShortcutSection';
 
 function setPlatform(platform: string): void {
@@ -70,7 +68,6 @@ describe('ComposerSendShortcutSection', () => {
     toastMocks.error.mockReset();
     toastMocks.success.mockReset();
     setPlatform('win32');
-    host = installDesktopPreferencesHarness();
   });
 
   it('shows the default Enter mode and platform-specific shortcut copy', () => {
@@ -89,7 +86,7 @@ describe('ComposerSendShortcutSection', () => {
     ).not.toBeNull();
   });
 
-  it('synchronizes mode B across subscribers and restores the default override', async () => {
+  it('synchronizes mode B across subscribers and restores the default override', () => {
     render(
       <>
         <ComposerSendShortcutSection />
@@ -98,15 +95,14 @@ describe('ComposerSendShortcutSection', () => {
     );
 
     const switches = screen.getAllByRole('switch', { name: 'Use Ctrl+Enter to send messages' });
-    await act(async () => { fireEvent.click(switches[0]); await settleDesktopPreferences(); });
+    fireEvent.click(switches[0]);
 
-    expect(host.snapshot()).toMatchObject({ value: { composerSendShortcut: 'modifier-enter' } });
-    expect(localStorage.getItem(COMPOSER_SEND_SHORTCUT_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(COMPOSER_SEND_SHORTCUT_STORAGE_KEY)).toBe('modifier-enter');
     expect(switches[0].getAttribute('data-state')).toBe('checked');
     expect(switches[1].getAttribute('data-state')).toBe('checked');
     expect(screen.getAllByText('Customized')).toHaveLength(2);
 
-    await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: 'Restore default' })[0]); await settleDesktopPreferences(); });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Restore default' })[0]);
 
     expect(localStorage.getItem(COMPOSER_SEND_SHORTCUT_STORAGE_KEY)).toBeNull();
     expect(switches[0].getAttribute('data-state')).toBe('unchecked');

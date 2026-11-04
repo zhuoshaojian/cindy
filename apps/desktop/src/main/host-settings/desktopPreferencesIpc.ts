@@ -3,7 +3,7 @@ import { DESKTOP_PREFERENCES_CHANNELS as channels, validateDesktopPreferencesUpd
 import { assertTrustedAppRendererEvent, isTrustedTopLevelCindyRendererEvent, isTrustedCindyRendererWindow } from '../security/trustedAppRenderer.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 import { isRemoteDesktopViewer } from '../remote-desktop-viewer/registry.js';
-import { inspectDesktopPreferences, updateDesktopPreferences, onDesktopPreferencesChanged, currentDesktopPreferencesProfileStamp } from './desktop-preferences.js';
+import { hostOwnsDesktopPreferences, inspectDesktopPreferences, updateDesktopPreferences, onDesktopPreferencesChanged, currentDesktopPreferencesProfileStamp } from './desktop-preferences.js';
 
 /** 来源、实际 profile partition 和 Host 注册的窗口身份三者同时匹配，不能仅凭 app-content 分类。 */
 let allowWindow: (id: number, access: 'read' | 'write') => boolean = () => false;
@@ -19,6 +19,9 @@ export function registerDesktopPreferencesIpc(options: { isLocalWindow: (id: num
   allowWindow = options.isLocalWindow;
   if (registered) return;
   registered = true;
+  ipcMain.on(channels.hostOwned, event => { event.returnValue = hostOwnsDesktopPreferences(); });
+  // Ordinary desktops keep these preferences in renderer localStorage.
+  if (!hostOwnsDesktopPreferences()) return;
   ipcMain.handle(channels.get, event => { assertLocalProfile(event); return inspectDesktopPreferences(); });
   // 同步启动 IPC 仅提供只读快照，避免缓存丢失后先闪回默认主题或语言。
   ipcMain.on(channels.getSync, event => {

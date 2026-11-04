@@ -1,10 +1,6 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { __resetDesktopPreferencesForTests } from '../state/hostDesktopPreferences';
-import { installDesktopPreferencesHarness } from './desktopPreferencesHarness';
-let host: ReturnType<typeof installDesktopPreferencesHarness>;
-
 import { renderHook } from '@testing-library/react';
 
 import {
@@ -41,12 +37,10 @@ function installElectronApi(
       agentIsland,
     },
   });
-  if (Object.keys(agentIsland).length) host = installDesktopPreferencesHarness();
 }
 
 describe('agent island settings', () => {
   afterEach(() => {
-    __resetDesktopPreferencesForTests();
     localStorage.clear();
     Reflect.deleteProperty(window, 'electronAPI');
     vi.restoreAllMocks();
@@ -71,8 +65,7 @@ describe('agent island settings', () => {
 
     expect(setEnabled).toHaveBeenCalledWith(false);
     expect(getAgentIslandEnabled()).toBe(false);
-    expect(host.snapshot()).toMatchObject({ value: { agentIslandEnabled: false }, customizedKeys: ['agentIslandEnabled'] });
-    expect(localStorage.getItem('notifications.agentIslandEnabled')).toBe('true');
+    expect(localStorage.getItem('notifications.agentIslandEnabled')).toBe('false');
   });
 
   it('syncs the persisted value to main on app bootstrap', async () => {
@@ -233,8 +226,7 @@ describe('agent island settings', () => {
     await expect(resetAgentIslandSoundSettings()).resolves.toBe(true);
 
     expect(setSoundSettings).toHaveBeenCalledWith(DEFAULT_AGENT_ISLAND_SOUND_SETTINGS);
-    expect(host.snapshot()).toMatchObject({ customizedKeys: [] });
-    expect(localStorage.getItem('notifications.agentIslandSoundSettings')).not.toBeNull();
+    expect(localStorage.getItem('notifications.agentIslandSoundSettings')).toBeNull();
     expect(isAgentIslandSoundSettingsCustomized()).toBe(false);
     expect(getAgentIslandSoundSettings()).toEqual(DEFAULT_AGENT_ISLAND_SOUND_SETTINGS);
   });
@@ -341,7 +333,7 @@ describe('agent island settings', () => {
     }]);
   });
 
-  it('does not persist a runtime display remapping as a user override', async () => {
+  it('persists the display target resolved by main after display re-enumeration', async () => {
     const getDisplayOptions = vi.fn(async () => ({
       ok: true as const,
       options: [],
@@ -358,8 +350,11 @@ describe('agent island settings', () => {
 
     await loadAgentIslandDisplayOptions();
 
-    expect(getAgentIslandDisplayTarget()).toEqual({ mode: 'all' });
-    expect(host.api.update).not.toHaveBeenCalled();
+    expect(getAgentIslandDisplayTarget()).toMatchObject({
+      mode: 'display',
+      displayId: 7,
+      displayName: 'Studio Display',
+    });
   });
 
   it('does not rewrite or notify when main returns the unchanged display target', async () => {

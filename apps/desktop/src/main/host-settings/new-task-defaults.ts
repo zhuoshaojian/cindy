@@ -6,6 +6,15 @@ import { normalizeHostSettingsChange, type NewTaskDefaultSettings, type HostSett
 import { validateNewTaskPreferenceHistory, type NewTaskPreferenceHistory } from '../../shared/newTaskPreferenceHistory.js';
 import { assertSettingsOwner, currentSettingsOwner, settingsOwnerKey, settingsOwnerFilePath } from './personalization.js';
 import { HostSettingsError } from './operations.js';
+import { getInstanceConfig } from '../instance-runtime/config.js';
+
+/** Only a managed cloud instance keeps new-task defaults here; desktops keep the renderer draft in localStorage. */
+export function hostOwnsNewTaskDefaults(): boolean {
+  return getInstanceConfig() !== null;
+}
+function assertHostOwned(): void {
+  if (!hostOwnsNewTaskDefaults()) throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
+}
 
 interface StoredDefaults extends NewTaskDefaultSettings { _initialized: boolean; _history: NewTaskPreferenceHistory | null }
 const emptyDefaults: NewTaskDefaultSettings = { harness: 'claude-code', providerId: null, modelId: null, effort: null, fast: false, thinking: true, worktree: false, planMode: false };
@@ -51,23 +60,24 @@ function projectNewTaskDefaults(result: ReturnType<typeof store.inspect>): HostS
   return { ...result, value: pick(result.value), defaults: pick(result.defaults), customizedKeys, isCustomized: customizedKeys.length > 0 };
 }
 export function inspectNewTaskDefaults(): HostSettingState<NewTaskDefaultSettings> {
-  if (!currentSettingsOwner()) return { status: 'unavailable', revision: null };
+  if (!hostOwnsNewTaskDefaults() || !currentSettingsOwner()) return { status: 'unavailable', revision: null };
   return projectNewTaskDefaults(store.inspect());
 }
 /** 只读网页不能把旧 Renderer 尚未导入的状态解释成已确认默认值。 */
 export function inspectNewTaskDefaultsForSnapshot(): HostSettingState<NewTaskDefaultSettings> | { status: 'migrationPending'; revision: null } {
-  if (!currentSettingsOwner()) return { status: 'unavailable', revision: null };
+  if (!hostOwnsNewTaskDefaults() || !currentSettingsOwner()) return { status: 'unavailable', revision: null };
   const result = store.inspect();
   if (result.status === 'ready' && !result.value._initialized) return { status: 'migrationPending', revision: null };
   return projectNewTaskDefaults(result);
 }
 export function readNewTaskPreferenceHistory(): NewTaskPreferenceHistory | null {
-  if (!currentSettingsOwner()) return null;
+  if (!hostOwnsNewTaskDefaults() || !currentSettingsOwner()) return null;
   const result = store.inspect();
   if (result.status !== 'ready') throw new HostSettingsError('UNREADABLE');
   return result.value._history;
 }
 export async function commitNewTaskDefaults(mutation: OverrideSettingsMutation<NewTaskDefaultSettings>, options: OverrideSettingsCommitOptions = {}) {
+  assertHostOwned();
   const owner = currentSettingsOwner();
   if (!owner) throw new HostSettingsError('OWNER_CHANGED');
   const result = await store.commitAtomic(state => {
@@ -172,6 +182,7 @@ export async function applyHostRemoteDraftPreference(pref: {
   agent: NewTaskDefaultSettings['harness']; providerId: string; modelId: string; active: boolean;
   markModelChoice?: boolean; effort?: string; fast?: boolean | 'ultrafast'; thinking?: boolean; taskProviderId?: string;
 }): Promise<void> {
+  assertHostOwned();
   const owner = currentSettingsOwner();
   if (!owner) throw new HostSettingsError('OWNER_CHANGED');
   let providers: ProviderView[] = [];
@@ -254,6 +265,7 @@ const MODEL_EFFORT_PRESET_SLOT = '*';
 export async function applyHostModelEffort(pref: {
   agent: NewTaskDefaultSettings['harness']; providerId: string; modelId: string; effort: string | null;
 }): Promise<void> {
+  assertHostOwned();
   const owner = currentSettingsOwner();
   if (!owner) throw new HostSettingsError('OWNER_CHANGED');
   if (!pref.providerId || pref.providerId === MODEL_EFFORT_PRESET_SLOT || !pref.modelId) throw new HostSettingsError('INVALID_VALUE');
@@ -282,6 +294,7 @@ export async function applyHostModelEffort(pref: {
 }
 /** 原生 UI 的 CAS/迁移保留权限历史；helper 的封闭字段语法仍不能读写权限。 */
 export async function saveNewTaskPreferenceHistory(history: unknown, owner: SettingsOwnerStamp, expectedRevision: string, importOnly: boolean): Promise<'saved' | 'already_initialized'> {
+  assertHostOwned();
   validateNewTaskPreferenceHistory(history);
   let outcome: 'saved' | 'already_initialized' = 'saved';
   await store.commitAtomic(state => {

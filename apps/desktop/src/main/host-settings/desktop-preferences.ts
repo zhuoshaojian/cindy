@@ -2,11 +2,12 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
 import { createLogger } from '../logger.js';
+import { getInstanceConfig } from '../instance-runtime/config.js';
 import { createOverrideSettingsFile, OverrideSettingsError, type OverrideSettingsSnapshot } from '../maker-host/override-settings-file.js';
 import {
   desktopPreferenceDefaults, DESKTOP_PREFERENCE_KEYS, normalizeDesktopPreferenceOverrides,
-  validateDesktopPreferencesUpdate, type DesktopPreferences, type DesktopPreferencesSnapshot,
-  type DesktopPreferencesUpdate,
+  validateDesktopPreferencesUpdate, type DesktopPreferenceKey, type DesktopPreferences,
+  type DesktopPreferencesSnapshot, type DesktopPreferencesUpdate,
 } from '../../shared/desktopPreferences.js';
 
 interface StoredPreferences extends DesktopPreferences { _initialized: boolean }
@@ -73,9 +74,28 @@ const desktopPreferences = createDesktopPreferencesStore({
   filePath: () => path.join(app.getPath('userData'), 'host-desktop-preferences.json'),
   profileStamp: currentDesktopPreferencesProfileStamp,
 });
-export const inspectDesktopPreferences = desktopPreferences.inspect;
-export const updateDesktopPreferences = desktopPreferences.update;
+/** Only a managed cloud instance keeps these preferences in the Host profile file. */
+export function hostOwnsDesktopPreferences(): boolean {
+  return getInstanceConfig() !== null;
+}
+const hostOnly = <A extends unknown[], R>(write: (...args: A) => Promise<R>) =>
+  (...args: A): Promise<R> =>
+    hostOwnsDesktopPreferences() ? write(...args) : Promise.reject(new OverrideSettingsError('SCOPE_CHANGED'));
+export const inspectDesktopPreferences = (): DesktopPreferencesSnapshot =>
+  hostOwnsDesktopPreferences()
+    ? desktopPreferences.inspect()
+    : { status: 'unavailable', revision: null, profileStamp: currentDesktopPreferencesProfileStamp() };
+export const updateDesktopPreferences = hostOnly(desktopPreferences.update);
 export const onDesktopPreferencesChanged = desktopPreferences.onChanged;
 
 /** Host journals persistence independently of later account/application changes. */
-export const commitDesktopPreferences = (request: DesktopPreferencesUpdate, assertCurrent?: () => void) => desktopPreferences.update(request, assertCurrent, true);
+export const commitDesktopPreferences = hostOnly((request: DesktopPreferencesUpdate, assertCurrent?: () => void) => desktopPreferences.update(request, assertCurrent, true));
+
+/** Committed Host value on a cloud instance; undefined keeps the caller's own runtime state. */
+export function hostDesktopPreference<K extends DesktopPreferenceKey>(key: K): DesktopPreferences[K] | undefined {
+  if (!hostOwnsDesktopPreferences()) return undefined;
+  try {
+    const state = desktopPreferences.inspect();
+    return state.status === 'ready' ? state.value[key] : undefined;
+  } catch { return undefined; }
+}

@@ -1,6 +1,6 @@
 /**
  * MessageNavRailCell — TipsSection 内的 "显示提问导航条" cell row。
- * Host profile 偏好(默认开启),成功提交后更新 Renderer。
+ * 纯 Renderer 本地偏好(localStorage,默认开启),切换立即生效,无 IPC。
  * 行内形态与 SilentEncryptedRetryCell 对齐;恢复默认走 DefaultOverrideControls
  * (语义 = 清 override 跟随版本默认,见 useMessageNavRailPreference)。
  */
@@ -11,21 +11,17 @@ import { ListOrdered } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { useMessageNavRailPreference } from '@/hooks/useMessageNavRailPreference';
 import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 
 export function MessageNavRailCell() {
-  const { t } = useTranslation();
-  const { enabled, isCustomized, setEnabled, resetPreference } = useMessageNavRailPreference();
+  const { enabled, isCustomized, setEnabled } = useMessageNavRailPreference();
 
   return (
     <MessageNavRailCellView
       enabled={enabled}
       isCustomized={isCustomized}
       onChange={setEnabled}
-      onReset={async () => {
-        if (!(await resetPreference())) toast.error(t('hostSettings.saveFailed'));
-      }}
+      onReset={() => setEnabled(true)}
     />
   );
 }
@@ -41,7 +37,7 @@ export function MessageNavRailCellView({
   isCustomized: boolean;
   disabled?: boolean;
   onChange(next: boolean): void;
-  onReset(): Promise<void>;
+  onReset(): void;
 }) {
   const { t } = useTranslation();
   return (

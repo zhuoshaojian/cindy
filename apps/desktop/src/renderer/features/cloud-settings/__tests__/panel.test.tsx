@@ -383,7 +383,9 @@ it('saves target notifications and stream fade without changing unrelated cloud 
   fireEvent.click(fade);
   await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
   await ready(fade);
-  fireEvent.click(screen.getByRole('button', { name: 'settings.defaults.restore' }));
+  // Like the local section there is no reset control; switching back to the default clears it.
+  expect(screen.queryByRole('button', { name: 'settings.defaults.restore' })).toBeNull();
+  fireEvent.click(fade);
   await waitFor(() => expect(save).toHaveBeenCalledTimes(3));
   const [chat] = await client.read(['desktopChat']);
   expect(chat.customizedKeys).toEqual([]);

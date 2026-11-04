@@ -2,17 +2,22 @@
 import { act, renderHook } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { __resetDesktopPreferencesForTests, connectHostDesktopPreferences, getDesktopPreference, updateDesktopPreference } from '../../state/hostDesktopPreferences';
-import { desktopPreferencesHarness, installDesktopPreferencesHarness, settleDesktopPreferences } from '../../__tests__/desktopPreferencesHarness';
-import { useNotificationSettings } from '../useNotificationSettings';
-import { useSwallowActivationClickSettings } from '../useSwallowActivationClickSettings';
-import { useFeishuNotificationSettings } from '../useFeishuNotificationSettings';
-import { useExperimentalFlag } from '../useExperimentalFeatures';
-import { useSidebarCardMode, useSidebarMainViewMode } from '../useSidebarCardMode';
-import { LocaleProvider, bootstrapInitialLocale, useLocale } from '../useLocale';
+import { __resetDesktopPreferencesForTests, connectHostDesktopPreferences, getDesktopPreference, updateDesktopPreference } from '../state/hostDesktopPreferences';
+import { desktopPreferencesHarness, installDesktopPreferencesHarness, settleDesktopPreferences } from './desktopPreferencesHarness';
+import { useNotificationSettings } from '../state/hostDesktop/useNotificationSettings';
+import { useSwallowActivationClickSettings } from '../state/hostDesktop/useSwallowActivationClickSettings';
+import { useFeishuNotificationSettings } from '../state/hostDesktop/useFeishuNotificationSettings';
+import { useExperimentalFlag } from '../state/hostDesktop/useExperimentalFeatures';
+import { useSidebarCardMode, useSidebarMainViewMode } from '../state/hostDesktop/useSidebarCardMode';
+import { LocaleProvider, bootstrapInitialLocale, useLocale } from '../state/hostDesktop/useLocale';
+import { useStreamFadePreference } from '../state/hostDesktop/useStreamFadePreference';
+import { useMessageNavRailPreference } from '../state/hostDesktop/useMessageNavRailPreference';
+import { useComposerSendShortcutPreference } from '../state/hostDesktop/useComposerSendShortcutPreference';
+import { useLinkOpenPreference } from '../state/hostDesktop/useLinkOpenPreference';
+import { desktopPreferenceDefaults } from '../../shared/desktopPreferences';
 const i18n = vi.hoisted(() => ({ changeLanguage: vi.fn() }));
 vi.mock('@/i18n', () => ({ i18n, DEFAULT_LOCALE: 'en', SUPPORTED_LOCALES: ['en', 'zh-CN', 'zh-TW', 'ja', 'ko'] }));
-vi.mock('../../lib/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
+vi.mock('../lib/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
 let host: ReturnType<typeof installDesktopPreferencesHarness>;
 beforeEach(() => {
   localStorage.clear(); __resetDesktopPreferencesForTests(); i18n.changeLanguage.mockClear();
@@ -50,7 +55,8 @@ describe('profile hooks use the same acknowledged Host state', () => {
   });
   it('does not turn readonly lightweight windows into importers or writers', async () => {
     const h = desktopPreferencesHarness(null);
-    const { update: _update, ...readApi } = h.api;
+    const readApi: Partial<typeof h.api> = { ...h.api };
+    delete readApi.update;
     Object.assign(window, { electronAPI: { desktopPreferences: readApi } });
     localStorage.setItem('theme', 'dark'); localStorage.setItem('language', 'ja');
     expect(getDesktopPreference('theme')).toBe('dark');
@@ -60,6 +66,22 @@ describe('profile hooks use the same acknowledged Host state', () => {
     expect(await updateDesktopPreference('locale', () => 'en')).toBe(false);
     h.external({ locale: 'ko' }); await settleDesktopPreferences();
     expect(getDesktopPreference('locale')).toBe('ko');
+  });
+  it('clears the override when the default is chosen again, like the local hooks', async () => {
+    __resetDesktopPreferencesForTests();
+    const web = desktopPreferenceDefaults().webLinkOpenPreference === 'sidebar' ? 'external' : 'sidebar';
+    host = installDesktopPreferencesHarness({ streamFadePreference: 'off', messageNavRailEnabled: false, composerSendShortcut: 'modifier-enter', webLinkOpenPreference: web });
+    const prefs = renderHook(() => ({ fade: useStreamFadePreference(), rail: useMessageNavRailPreference(), composer: useComposerSendShortcutPreference(), link: useLinkOpenPreference('web') }));
+    await act(async () => { await settleDesktopPreferences(); });
+    expect(prefs.result.current.fade.isCustomized).toBe(true);
+    await act(async () => {
+      prefs.result.current.fade.setPreference('on'); prefs.result.current.rail.setEnabled(true);
+      prefs.result.current.composer.setPreference('enter'); prefs.result.current.link.setPreference(desktopPreferenceDefaults().webLinkOpenPreference);
+      await settleDesktopPreferences();
+    });
+    expect(host.snapshot()).toMatchObject({ customizedKeys: [], isCustomized: false });
+    expect(prefs.result.current.fade.isCustomized).toBe(false); expect(prefs.result.current.rail.isCustomized).toBe(false);
+    expect(prefs.result.current.composer.isCustomized).toBe(false); expect(prefs.result.current.link.isCustomized).toBe(false);
   });
   it('applies consecutive sound leaf edits to the newest acknowledged group', async () => {
     await settleDesktopPreferences();

@@ -6,6 +6,8 @@ import { randomUUID } from 'node:crypto';
 
 const isolated = vi.hoisted(() => ({ root: '', generation: 1 }));
 vi.mock('electron', () => ({ app: { getPath: () => isolated.root }, net: { fetch: vi.fn() } }));
+// New-task defaults are Host-owned only on a managed cloud instance.
+vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../logger.js', () => ({ createLogger: () => ({ info() {}, warn() {}, error() {}, debug() {} }) }));
 vi.mock('../../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => ({ info() {}, warn() {}, error() {}, debug() {} }) } }));
 vi.mock('../../appSessionState.js', () => ({

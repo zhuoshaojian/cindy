@@ -131,14 +131,14 @@ import { advanceRuntimeRecoveryNotice } from '../im/shared/runtimeRecoveryNotice
 import { removeBotImConnectionsForBot } from '../im/shared/botImConnectionRuntime.js';
 import { configureBotImLaneRuntime } from '../im/shared/botImLaneRuntime.js';
 import { markImSessionManualRouteOverride } from '../im/shared/manualRouteOverride.js';
-import { inspectAppDefaultModel } from './appDefaultModelControl.js';
+import { configureAppDefaultModelSelection, inspectAppDefaultModel } from './appDefaultModelControl.js';
 import { configureCloudMemoryManagement, configureCloudMcpCredentials } from '../host-settings/managementData.js';
 import { cloudMcpCredentialStore } from '../secrets/providerSecretStore.js';
 import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudManagementExecution, registerPrivateCloudManagementCall } from '../host-settings/managementCalls.js';
 import { configureAdditionalModelRuntime, configureAdditionalLiveApplication } from '../host-settings/additionalRuntime.js';
 import { installHostNewMakerDefaultsSource } from '../host-settings/cache.js';
 import { prepareHostSettingsSkill } from '../host-settings/cindy-settings-skill.js';
-import { onNewTaskDefaultsChanged, commitNewTaskDefaults, applyHostRemoteDraftPreference } from '../host-settings/new-task-defaults.js';
+import { hostOwnsNewTaskDefaults, onNewTaskDefaultsChanged, commitNewTaskDefaults, applyHostRemoteDraftPreference } from '../host-settings/new-task-defaults.js';
 import { onModelPresentationPreferencesChanged } from '../host-settings/model-presentation-preferences.js';
 import { refreshSettingsModelRecommendation } from '../host-settings/catalog.js';
 import { onAuthStateChange } from '../authManager.js';
@@ -753,6 +753,7 @@ import {
   type ProviderModelMemorySnapshot,
   syncNewMakerDraftCache,
   setProviderModelMemoryCache,
+  setThinkingEnabledInMemory,
   setWorkerCreationPrefsCache,
 } from '../maker-host/newMakerDefaultsCache.js';
 import {
@@ -6516,8 +6517,19 @@ export function applyNewMakerDraftRoute(route: BotModelRoute): void {
  */
 export function registerModelVisibilitySyncIpc(): void {
   registerModelFavoritesSync(broadcastToAllWindows);
-  installHostNewMakerDefaultsSource();
-  onNewTaskDefaultsChanged(broadcastNewMakerDraftChanged);
+  if (hostOwnsNewTaskDefaults()) {
+    // 托管云实例的新任务默认由 Host 保存；普通桌面仍由 Renderer 草稿推送镜像。
+    installHostNewMakerDefaultsSource();
+    onNewTaskDefaultsChanged(broadcastNewMakerDraftChanged);
+  } else {
+    configureAppDefaultModelSelection((appDefaultSelection) => {
+      broadcastToAllWindows(MAKER_PUSH.DRAFT_PREF_APPLY, {
+        agent: appDefaultSelection.route.harness === 'claude' ? 'claude-code' : appDefaultSelection.route.harness,
+        providerId: appDefaultSelection.route.providerId ?? '', modelId: appDefaultSelection.route.model,
+        active: true, appDefaultSelection,
+      });
+    });
+  }
   onModelPresentationPreferencesChanged(() => { broadcastToAllWindows(MAKER_PUSH.PROVIDER_CHANGED, {}); });
   // Register with model visibility before the first window; a cold-start preference
   // push must not be lost while the larger Maker bundle is still initializing.
@@ -6574,7 +6586,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     },
   }));
   // 推荐只取执行端真实目录，生命周期预热保证没有 Renderer 时也能创建后续任务。
-  const refreshTaskRecommendation = () => { void refreshSettingsModelRecommendation().catch(() => {}); };
+  const refreshTaskRecommendation = () => {
+    if (hostOwnsNewTaskDefaults()) void refreshSettingsModelRecommendation().catch(() => {});
+  };
   refreshTaskRecommendation();
   onAuthStateChange(refreshTaskRecommendation);
   // Catalog updates and explicit budget edits share one serial refresh boundary.
@@ -7376,10 +7390,12 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     return getRemoteNewMakerDefaults(requireAgentKind(agentKind));
   });
 
-  // 控制端直接写执行 Host 的偏好；无 Renderer 时同样落盘并广播，不等窗口转发/ACK。
+  // device-link 草稿「模型 effort/fast」写穿:控制端经隧道调用 → 跑在**被控端**。被控端不直接改
+  // newMakerDefaultsCache(那只是镜像、renderer 才是真相),而是把 pref 转发给自身 renderer
+  // (DRAFT_PREF_APPLY,非转发 channel,只落本地窗口),由 renderer 调它原来的本地 setter 写真实草稿;
+  // 草稿变更经既有 SYNC_NEW_MAKER_DRAFT re-mirror + 上面的 NEW_MAKER_DRAFT_CHANGED 广播回控制端。
   ipcMain.handle(MAKER_INVOKE.APPLY_NEW_MAKER_DRAFT_PREF, async (event, pref: unknown) => {
-    if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
-    if (!pref || typeof pref !== 'object' || Array.isArray(pref)) throwIpcError('INVALID_PARAMS', 'pref required');
+    if (!pref || typeof pref !== 'object') throwIpcError('INVALID_PARAMS', 'pref required');
     const p = pref as {
       agent?: unknown;
       providerId?: unknown;
@@ -7421,25 +7437,49 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     ) {
       throwIpcError('INVALID_PARAMS', 'taskProviderId must be a string of at most 256 chars');
     }
-    await applyHostRemoteDraftPreference({
+    if (hostOwnsNewTaskDefaults()) {
+      // 托管云实例直接写执行 Host 的偏好；无 Renderer 时同样落盘并广播，不等窗口转发/ACK。
+      if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
+      await applyHostRemoteDraftPreference({
+        agent: p.agent,
+        providerId: p.providerId ?? '',
+        modelId: p.modelId,
+        active: p.active === true,
+        ...(typeof p.markModelChoice === 'boolean' ? { markModelChoice: p.markModelChoice } : {}),
+        ...(p.taskProviderId ? { taskProviderId: p.taskProviderId } : {}),
+        ...(p.effort !== undefined ? { effort: p.effort } : {}),
+        ...(p.fast !== undefined ? { fast: p.fast } : {}),
+        ...(p.thinking !== undefined ? { thinking: p.thinking } : {}),
+      }).catch(() => throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
+      return;
+    }
+    broadcastToAllWindows(MAKER_PUSH.DRAFT_PREF_APPLY, {
       agent: p.agent,
       providerId: p.providerId ?? '',
       modelId: p.modelId,
       active: p.active === true,
-      ...(typeof p.markModelChoice === 'boolean' ? { markModelChoice: p.markModelChoice } : {}),
+      ...(p.markModelChoice === false ? { markModelChoice: false } : {}),
+      // 已有任务里只换模型:来源沿用任务的,被控端据此判断是否改写自己的新建默认。
       ...(p.taskProviderId ? { taskProviderId: p.taskProviderId } : {}),
       ...(p.effort !== undefined ? { effort: p.effort } : {}),
       ...(p.fast !== undefined ? { fast: p.fast } : {}),
       ...(p.thinking !== undefined ? { thinking: p.thinking } : {}),
-    }).catch(() => throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
+    });
   });
 
-  // worktree 默认同样由 Host 保存，广播只在真实提交后发生。
+  // device-link 草稿「新建会话默认启用 worktree」写穿:与上面的模型 pref 同款转发模式——
+  // 被控端不直接改 newMakerDefaultsCache(那只是镜像、renderer 才是真相),把布尔转发给
+  // 自身 renderer(WORKTREE_PREF_APPLY,仅本地窗口),renderer patchDraft 写真实草稿;
+  // 变更经既有 SYNC_NEW_MAKER_DRAFT re-mirror + NEW_MAKER_DRAFT_CHANGED 回流控制端。
   registerNewMakerWorktreePreferenceHandler(createElectronIpcHandlerRegistry(), {
     isDeviceLinkInvoke,
     assertTrustedCaller: (event) =>
       assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]),
-    savePreference: async enabled => { await commitNewTaskDefaults({ set: { worktree: enabled } }); },
+    broadcast: broadcastToAllWindows,
+    // 托管云实例由 Host 保存，广播只在真实提交后发生。
+    ...(hostOwnsNewTaskDefaults()
+      ? { savePreference: async (enabled: boolean) => { await commitNewTaskDefaults({ set: { worktree: enabled } }); } }
+      : {}),
   });
 
   // worktree 源分支不是设备全局草稿字段，而是 canonical baseRepo scoped 的 host 真相。
@@ -7454,11 +7494,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     broadcast: broadcastToAllWindows,
   });
 
-  // 旧控制端的会话模型预设兼容入口也直接写 Host，成功后只向对应会话广播镜像。
-  // 新控制端统一走 APPLY_NEW_MAKER_DRAFT_PREF；两条路径均不依赖 Renderer 存活。
+  // 旧控制端的 device-link 会话模型预设写穿兼容入口。转发给被控端 renderer 后,renderer 将值
+  // 收敛到 providerModelMemory 全局预设,同时经 SYNC_SESSION_MODEL_PREF 回流供旧控制端的
+  // session-scoped 镜像显示。新控制端统一走 APPLY_NEW_MAKER_DRAFT_PREF。
   ipcMain.handle(MAKER_INVOKE.SET_SESSION_MODEL_PREF, async (event, pref: unknown) => {
-    if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
-    if (!pref || typeof pref !== 'object' || Array.isArray(pref)) throwIpcError('INVALID_PARAMS', 'pref required');
+    if (!pref || typeof pref !== 'object') throwIpcError('INVALID_PARAMS', 'pref required');
     const p = pref as {
       sessionId?: unknown;
       agent?: unknown;
@@ -7485,12 +7525,25 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (p.fast !== undefined && (typeof p.fast !== 'boolean' && p.fast !== 'ultrafast')) {
       throwIpcError('INVALID_PARAMS', 'fast must be boolean or ultrafast');
     }
-    const ownerScope = activeOwnerScopeKey();
-    await applyHostRemoteDraftPreference({ agent: p.agent, providerId: p.providerId, modelId: p.model, active: false,
-      ...(p.effort !== undefined ? { effort: p.effort } : {}), ...(p.fast !== undefined ? { fast: p.fast } : {}),
-    }).catch(() => throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
-    if (isAppSessionBoundaryPending() || activeOwnerScopeKey() !== ownerScope) throwIpcError('PRECONDITION_FAILED', 'Owner changed');
-    tapWindowBroadcast(MAKER_PUSH.SESSION_MODEL_PREF_CHANGED, {
+    if (hostOwnsNewTaskDefaults()) {
+      // 托管云实例直接写 Host，成功后只向对应会话广播镜像，不依赖 Renderer 存活。
+      if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
+      const ownerScope = activeOwnerScopeKey();
+      await applyHostRemoteDraftPreference({ agent: p.agent, providerId: p.providerId, modelId: p.model, active: false,
+        ...(p.effort !== undefined ? { effort: p.effort } : {}), ...(p.fast !== undefined ? { fast: p.fast } : {}),
+      }).catch(() => throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
+      if (isAppSessionBoundaryPending() || activeOwnerScopeKey() !== ownerScope) throwIpcError('PRECONDITION_FAILED', 'Owner changed');
+      tapWindowBroadcast(MAKER_PUSH.SESSION_MODEL_PREF_CHANGED, {
+        sessionId: p.sessionId,
+        agent: p.agent,
+        providerId: p.providerId,
+        model: p.model,
+        ...(p.effort !== undefined ? { effort: p.effort } : {}),
+        ...(p.fast !== undefined ? { fast: p.fast } : {}),
+      });
+      return;
+    }
+    broadcastToAllWindows(MAKER_PUSH.SESSION_PREF_APPLY, {
       sessionId: p.sessionId,
       agent: p.agent,
       providerId: p.providerId,
@@ -9083,7 +9136,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         });
       });
     }
-    // 执行 Host 拥有个性化正文，不接受控制端或 Renderer 传来的副本。
+    // 托管云实例由执行 Host 提供个性化正文，不接受控制端或 Renderer 传来的副本。
     captureHostPersonalization(o);
     assertAccess?.();
     await options.waitForAccountProviderModelsReady();
@@ -11437,11 +11490,24 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       agentHandoffPending.set(sessionId, handoff, expectedGeneration),
     readPendingHandoffGeneration: (sessionId) => agentHandoffPending.readGeneration(sessionId),
     rememberThinkingIntent: async ({ agentKind, providerId, model, thinking }) => {
-      if (!providerId || !model) return;
-      // Host owns model preferences, including when no local renderer is alive.
-      // Persist before bootstrap; owner-fenced store notifications refresh all projections.
-      await applyHostRemoteDraftPreference({
-        agent: agentKind, providerId, modelId: model, active: false, thinking,
+      if (hostOwnsNewTaskDefaults()) {
+        if (!providerId || !model) return;
+        // 托管云实例由 Host 保存模型偏好，没有本机 Renderer 时也在 bootstrap 前落盘。
+        await applyHostRemoteDraftPreference({
+          agent: agentKind, providerId, modelId: model, active: false, thinking,
+        });
+        return;
+      }
+      setThinkingEnabledInMemory(agentKind, providerId, model, thinking);
+      // 同步本机 renderer 的记忆：主进程写的只是镜像，renderer 才是 providerModelMemory
+      // 的真相源。不写回这一笔，renderer 的全量快照会一直「尚未包含该选择」，提交时写入
+      // 的钉子也就撤不掉，反而会长期压住用户在被控端后来的显式改动（Greptile P1）。
+      broadcastToAllWindows(MAKER_PUSH.DRAFT_PREF_APPLY, {
+        agent: agentKind,
+        providerId: providerId ?? '',
+        modelId: model,
+        active: false,
+        thinking,
       });
     },
     bootstrapSwitchedSession: async (sessionId, opts) => {

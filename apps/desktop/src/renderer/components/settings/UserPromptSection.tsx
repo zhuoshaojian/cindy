@@ -9,7 +9,19 @@ import { Button } from '@/components/ui/button';
 
 export function UserPromptSection() {
   const state = useUserPrompt();
-  return <UserPromptEditor {...state} />;
+  if ('ready' in state) return <UserPromptEditor {...state} />;
+  // 普通桌面沿用上游 localStorage：随时可写、同步保存，外部值变化即刷新草稿。
+  return (
+    <UserPromptEditor
+      value={state.value}
+      ready
+      unavailable={false}
+      customized={state.value !== ''}
+      revision="local"
+      ownerKey={`local:${state.value}`}
+      setValue={state.setValue}
+    />
+  );
 }
 
 /** Personalization page title; the cloud surface shows it alone when the prompt is not reported. */
@@ -20,6 +32,19 @@ export function PersonalizationPageTitle() {
       {t('settings.personalization.title')}
     </h2>
   );
+}
+
+export interface UserPromptEditorProps {
+  value: string;
+  ready: boolean;
+  unavailable: boolean;
+  customized: boolean;
+  revision: string | null;
+  ownerKey: string;
+  setValue(value: string, revision: string): Promise<void> | void;
+  /** Host 正本才有「跟随默认」;本机 localStorage 与上游一样只有保存。 */
+  resetValue?(revision: string): Promise<void>;
+  onDirtyChange?(dirty: boolean): void;
 }
 
 /** Shared native control; the cloud surface supplies its own scoped adapter. */
@@ -33,9 +58,7 @@ export function UserPromptEditor({
   setValue,
   resetValue,
   onDirtyChange,
-}: ReturnType<typeof useUserPrompt> & {
-  onDirtyChange?(dirty: boolean): void;
-}) {
+}: UserPromptEditorProps) {
   const { t } = useTranslation();
 
   const [draft, setDraft] = useState({ value, revision, ownerKey });
@@ -76,7 +99,7 @@ export function UserPromptEditor({
   }, [canSave, draft, setValue, t]);
 
   const handleReset = useCallback(async () => {
-    if (!ready || !revision || saving) return;
+    if (!resetValue || !ready || !revision || saving) return;
     setSaving(true);
     try {
       await resetValue(revision);
@@ -118,7 +141,7 @@ export function UserPromptEditor({
         </div>
 
         <textarea
-          value={draft.ownerKey === ownerKey ? draft.value : ''}
+          value={draft.ownerKey === ownerKey ? draft.value : value}
           disabled={!ready || saving}
           onChange={(e) =>
             setDraft((current) => ({
@@ -164,14 +187,24 @@ export function UserPromptEditor({
           </p>
 
           <div className="flex items-center gap-2">
+            {resetValue && (
+              <Button
+                variant="secondary"
+                onClick={handleReset}
+                disabled={!ready || !customized || saving || conflicted}
+              >
+                {t('hostSettings.reset')}
+              </Button>
+            )}
             <Button
-              variant="secondary"
-              onClick={handleReset}
-              disabled={!ready || !customized || saving || conflicted}
+              variant="cta"
+              size="md"
+              compact
+              type="button"
+              onClick={handleSave}
+              disabled={!canSave}
+              loading={saving}
             >
-              {t('hostSettings.reset')}
-            </Button>
-            <Button onClick={handleSave} disabled={!canSave} loading={saving}>
               {t('settings.personalization.save')}
             </Button>
           </div>

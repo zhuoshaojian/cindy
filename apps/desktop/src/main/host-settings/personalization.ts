@@ -5,6 +5,12 @@ import { dataOwnerStorageKey, isAppSessionBoundaryPending, peekCommittedAppSessi
 import { createOverrideSettingsFile, type OverrideSettingsCommitOptions, type OverrideSettingsMutation } from '../maker-host/override-settings-file.js';
 import type { PersonalizationSettings, SettingsOwnerStamp, HostSettingState } from '../../shared/hostSettings.js';
 import { HostSettingsError } from './operations.js';
+import { getInstanceConfig } from '../instance-runtime/config.js';
+
+/** Only a managed cloud instance keeps the prompt here; desktops keep the renderer copy in localStorage. */
+export function hostOwnsPersonalization(): boolean {
+  return getInstanceConfig() !== null;
+}
 
 interface StoredPersonalization extends PersonalizationSettings { _initialized: boolean }
 const defaults: StoredPersonalization = { userPrompt: '', _initialized: false };
@@ -58,12 +64,12 @@ function projectPersonalization(snapshot: ReturnType<typeof store.inspect>): Hos
   return { ...snapshot, value: { userPrompt: snapshot.value.userPrompt }, defaults: { userPrompt: '' }, customizedKeys, isCustomized: customizedKeys.length > 0 };
 }
 export function inspectPersonalization(): HostSettingState<PersonalizationSettings> {
-  if (!currentSettingsOwner()) return { status: 'unavailable', revision: null };
+  if (!hostOwnsPersonalization() || !currentSettingsOwner()) return { status: 'unavailable', revision: null };
   return projectPersonalization(store.inspect());
 }
 /** 不向快照交出正文；尚未初始化与明确恢复默认是两种不同状态。 */
 export function inspectPersonalizationForSnapshot(): HostSettingState<{ isCustomized: boolean }> | { status: 'migrationPending'; revision: null } {
-  if (!currentSettingsOwner()) return { status: 'unavailable', revision: null };
+  if (!hostOwnsPersonalization() || !currentSettingsOwner()) return { status: 'unavailable', revision: null };
   const raw = store.inspect();
   if (raw.status === 'ready' && !raw.value._initialized) return { status: 'migrationPending', revision: null };
   const result = projectPersonalization(raw);
@@ -79,6 +85,7 @@ export function readHostUserPrompt(): string {
 }
 
 export async function commitPersonalization(mutation: OverrideSettingsMutation<PersonalizationSettings>, options: OverrideSettingsCommitOptions = {}) {
+  if (!hostOwnsPersonalization()) throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
   const owner = currentSettingsOwner();
   if (!owner) throw new HostSettingsError('OWNER_CHANGED');
   const result = await store.commitAtomic({ set: { ...mutation.set, _initialized: true }, clear: mutation.clear }, {
@@ -91,6 +98,7 @@ export async function commitPersonalization(mutation: OverrideSettingsMutation<P
 
 /** 只初始化一次；显式恢复默认后也保留已初始化标记。 */
 export async function importLegacyPersonalization(userPrompt: unknown, owner: SettingsOwnerStamp, expectedRevision: string): Promise<'imported' | 'already_initialized'> {
+  if (!hostOwnsPersonalization()) throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
   if (typeof userPrompt !== 'string' || userPrompt.length > 8000) throw new HostSettingsError('INVALID_PARAMS');
   let result: 'imported' | 'already_initialized' = 'imported';
   await store.commitAtomic((state) => {

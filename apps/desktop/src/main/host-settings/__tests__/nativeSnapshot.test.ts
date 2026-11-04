@@ -9,7 +9,7 @@ const fixture = vi.hoisted(() => ({
   trusted: vi.fn(),
 }));
 vi.mock('electron', () => ({
-  ipcMain: { handle: (name: string, handler: (...args: unknown[]) => Promise<unknown>) => fixture.handlers.set(name, handler) },
+  ipcMain: { handle: (name: string, handler: (...args: unknown[]) => Promise<unknown>) => fixture.handlers.set(name, handler), on: vi.fn() },
   BrowserWindow: { getAllWindows: () => [] },
 }));
 vi.mock('../../security/trustedAppRenderer.js', () => ({ assertTrustedAppRendererEvent: fixture.trusted }));
@@ -17,7 +17,7 @@ vi.mock('../../windowFocusClassifier.js', () => ({ isAppContentWindow: () => tru
 vi.mock('../../utils/ipcValidate.js', () => ({ throwIpcError: (code: string) => { throw new Error(code); } }));
 vi.mock('../../appearance-settings-ipc.js', () => ({ applySavedAppearance: vi.fn() }));
 vi.mock('../catalog.js', () => ({ validateSettingsModelSelection: vi.fn(), refreshSettingsModelRecommendation: fixture.catalog }));
-vi.mock('../new-task-defaults.js', () => ({ readNewTaskPreferenceHistory: fixture.history, saveNewTaskPreferenceHistory: vi.fn() }));
+vi.mock('../new-task-defaults.js', () => ({ hostOwnsNewTaskDefaults: () => true, readNewTaskPreferenceHistory: fixture.history, saveNewTaskPreferenceHistory: vi.fn() }));
 vi.mock('../personalization.js', () => ({
   currentSettingsOwner: () => fixture.snapshot?.ownerStamp,
   assertSettingsOwner: vi.fn(), importLegacyPersonalization: vi.fn(),

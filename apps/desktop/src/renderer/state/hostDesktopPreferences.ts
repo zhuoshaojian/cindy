@@ -182,53 +182,21 @@ let startupHost: DesktopPreferencesSnapshot | null = null;
 let startupRead = false;
 const subscribers = new Set<() => void>();
 const fallbackDefaults = desktopPreferenceDefaults();
-let stopViewerThemeCache: (() => void) | null = null;
+/** Remote desktop viewer windows keep the upstream localStorage hooks. */
 function isRemoteViewer(): boolean {
   return typeof window !== 'undefined' && !!window.electronAPI?.remoteDesktopViewer;
 }
 
-/** Viewer 只读主窗成功提交后写下的两个外观缓存键，不捕获其他 profile 偏好。 */
-function readViewerThemeCache(): Partial<Pick<DesktopPreferences, 'theme' | 'themeFamilyId'>> | null {
-  const next: Partial<Pick<DesktopPreferences, 'theme' | 'themeFamilyId'>> = {};
-  try {
-    for (const key of ['theme', 'themeFamilyId'] as const) {
-      const raw = localStorage.getItem(DESKTOP_PREFERENCE_STORAGE_KEYS[key]);
-      if (raw === null) continue; // 已提交的 clear 回到当前默认，不重导残留旧 theme ID。
-      try { Object.assign(next, { [key]: normalizeDesktopPreference(key, raw) }); }
-      catch { if (startup?.[key] !== undefined) Object.assign(next, { [key]: startup[key] }); }
-    }
-    return next;
-  } catch { return null; }
+/** Preload exposes the Host profile store only on a managed cloud instance. */
+export function hasHostDesktopPreferences(): boolean {
+  return !!api();
 }
-
-function subscribeViewerThemeCache(): void {
-  if (!isRemoteViewer() || stopViewerThemeCache) return;
-  const refresh = () => {
-    const next = readViewerThemeCache();
-    if (next && (next.theme !== startup?.theme || next.themeFamilyId !== startup?.themeFamilyId)) {
-      startup = next;
-      subscribers.forEach(fn => fn());
-    }
-  };
-  const onStorage = (event: StorageEvent) => {
-    if (event.key !== null && event.key !== 'theme' && event.key !== 'theme.familyId') return;
-    try { if (event.storageArea && event.storageArea !== localStorage) return; }
-    catch { return; }
-    // 事件只作失效通知；重新读实际缓存，不信任事件携带的值，也不反写 Host。
-    refresh();
-  };
-  window.addEventListener('storage', onStorage);
-  stopViewerThemeCache = () => { window.removeEventListener('storage', onStorage); stopViewerThemeCache = null; };
-  refresh(); // 补齐首次 render 与订阅建立之间可能错过的缓存变化。
-}
-
 function api(): (DesktopPreferencesReaderApi & Partial<Pick<DesktopPreferencesRendererApi, 'update'>>) | undefined {
   return typeof window === 'undefined' || isRemoteViewer() ? undefined : window.electronAPI?.desktopPreferences;
 }
 function ensureStartup(): void {
   if (startupRead) return;
   startupRead = true;
-  if (isRemoteViewer()) { startup = readViewerThemeCache(); return; }
   try { startupHost = api()?.getSync() ?? null; } catch { startupHost = null; }
   // 读取不改写启动缓存，尤其不可影响先于迁移定型的首启标记判断。
   startup = startupHost?.status === 'ready' ? null : captureLegacyDesktopPreferences(false);
@@ -243,11 +211,7 @@ export function isDesktopPreferenceCustomized(key: DesktopPreferenceKey): boolea
 }
 export function subscribeDesktopPreferences(fn: () => void): () => void {
   subscribers.add(fn);
-  subscribeViewerThemeCache();
-  return () => {
-    subscribers.delete(fn);
-    if (subscribers.size === 0) stopViewerThemeCache?.();
-  };
+  return () => { subscribers.delete(fn); };
 }
 export function useDesktopPreference<K extends DesktopPreferenceKey>(key: K): DesktopPreferences[K] {
   return useSyncExternalStore(subscribeDesktopPreferences, () => getDesktopPreference(key));
@@ -285,5 +249,5 @@ export async function clearDesktopPreference(key: DesktopPreferenceKey): Promise
   return client?.mutate({ clear: [key] }) ?? false;
 }
 export function __resetDesktopPreferencesForTests(): void {
-  client?.stop(); stopViewerThemeCache?.(); client = null; startup = null; startupHost = null; startupRead = false; subscribers.clear();
+  client?.stop(); client = null; startup = null; startupHost = null; startupRead = false; subscribers.clear();
 }

@@ -10,6 +10,8 @@ const isolated = vi.hoisted(() => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('electron', () => ({ app: { getPath: () => isolated.root } }));
+// Profile preferences are Host-owned only on a managed cloud instance.
+vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../logger.js', () => ({ createLogger: () => isolated.logger }));
 vi.mock('../../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => isolated.logger } }));
 vi.mock('../../appSessionState.js', () => ({

@@ -9,6 +9,8 @@ const host = vi.hoisted(() => ({ root: '', owner: 'owner-a', generation: 1, pend
   forbidden: vi.fn(() => { throw new Error('No session load or owner-scoped getter'); }),
 }));
 vi.mock('electron', () => ({ app: { getPath: () => host.root } }));
+// New-task defaults are Host-owned only on a managed cloud instance.
+vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../appSessionState.js', () => ({
   dataOwnerStorageKey: (id: string) => `test-${id}`,
   getActiveAppSession: host.forbidden,

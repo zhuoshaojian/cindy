@@ -1334,17 +1334,7 @@ describe('远程交互接线不变式', () => {
     expect(chatInputSrc).toContain('markModelChoice: true');
     expect(chatInputSrc).toContain('agentKind: targetAgentKind');
 
-    const app = read('App.tsx');
-    const listenerStart = app.indexOf('const offDraft = window.electronAPI.onMakerDraftPrefApply(');
-    const listenerEnd = app.indexOf('const offSession =', listenerStart);
-    expect(listenerStart).toBeGreaterThan(-1);
-    expect(listenerEnd).toBeGreaterThan(listenerStart);
-    const listener = app.slice(listenerStart, listenerEnd);
-    expect(listener).toContain('applyAppDefaultModelSelection(appDefaultSelection)');
-    expect(listener).toContain('syncNewMakerPrefs(appDefaultSelection.requestId)');
-    // taskProviderId keeps an in-task model change from moving the new-task source (#6555).
-    expect(listener).toMatch(/applyRemoteDraftPreference\(\{\s*agent, providerId, modelId, active, effort, fast, thinking, markModelChoice, taskProviderId,?\s*\}\)/);
-    const appSrc = read('state/applyRemoteDraftPreference.ts');
+    const appSrc = read('App.tsx');
     expect(appSrc).toContain(
       'markModelChoice === false ? patchVendorPrefsPreservingModelChoice : patchVendorPrefs',
     );
@@ -1553,7 +1543,7 @@ describe('远程交互接线不变式', () => {
   });
 
   it('App active Fast-only 写穿不能改 lastByVendor model/effort 配对', () => {
-    const src = read('state/applyRemoteDraftPreference.ts');
+    const src = read('App.tsx');
     const start = src.indexOf('if (active) {');
     expect(start).toBeGreaterThan(-1);
     const body = src.slice(start, start + 700);

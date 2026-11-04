@@ -37,7 +37,7 @@ let activeDataOwnerId: string | null = null;
 let hostPreferenceWriter: (() => void) | null = null;
 export function configureHostDraftPersistence(writer: (() => void) | null): void { hostPreferenceWriter = writer; }
 /** Host 接线启用后，目录变化只能由执行端重算，Renderer 不再偷偷选择替代型号。 */
-export function hasHostDraftPreferences(): boolean { return typeof window !== 'undefined' && !!window.electronAPI?.hostSettings; }
+export function hasHostDraftPreferences(): boolean { return typeof window !== 'undefined' && window.electronAPI?.hostSettings?.hostOwned === true; }
 export function applyHostDraftPreferences(preferences: Partial<NewMakerDraft>): void {
   currentDraft = { ...currentDraft, ...preferences, lastByVendor: { ...currentDraft.lastByVendor, ...preferences.lastByVendor } };
   preferenceSyncFallback = null;
@@ -510,8 +510,13 @@ function loadFromStorage(): NewMakerDraft {
   if (typeof window === 'undefined') return makeDefault();
   try {
     const raw = window.localStorage.getItem(storageKey());
-    const workspace = window.localStorage.getItem(`${storageKey()}:workspace`);
-    return sanitize({ ...(raw ? JSON.parse(raw) : {}), ...(workspace ? JSON.parse(workspace) : {}) });
+    if (hasHostDraftPreferences()) {
+      // 云实例的默认值在 Host；本机只留工作区等单次草稿状态。
+      const workspace = window.localStorage.getItem(`${storageKey()}:workspace`);
+      return sanitize({ ...(raw ? JSON.parse(raw) : {}), ...(workspace ? JSON.parse(workspace) : {}) });
+    }
+    if (!raw) return makeDefault();
+    return sanitize(JSON.parse(raw));
   } catch {
     return makeDefault();
   }

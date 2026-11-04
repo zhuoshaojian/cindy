@@ -11,9 +11,9 @@ import { validateAdditionalSettingsOverrides } from '../shared/settingsEditableC
  *  - windowsCloseBehavior: null (Windows 首次关闭时弹窗询问,选择后持久化)
  *  - linuxCloseBehavior: null (Linux 首次关闭时弹窗询问,选择后持久化)
  *
- * swallowActivationClick 迁移后由 Host profile 正本解释；本文件的旧值只作
- * 尚未迁移或暂不可读时的兼容缓存。平台关闭行为仍完全由本 store 持久化与执行。
- * inspect 只检查本文件，不读取或应用桌面运行态。
+ * swallowActivationClick 仍由 renderer localStorage 承担运行时事实标准,main
+ * 侧文件只供下次创建 BrowserWindow 时读取(托管云实例改读 Host profile 正本)。
+ * 平台关闭行为则完全由 main 侧持久化与执行,renderer 通过 IPC 读写同一份状态。
  */
 
 import { app } from 'electron';
@@ -29,7 +29,7 @@ import {
 } from '../shared/windowBehavior.js';
 
 import { inspectSettingsFile, isSettingBoolean, validateOptionalSettingsFields } from './maker-host/settings-inspection.js';
-import { inspectDesktopPreferences } from './host-settings/desktop-preferences.js';
+import { hostDesktopPreference } from './host-settings/desktop-preferences.js';
 
 const log = desktopMakerLogger.child('window-behavior-settings-store');
 
@@ -86,15 +86,9 @@ const store = createOverrideSettingsFile<WindowBehaviorSettings>({
 });
 
 export function readWindowBehaviorSettings(): WindowBehaviorSettings {
-  const legacy = store.read();
-  try {
-    const desktop = inspectDesktopPreferences();
-    if (desktop.status === 'ready') {
-      // 创建期原生窗口只消费 Host 正本；迟到的旧缓存写入不能改变生效值。
-      return { ...legacy, swallowActivationClick: desktop.value.swallowActivationClick };
-    }
-  } catch { /* 不可读时保留既有缓存，不迁移、不写默认。 */ }
-  return legacy;
+  const settings = store.read();
+  const swallowActivationClick = hostDesktopPreference('swallowActivationClick');
+  return swallowActivationClick === undefined ? settings : { ...settings, swallowActivationClick };
 }
 
 export function writeSwallowActivationClick(swallowActivationClick: boolean): void {

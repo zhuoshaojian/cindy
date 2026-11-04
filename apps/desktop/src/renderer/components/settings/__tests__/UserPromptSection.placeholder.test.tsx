@@ -4,16 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
   state: { value: '', ready: true, unavailable: false, customized: false, revision: 'r1' as string | null, ownerKey: 'owner-a:1' },
-  save: vi.fn(), reset: vi.fn(), success: vi.fn(), error: vi.fn(),
+  save: vi.fn(), reset: vi.fn(), success: vi.fn(), error: vi.fn(), local: false,
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('@/hooks/useUserPrompt', () => ({ useUserPrompt: () => ({ ...fixture.state, setValue: fixture.save, resetValue: fixture.reset }) }));
+vi.mock('@/hooks/useUserPrompt', () => ({ useUserPrompt: () => fixture.local
+  ? { value: fixture.state.value, setValue: fixture.save }
+  : ({ ...fixture.state, setValue: fixture.save, resetValue: fixture.reset }) }));
 vi.mock('@/lib/toast', () => ({ toast: { success: fixture.success, error: fixture.error } }));
 import { UserPromptSection } from '../UserPromptSection';
 const editor = () => screen.getByRole('textbox', { name: 'settings.personalization.ariaLabel' });
 const saveButton = () => screen.getByRole('button', { name: 'settings.personalization.save' }) as HTMLButtonElement;
 beforeEach(() => {
   vi.resetAllMocks();
+  fixture.local = false;
   fixture.state = { value: '', ready: true, unavailable: false, customized: false, revision: 'r1', ownerKey: 'owner-a:1' };
   fixture.save.mockResolvedValue(undefined); fixture.reset.mockResolvedValue(undefined);
 });
@@ -66,5 +69,23 @@ describe('个性化设置编辑与保存回执', () => {
     render(<UserPromptSection />);
     expect((editor() as HTMLTextAreaElement).disabled).toBe(true);
     expect(saveButton().disabled).toBe(true); expect(screen.getByRole('status').textContent).toBe('hostSettings.loadFailed');
+  });
+});
+
+describe('普通桌面沿用上游本机提示词', () => {
+  beforeEach(() => { fixture.local = true; fixture.save.mockReturnValue(undefined); });
+  it('只有保存按钮，保存即提示成功', async () => {
+    render(<UserPromptSection />);
+    expect(screen.queryByRole('button', { name: 'hostSettings.reset' })).toBeNull();
+    fireEvent.change(editor(), { target: { value: 'draft' } }); fireEvent.click(saveButton());
+    expect(fixture.save).toHaveBeenCalledWith('draft', 'local');
+    await waitFor(() => expect(fixture.success).toHaveBeenCalledOnce());
+  });
+  it('外部值变化时草稿跟随，与上游一致', () => {
+    const view = render(<UserPromptSection />);
+    fireEvent.change(editor(), { target: { value: 'draft' } });
+    fixture.state = { ...fixture.state, value: 'other window' };
+    view.rerender(<UserPromptSection />);
+    expect((editor() as HTMLTextAreaElement).value).toBe('other window');
   });
 });

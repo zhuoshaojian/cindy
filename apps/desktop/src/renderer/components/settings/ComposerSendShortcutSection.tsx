@@ -19,14 +19,13 @@ import {
 
 export function ComposerSendShortcutSection() {
   const { t } = useTranslation();
-  const { preference, isCustomized, setPreference, resetPreference } =
-    useComposerSendShortcutPreference();
+  const { preference, isCustomized, setPreference } = useComposerSendShortcutPreference();
   const shortcut = getComposerModifierShortcutLabel(window.electronAPI?.platform);
 
-  const onReset = useCallback(async () => {
-    if (await resetPreference()) toast.success(t('settings.defaults.restored'));
-    else toast.error(t('hostSettings.saveFailed'));
-  }, [resetPreference, t]);
+  const onReset = useCallback(() => {
+    setPreference('enter');
+    toast.success(t('settings.defaults.restored'));
+  }, [setPreference, t]);
 
   return (
     <ComposerSendShortcutSectionView
@@ -57,7 +56,7 @@ export function ComposerSendShortcutSectionView({
   isCustomized: boolean;
   shortcut: string;
   disabled?: boolean;
-  onReset(): Promise<void>;
+  onReset(): void;
   onChange(next: ComposerSendShortcutPreference): void;
 }) {
   const { t } = useTranslation();

@@ -5,13 +5,18 @@
  * 校验 Cindy 自有顶层 Renderer，避免 WebView / Ghost 修改后续会话创建偏好。
  */
 import { throwIpcError } from '../utils/ipcValidate.js';
-import { MAKER_INVOKE } from './channels.js';
+import { MAKER_INVOKE, MAKER_PUSH } from './channels.js';
 import type { IpcHandlerRegistry } from './ipcHandlerRegistry.js';
 
 export interface NewMakerWorktreePreferenceHandlerDeps {
   isDeviceLinkInvoke(): boolean;
   assertTrustedCaller(event: unknown): void;
-  savePreference(enabled: boolean): Promise<void>;
+  broadcast(
+    channel: typeof MAKER_PUSH.WORKTREE_PREF_APPLY,
+    payload: { worktreeEnabled: boolean },
+  ): void;
+  /** 托管云实例:直接提交 Host 偏好,不经 Renderer 转发。 */
+  savePreference?(enabled: boolean): Promise<void>;
 }
 
 export function registerNewMakerWorktreePreferenceHandler(
@@ -29,7 +34,12 @@ export function registerNewMakerWorktreePreferenceHandler(
     if (typeof p.worktreeEnabled !== 'boolean') {
       throwIpcError('INVALID_PARAMS', 'worktreeEnabled must be boolean');
     }
-    return deps.savePreference(p.worktreeEnabled).catch(() =>
-      throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
+    if (deps.savePreference) {
+      return deps.savePreference(p.worktreeEnabled).catch(() =>
+        throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
+    }
+    deps.broadcast(MAKER_PUSH.WORKTREE_PREF_APPLY, {
+      worktreeEnabled: p.worktreeEnabled,
+    });
   });
 }

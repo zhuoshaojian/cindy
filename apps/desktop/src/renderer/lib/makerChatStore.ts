@@ -196,6 +196,7 @@ import {
 } from '@/lib/searchJumpTargeting';
 import { extractIpcError } from '@/utils/ipcError';
 import { tryBeginAgentSendDispatch } from '@/lib/agentSwitchCoordinator';
+import { getUserPrompt } from '@/lib/userPromptStore';
 import { getMakerMemoryEnabled } from '@/lib/memorySettingsStore';
 import {
   isRemoteDataOwnerPushCurrent,
@@ -14117,7 +14118,7 @@ export function buildCreateOptsForCurrentSession(
     fastMode: current.fastMode,
     planMode: current.planModeEnabled,
     displayReasoning: 'summarized',
-    // 个性化指令由执行 Host 在启动装配点读取，不透传控制端正文。
+    userPrompt: getUserPrompt(),
     // device-link routes to the target desktop, so omit the controller setting.
     // SSH remote follows the controller's global setting like local sessions:
     // memory lives on this machine, scoped per hostId+remote path

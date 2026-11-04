@@ -1260,6 +1260,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     close: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.close, input),
   } satisfies CloudSettingsRendererApi,
   hostSettings: {
+    hostOwned: ipcRenderer.sendSync('host-settings:host-owned') === true,
     get: () => ipcRenderer.invoke('host-settings:get'),
     update: (input) => ipcRenderer.invoke('host-settings:update', input),
     saveHistory: (input) => ipcRenderer.invoke('host-settings:save-history', input),

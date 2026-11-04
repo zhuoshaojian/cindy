@@ -92,7 +92,9 @@ export function normalizeDesktopPreferenceOverrides(raw: unknown): Partial<Deskt
 export type DesktopPreferencesSnapshot =
   | { status: 'ready'; profileStamp: string; revision: string; value: DesktopPreferences; defaults: DesktopPreferences; customizedKeys: DesktopPreferenceKey[]; isCustomized: boolean }
   | { status: 'migrationPending'; profileStamp: string; revision: string }
-  | { status: 'unreadable'; profileStamp: string; revision: null };
+  | { status: 'unreadable'; profileStamp: string; revision: null }
+  // Ordinary desktops keep these preferences in renderer localStorage.
+  | { status: 'unavailable'; profileStamp: string; revision: null };
 export interface DesktopPreferencesUpdate {
   profileStamp: string;
   expectedRevision: string;
@@ -112,6 +114,7 @@ export interface DesktopPreferencesRendererApi extends DesktopPreferencesReaderA
 export const DESKTOP_PREFERENCES_CHANNELS = {
   get: 'desktop-preferences:get', getSync: 'desktop-preferences:get-sync',
   update: 'desktop-preferences:update', changed: 'desktop-preferences:changed',
+  hostOwned: 'desktop-preferences:host-owned',
 } as const;
 export function validateDesktopPreferencesUpdate(raw: unknown): DesktopPreferencesUpdate {
   if (!record(raw) || Object.keys(raw).some(k => !['profileStamp', 'expectedRevision', 'set', 'clear', 'importOnly'].includes(k))

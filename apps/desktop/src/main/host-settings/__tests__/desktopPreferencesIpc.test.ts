@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   handlers: new Map<string, (...args: any[]) => any>(), events: new Map<string, (...args: any[]) => any>(),
-  partition: {}, allowed: true, update: vi.fn(), inspect: vi.fn(() => ({ status: 'migrationPending', profileStamp: 'p', revision: 'r' })),
+  partition: {}, allowed: true, hostOwned: true, update: vi.fn(), inspect: vi.fn(() => ({ status: 'migrationPending', profileStamp: 'p', revision: 'r' })),
 }));
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] }, session: { defaultSession: h.partition },
   ipcMain: { handle: (name: string, fn: (...args: any[]) => any) => h.handlers.set(name, fn), on: (name: string, fn: (...args: any[]) => any) => h.events.set(name, fn) } }));
 vi.mock('../../security/trustedAppRenderer.js', () => ({ assertTrustedAppRendererEvent: () => { if (!h.allowed) throw new Error('denied'); }, isTrustedTopLevelCindyRendererEvent: () => h.allowed, isTrustedCindyRendererWindow: () => true }));
 vi.mock('../../utils/ipcValidate.js', () => ({ throwIpcError: (code: string) => { throw new Error(code); } }));
-vi.mock('../desktop-preferences.js', () => ({ inspectDesktopPreferences: h.inspect, updateDesktopPreferences: h.update,
+vi.mock('../desktop-preferences.js', () => ({ hostOwnsDesktopPreferences: () => h.hostOwned, inspectDesktopPreferences: h.inspect, updateDesktopPreferences: h.update,
   onDesktopPreferencesChanged: vi.fn(), currentDesktopPreferencesProfileStamp: () => 'p' }));
 vi.mock('../startup.js', () => { throw new Error('Host Skill preparation forbidden'); });
 vi.mock('../../remote-desktop-viewer/registry.js', () => ({ isRemoteDesktopViewer: (id: number) => id === 99 }));
@@ -45,5 +45,18 @@ describe('local-profile desktop preferences IPC', () => {
     h.events.get('desktop-preferences:get-sync')!(other);
     expect(other.returnValue).toBeNull();
     expect(h.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ordinary desktop', () => {
+  it('answers only the host-owned probe so the renderer keeps localStorage', async () => {
+    vi.resetModules(); h.handlers.clear(); h.events.clear(); h.hostOwned = false;
+    const { registerDesktopPreferencesIpc: register } = await import('../desktopPreferencesIpc');
+    register({ isLocalWindow: () => true });
+    expect([...h.handlers.keys()]).toEqual([]);
+    expect([...h.events.keys()]).toEqual(['desktop-preferences:host-owned']);
+    const probe = { returnValue: undefined as unknown };
+    h.events.get('desktop-preferences:host-owned')!(probe);
+    expect(probe.returnValue).toBe(false);
   });
 });

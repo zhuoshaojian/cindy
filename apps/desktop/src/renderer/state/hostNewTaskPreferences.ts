@@ -80,7 +80,7 @@ function mergeEdits(before: unknown, after: unknown, target: unknown): unknown {
 /** 每个 owner/generation 一条 CAS 写队列；冲突回读，绝不拿新 revision 重放陈旧整表。 */
 export function connectHostNewTaskPreferences(): () => void {
   const api = window.electronAPI?.hostSettings;
-  if (!api) return () => {};
+  if (!api?.hostOwned) return () => {};
   const owner = getDataOwnerGeneration();
   if (!owner.dataOwnerId) return () => {};
   const legacy = capture(owner.dataOwnerId);

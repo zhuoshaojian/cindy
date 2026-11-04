@@ -16,6 +16,8 @@ vi.mock('../../main/appSessionState.js', () => ({
   isAppSessionBoundaryPending: () => host.pending,
 }));
 vi.mock('../../main/logger.js', () => ({ createLogger: () => ({ info() {}, warn() {} }) }));
+// New-task defaults are Host-owned only on a managed cloud instance.
+vi.mock('../../main/instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../lib/toast', () => ({ toast: { error: host.toast } }));
 vi.mock('../i18n', () => ({ default: { t: (key: string) => key } }));
 const values = new Map<string, string>();
@@ -59,7 +61,7 @@ async function setup() {
     await service.saveNewTaskPreferenceHistory(input.history, input.ownerStamp, input.expectedRevision, input.importOnly);
     return snapshot();
   };
-  const api = { get: vi.fn(async () => snapshot()), saveHistory: vi.fn(save), update: vi.fn(), importPrompt: vi.fn(),
+  const api = { hostOwned: true, get: vi.fn(async () => snapshot()), saveHistory: vi.fn(save), update: vi.fn(), importPrompt: vi.fn(),
     onChanged: (callback: Parameters<HostSettingsRendererApi['onChanged']>[0]) => service.onNewTaskDefaultsChanged(() => callback(stamp())) };
   (window as unknown as { electronAPI: unknown }).electronAPI = { hostSettings: api };
   const draft = await import('../state/newMakerDraft');

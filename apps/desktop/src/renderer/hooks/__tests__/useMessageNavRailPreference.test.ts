@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-import { installDesktopPreferencesHarness, settleDesktopPreferences } from '../../__tests__/desktopPreferencesHarness';
-let host: ReturnType<typeof installDesktopPreferencesHarness>;
-
 
 /**
  * useMessageNavRailPreference — 覆盖 override 语义(规则 20):
@@ -24,18 +21,17 @@ const KEY = 'chat.messageNavRail.enabled';
 describe('useMessageNavRailPreference', () => {
   beforeEach(() => {
     localStorage.clear();
-    host = installDesktopPreferencesHarness();
     _resetMessageNavRailPreferenceForTests();
   });
 
-  it('defaults to enabled with no stored override', async () => {
+  it('defaults to enabled with no stored override', () => {
     expect(getMessageNavRailEnabled()).toBe(true);
     const { result } = renderHook(() => useMessageNavRailPreference());
     expect(result.current.enabled).toBe(true);
     expect(result.current.isCustomized).toBe(false);
   });
 
-  it('reads a stored disabled override', async () => {
+  it('reads a stored disabled override', () => {
     localStorage.setItem(KEY, 'false');
     expect(getMessageNavRailEnabled()).toBe(false);
     const { result } = renderHook(() => useMessageNavRailPreference());
@@ -43,7 +39,7 @@ describe('useMessageNavRailPreference', () => {
     expect(result.current.isCustomized).toBe(true);
   });
 
-  it('keeps an older stored enabled value as a user override', async () => {
+  it('keeps an older stored enabled value as a user override', () => {
     localStorage.setItem(KEY, 'true');
     expect(getMessageNavRailEnabled()).toBe(true);
     const { result } = renderHook(() => useMessageNavRailPreference());
@@ -51,18 +47,18 @@ describe('useMessageNavRailPreference', () => {
     expect(result.current.isCustomized).toBe(true);
   });
 
-  it('falls back to default on garbage stored value', async () => {
+  it('falls back to default on garbage stored value', () => {
     localStorage.setItem(KEY, 'whatever');
     expect(getMessageNavRailEnabled()).toBe(true);
   });
 
-  it('disabling persists override; reset clears the Host override', async () => {
+  it('disabling persists override; enabling removes the key', () => {
     const { result } = renderHook(() => useMessageNavRailPreference());
-    await act(async () => { result.current.setEnabled(false); await settleDesktopPreferences(); });
-    expect(host.snapshot()).toMatchObject({ value: { messageNavRailEnabled: false }, customizedKeys: ['messageNavRailEnabled'] });
+    act(() => result.current.setEnabled(false));
+    expect(localStorage.getItem(KEY)).toBe('false');
     expect(getMessageNavRailEnabled()).toBe(false);
 
-    await act(async () => { await result.current.resetPreference(); await settleDesktopPreferences(); });
+    act(() => result.current.setEnabled(true));
     expect(localStorage.getItem(KEY)).toBeNull();
     expect(getMessageNavRailEnabled()).toBe(true);
     expect(result.current.isCustomized).toBe(false);

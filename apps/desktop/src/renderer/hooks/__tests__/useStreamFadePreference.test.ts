@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-import { installDesktopPreferencesHarness, settleDesktopPreferences } from '../../__tests__/desktopPreferencesHarness';
-let host: ReturnType<typeof installDesktopPreferencesHarness>;
-
 
 /**
  * useStreamFadePreference — 覆盖 override 语义(规则 20):
@@ -26,69 +23,74 @@ const KEY = 'chat.streamFadePreference';
 describe('useStreamFadePreference', () => {
   beforeEach(() => {
     localStorage.clear();
-    host = installDesktopPreferencesHarness();
     _resetStreamFadePreferenceForTests();
   });
 
-  it('defaults to on with no stored override', async () => {
+  it('defaults to on with no stored override', () => {
     expect(getStreamFadePreference()).toBe('on');
     const { result } = renderHook(() => useStreamFadePreference());
     expect(result.current.preference).toBe('on');
     expect(result.current.isCustomized).toBe(false);
   });
 
-  it('reads a stored off override', async () => {
+  it('reads a stored off override', () => {
     localStorage.setItem(KEY, 'off');
     expect(getStreamFadePreference()).toBe('off');
     const { result } = renderHook(() => useStreamFadePreference());
     expect(result.current.isCustomized).toBe(true);
   });
 
-  it('preserves an explicit legacy default override', async () => {
+  it('clears a legacy on override after the default changes to on', () => {
     localStorage.setItem(KEY, 'on');
     expect(getStreamFadePreference()).toBe('on');
-    expect(localStorage.getItem(KEY)).toBe('on');
+    expect(localStorage.getItem(KEY)).toBeNull();
     const { result } = renderHook(() => useStreamFadePreference());
-    expect(result.current.isCustomized).toBe(true);
+    expect(result.current.isCustomized).toBe(false);
   });
 
-  it('falls back to default on garbage stored value', async () => {
+  it('falls back to default on garbage stored value', () => {
     localStorage.setItem(KEY, 'whatever');
     expect(getStreamFadePreference()).toBe('on');
   });
 
-  it('setting off persists override; reset clears the Host override', async () => {
+  it('setting off persists override; setting back to on removes the key', () => {
     const { result } = renderHook(() => useStreamFadePreference());
-    await act(async () => { result.current.setPreference('off'); await settleDesktopPreferences(); });
-    expect(host.snapshot()).toMatchObject({ value: { streamFadePreference: 'off' }, customizedKeys: ['streamFadePreference'] });
+    act(() => result.current.setPreference('off'));
+    expect(localStorage.getItem(KEY)).toBe('off');
     expect(getStreamFadePreference()).toBe('off');
 
-    await act(async () => { await result.current.resetPreference(); await settleDesktopPreferences(); });
+    act(() => result.current.setPreference('on'));
     expect(localStorage.getItem(KEY)).toBeNull();
     expect(getStreamFadePreference()).toBe('on');
     expect(result.current.isCustomized).toBe(false);
   });
 
-  it('useStreamFadeEnabled tracks toggles from the settings hook', async () => {
+  it('useStreamFadeEnabled tracks toggles from the settings hook', () => {
     const pref = renderHook(() => useStreamFadePreference());
     const enabled = renderHook(() => useStreamFadeEnabled());
     expect(enabled.result.current).toBe(true);
 
-    await act(async () => { pref.result.current.setPreference('off'); await settleDesktopPreferences(); });
+    act(() => pref.result.current.setPreference('off'));
     expect(enabled.result.current).toBe(false);
 
-    await act(async () => { pref.result.current.setPreference('on'); await settleDesktopPreferences(); });
+    act(() => pref.result.current.setPreference('on'));
     expect(enabled.result.current).toBe(true);
   });
 
-  it('useStreamFadeEnabled tracks Host changes without the settings hook mounted', async () => {
+  it('useStreamFadeEnabled tracks storage changes without the settings hook mounted', () => {
     const enabled = renderHook(() => useStreamFadeEnabled());
     expect(enabled.result.current).toBe(true);
 
-    await act(async () => { await settleDesktopPreferences(); host.external({ streamFadePreference: 'off' }); await settleDesktopPreferences(); });
+    act(() => {
+      localStorage.setItem(KEY, 'off');
+      window.dispatchEvent(new StorageEvent('storage', { key: KEY, newValue: 'off' }));
+    });
     expect(enabled.result.current).toBe(false);
 
-    await act(async () => { host.external({ streamFadePreference: 'on' }); await settleDesktopPreferences(); });
+    act(() => {
+      localStorage.removeItem(KEY);
+      window.dispatchEvent(new StorageEvent('storage', { key: KEY, newValue: null }));
+    });
     expect(enabled.result.current).toBe(true);
   });
 });

@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-import { installDesktopPreferencesHarness, settleDesktopPreferences } from '../../__tests__/desktopPreferencesHarness';
-let host: ReturnType<typeof installDesktopPreferencesHarness>;
-
 
 /**
  * useLinkOpenPreference — 覆盖 override 语义(规则 20):
@@ -47,11 +44,10 @@ describe('isLocalOpenUrl', () => {
 describe('useLinkOpenPreference', () => {
   beforeEach(() => {
     localStorage.clear();
-    host = installDesktopPreferencesHarness();
     _resetLinkOpenPreferenceForTests();
   });
 
-  it('defaults web to external and local to sidebar with no stored override', async () => {
+  it('defaults web to external and local to sidebar with no stored override', () => {
     expect(getLinkOpenPreference('web')).toBe('external');
     expect(getLinkOpenPreference('local')).toBe('sidebar');
     const web = renderHook(() => useLinkOpenPreference('web'));
@@ -62,7 +58,7 @@ describe('useLinkOpenPreference', () => {
     expect(local.result.current.isCustomized).toBe(false);
   });
 
-  it('reads a stored web sidebar override without touching local', async () => {
+  it('reads a stored web sidebar override without touching local', () => {
     localStorage.setItem(WEB_KEY, 'sidebar');
     expect(getLinkOpenPreference('web')).toBe('sidebar');
     expect(getLinkOpenPreference('local')).toBe('sidebar');
@@ -71,73 +67,72 @@ describe('useLinkOpenPreference', () => {
     expect(localStorage.getItem(LOCAL_KEY)).toBeNull();
   });
 
-  it('falls back to each kind default on garbage stored value', async () => {
+  it('falls back to each kind default on garbage stored value', () => {
     localStorage.setItem(WEB_KEY, 'whatever');
     localStorage.setItem(LOCAL_KEY, 'whatever');
     expect(getLinkOpenPreference('web')).toBe('external');
     expect(getLinkOpenPreference('local')).toBe('sidebar');
   });
 
-  it('setting web to sidebar persists; reset clears the Host override', async () => {
+  it('setting web to sidebar persists; setting back to external removes the key', () => {
     const { result } = renderHook(() => useLinkOpenPreference('web'));
-    await act(async () => { result.current.setPreference('sidebar'); await settleDesktopPreferences(); });
-    expect(getLinkOpenPreference('web')).toBe('sidebar');
+    act(() => result.current.setPreference('sidebar'));
+    expect(localStorage.getItem(WEB_KEY)).toBe('sidebar');
     expect(getLinkOpenPreference('web')).toBe('sidebar');
 
-    await act(async () => { await result.current.resetPreference(); await settleDesktopPreferences(); });
+    act(() => result.current.setPreference('external'));
     expect(localStorage.getItem(WEB_KEY)).toBeNull();
     expect(getLinkOpenPreference('web')).toBe('external');
     expect(result.current.isCustomized).toBe(false);
   });
 
-  it('setting local to external persists; reset clears the Host override', async () => {
+  it('setting local to external persists; setting back to sidebar removes the key', () => {
     const { result } = renderHook(() => useLinkOpenPreference('local'));
-    await act(async () => { result.current.setPreference('external'); await settleDesktopPreferences(); });
-    expect(getLinkOpenPreference('local')).toBe('external');
+    act(() => result.current.setPreference('external'));
+    expect(localStorage.getItem(LOCAL_KEY)).toBe('external');
     expect(getLinkOpenPreference('local')).toBe('external');
 
-    await act(async () => { await result.current.resetPreference(); await settleDesktopPreferences(); });
+    act(() => result.current.setPreference('sidebar'));
     expect(localStorage.getItem(LOCAL_KEY)).toBeNull();
     expect(getLinkOpenPreference('local')).toBe('sidebar');
     expect(result.current.isCustomized).toBe(false);
   });
 
-  it('preserves an explicit stored default as an override', async () => {
+  it('clears a stored value that equals the new default', () => {
     localStorage.setItem(WEB_KEY, 'external');
     expect(getLinkOpenPreference('web')).toBe('external');
-    expect(localStorage.getItem(WEB_KEY)).toBe('external');
-    expect(renderHook(() => useLinkOpenPreference('web')).result.current.isCustomized).toBe(true);
+    expect(localStorage.getItem(WEB_KEY)).toBeNull();
   });
 
-  it('interprets the explicit legacy external choice for both kinds without writing', async () => {
+  it('migrates a legacy external override onto local only', () => {
     localStorage.setItem(LEGACY_KEY, 'external');
     expect(getLinkOpenPreference('web')).toBe('external');
     expect(getLinkOpenPreference('local')).toBe('external');
-    expect(localStorage.getItem(LEGACY_KEY)).not.toBeNull();
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
     expect(localStorage.getItem(WEB_KEY)).toBeNull();
-    expect(getLinkOpenPreference('local')).toBe('external');
+    expect(localStorage.getItem(LOCAL_KEY)).toBe('external');
   });
 
-  it('interprets the explicit legacy sidebar choice for both kinds without writing', async () => {
+  it('migrates a legacy sidebar override onto web only', () => {
     localStorage.setItem(LEGACY_KEY, 'sidebar');
     expect(getLinkOpenPreference('web')).toBe('sidebar');
     expect(getLinkOpenPreference('local')).toBe('sidebar');
-    expect(localStorage.getItem(LEGACY_KEY)).not.toBeNull();
-    expect(getLinkOpenPreference('web')).toBe('sidebar');
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+    expect(localStorage.getItem(WEB_KEY)).toBe('sidebar');
     expect(localStorage.getItem(LOCAL_KEY)).toBeNull();
   });
 
-  it('does not overwrite an already-split custom key without deleting the rollback key', async () => {
+  it('does not overwrite an already-split custom key while dropping the legacy key', () => {
     localStorage.setItem(LEGACY_KEY, 'sidebar');
     localStorage.setItem(LOCAL_KEY, 'external');
     expect(getLinkOpenPreference('local')).toBe('external');
     expect(getLinkOpenPreference('web')).toBe('sidebar');
-    expect(localStorage.getItem(LEGACY_KEY)).not.toBeNull();
-    expect(getLinkOpenPreference('local')).toBe('external');
-    expect(getLinkOpenPreference('web')).toBe('sidebar');
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+    expect(localStorage.getItem(LOCAL_KEY)).toBe('external');
+    expect(localStorage.getItem(WEB_KEY)).toBe('sidebar');
   });
 
-  it('picks the matching preference for a URL', async () => {
+  it('picks the matching preference for a URL', () => {
     localStorage.setItem(WEB_KEY, 'sidebar');
     localStorage.setItem(LOCAL_KEY, 'external');
     expect(getLinkOpenPreferenceForUrl('https://example.com')).toBe('sidebar');

@@ -241,10 +241,15 @@ export function NativeCloudSections(props: Props) {
   const s = (d: CloudSettingsDomain) => states[d]!;
   const c = (d: CloudSettingsDomain) => !!s(d).isCustomized;
   const chatCustomized = (key: string) => s('desktopChat').customizedKeys?.includes(key) ?? false;
+  // Like the local hooks, choosing the current default clears the override.
+  const chatChoice = (key: string, next: unknown) =>
+    next === s('desktopChat').defaults?.[key]
+      ? attempt('desktopChat', {}, [key])
+      : attempt('desktopChat', { [key]: next });
   const linkControl = (key: 'webLinkOpenPreference' | 'localLinkOpenPreference') => ({
     preference: s('desktopChat').value?.[key] as 'external' | 'sidebar',
     isCustomized: chatCustomized(key),
-    onChange: (next: 'external' | 'sidebar') => void attempt('desktopChat', { [key]: next }),
+    onChange: (next: 'external' | 'sidebar') => void chatChoice(key, next),
     onReset: () => attempt('desktopChat', {}, [key]),
   });
   if (tab === 'appearance')
@@ -266,11 +271,7 @@ export function NativeCloudSections(props: Props) {
             'settings-search-target-appearance-stream-fade',
             <StreamFadeSectionView
               enabled={s('desktopChat').value?.streamFadePreference === 'on'}
-              isCustomized={chatCustomized('streamFadePreference')}
-              onChange={(value) =>
-                void attempt('desktopChat', { streamFadePreference: value ? 'on' : 'off' })
-              }
-              onReset={() => attempt('desktopChat', {}, ['streamFadePreference'])}
+              onChange={(value) => void chatChoice('streamFadePreference', value ? 'on' : 'off')}
             />,
             'pt-[18px] pb-[18px]',
           )}
@@ -308,7 +309,7 @@ export function NativeCloudSections(props: Props) {
               isCustomized={chatCustomized('composerSendShortcut')}
               shortcut="Ctrl+Enter"
               disabled={disabled}
-              onChange={(next) => void attempt('desktopChat', { composerSendShortcut: next })}
+              onChange={(next) => void chatChoice('composerSendShortcut', next)}
               onReset={() => attempt('desktopChat', {}, ['composerSendShortcut'])}
             />,
           )}
@@ -564,7 +565,7 @@ export function NativeCloudSections(props: Props) {
                   enabled={bool(s('desktopChat'), 'messageNavRailEnabled')}
                   isCustomized={chatCustomized('messageNavRailEnabled')}
                   disabled={disabled}
-                  onChange={(next) => void attempt('desktopChat', { messageNavRailEnabled: next })}
+                  onChange={(next) => void chatChoice('messageNavRailEnabled', next)}
                   onReset={() => attempt('desktopChat', {}, ['messageNavRailEnabled'])}
                 />
               )}

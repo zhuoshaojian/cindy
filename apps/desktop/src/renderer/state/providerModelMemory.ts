@@ -52,7 +52,7 @@ export { MODEL_PRESET_SLOT_ID };
 
 let activeDataOwnerId: string | null = null;
 let hostPreferenceWriter: (() => void) | null = null;
-const hasHostPreferences = () => typeof window !== 'undefined' && !!window.electronAPI?.hostSettings;
+const hasHostPreferences = () => typeof window !== 'undefined' && window.electronAPI?.hostSettings?.hostOwned === true;
 export function configureHostProviderMemoryPersistence(writer: (() => void) | null): void { hostPreferenceWriter = writer; }
 /** Host 迁移使用完整快照，lastModel 不能从 snapshotForSeed 推断或丢弃。 */
 export function snapshotForHost(expectedOwner: string | null): Record<string, ProviderMemory> | null {

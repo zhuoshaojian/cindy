@@ -5,8 +5,8 @@
  * 浮现,见 rehypeStreamWordFade):开(默认)= 新内容淡入;关 = 文字直接显示。
  * 系统 reduced-motion 开启时动效无条件关闭,本开关不覆盖该行为。
  *
- * 存储走 useStreamFadePreference(Host profile 只存 override,恢复默认清除
- * override)。保存成功后更新正在流式的消息。
+ * 存储走 useStreamFadePreference(localStorage 只存 override,切回默认即
+ * 清除,规则 20)。切换即时生效,正在流式的消息也立刻应用。
  * 卡片样式与 ChipMetricsSection 对齐(rounded 12 / Card bg / 1px Board)。
  */
 
@@ -15,35 +15,23 @@ import { useTranslation } from 'react-i18next';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useStreamFadePreference } from '@/hooks/useStreamFadePreference';
-import { toast } from '@/lib/toast';
-import { DefaultOverrideControls } from './DefaultOverrideControls';
 
 export function StreamFadeSection() {
-  const { t } = useTranslation();
-  const { preference, setPreference, isCustomized, resetPreference } = useStreamFadePreference();
+  const { preference, setPreference } = useStreamFadePreference();
   return (
     <StreamFadeSectionView
       enabled={preference === 'on'}
-      isCustomized={isCustomized}
       onChange={(next) => setPreference(next ? 'on' : 'off')}
-      onReset={async () => {
-        if (await resetPreference()) toast.success(t('settings.defaults.restored'));
-        else toast.error(t('hostSettings.saveFailed'));
-      }}
     />
   );
 }
 
 export function StreamFadeSectionView({
   enabled,
-  isCustomized,
   onChange,
-  onReset,
 }: {
   enabled: boolean;
-  isCustomized: boolean;
   onChange(value: boolean): void;
-  onReset(): Promise<void>;
 }) {
   const { t } = useTranslation();
 
@@ -72,14 +60,11 @@ export function StreamFadeSectionView({
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
-          <Switch
-            checked={enabled}
-            onCheckedChange={onChange}
-            aria-label={t('settings.streamFade.toggleAria')}
-          />
-        </div>
+        <Switch
+          checked={enabled}
+          onCheckedChange={onChange}
+          aria-label={t('settings.streamFade.toggleAria')}
+        />
       </div>
     </div>
   );

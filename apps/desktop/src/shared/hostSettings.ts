@@ -41,6 +41,8 @@ export interface NativeHostSettingsSnapshot extends HostSettingsSnapshot {
   operationIds: Partial<Record<HostSettingsDomain, string>>;
 }
 export interface HostSettingsRendererApi {
+  /** True only on a managed cloud instance, where new-task defaults and personalization live in the Host profile. */
+  readonly hostOwned: boolean;
   get(): Promise<NativeHostSettingsSnapshot>;
   update(input: HostSettingsUpdate & { ownerStamp: SettingsOwnerStamp }): Promise<HostSettingsReceipt>;
   saveHistory(input: { ownerStamp: SettingsOwnerStamp; expectedRevision: string; history: import('./newTaskPreferenceHistory.js').NewTaskPreferenceHistory; importOnly: boolean }): Promise<NativeHostSettingsSnapshot>;

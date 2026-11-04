@@ -94,7 +94,9 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 ## Renderer 偏好迁移
 
-新任务偏好和个性化从 Renderer localStorage 迁入 owner-scoped Host 文件，不复制整个 localStorage。
+托管云实例上，新任务偏好和个性化从 Renderer localStorage 迁入 owner-scoped Host 文件，不复制整个 localStorage。
+
+普通桌面沿用上游：新任务偏好留在 Renderer 草稿（localStorage）与 Main 内存镜像，个性化留在 Renderer localStorage 并随新建任务请求带给 Main；不迁移、不写 `host-new-task-defaults.json` / `host-personalization.json`，设置读取对 `newTaskDefaults` 与 `personalization` 报告 `unavailable`，写入返回 `UNSUPPORTED_CAPABILITY`。个性化设置页与上游一样只有保存，云实例才有恢复默认。远程草稿选模、会话模型预设、工作树默认、思考开关回写与 Bot 默认模型仍按上游转发给本机 Renderer；只有云实例由 Main 直接写 Host。Renderer 通过 `hostSettings.hostOwned` 判断，preload 在启动时向 Main 同步查询一次；普通桌面上 Main 只回答这个探测，不注册其余 `host-settings:*` Renderer 通道。
 
 - 导入受 owner/generation 和 revision 保护，仅初始化未迁移领域。Host 已经修改或恢复默认的领域不能被旧 Renderer 覆盖。
 - 初始化标记不随 reset 删除；旧值保留用于人工处理冲突，但不再作为正常读写真值。
@@ -103,14 +105,14 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 - Worker 与远程草稿的 effort 优先级保持各自原合同。
 - Renderer 只持有可重建缓存，等待 Host 保存回执后才显示成功。旧回读不能覆盖较新的通知；保存等待期间切换身份不把旧草稿写给新 owner。
 - 个性化编辑保留未保存草稿；外部更新造成 revision 冲突时禁止覆盖，提示保留草稿并重新打开设置。恢复默认调用 `clear`，显式保存空串仍然是 override。
-- 个性化由执行 Host 在原启动装配点读取，随后沿原顺序追加项目上下文；控制端不再发送自己的正文副本。公共 system prompt 与各引擎拼接顺序不变。
+- 云实例的个性化由执行 Host 在原启动装配点读取，随后沿原顺序追加项目上下文；控制端发来的正文副本不被采用。公共 system prompt 与各引擎拼接顺序不变。
 
 ### 本次新增的 profile 与 owner 正本
 
-- **Profile 桌面偏好**：主题/主题族、语言、sidebar 与 ghost panel 布局、桌面/飞书通知、点击/发送/链接行为、淡入、推荐、消息导航条、Agent Island 启用/音效/皮肤/显示目标、持久化网络调试，共 20 组、25 个公开叶子。正本迁入 `host-desktop-preferences.json`；自定义主题、音效文件和显示器身份仍仅存本机。目录以 `scope: profile` 和 `surface: hostDesktop` 区分所属 profile 与应用到 Host 桌面的展示语义。
+- **Profile 桌面偏好（仅托管云实例）**：主题/主题族、语言、sidebar 与 ghost panel 布局、桌面/飞书通知、点击/发送/链接行为、淡入、推荐、消息导航条、Agent Island 启用/音效/皮肤/显示目标、持久化网络调试，共 20 组、25 个公开叶子。正本迁入 `host-desktop-preferences.json`；自定义主题、音效文件和显示器身份仍仅存本机。目录以 `scope: profile` 和 `surface: hostDesktop` 区分所属 profile 与应用到 Host 桌面的展示语义。普通桌面沿用上游 hook 的 localStorage，不迁移、不写这个文件，设置读取报告 `unavailable`；preload 只在云实例暴露 `desktopPreferences`。上游 hook 保持原文件，只把读写偏好或持有状态的导出在云实例转交 `state/hostDesktop` 的同名实现；纯函数不转交。云实例上设回默认值即清除 override，与本机规则一致。Agent Island 仅 macOS 可用，不进入云实例，保持上游实现。
 - **Owner 模型偏好（仅托管云实例）**：云实例上模型显示 override、引擎偏好和收藏迁入 `host-model-presentation-preferences.json`，让设置通道、网页控制台和设置工具在没有窗口时也能读写。保留初始化默认规则、follow-catalog 记录、收藏顺序/身份与 seed 墓碑；不把它们错误迁为 profile，也不重复迁移已接入的 `providerModelMemory`。普通桌面沿用上游 Renderer localStorage 与 Main 内存镜像，不迁移、不写这个文件，设置读取对这三项报告 `unavailable`。上游三个 store 保持原签名，只在云实例转交 Host：收藏与引擎写入和本机一样不等待回执，失败时提示并回到 Host 正本；云实例的 device-link 收藏请求由 Main 按 revision 直接读写该文件。
 - **本机桥**：仅执行 Host 同一 profile 的可信本地 Renderer，可经固定 preload/IPC 通道读取、一次性导入和保存。桌面与模型桥同时校验可信顶层 frame、实际 profile partition 与 Host 注册的窗口身份；仅本机主、副应用窗口可写，登记为只读的辅助窗不可写，remote viewer 明确排除，提交前重新校验。同步启动桥只读，避免重建缓存时闪回默认主题/语言。控制端、远控窗口、网页或工具参数不能冒充本机导入者。
-- **提交与缓存**：profile 写入受 profile stamp/revision 保护，owner 写入另受 owner/generation 保护；都在真实锁内 CAS 与原子提交。多窗口冲突只回读，不换 revision 重放旧整表。初始化标记不随恢复默认删除，旧 Renderer 数据不能重新覆盖；首次导入也尊重旧 owner 的 follow-catalog 墓碑和目标显式选择。兼容首帧缓存只能由成功 Host 提交单向更新，不是第二正本。remote viewer 仅监听 `theme` / `theme.familyId` 两项外观成功缓存，不捕获其它 legacy 偏好、不读完整 profile、不写入或导入；语言继续沿既有专用通知同步。
+- **提交与缓存**：profile 写入受 profile stamp/revision 保护，owner 写入另受 owner/generation 保护；都在真实锁内 CAS 与原子提交。多窗口冲突只回读，不换 revision 重放旧整表。初始化标记不随恢复默认删除，旧 Renderer 数据不能重新覆盖；首次导入也尊重旧 owner 的 follow-catalog 墓碑和目标显式选择。兼容首帧缓存只能由成功 Host 提交单向更新，不是第二正本。remote viewer 不经过 Host 存储，沿用上游 localStorage hook。
 - **待迁移**：未能证明全新且尚未完成导入的旧 profile/owner 数据返回 `migrationPending`；只有有依据的新 profile 才解释为默认。inspection 不执行导入、不删旧键；完成初始化后，即使没有 Renderer 窗口也能从 Host 读取。
 - **运行态消费**：桌面通知最终发送入口和窗口创建期点击行为直接消费已就绪的 Host 值，迟到的旧 Renderer payload 不能覆盖正本。Agent Island 仅在既有受支持初始化分支订阅偏好，应用前检查已提交身份与切换边界；登出/reset 后暂停自动应用，待合法会话的原有启用入口恢复。headless/不支持的平台不因保存的开关启动原生岛，退出时解绑订阅。
 
