@@ -76,6 +76,8 @@ export function StorageOverviewView({
   title,
   description,
   children,
+  usagePercent,
+  usageLabel,
 }: {
   databaseBytes: number | null;
   mediaBytes: number | null;
@@ -89,6 +91,9 @@ export function StorageOverviewView({
   description?: ReactNode;
   /** 说明下方的补充行。 */
   children?: ReactNode;
+  /** 进度条改为表示别的占用(如另一台电脑的磁盘);不传时为数据库相对提醒阈值。 */
+  usagePercent?: number | null;
+  usageLabel?: string;
 }) {
   const { t } = useTranslation();
   const fixedCacheBytes = legacyImagesBytes !== null && chatAttachmentsBytes !== null
@@ -97,9 +102,11 @@ export function StorageOverviewView({
   const totalBytes = databaseBytes !== null && mediaBytes !== null && fixedCacheBytes !== null
     ? databaseBytes + mediaBytes + fixedCacheBytes
     : null;
-  const overviewPercent = databaseBytes === null || warningThresholdGiB <= 0
-    ? null
-    : Math.min(100, (databaseBytes / (warningThresholdGiB * GIB_BYTES)) * 100);
+  const overviewPercent = usagePercent !== undefined
+    ? usagePercent
+    : databaseBytes === null || warningThresholdGiB <= 0
+      ? null
+      : Math.min(100, (databaseBytes / (warningThresholdGiB * GIB_BYTES)) * 100);
   return (
     <div
       className={cn(
@@ -118,7 +125,7 @@ export function StorageOverviewView({
         {children}
         <div id={storageManagementCardSettings.aboutStorageDatabaseSectionTitle.targetId}
           role="progressbar"
-          aria-label={t(storageManagementCardSettings.aboutStorageDatabaseSectionTitle.titleKey)}
+          aria-label={usageLabel ?? t(storageManagementCardSettings.aboutStorageDatabaseSectionTitle.titleKey)}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={overviewPercent ?? undefined}
