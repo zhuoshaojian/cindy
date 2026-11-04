@@ -414,3 +414,52 @@ With the Mac Dev `0.1.121-dev.cloud.20261102.11` (`ba2cf17300`):
 Seen during the test, unchanged from cloud.6: when another writer changes the Host file while the
 instance renderer commits its catalog scopes, that background commit loses the revision check and
 shows the save-failed toast on the instance screen. Fleet admission has not been requested.
+
+## cloud.8: profile preferences local outside cloud instances (2026-11-04)
+
+`d55ef4c2e1` applies the cloud.7 treatment to desktop preferences, new-task defaults and the
+personalization prompt: ordinary desktops keep the upstream renderer storage with no migration,
+and only a managed cloud instance keeps them in its Host profile files. The upstream hooks and
+stores keep their files; on the instance the exports that read, write or hold preference state
+hand over to same-named Host implementations. Main registers the Host IPC, writes remote draft,
+worktree, thinking and Bot default choices to the Host and reads the prompt at session start only
+there (see `docs/host-settings.md`). Delivery `a8e6871e16`, run 41782794930: verify, candidate
+(native smoke on `0.1.121-cloud.8`, build inputs bound to `d55ef4c2e1`) and cache passed; a
+disposable probe hit the qualified cache and was removed. The owner-only policy
+(`cis-u121c8-1104-own-*`) added the cloud.8 approval for the owner and the keyring list (9 → 10, no
+retirement); defaults, placements, schedules and backup policy were unchanged and only the owner
+was offered cloud.8.
+
+The operator's data check now tolerates rows the source flushes while exiting (the cloud.7 hold):
+the sealed sample records, per database, the session/message rowid ceiling and a digest of the ids
+at or below it; the candidate must keep that digest, may only add session/message rows above the
+ceiling, at most 20, each older than the candidate Pod; every other count stays exact. The first
+attempt carried full id lists, exceeded the 16 KiB exec output limit inside the `Stopping` patch
+and stopped in `recovery-hold` before the source was stopped (sealed, same Pod, no backup or data
+change). It was rolled back along the CIS pre-mutation cancel path: `cancel` on the same source
+boot, the annotation moved to `Verified` and the record hold cleared with fences, the operation
+closed as `cancelled` (instance lock and paused digest cleared, audit event by
+`operator-forward-recovery`). With the compact probe (about 9 KB) the second attempt backed up
+**3,568 files / 451,917,066 bytes**, kept databases and schedules unchanged (no exit rows this
+time), started main and init on the delivered digest with the cache hit, released and observed
+for five minutes. The instance is ready on cloud.8 with zero restarts; the other 13 instances,
+their Pods and new claims are unchanged, with no active operation.
+
+With the Mac Dev `0.1.121-dev.cloud.20261102.12` (`d55ef4c2e1`):
+
+- Ordinary desktop: preload exposes neither the desktop nor the model Host store,
+  `hostSettings.hostOwned` is false and `host-settings:get` has no handler. Reply fade-in off wrote
+  the upstream localStorage override and on removed it; the personalization page has only Save,
+  which wrote the owner-scoped localStorage prompt. The profile's Host files stayed byte-identical
+  and localStorage was restored exactly.
+- Instance: the four Host preference files kept their bytes and mtimes across the upgrade.
+  `maker:get-new-maker-defaults` over device-link reports `hostAuthoritative`, so Main serves the
+  Host defaults. On the cloud page reply fade-in has no reset control; off wrote the override and
+  on cleared it, leaving the file byte-identical to before. No Host channel errors appear in the
+  instance log since the boot.
+- Not exercised live: the cloud page does not read the instance prompt by design, so
+  personalization there shows only the heading, and the instance prompt path is unchanged from
+  cloud.7. Device-link worktree and model writes were skipped because they can only store explicit
+  values, which would leave a customized default behind; their Host code is unchanged from cloud.7
+  and covered by tests. Fleet admission has not been requested.
+
