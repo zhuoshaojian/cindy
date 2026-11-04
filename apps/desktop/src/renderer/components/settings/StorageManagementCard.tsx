@@ -636,7 +636,14 @@ type DbSlimmingPhase =
 
 
 /** 存储空间页框架:页标题与说明 + 各分区。云实例设置复用同一框架。 */
-export function StorageSectionFrame({ children }: { children: ReactNode }) {
+export function StorageSectionFrame({
+  children,
+  description,
+}: {
+  children: ReactNode;
+  /** 另一台电脑的存储页用自己的说明。 */
+  description?: ReactNode;
+}) {
   const { t } = useTranslation();
   return (
     <div id="settings-storage-section" className="flex flex-col gap-3">
@@ -646,7 +653,7 @@ export function StorageSectionFrame({ children }: { children: ReactNode }) {
             {t('settings.about.storage.title')}
           </h2>
           <p className="mt-1 text-13 leading-[1.5] text-[var(--settings-section-desc)]">
-            {t('settings.about.storage.overviewDescription')}
+            {description ?? t('settings.about.storage.overviewDescription')}
           </p>
         </div>
       </div>
