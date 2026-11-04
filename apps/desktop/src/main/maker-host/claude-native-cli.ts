@@ -1,3 +1,6 @@
+import { cloudCliAuthorization } from '../host-settings/managementCliAuthorization.js';
+import { cloudManagementExecution } from '../host-settings/managementCalls.js';
+import { cloudPilotClaudeCliEnv } from '../cloudPilotDistribution.js';
 /**
  * claude-native-cli —— Claude 订阅的唯一接入面:Cindy 内置的官方 Claude Code CLI。
  *
@@ -100,6 +103,7 @@ function cliBinaryPath(): string | null {
 async function cliEnv(options: { network: boolean; configDir?: string }): Promise<NodeJS.ProcessEnv> {
   return {
     ...cleanProcessEnv(),
+    ...cloudPilotClaudeCliEnv(),
     ...(options.network ? await claudeCliNetworkEnv() : {}),
     ...(options.configDir ? { CLAUDE_CONFIG_DIR: options.configDir } : {}),
   };
@@ -107,7 +111,7 @@ async function cliEnv(options: { network: boolean; configDir?: string }): Promis
 
 function runCli(
   args: string[],
-  options: { env: NodeJS.ProcessEnv; timeoutMs: number; signal?: AbortSignal },
+  options: { env: NodeJS.ProcessEnv; timeoutMs: number; signal?: AbortSignal; cloudLogin?: boolean },
 ): Promise<{ code: number | null; stdout: string; stderr: string; reason?: 'timeout' | 'cancelled' }> {
   const binary = cliBinaryPath();
   if (!binary) return Promise.reject(new Error('claude cli unavailable'));
@@ -131,8 +135,13 @@ function runCli(
     const onAbort = () => stop('cancelled');
     if (options.signal?.aborted) onAbort();
     else options.signal?.addEventListener('abort', onAbort, { once: true });
+    const present = options.cloudLogin ? cloudCliAuthorization((line) => child.stdin?.write(line)) : undefined;
+    child.stdin?.on('error', () => stop('cancelled'));
     child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
+      if (present) {
+        void present(chunk.toString('utf8')).catch(() => stop('cancelled'));
+      }
+      stdout = (stdout + chunk.toString('utf8')).slice(-65_536);
     });
     child.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString('utf8');
@@ -416,7 +425,9 @@ export async function runClaudeCliLogin(signal: AbortSignal, configDir?: string)
   if (!cliBinaryPath()) return { ok: false, reason: 'local_unavailable' };
   try {
     const result = await runCli(['auth', 'login', '--claudeai'], {
-      env: await cliEnv({ network: true, configDir }),
+      env: { ...await cliEnv({ network: true, configDir }),
+        ...(cloudManagementExecution() && process.platform === 'linux' ? { BROWSER: '/bin/true' } : {}) },
+      cloudLogin: !!cloudManagementExecution(),
       timeoutMs: LOGIN_TIMEOUT_MS,
       signal,
     });

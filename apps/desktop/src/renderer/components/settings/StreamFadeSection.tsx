@@ -18,9 +18,23 @@ import { SettingsCard, SettingsRow, SettingsSection } from '@/components/ui/sett
 import { useStreamFadePreference } from '@/hooks/useStreamFadePreference';
 
 export function StreamFadeSection() {
-  const { t } = useTranslation();
   const { preference, setPreference } = useStreamFadePreference();
-  const enabled = preference === 'on';
+  return (
+    <StreamFadeSectionView
+      enabled={preference === 'on'}
+      onChange={(next) => setPreference(next ? 'on' : 'off')}
+    />
+  );
+}
+
+export function StreamFadeSectionView({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange(value: boolean): void;
+}) {
+  const { t } = useTranslation();
 
   return (
     <SettingsSection title={t('settings.streamFade.title')} headingLevel={3}>
@@ -31,7 +45,7 @@ export function StreamFadeSection() {
           trailing={
             <Switch data-setting-id={appearanceSettings.streamFadeLabel.id}
               checked={enabled}
-              onCheckedChange={(next) => setPreference(next ? 'on' : 'off')}
+              onCheckedChange={onChange}
               aria-label={t('settings.streamFade.toggleAria')}
             />
           }

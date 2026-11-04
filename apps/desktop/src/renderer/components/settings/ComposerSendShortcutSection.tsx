@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   getComposerModifierShortcutLabel,
   useComposerSendShortcutPreference,
+  type ComposerSendShortcutPreference,
 } from '@/hooks/useComposerSendShortcutPreference';
 import { toast } from '@/lib/toast';
 import { SettingsCard, SettingsRow, SettingsSection } from '@/components/ui/settings-rows';
@@ -22,6 +23,39 @@ export function ComposerSendShortcutSection() {
   }, [setPreference, t]);
 
   return (
+    <ComposerSendShortcutSectionView
+      preference={preference}
+      isCustomized={isCustomized}
+      shortcut={shortcut}
+      onReset={onReset}
+      onChange={(next) => {
+        const result = setPreference(next);
+        if (!result.ok && result.conflict === 'composer-voice-input') {
+          toast.error(t('settings.shortcuts.errors.composerVoiceConflict'));
+        }
+      }}
+    />
+  );
+}
+
+/** Presentation only: the controller owns the target, persistence and platform. */
+export function ComposerSendShortcutSectionView({
+  preference,
+  isCustomized,
+  shortcut,
+  disabled = false,
+  onReset,
+  onChange,
+}: {
+  preference: ComposerSendShortcutPreference;
+  isCustomized: boolean;
+  shortcut: string;
+  disabled?: boolean;
+  onReset(): void;
+  onChange(next: ComposerSendShortcutPreference): void;
+}) {
+  const { t } = useTranslation();
+  return (
     <SettingsSection title={t('settings.composer.title')}>
       <SettingsCard>
         <SettingsRow
@@ -29,15 +63,15 @@ export function ComposerSendShortcutSection() {
           hint={t(personalizationDetailsSettings.composerSendShortcutLabel.descriptionKey, { shortcut })}
           trailing={
             <div className="flex shrink-0 items-center gap-2">
-              <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
+              <DefaultOverrideControls
+                isCustomized={isCustomized}
+                onReset={onReset}
+                disabled={disabled}
+              />
               <Switch data-setting-id={personalizationDetailsSettings.composerSendShortcutLabel.id}
                 checked={preference === 'modifier-enter'}
-                onCheckedChange={(enabled) => {
-                  const result = setPreference(enabled ? 'modifier-enter' : 'enter');
-                  if (!result.ok && result.conflict === 'composer-voice-input') {
-                    toast.error(t('settings.shortcuts.errors.composerVoiceConflict'));
-                  }
-                }}
+                disabled={disabled}
+                onCheckedChange={(enabled) => onChange(enabled ? 'modifier-enter' : 'enter')}
                 aria-label={t('settings.composer.sendShortcut.ariaLabel', { shortcut })}
               />
             </div>

@@ -5,6 +5,8 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { MainEntryRedirect } from '@/components/layout/MainEntryRedirect';
 import { RouteErrorFallback } from '@/components/error/RouteErrorFallback';
 import { SidebarWindowLayout } from '@/components/layout/SidebarWindowLayout';
+import { lazy, Suspense } from 'react';
+import { CloudSettingsView } from '@/features/cloud-settings/CloudSettingsView';
 import { LoginPage } from '@/components/login/LoginPage';
 import { AddAccountLoginPage } from '@/components/login/AddAccountLoginPage';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -46,6 +48,7 @@ function EmptyRouteFallback() {
  *
  * LocalDbGate 下沉在路由层：AuthProvider 在 RouterProvider 之外无法 useNavigate。
  */
+const CloudSettingsTrial = import.meta.env.DEV ? lazy(() => import('@/features/cloud-settings/trial').then(module => ({ default: module.CloudSettingsTrial }))) : null;
 export const router = createHashRouter([
   {
     path: '/login',
@@ -265,6 +268,8 @@ export const router = createHashRouter([
                     ],
                   },
                   { path: 'settings', element: <SettingsView /> },
+                  { path: 'cloud-settings', element: <CloudSettingsView /> },
+                  ...(CloudSettingsTrial ? [{ path: 'cloud-settings-trial', element: <Suspense fallback={null}><CloudSettingsTrial /></Suspense> }] : []),
                   {
                     path: 'plugins',
                     lazy: () => import('@/features/plugin/GhostPluginPage').then(({ GhostPluginPage }) => ({ Component: GhostPluginPage })),

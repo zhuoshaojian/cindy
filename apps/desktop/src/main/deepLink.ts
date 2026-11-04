@@ -1,3 +1,4 @@
+import { isCloudPilotDistribution } from './cloudPilotDistribution.js';
 /**
  * deepLink — cindy:// (+ 历史 xdt-maker://) custom URL scheme + folder-context-menu handoff
  * ---------------------------------------------------------------------------
@@ -718,6 +719,7 @@ function isWindowsSlashSwitch(value: string): boolean {
  */
 export function registerDeepLinkProtocol(): void {
   if (!app.isPackaged) return;
+  if (isCloudPilotDistribution()) return;
 
   for (const scheme of DEEP_LINK_SCHEMES) {
     const registered = app.setAsDefaultProtocolClient(scheme);

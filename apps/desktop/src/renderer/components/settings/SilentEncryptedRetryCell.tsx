@@ -15,7 +15,6 @@ import { DefaultOverrideControls } from './DefaultOverrideControls';
 const log = createLogger('SilentEncryptedRetryCell');
 
 export function SilentEncryptedRetryCell() {
-  const setting = useSettingDefinition(additionalSettings.silentRetry);
   const { t } = useTranslation();
   const { enabled, isCustomized, setEnabled, setIsCustomized } = useSilentEncryptedRetry();
   const [pending, setPending] = useState(false);
@@ -39,7 +38,9 @@ export function SilentEncryptedRetryCell() {
       } catch (err) {
         log.warn('silentEncryptedRetrySet failed', err);
         toast.error(
-          err instanceof Error ? err.message : t('settings.silentEncryptedRetry.toast.toggleFailed'),
+          err instanceof Error
+            ? err.message
+            : t('settings.silentEncryptedRetry.toast.toggleFailed'),
         );
         setEnabled(prev);
       } finally {
@@ -63,6 +64,34 @@ export function SilentEncryptedRetryCell() {
       setPending(false);
     }
   }, [setEnabled, setIsCustomized, t]);
+
+  return (
+    <SilentEncryptedRetryCellView
+      enabled={enabled}
+      isCustomized={isCustomized}
+      pending={pending}
+      handleToggle={handleToggle}
+      handleReset={handleReset}
+    />
+  );
+}
+
+/** Shared native view. Local and cloud controllers provide the same state/actions. */
+export function SilentEncryptedRetryCellView({
+  enabled,
+  isCustomized,
+  pending,
+  handleToggle,
+  handleReset,
+}: {
+  enabled: boolean;
+  isCustomized: boolean;
+  pending: boolean;
+  handleToggle: (next: boolean) => Promise<void>;
+  handleReset: () => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const setting = useSettingDefinition(additionalSettings.silentRetry);
 
   return (
     <SettingsRow

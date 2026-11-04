@@ -2,7 +2,7 @@ import { personalizationDetailsSettings } from './PersonalizationDetails.setting
 import { useSettingDefinition } from './useSettingDefinition';
 import { Button } from '@/components/ui/button';
 import { SettingsCard, SettingsField } from '@/components/ui/settings-rows';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
@@ -11,28 +11,110 @@ import { USER_PROMPT_MAX_LENGTH } from '@/lib/userPrompt.constants';
 import { toast } from '@/lib/toast';
 
 export function UserPromptSection() {
-  const { value, setValue } = useUserPrompt();
+  const state = useUserPrompt();
+  if ('ready' in state) return <UserPromptEditor {...state} />;
+  // 普通桌面沿用上游 localStorage：随时可写、同步保存，外部值变化即刷新草稿。
+  return (
+    <UserPromptEditor
+      value={state.value}
+      ready
+      unavailable={false}
+      customized={state.value !== ''}
+      revision="local"
+      ownerKey={`local:${state.value}`}
+      setValue={state.setValue}
+    />
+  );
+}
+
+/** Personalization page title; the cloud surface shows it alone when the prompt is not reported. */
+export function PersonalizationPageTitle() {
+  const { t } = useTranslation();
+  return (
+    <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
+      {t('settings.personalization.title')}
+    </h2>
+  );
+}
+
+export interface UserPromptEditorProps {
+  value: string;
+  ready: boolean;
+  unavailable: boolean;
+  customized: boolean;
+  revision: string | null;
+  ownerKey: string;
+  setValue(value: string, revision: string): Promise<void> | void;
+  /** Host 正本才有「跟随默认」;本机 localStorage 与上游一样只有保存。 */
+  resetValue?(revision: string): Promise<void>;
+  onDirtyChange?(dirty: boolean): void;
+}
+
+/** Shared native control; the cloud surface supplies its own scoped adapter. */
+export function UserPromptEditor({
+  value,
+  ready,
+  unavailable,
+  customized,
+  revision,
+  ownerKey,
+  setValue,
+  resetValue,
+  onDirtyChange,
+}: UserPromptEditorProps) {
   const { t } = useTranslation();
   const setting = useSettingDefinition(personalizationDetailsSettings.userInstructions);
 
-  const [draft, setDraft] = useState(value);
+  const [draft, setDraft] = useState({ value, revision, ownerKey });
+  const previousValue = useRef(value);
+  const [saving, setSaving] = useState(false);
 
-  // 外部 storage 变化（其他 window 实例 setValue 触发的 storage event）时刷新草稿。
-  // 单 Electron 窗口里几乎不会触发，留作兜底。
+  // 同 owner 的外部修改不吞掉正在编辑的草稿；其旧 revision 会阻止覆盖。
   useEffect(() => {
-    setDraft(value);
-  }, [value]);
+    const previous = previousValue.current;
+    previousValue.current = value;
+    setDraft((current) =>
+      current.ownerKey !== ownerKey || current.value === previous
+        ? { value, revision, ownerKey }
+        : current,
+    );
+  }, [value, revision, ownerKey]);
 
-  const length = draft.length;
+  const length = draft.value.length;
   const overLimit = length > USER_PROMPT_MAX_LENGTH;
-  const dirty = draft !== value;
-  const canSave = dirty && !overLimit;
+  const dirty = draft.value !== value;
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  const conflicted = dirty && draft.revision !== revision;
+  const canSave = ready && dirty && !overLimit && !saving && !conflicted;
 
-  const handleSave = useCallback(() => {
-    if (!canSave) return;
-    setValue(draft);
-    toast.success(t('settings.personalization.toast.saved'));
+  const handleSave = useCallback(async () => {
+    if (!canSave || !draft.revision) return;
+    setSaving(true);
+    try {
+      await setValue(draft.value, draft.revision);
+      toast.success(t('settings.personalization.toast.saved'));
+    } catch {
+      toast.error(t('hostSettings.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
   }, [canSave, draft, setValue, t]);
+
+  const handleReset = useCallback(async () => {
+    if (!resetValue || !ready || !revision || saving) return;
+    setSaving(true);
+    try {
+      await resetValue(revision);
+      setDraft({ value: '', revision: null, ownerKey });
+      toast.success(t('settings.personalization.toast.saved'));
+    } catch {
+      toast.error(t('hostSettings.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  }, [ready, revision, saving, resetValue, ownerKey, t]);
 
   const counter = useMemo(
     () => `${length.toLocaleString()} / ${USER_PROMPT_MAX_LENGTH.toLocaleString()}`,
@@ -44,8 +126,15 @@ export function UserPromptSection() {
       {/* 名称/说明在输入框上方, 与输入框同属一项 */}
       <SettingsField title={setting.title} hint={setting.description}>
         <textarea {...setting.anchorProps} {...setting.controlProps}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          value={draft.ownerKey === ownerKey ? draft.value : value}
+          disabled={!ready || saving}
+          onChange={(e) =>
+            setDraft((current) => ({
+              value: e.target.value,
+              revision: current.value === value ? revision : current.revision,
+              ownerKey,
+            }))
+          }
           placeholder={t('settings.personalization.placeholder')}
           aria-label={t('settings.personalization.ariaLabel')}
           rows={7}
@@ -62,6 +151,11 @@ export function UserPromptSection() {
           style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
         />
 
+        {(unavailable || conflicted) && (
+          <p role="status" className="text-13 text-[var(--settings-section-desc)]">
+            {t(unavailable ? 'hostSettings.loadFailed' : 'hostSettings.changed')}
+          </p>
+        )}
         <div className="flex items-center justify-between gap-3">
           <p
             className={cn(
@@ -77,16 +171,28 @@ export function UserPromptSection() {
             {overLimit ? t('settings.personalization.overLimit') : ''}
           </p>
 
-          <Button {...setting.controlProps}
-            variant="cta"
-            size="md"
-            compact
-            type="button"
-            onClick={handleSave}
-            disabled={!canSave}
-          >
-            {t('settings.personalization.save')}
-          </Button>
+          <div className="flex items-center gap-2">
+            {resetValue && (
+              <Button
+                variant="secondary"
+                onClick={handleReset}
+                disabled={!ready || !customized || saving || conflicted}
+              >
+                {t('hostSettings.reset')}
+              </Button>
+            )}
+            <Button {...setting.controlProps}
+              variant="cta"
+              size="md"
+              compact
+              type="button"
+              onClick={handleSave}
+              disabled={!canSave}
+              loading={saving}
+            >
+              {t('settings.personalization.save')}
+            </Button>
+          </div>
         </div>
       </SettingsField>
     </SettingsCard>

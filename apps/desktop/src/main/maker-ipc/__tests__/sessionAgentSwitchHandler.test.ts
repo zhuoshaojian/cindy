@@ -616,7 +616,8 @@ describe('performSessionAgentSwitch', () => {
     const pendingSwitches = createPendingAgentSwitchRegistry();
     const { deps } = makeDeps({
       pendingSwitches,
-      rememberThinkingIntent: (input) => {
+      rememberThinkingIntent: async (input) => {
+        await Promise.resolve();
         remembered.push(input);
       },
       getSessionRow: async () => ({ ...row }),
@@ -629,6 +630,7 @@ describe('performSessionAgentSwitch', () => {
         };
       },
       bootstrapSwitchedSession: async (_id, opts) => {
+        expect(remembered.at(-1)?.thinking).toBe(opts?.thinkingEnabled);
         bootstraps.push(opts);
       },
     });

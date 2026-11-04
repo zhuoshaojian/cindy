@@ -17,10 +17,33 @@ import { cn } from '@/lib/utils';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 
 export function MessageNavRailCell() {
-  const setting = useSettingDefinition(additionalSettings.messageNavRail);
-  const { t } = useTranslation();
   const { enabled, isCustomized, setEnabled } = useMessageNavRailPreference();
 
+  return (
+    <MessageNavRailCellView
+      enabled={enabled}
+      isCustomized={isCustomized}
+      onChange={setEnabled}
+      onReset={() => setEnabled(true)}
+    />
+  );
+}
+
+export function MessageNavRailCellView({
+  enabled,
+  isCustomized,
+  disabled = false,
+  onChange,
+  onReset,
+}: {
+  enabled: boolean;
+  isCustomized: boolean;
+  disabled?: boolean;
+  onChange(next: boolean): void;
+  onReset(): void;
+}) {
+  const { t } = useTranslation();
+  const setting = useSettingDefinition(additionalSettings.messageNavRail);
   return (
     <SettingsRow
       {...setting.anchorProps}
@@ -38,11 +61,16 @@ export function MessageNavRailCell() {
       hint={setting.description}
       trailing={
         <div className="flex items-center gap-2">
-          <DefaultOverrideControls isCustomized={isCustomized} onReset={() => setEnabled(true)} />
+          <DefaultOverrideControls
+            isCustomized={isCustomized}
+            onReset={onReset}
+            disabled={disabled}
+          />
           <Switch
             {...setting.controlProps}
             checked={enabled}
-            onCheckedChange={setEnabled}
+            onCheckedChange={onChange}
+            disabled={disabled}
             aria-label={t('settings.messageNavRail.toggleAria')}
           />
         </div>

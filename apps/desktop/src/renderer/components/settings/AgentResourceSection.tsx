@@ -79,7 +79,6 @@ export function AgentResourceSection() {
   const settingsRevision = useAppSettingsRevision('agent-resources');
   const { t } = useTranslation();
   const [settings, setSettings] = useState<Wire | null>(null);
-  const maxInputId = useId();
   // 预设三键写入的 in-flight 闸:防并发点击交错出"杂交档位"落盘。
   const [applyingPreset, setApplyingPreset] = useState(false);
   // 并发上限输入框的本地草稿:一切编辑中间态(清空、"10"删掉首位剩"0"等)都
@@ -185,6 +184,52 @@ export function AgentResourceSection() {
   if (!settings) return null;
 
   return (
+    <AgentResourceSectionView
+      settings={settings}
+      activePreset={activePreset}
+      applyingPreset={applyingPreset}
+      applyPreset={applyPreset}
+      maxDraft={maxDraft}
+      setMaxDraft={setMaxDraft}
+      persist={persist}
+      reset={() => {
+        if (applyingPreset) return;
+        void window.electronAPI.maker
+          .agentResourceSettingsReset()
+          .then((next) => {
+            applyServerState(next);
+            toast.success(t('settings.defaults.restored'));
+          })
+          .catch(() => toast.error(t('settings.defaults.restoreFailed')));
+      }}
+    />
+  );
+}
+
+/** Shared native view. Local and cloud controllers provide the same state/actions. */
+export function AgentResourceSectionView({
+  settings,
+  activePreset,
+  applyingPreset,
+  applyPreset,
+  maxDraft,
+  setMaxDraft,
+  persist,
+  reset,
+}: {
+  settings: Wire;
+  activePreset: PresetId | null;
+  applyingPreset: boolean;
+  applyPreset: (id: PresetId) => Promise<void>;
+  maxDraft: string | null;
+  setMaxDraft: (value: string | null) => void;
+  persist: (key: SettingKey, value: number | string | boolean) => void;
+  reset: () => void;
+}) {
+  const { t } = useTranslation();
+  const maxInputId = useId();
+
+  return (
     <SettingsSection
       title={t('settings.agentResource.title')}
       action={
@@ -194,18 +239,7 @@ export function AgentResourceSection() {
           <DefaultOverrideControls
             isCustomized={Boolean(settings.isCustomized)}
             disabled={applyingPreset}
-            onReset={() => {
-              if (applyingPreset) return;
-              void window.electronAPI.maker
-                .agentResourceSettingsReset()
-                .then((next) => {
-                  applyServerState(next);
-                  toast.success(t('settings.defaults.restored'));
-                })
-                .catch(() => {
-                  toast.error(t('settings.defaults.restoreFailed'));
-                });
-            }}
+            onReset={reset}
           />
         </div>
       }

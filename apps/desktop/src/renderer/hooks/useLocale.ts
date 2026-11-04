@@ -35,6 +35,14 @@ import {
   effectiveOf,
   getEffectiveLocale,
 } from '@/lib/localePreference';
+import * as host from '@/state/hostDesktop/useLocale';
+import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
+
+/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
+const hostDesktop = hasHostDesktopPreferences();
+export const bootstrapInitialLocale = hostDesktop ? host.bootstrapInitialLocale : bootstrapInitialLocaleLocal;
+export const LocaleProvider = hostDesktop ? host.LocaleProvider : LocaleProviderLocal;
+export const useLocale = hostDesktop ? host.useLocale : useLocaleLocal;
 
 interface LocaleContextValue {
   /** 用户的偏好选择 (含 'system')。 */
@@ -81,13 +89,13 @@ function applyLocale(loc: SupportedLocale): void {
  * window, so the selected language is already loaded here and applying it is
  * synchronous; even an early render failure stays in the user's language.
  */
-export function bootstrapInitialLocale(): SupportedLocale {
+function bootstrapInitialLocaleLocal(): SupportedLocale {
   const effectiveLocale = getEffectiveLocale();
   applyLocale(effectiveLocale);
   return effectiveLocale;
 }
 
-export function LocaleProvider({ children }: { children: ReactNode }) {
+function LocaleProviderLocal({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<LocalePreference>(readStoredLocale);
   const [effectiveLocale, setEffectiveLocale] = useState<SupportedLocale>(getEffectiveLocale);
   const [classicalStyle, setClassicalStyleState] = useState<ClassicalReplyStyleId>(readStoredClassicalStyle);
@@ -125,7 +133,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   return createElement(LocaleContext.Provider, { value }, children);
 }
 
-export function useLocale(): LocaleContextValue {
+function useLocaleLocal(): LocaleContextValue {
   const ctx = useContext(LocaleContext);
   if (ctx === undefined) {
     throw new Error('useLocale must be used within a LocaleProvider');

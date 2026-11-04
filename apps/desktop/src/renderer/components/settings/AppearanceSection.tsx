@@ -1,5 +1,5 @@
 import { appearanceSettings, UI_FONT_PRESETS, CODE_FONT_PRESETS, TERMINAL_FONT_PRESETS } from './AppearanceSection.settings-search';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select } from '@/components/ui/select';
 
@@ -23,8 +23,18 @@ import {
   DEFAULT_UI_FONT_SIZE,
   useFontSettings,
 } from '@/hooks/useFontSettings';
-import { useSidebarCardMode, useSidebarMainViewMode } from '@/hooks/useSidebarCardMode';
-import { getThemeFamilies, resolveFamilyVariant, type ThemeFamily } from '@/themes/families';
+import {
+  useSidebarCardMode,
+  useSidebarMainViewMode,
+  type SidebarMainViewMode,
+  type SidebarViewMode,
+} from '@/hooks/useSidebarCardMode';
+import {
+  getThemeFamilies,
+  resolveFamilyVariant,
+  tryGetFamily,
+  type ThemeFamily,
+} from '@/themes/families';
 import { resolveThemeValue } from '@/themes/theme-service';
 import type { Theme } from '@/themes/types';
 import { buildCopyFromTheme, onLocalThemesChange, refreshLocalThemes } from '@/themes/local-themes';
@@ -86,9 +96,9 @@ interface ModePalette {
   ink: string;
 }
 
-function modePalette(theme: Theme): ModePalette {
+function modePalette(theme: Theme | null): ModePalette {
   // 回退用同名语义角色的 CSS 变量,不写字面色值(所选主题缺项时跟随当前全局主题)。
-  const value = (id: string) => resolveThemeValue(theme, id) ?? `var(--${id})`;
+  const value = (id: string) => (theme && resolveThemeValue(theme, id)) ?? `var(--${id})`;
   return {
     canvas: value('surface'),
     sidebar: value('surface-chip'),
@@ -322,53 +332,55 @@ function FamilyDropdown({
   );
 }
 
+type FontSettingsController = ReturnType<typeof useFontSettings>;
+type TerminalFontKey =
+  | 'terminalFamily'
+  | 'terminalSize'
+  | 'setTerminalFamily'
+  | 'setTerminalSize'
+  | 'resetTerminalFamily'
+  | 'resetTerminalSize';
+
+/**
+ * 外观页的展示部分。本机设置传入桌面 hook;云实例设置传入目标实例的值与保存动作,
+ * 未传的可选部分(终端字体、本地主题、壁纸、布局恢复)不显示。
+ */
+export interface AppearanceSectionViewProps {
+  theme: ThemeOption;
+  setTheme: (next: ThemeOption) => void;
+  familyId: string;
+  setFamily: (id: string) => void;
+  families: ThemeFamily[];
+  fonts: Omit<FontSettingsController, TerminalFontKey>;
+  terminalFont?: Pick<FontSettingsController, TerminalFontKey>;
+  sidebarViewMode: SidebarViewMode;
+  setSidebarViewMode: (next: SidebarViewMode) => void;
+  sidebarMainViewMode: SidebarMainViewMode;
+  setSidebarMainViewMode: (next: SidebarMainViewMode) => void;
+  localThemes?: {
+    onExport: () => void;
+    onImport: () => void;
+    onOpenDir: () => void;
+    onRefresh: () => void;
+  };
+  /** 本机 Dock 图标选择器(仅 macOS 本机);未传时不显示该行。 */
+  dockIcon?: ReactNode;
+  wallpaper?: ReactNode;
+  layoutReset?: ReactNode;
+}
+
 export function AppearanceSection() {
   const { theme, setTheme, familyId, setFamily } = useTheme();
-  const {
-    uiFamily,
-    codeFamily,
-    uiSize,
-    codeSize,
-    terminalFamily,
-    terminalSize,
-    setUiFamily,
-    setCodeFamily,
-    setUiSize,
-    setCodeSize,
-    setTerminalFamily,
-    setTerminalSize,
-    resetUiFamily,
-    resetCodeFamily,
-    resetUiSize,
-    resetCodeSize,
-    resetTerminalFamily,
-    resetTerminalSize,
-  } = useFontSettings();
+  const fontSettings = useFontSettings();
   const { mode: sidebarViewMode, setMode: setSidebarViewMode } = useSidebarCardMode();
   const { mode: sidebarMainViewMode, setMode: setSidebarMainViewMode } = useSidebarMainViewMode();
   const { t } = useTranslation();
   const [localThemesVersion, setLocalThemesVersion] = useState(0);
-  const [uiSizeInput, setUiSizeInput] = useState(String(uiSize));
-  const [codeSizeInput, setCodeSizeInput] = useState(String(codeSize));
-  const [terminalSizeInput, setTerminalSizeInput] = useState(String(terminalSize));
   const families = useMemo(() => getThemeFamilies(), [localThemesVersion]);
-  const selectedFamily = families.find((f) => f.id === familyId) ?? families[0];
 
   useEffect(() => {
     void refreshLocalThemes();
   }, []);
-
-  useEffect(() => {
-    setUiSizeInput(String(uiSize));
-  }, [uiSize]);
-
-  useEffect(() => {
-    setCodeSizeInput(String(codeSize));
-  }, [codeSize]);
-
-  useEffect(() => {
-    setTerminalSizeInput(String(terminalSize));
-  }, [terminalSize]);
 
   useEffect(
     () =>
@@ -376,37 +388,6 @@ export function AppearanceSection() {
         setLocalThemesVersion((version) => version + 1);
       }),
     [],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      const currentIndex = THEME_OPTIONS.indexOf(theme);
-      let nextIndex = currentIndex;
-
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        nextIndex = (currentIndex + 1) % THEME_OPTIONS.length;
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        nextIndex = (currentIndex - 1 + THEME_OPTIONS.length) % THEME_OPTIONS.length;
-      } else if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        return;
-      } else {
-        return;
-      }
-
-      setTheme(THEME_OPTIONS[nextIndex]);
-    },
-    [theme, setTheme],
-  );
-
-  const getFamilyLabel = useCallback(
-    (family: ThemeFamily) =>
-      isLocalThemeId(family.id)
-        ? `${family.name} ${t('settings.appearance.localBadge')}`
-        : family.name,
-    [t],
   );
 
   const handleExport = useCallback(async () => {
@@ -487,6 +468,129 @@ export function AppearanceSection() {
     toast.success(t('settings.appearance.localThemes.refreshed'));
   }, [familyId, setFamily, t]);
 
+  const {
+    terminalFamily,
+    terminalSize,
+    setTerminalFamily,
+    setTerminalSize,
+    resetTerminalFamily,
+    resetTerminalSize,
+    ...fonts
+  } = fontSettings;
+
+  return (
+    <AppearanceSectionView
+      theme={theme}
+      setTheme={setTheme}
+      familyId={familyId}
+      setFamily={setFamily}
+      families={families}
+      fonts={fonts}
+      terminalFont={{
+        terminalFamily,
+        terminalSize,
+        setTerminalFamily,
+        setTerminalSize,
+        resetTerminalFamily,
+        resetTerminalSize,
+      }}
+      sidebarViewMode={sidebarViewMode}
+      setSidebarViewMode={setSidebarViewMode}
+      sidebarMainViewMode={sidebarMainViewMode}
+      setSidebarMainViewMode={setSidebarMainViewMode}
+      localThemes={{
+        onExport: () => void handleExport(),
+        onImport: () => void handleImport(),
+        onOpenDir: () => void handleOpenDir(),
+        onRefresh: () => void handleRefresh(),
+      }}
+      dockIcon={window.electronAPI?.platform === 'darwin' ? <DockIconPicker /> : undefined}
+      wallpaper={<WallpaperSection />}
+      layoutReset={<LayoutResetControl />}
+    />
+  );
+}
+
+export function AppearanceSectionView({
+  theme,
+  setTheme,
+  familyId,
+  setFamily,
+  families,
+  fonts,
+  terminalFont,
+  sidebarViewMode,
+  setSidebarViewMode,
+  sidebarMainViewMode,
+  setSidebarMainViewMode,
+  localThemes,
+  dockIcon,
+  wallpaper,
+  layoutReset,
+}: AppearanceSectionViewProps) {
+  const {
+    uiFamily,
+    codeFamily,
+    uiSize,
+    codeSize,
+    setUiFamily,
+    setCodeFamily,
+    setUiSize,
+    setCodeSize,
+    resetUiFamily,
+    resetCodeFamily,
+    resetUiSize,
+    resetCodeSize,
+  } = fonts;
+  const { t } = useTranslation();
+  const [uiSizeInput, setUiSizeInput] = useState(String(uiSize));
+  const [codeSizeInput, setCodeSizeInput] = useState(String(codeSize));
+  const [terminalSizeInput, setTerminalSizeInput] = useState(String(terminalFont?.terminalSize));
+  const selectedFamily = families.find((f) => f.id === familyId) ?? families[0];
+
+  useEffect(() => {
+    setUiSizeInput(String(uiSize));
+  }, [uiSize]);
+
+  useEffect(() => {
+    setCodeSizeInput(String(codeSize));
+  }, [codeSize]);
+
+  useEffect(() => {
+    setTerminalSizeInput(String(terminalFont?.terminalSize));
+  }, [terminalFont?.terminalSize]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const currentIndex = THEME_OPTIONS.indexOf(theme);
+      let nextIndex = currentIndex;
+
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        nextIndex = (currentIndex + 1) % THEME_OPTIONS.length;
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        nextIndex = (currentIndex - 1 + THEME_OPTIONS.length) % THEME_OPTIONS.length;
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        return;
+      } else {
+        return;
+      }
+
+      setTheme(THEME_OPTIONS[nextIndex]);
+    },
+    [theme, setTheme],
+  );
+
+  const getFamilyLabel = useCallback(
+    (family: ThemeFamily) =>
+      isLocalThemeId(family.id)
+        ? `${family.name} ${t('settings.appearance.localBadge')}`
+        : family.name,
+    [t],
+  );
+
   const commitCodeSizeInput = useCallback(() => {
     const trimmed = codeSizeInput.trim();
     const next = Number(codeSizeInput);
@@ -500,6 +604,8 @@ export function AppearanceSection() {
   }, [codeSize, codeSizeInput, setCodeSize]);
 
   const commitTerminalSizeInput = useCallback(() => {
+    if (!terminalFont) return;
+    const { terminalSize, setTerminalSize } = terminalFont;
     const trimmed = terminalSizeInput.trim();
     const next = Number(terminalSizeInput);
     if (trimmed !== '' && Number.isFinite(next)) {
@@ -509,7 +615,7 @@ export function AppearanceSection() {
       return;
     }
     setTerminalSizeInput(String(terminalSize));
-  }, [terminalSize, terminalSizeInput, setTerminalSize]);
+  }, [terminalFont, terminalSizeInput]);
 
   const commitUiSizeInput = useCallback(() => {
     const trimmed = uiSizeInput.trim();
@@ -524,8 +630,10 @@ export function AppearanceSection() {
   }, [uiSize, uiSizeInput, setUiSize]);
 
   // 三张缩略图按所选配色的浅 / 深方案上色;配色缺某一方案时用另一方案(此时模式已锁定)。
-  const lightPalette = modePalette(resolveFamilyVariant(selectedFamily.id, 'light').theme);
-  const darkPalette = modePalette(resolveFamilyVariant(selectedFamily.id, 'dark').theme);
+  // 目标实例上的本地主题不在本机目录里,缩略图跟随当前全局主题。
+  const knownFamily = tryGetFamily(selectedFamily.id);
+  const lightPalette = modePalette(knownFamily ? resolveFamilyVariant(knownFamily.id, 'light').theme : null);
+  const darkPalette = modePalette(knownFamily ? resolveFamilyVariant(knownFamily.id, 'dark').theme : null);
 
   // 只有一种方案的主题:显示模式固定为该方案,模式卡片只读并按实际显示选中;
   // 用户保存的显示模式不改,换回双方案主题后照旧生效。
@@ -616,55 +724,49 @@ export function AppearanceSection() {
               }
             />
 
-            {window.electronAPI?.platform === 'darwin' ? (
+            {dockIcon ? (
               <SettingsRow
                 className="cindy-segmented-row"
                 title={<span id={appearanceSettings.appIcon.targetId}>{t(appearanceSettings.appIcon.titleKey)}</span>}
                 hint={t(appearanceSettings.appIcon.descriptionKey)}
-                trailing={<DockIconPicker />}
+                trailing={dockIcon}
               />
             ) : null}
 
-            <SettingsRow
-              wrap
-              title={<span id={appearanceSettings.localThemesTitle.targetId}>{t(appearanceSettings.localThemesTitle.titleKey)}</span>}
-              trailing={
-              <div className="flex flex-wrap gap-2">
-                <LocalThemeIconButton
-                  icon={Copy}
-                  label={t('settings.appearance.localThemes.export')}
-                  onClick={() => {
-                    void handleExport();
-                  }}
-                />
-                <LocalThemeIconButton
-                  icon={ImportIcon}
-                  label={t('settings.appearance.localThemes.import')}
-                  onClick={() => {
-                    void handleImport();
-                  }}
-                />
-                <LocalThemeIconButton
-                  icon={FolderOpen}
-                  label={t('settings.appearance.localThemes.openDir')}
-                  onClick={() => {
-                    void handleOpenDir();
-                  }}
-                />
-                <LocalThemeIconButton
-                  icon={RefreshCw}
-                  label={t('settings.appearance.localThemes.refresh')}
-                  onClick={() => {
-                    void handleRefresh();
-                  }}
-                />
-              </div>
-              }
-            />
+            {localThemes && (
+              <SettingsRow
+                wrap
+                title={<span id={appearanceSettings.localThemesTitle.targetId}>{t(appearanceSettings.localThemesTitle.titleKey)}</span>}
+                trailing={
+                <div className="flex flex-wrap gap-2">
+                  <LocalThemeIconButton
+                    icon={Copy}
+                    label={t('settings.appearance.localThemes.export')}
+                    onClick={localThemes.onExport}
+                  />
+                  <LocalThemeIconButton
+                    icon={ImportIcon}
+                    label={t('settings.appearance.localThemes.import')}
+                    onClick={localThemes.onImport}
+                  />
+                  <LocalThemeIconButton
+                    icon={FolderOpen}
+                    label={t('settings.appearance.localThemes.openDir')}
+                    onClick={localThemes.onOpenDir}
+                  />
+                  <LocalThemeIconButton
+                    icon={RefreshCw}
+                    label={t('settings.appearance.localThemes.refresh')}
+                    onClick={localThemes.onRefresh}
+                  />
+                </div>
+                }
+              />
+            )}
           </SettingsCard>
         </SettingsSection>
 
-        <WallpaperSection />
+        {wallpaper}
 
         <SettingsSection
           id={appearanceSettings.fonts.targetId}
@@ -784,60 +886,64 @@ export function AppearanceSection() {
               </div>
             </SettingsField>
 
-            <SettingsField
-              id={appearanceSettings.fontTerminalFamilyLabel.targetId}
-              title={t(appearanceSettings.fontTerminalFamilyLabel.titleKey)}
-              hint={t(appearanceSettings.fontTerminalFamilyLabel.descriptionKey)}
-              action={<FontFamilyResetButton value={terminalFamily} onReset={resetTerminalFamily} />}
-            >
-              <FontFamilyPicker data-setting-id={appearanceSettings.fontTerminalFamilyLabel.id}
-                ariaLabel={t('settings.appearance.font.terminalFamily.aria')}
-                value={terminalFamily}
-                presets={TERMINAL_FONT_PRESETS}
-                previewSample={t('settings.appearance.font.previewSamples.terminal')}
-                previewFallbackFamily={DEFAULT_TERMINAL_FONT_FAMILY}
-                onChange={setTerminalFamily}
-              />
-            </SettingsField>
+            {terminalFont && (
+              <>
+              <SettingsField
+                id={appearanceSettings.fontTerminalFamilyLabel.targetId}
+                title={t(appearanceSettings.fontTerminalFamilyLabel.titleKey)}
+                hint={t(appearanceSettings.fontTerminalFamilyLabel.descriptionKey)}
+                action={<FontFamilyResetButton value={terminalFont.terminalFamily} onReset={terminalFont.resetTerminalFamily} />}
+              >
+                <FontFamilyPicker data-setting-id={appearanceSettings.fontTerminalFamilyLabel.id}
+                  ariaLabel={t('settings.appearance.font.terminalFamily.aria')}
+                  value={terminalFont.terminalFamily}
+                  presets={TERMINAL_FONT_PRESETS}
+                  previewSample={t('settings.appearance.font.previewSamples.terminal')}
+                  previewFallbackFamily={DEFAULT_TERMINAL_FONT_FAMILY}
+                  onChange={terminalFont.setTerminalFamily}
+                />
+              </SettingsField>
 
-            <SettingsField
-              title={<span id={appearanceSettings.fontTerminalSizeLabel.targetId}>{t(appearanceSettings.fontTerminalSizeLabel.titleKey)}</span>}
-              hint={t(appearanceSettings.fontTerminalSizeLabel.descriptionKey)}
-              action={<DefaultOverrideControls isCustomized={terminalSize !== DEFAULT_TERMINAL_FONT_SIZE} onReset={resetTerminalSize} />}
-            >
-              <div className="flex items-center gap-3">
-                <Slider data-setting-id={appearanceSettings.fontTerminalSizeLabel.id}
-                  min={APPEARANCE_LIMITS.terminalSize.min}
-                  max={APPEARANCE_LIMITS.terminalSize.max}
-                  step={1}
-                  value={[terminalSize]}
-                  onValueChange={([next]) => {
-                    if (typeof next === 'number') setTerminalSize(next);
-                  }}
-                  aria-label={t('settings.appearance.font.terminalSize.aria')}
-                />
-                <SettingsTextInput data-setting-id={appearanceSettings.fontTerminalSizeLabel.id}
-                  type="number"
-                  aria-label={t(appearanceSettings.fontTerminalSizeLabel.titleKey)}
-                  min={APPEARANCE_LIMITS.terminalSize.min}
-                  max={APPEARANCE_LIMITS.terminalSize.max}
-                  step={1}
-                  value={terminalSizeInput}
-                  onChange={setTerminalSizeInput}
-                  onBlur={commitTerminalSizeInput}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      commitTerminalSizeInput();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                  size="md"
-                  mono
-                  className="w-[72px] shrink-0"
-                  inputClassName="px-3 text-right"
-                />
-              </div>
-            </SettingsField>
+              <SettingsField
+                title={<span id={appearanceSettings.fontTerminalSizeLabel.targetId}>{t(appearanceSettings.fontTerminalSizeLabel.titleKey)}</span>}
+                hint={t(appearanceSettings.fontTerminalSizeLabel.descriptionKey)}
+                action={<DefaultOverrideControls isCustomized={terminalFont.terminalSize !== DEFAULT_TERMINAL_FONT_SIZE} onReset={terminalFont.resetTerminalSize} />}
+              >
+                <div className="flex items-center gap-3">
+                  <Slider data-setting-id={appearanceSettings.fontTerminalSizeLabel.id}
+                    min={APPEARANCE_LIMITS.terminalSize.min}
+                    max={APPEARANCE_LIMITS.terminalSize.max}
+                    step={1}
+                    value={[terminalFont.terminalSize]}
+                    onValueChange={([next]) => {
+                      if (typeof next === 'number') terminalFont.setTerminalSize(next);
+                    }}
+                    aria-label={t('settings.appearance.font.terminalSize.aria')}
+                  />
+                  <SettingsTextInput data-setting-id={appearanceSettings.fontTerminalSizeLabel.id}
+                    type="number"
+                    aria-label={t(appearanceSettings.fontTerminalSizeLabel.titleKey)}
+                    min={APPEARANCE_LIMITS.terminalSize.min}
+                    max={APPEARANCE_LIMITS.terminalSize.max}
+                    step={1}
+                    value={terminalSizeInput}
+                    onChange={setTerminalSizeInput}
+                    onBlur={commitTerminalSizeInput}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        commitTerminalSizeInput();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    size="md"
+                    mono
+                    className="w-[72px] shrink-0"
+                    inputClassName="px-3 text-right"
+                  />
+                </div>
+              </SettingsField>
+              </>
+            )}
           </SettingsCard>
         </SettingsSection>
 
@@ -878,7 +984,7 @@ export function AppearanceSection() {
               }
             />
 
-            <LayoutResetControl />
+            {layoutReset}
           </SettingsCard>
         </SettingsSection>
       </div>

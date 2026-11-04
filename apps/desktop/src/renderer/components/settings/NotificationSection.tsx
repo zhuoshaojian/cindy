@@ -16,6 +16,16 @@ import { useNotificationSettings } from '@/hooks/useNotificationSettings';
 
 export function NotificationSection() {
   const { enabled, setEnabled } = useNotificationSettings();
+  return <NotificationSectionView enabled={enabled} onChange={setEnabled} />;
+}
+
+export function NotificationSectionView({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange(value: boolean): void;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -31,7 +41,7 @@ export function NotificationSection() {
           trailing={
             <Switch data-setting-id={notificationSettings.notificationsSessionDoneLabel.id}
               checked={enabled}
-              onCheckedChange={setEnabled}
+              onCheckedChange={onChange}
               aria-label={t('settings.notifications.sessionDoneAria')}
             />
           }

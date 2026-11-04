@@ -28,7 +28,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { Spinner } from '@/components/ui/spinner';
-import { createCustomProvider, deleteCustomProvider, updateCustomProvider, providerViewToCustomProviderConfig, type RuntimeKeys } from '@/lib/customProviders';
+import { providerViewToCustomProviderConfig, type RuntimeKeys } from '@/lib/customProviders';
+import { localProviderSetup, useProviderSetupSource } from './providerSetupSource';
 import { isWizardOAuthChoice, isWizardApiKeyChoice, presetChoiceMeta, builtinChoiceMeta, type ProviderSearchTarget } from './providerSearch';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
 import { configuredPresetAgents } from '../../../shared/piRuntimeInitialization';
@@ -306,6 +307,9 @@ export function AddProviderWizard({
   onDone: notifyDone,
 }: AddProviderWizardProps) {
   const { t, i18n } = useTranslation();
+  // The cloud instance settings page supplies its instance; otherwise this computer.
+  const setupSource = useProviderSetupSource();
+  const api = setupSource ?? localProviderSetup;
   const dialog = useDialogExit();
   const panelRef = useRef<HTMLDivElement>(null);
   const onClose = useCallback(() => dialog.close(notifyClosed), [dialog.close, notifyClosed]);
@@ -339,7 +343,7 @@ export function AddProviderWizard({
   const oauthDraftRef = useRef<CustomProviderConfig | null>(null);
   const oauthAttemptRef = useRef(0);
   const [ollamaCanInstall, setOllamaCanInstall] = useState(() =>
-    offersManagedOllamaInstall(window.electronAPI.platform),
+    api.localRuntimes && offersManagedOllamaInstall(window.electronAPI.platform),
   );
   const [loggingIn, setLoggingIn] = useState(false);
   const [xaiDeviceLogin, setXaiDeviceLogin] = useState(false);
@@ -354,8 +358,8 @@ export function AddProviderWizard({
     clearDeviceCode: clearGenericDeviceCode,
     beginOwnedLogin: beginGenericOwnedLogin,
     cancelOwnedLogin: cancelGenericOwnedLogin,
-  } = useProviderOAuthDeviceCode(genericOAuthProviderId, {
-    observeProgress: genericDeviceFlow || (sel?.kind === 'oauth' && ['openai', 'xai'].includes(sel.provider.id)),
+  } = useProviderOAuthDeviceCode(setupSource ? null : genericOAuthProviderId, {
+    observeProgress: !setupSource && (genericDeviceFlow || (sel?.kind === 'oauth' && ['openai', 'xai'].includes(sel.provider.id))),
     browserLoginRef: accountLoginRef,
   });
   // Step 3 拉取态
@@ -417,7 +421,7 @@ export function AddProviderWizard({
 
   useEffect(() => {
     let cancelled = false;
-    void window.electronAPI.maker
+    void api
       .listProviderPresets()
       .then((r) => {
         if (!cancelled) {
@@ -440,6 +444,10 @@ export function AddProviderWizard({
 
   useEffect(() => {
     let cancelled = false;
+    if (!api.localRuntimes) {
+      setLocalProbe((current) => ({ ...current, ready: true }));
+      return;
+    }
     void window.electronAPI.maker
       .localModelList()
       .then((result) => {
@@ -462,7 +470,7 @@ export function AddProviderWizard({
 
   useEffect(() => {
     let cancelled = false;
-    void window.electronAPI.maker
+    void api
       .scanLocalCli()
       .then((result) => {
         if (!cancelled) setCliDetections(result.detections);
@@ -542,7 +550,7 @@ export function AddProviderWizard({
         connectedProviderIds,
         cliCandidates,
         fallbackOauthProviderId: oauthChoices[0]?.id ?? null,
-      })
+      }).filter((item) => api.localRuntimes || item.kind !== 'ollama')
     : [];
   const recommendedOauthIds = new Set(
     recommendations
@@ -553,10 +561,11 @@ export function AddProviderWizard({
   const ollamaMatchesQuery =
     !q || t('settings.providers.local.title').toLowerCase().includes(q) || 'ollama'.includes(q);
   const showOllamaInList =
+    api.localRuntimes &&
     !ollamaAlreadyAdded &&
     ollamaMatchesQuery &&
     (Boolean(q) || (localProbe.ready && !recommendsOllama));
-  const showLlamaCppInList = (!q || 'llama.cpp'.includes(q)) && !providers.some(p => p.id === MANAGED_LLAMACPP_PROVIDER_ID);
+  const showLlamaCppInList = api.localRuntimes && (!q || 'llama.cpp'.includes(q)) && !providers.some(p => p.id === MANAGED_LLAMACPP_PROVIDER_ID);
   const listedOauth = q
     ? filteredOauth
     : filteredOauth.filter((p) => !recommendedOauthIds.has(p.id));
@@ -583,7 +592,7 @@ export function AddProviderWizard({
     if (savingRef.current) return;
     const draft = oauthDraftRef.current;
     oauthDraftRef.current = null;
-    if (draft) void deleteCustomProvider(draft.id).catch(() => undefined);
+    if (draft) void api.deleteCustomProvider(draft.id).catch(() => undefined);
   }, []);
 
   const pickOauth = useCallback((provider: ProviderView) => {
@@ -591,7 +600,7 @@ export function AddProviderWizard({
     consumePresetEntry();
     const draft = oauthDraftRef.current;
     oauthDraftRef.current = null;
-    if (draft) void deleteCustomProvider(draft.id).catch(() => undefined);
+    if (draft) void api.deleteCustomProvider(draft.id).catch(() => undefined);
     fetchSeqRef.current += 1;
     setManualModelIds({});
     setSel({ kind: 'oauth', provider });
@@ -603,7 +612,7 @@ export function AddProviderWizard({
     consumePresetEntry();
     const draft = oauthDraftRef.current;
     oauthDraftRef.current = null;
-    if (draft) void deleteCustomProvider(draft.id).catch(() => undefined);
+    if (draft) void api.deleteCustomProvider(draft.id).catch(() => undefined);
     fetchSeqRef.current += 1;
     setManualModelIds({});
     setSel({ kind: 'builtinApiKey', provider });
@@ -646,7 +655,7 @@ export function AddProviderWizard({
       }
       const draft = oauthDraftRef.current;
       oauthDraftRef.current = null;
-      if (draft) void deleteCustomProvider(draft.id).catch(() => undefined);
+      if (draft) void api.deleteCustomProvider(draft.id).catch(() => undefined);
       if (
         preset.id === 'lmstudio' &&
         providers.some((p) => p.id === MANAGED_LMSTUDIO_PROVIDER_ID)
@@ -740,18 +749,40 @@ export function AddProviderWizard({
   }, [entry, presets, presetsLoadState, pickPreset, onEntryUnavailable]);
 
   const localLoginRef = useRef<{ cancel: () => void } | null>(null);
+  // The setup source's own account sign-in (the cloud instance's Claude Code or Codex).
+  const sourceAccountLogin = async (kind: 'claude' | 'codex') => {
+    setLoggingIn(true);
+    const login = { cancel: () => setupSource?.cancelLocalAccountLogin?.() };
+    localLoginRef.current = login;
+    try {
+      const result = await setupSource!.localAccountLogin!(kind);
+      if (localLoginRef.current !== login) return;
+      if (result.ok) onDone(kind === 'claude' ? 'anthropic' : 'openai');
+      else if (result.reason !== 'login_cancelled')
+        toast.error(t(kind === 'claude' ? 'settings.connections.claude.toast.loginFailed' : 'settings.providers.openai.localUnavailable'));
+    } catch {
+      if (localLoginRef.current === login)
+        toast.error(t(kind === 'claude' ? 'settings.connections.claude.toast.loginFailed' : 'settings.providers.openai.localUnavailable'));
+    } finally {
+      if (localLoginRef.current === login) {
+        localLoginRef.current = null;
+        setLoggingIn(false);
+      }
+    }
+  };
   useEffect(() => () => {
     const localLogin = localLoginRef.current;
     localLoginRef.current = null;
     localLogin?.cancel();
     const login = accountLoginRef.current;
     accountLoginRef.current = null;
-    if (login) void window.electronAPI.maker.providerOAuthCancel(login.providerId, { ownerId: login.ownerId, releaseOwner: true });
+    if (login) void api.providerOAuthCancel(login.providerId, { ownerId: login.ownerId, releaseOwner: true });
   }, []);
 
   const connectSubscription = useCallback(async (target: 'default' | 'new') => {
     const providerId = sel?.kind === 'oauth' ? sel.provider.id : undefined;
     if (!isSubscriptionProvider(providerId) || localLoginRef.current) return;
+    if (setupSource?.localAccountLogin) return void sourceAccountLogin(providerId === 'anthropic' ? 'claude' : 'codex');
     setLoggingIn(true);
     const loginKey = crypto.randomUUID();
     const login = { cancel: () => { void window.electronAPI.subscriptionAccounts.command({ action: 'cancel', providerId, loginKey }).catch(() => {}); } };
@@ -793,14 +824,14 @@ export function AddProviderWizard({
           accountLoginRef.current = login;
           let created = false;
           try {
-            await createCustomProvider({ id, name: selected.name, auth: preset ? { method: 'oauth', oauth: providerPresetOAuth(preset.id)! } : { method: 'oauth', native },
+            await api.createCustomProvider({ id, name: selected.name, auth: preset ? { method: 'oauth', oauth: providerPresetOAuth(preset.id)! } : { method: 'oauth', native },
               runtimes: preset ? providerPresetOAuthRuntimes(preset) : brand === 'anthropic'
                 ? { 'claude-code': { baseUrl: 'https://api.anthropic.com', wireProtocol: 'anthropic-messages', models: [] } }
                 : { codex: { baseUrl: brand === 'openai' ? 'https://chatgpt.com/backend-api/codex' : 'https://api.x.ai/v1', wireProtocol: 'openai-responses', models: [] } },
             }, {});
             created = true;
             if (accountLoginRef.current !== login) return;
-            const result = await window.electronAPI.maker.providerOAuthLogin(id, {
+            const result = await api.providerOAuthLogin(id, {
               ownerId: login.ownerId,
               ...(brand === 'xai' ? { method } : {}),
             });
@@ -813,12 +844,12 @@ export function AddProviderWizard({
               accountLoginRef.current = null;
               clearGenericDeviceCode();
             }
-            if (created && !ok) await deleteCustomProvider(id);
+            if (created && !ok) await api.deleteCustomProvider(id);
           }
         } else {
           const ownedLogin = beginGenericOwnedLogin();
           try {
-            const r = await window.electronAPI.maker.providerOAuthLogin(id, {
+            const r = await api.providerOAuthLogin(id, {
               ownerId: ownedLogin.ownerId,
             });
             ok = r.ok;
@@ -830,10 +861,9 @@ export function AddProviderWizard({
         if (ok && preset) {
           // Reuse the model picker after login. Credentials stay in Main; only the
           // discovered, redacted model configuration comes back to the renderer.
-          const snapshot = await window.electronAPI.maker.listProviders();
-          if (oauthAttemptRef.current !== attempt) { await deleteCustomProvider(id); return; }
-          const connected = snapshot.providers.find(p => p.id === id);
-          if (!connected) { await deleteCustomProvider(id); throw new Error('provider_not_found_after_login'); }
+          const connected = await api.readProvider(id);
+          if (oauthAttemptRef.current !== attempt) { await api.deleteCustomProvider(id); return; }
+          if (!connected) { await api.deleteCustomProvider(id); throw new Error('provider_not_found_after_login'); }
           const config = providerViewToCustomProviderConfig(connected);
           oauthDraftRef.current = config;
           const choices: typeof picks = new Map();
@@ -869,7 +899,7 @@ export function AddProviderWizard({
           toast.error(t('settings.providers.wizard.authorizeFailed', { name: selected.name }));
         }
       } catch {
-        if (preset && id !== preset.id && !oauthDraftRef.current) await deleteCustomProvider(id).catch(() => undefined);
+        if (preset && id !== preset.id && !oauthDraftRef.current) await api.deleteCustomProvider(id).catch(() => undefined);
         toast.error(t('settings.providers.wizard.authorizeFailed', { name: selected.name }));
       } finally {
         // A cancelled account login may settle after a retry or local login has started.
@@ -895,7 +925,7 @@ export function AddProviderWizard({
     if (accountLoginRef.current) {
       const login = accountLoginRef.current;
       accountLoginRef.current = null;
-      if (login) void window.electronAPI.maker.providerOAuthCancel(login.providerId, { ownerId: login.ownerId, releaseOwner: true });
+      if (login) void api.providerOAuthCancel(login.providerId, { ownerId: login.ownerId, releaseOwner: true });
     }
     else cancelGenericOwnedLogin();
     clearGenericDeviceCode();
@@ -1076,7 +1106,7 @@ export function AddProviderWizard({
             const reuseDetection = detected?.catalog?.ok && agent === detected.agent
               && apiKey === detected.apiKey && source.baseUrl === detected.preset.runtimes[agent]?.baseUrl
               && !source.route && !source.modelsUrl?.includes('client_version=');
-            const r = reuseDetection ? detected!.catalog! : await window.electronAPI.maker.fetchProviderModels({
+            const r = reuseDetection ? detected!.catalog! : await api.fetchProviderModels({
               ...(detected ? { redirect: 'error' as const } : {}),
               agent,
               baseUrl: source.baseUrl,
@@ -1300,7 +1330,7 @@ export function AddProviderWizard({
     setSaving(true);
     try {
       // 失败经统一 IPC 错误协议抛出(throwIpcError),这里 catch 即失败。
-      await window.electronAPI.builtinApiKeyStore(id, key);
+      await api.builtinApiKeyStore(id, key);
       toast.success(t('settings.providers.wizard.authorizedToast', { name: sel.provider.name }));
       onDone(id);
     } catch {
@@ -1422,7 +1452,7 @@ export function AddProviderWizard({
         if (oauthDraft) oauthDraftRef.current = oauthDraft;
         return;
       }
-      await (oauthDraft ? updateCustomProvider : createCustomProvider)(
+      await (oauthDraft ? api.updateCustomProvider : api.createCustomProvider)(
         {
           ...(oauthDraft ?? {}),
           id,
@@ -1851,28 +1881,41 @@ export function AddProviderWizard({
                   </span>
                 </div>
               </div>
-              {isSubscriptionProvider(sel.provider.id) && (
+              {/* The account picker reads this computer's CLI accounts; a setup source signs in its own. */}
+              {isSubscriptionProvider(sel.provider.id) && !setupSource && (
                 <SubscriptionSignInChoices key={sel.provider.id} providerId={sel.provider.id}
                   busy={loggingIn} onConnect={target => void connectSubscription(target)} onCancel={cancelAuthorize} />
               )}
-              <div className={cn('flex flex-wrap items-center gap-2', isSubscriptionProvider(sel.provider.id) && 'border-t border-[var(--border-default)] pt-4')}>
+              <div className={cn('flex flex-wrap items-center gap-2', isSubscriptionProvider(sel.provider.id) && !setupSource && 'border-t border-[var(--border-default)] pt-4')}>
                 {/* 等待授权中按钮变「取消」(与详情头对称),不禁用——浏览器流挂起时用户必须能中止重试。 */}
-                {!isSubscriptionProvider(sel.provider.id) && (loggingIn ? (
+                {(!isSubscriptionProvider(sel.provider.id) || setupSource) && (loggingIn ? (
                   <Button variant="secondary" size="lg" type="button" onClick={cancelAuthorize}>
                     <Spinner size={13} />
                     {t('settings.providers.button.cancel')}
                   </Button>
                 ) : (
                   <>
+                    {setupSource?.localAccountLogin && isSubscriptionProvider(sel.provider.id) && (
+                      <Button variant="secondary" size="lg" type="button" onClick={() => void connectSubscription('default')}>
+                        {t(
+                          sel.provider.id === 'anthropic'
+                            ? 'settings.providers.localAccount.useClaude'
+                            : 'settings.providers.openai.useLocalAccount',
+                        )}
+                      </Button>
+                    )}
+                    {/* Claude 订阅只能经 Claude Code 自己的登录使用,不提供独立账号。 */}
+                    {sel.provider.id !== 'anthropic' && (
                       <Button variant="secondary" size="lg" type="button" onClick={() => void handleAuthorize()}>
                         {t(
-                          sel.provider.id === 'xai'
+                          ['openai', 'xai'].includes(sel.provider.id)
                               ? 'settings.providers.openai.addIndependentAccount'
                               : sel.provider.auth.oauth?.flow === 'device-code'
                                 ? 'settings.providers.wizard.authorizeWithDeviceCode'
                                 : 'settings.providers.button.authorize',
                         )}
                       </Button>
+                    )}
                     {sel.provider.id === 'xai' && (
                       <Button variant="secondary" size="lg" type="button" onClick={() => void handleAuthorize('device')}>
                         {t('settings.connections.xai.deviceLogin')}
@@ -1905,6 +1948,7 @@ export function AddProviderWizard({
                 <OAuthDeviceCodeCard deviceCode={genericDeviceCode} />
               )}
               {loggingIn && browserUrl && <OAuthBrowserLink url={browserUrl} />}
+              {loggingIn && setupSource?.loginPrompt}
               {oauthSingleAgentNote && <InfoLine text={oauthSingleAgentNote} />}
             </div>
           )}

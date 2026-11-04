@@ -130,6 +130,11 @@ function setup(random = 0) {
   const deps = {
     saved,
     vault,
+    // Cloud fork: an ordinary Desktop has no managed-instance config, so the
+    // managed-instance branches of initialize/refresh must never run here.
+    getInstanceConfig: () => null,
+    instanceAuthReady: () => { throw new Error('managed instance path'); },
+    authenticateManagedInstance: () => { throw new Error('managed instance path'); },
     onStartupFallback: vi.fn(),
     transactAuthAccountVault: transaction,
     accountVaultKey: (realm: string, id: string) => `${realm}:${id}`,

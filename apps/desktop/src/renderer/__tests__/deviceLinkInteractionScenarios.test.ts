@@ -1342,7 +1342,7 @@ describe('远程交互接线不变式', () => {
     expect(appSrc).not.toContain('markModelChoice === false ? {} : { model: modelId }');
 
     const draftSrc = read('state/newMakerDraft.ts');
-    expect(draftSrc).toContain('if (!opts.markModelChoice && modelChosen[vendor] === true)');
+    expect(draftSrc).toContain('if (!opts.markModelChoice && (modelChosen[vendor] === true || hasHostDraftPreferences()))');
     expect(draftSrc).toContain('delete nextPatch.model');
     expect(draftSrc).toContain('delete nextPatch.providerId');
     expect(draftSrc).toContain('if (incomingModel !== savedModel)');
@@ -1356,7 +1356,15 @@ describe('远程交互接线不变式', () => {
     expect(pushActiveEnd).toBeGreaterThan(pushActiveStart);
     const pushActiveBody = newMakerDraftRouteSrc.slice(pushActiveStart, pushActiveEnd);
     expect(pushActiveBody).toContain('active: true');
-    expect(pushActiveBody).toContain('markModelChoice: false');
+    expect(pushActiveBody).toContain('markModelChoice: target !== undefined && target.markModelChoice !== false');
+  });
+
+  it('Host 计划默认跨任务保留，远端草稿开关只覆盖本次草稿、不读写控制端偏好', () => {
+    const src = read('features/cc-agent/NewMakerDraftRoute.tsx');
+    expect(src).toContain('? remoteDraftPlan.enabled : remoteDraftState.value?.planMode === true)');
+    expect(src).toContain(': chatPrefs.planMode === true;');
+    expect(src.match(/if \(effectivePlanMode && !hasHostDraftPreferences\(\) && !isDeviceLinkDraft\) patch/g)).toHaveLength(3);
+    expect(src).not.toContain('if (effectivePlanMode) patch');
   });
 
   it('外部 session effort patch 必须在 layout commit 时对齐 cache 并抢占旧 runtime', () => {

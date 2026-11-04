@@ -25,9 +25,9 @@ import { useTranslation } from 'react-i18next';
 import { useSyncExternalStore } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Tip } from '@/components/ui/tooltip';
 import { TAB_IDS, isSettingsTab } from '@/lib/tabLabels';
 import type { SettingsTab } from '@/lib/tabLabels';
+import { SettingsSidebar } from './SettingsSidebar';
 import { SettingsSidebarNav } from './SettingsSidebarNav';
 import { isLegacyAppearanceDeepLink, resolveSettingsSearchEntry } from './settingsSearchCatalog';
 import { SettingsCard, SettingsPageScope, SettingsRow, SettingsSection } from '@/components/ui/settings-rows';
@@ -66,6 +66,8 @@ import { useVoiceInputModelSelection } from '@/hooks/useVoiceInputModelSelection
 import { useVoiceSpeakerFilterStatus } from '@/hooks/useVoiceSpeakerFilterStatus';
 import { getVoiceInputSettings } from '@/hooks/useVoiceInputSettings';
 import { getAgentIslandEnabled, getAgentIslandLiveActivity, getAgentIslandSoundSettings, isAgentIslandSupported, loadAgentIslandLiveActivitySupport, subscribeAgentIslandSettings } from '@/hooks/useAgentIslandSettings';
+import { CloudInstancesSection } from '@/features/cloud-settings/CloudInstancesSection';
+import { useCloudInstanceAccess } from '@/features/cloud-settings/CloudInstanceAccess';
 
 // Keep General available with the route; load other sections only when opened.
 const VoiceInputSection = lazy(() => import('./VoiceInputSection').then(module => ({ default: module.VoiceInputSection })));
@@ -144,6 +146,7 @@ function SettingsViewContent() {
   const { t } = useTranslation();
   const [searchActivation, setSearchActivation] = useState(0);
   const { mode, dataOwnerId, user } = useAuth();
+  const canAccessCloudInstances = useCloudInstanceAccess() === 'allowed';
   const menuWidth = outletContext?.sidebarWidth ?? DEFAULT_SETTINGS_MENU_WIDTH;
   const isMac = window.electronAPI?.platform === 'darwin';
   const [helpAssistantOpen, setHelpAssistantOpen] = useState(false);
@@ -173,11 +176,12 @@ function SettingsViewContent() {
     if (raw === 'tina') return 'im-bot';
     if (raw === 'billing' && !canAccessBilling) return 'general';
     if (raw === 'usage' && !canAccessUsage) return 'general';
+    if (raw === 'cloud-instances' && !canAccessCloudInstances) return 'general';
     if (raw === 'agent-island' && !isMac) return 'general';
     // legacy 深链:外观设置原在「通用」、回复动效原在「个性化」,旧 section 深链落到「外观」。
     if (isLegacyAppearanceDeepLink(raw, rawSection)) return 'appearance';
     return isSettingsTab(raw) ? raw : 'general';
-  }, [canAccessBilling, canAccessUsage, isMac, rawSection, rawTab]);
+  }, [canAccessBilling, canAccessUsage, canAccessCloudInstances, isMac, rawSection, rawTab]);
   const previousTabRef = useRef(activeTab);
   const refreshVoiceModelSelection = voiceModelSelection.refresh;
   useEffect(() => {
@@ -187,7 +191,6 @@ function SettingsViewContent() {
     }
     previousTabRef.current = activeTab;
   }, [activeTab, refreshVoiceModelSelection]);
-
   const piExtensionsPanelOpen =
     activeTab === 'general' &&
     (rawTab === 'pi-extensions' || searchParams.get('openPanel') === 'pi-extensions');
@@ -308,9 +311,10 @@ function SettingsViewContent() {
         (tabId) =>
           (isMac || tabId !== 'agent-island') &&
           (canAccessBilling || tabId !== 'billing') &&
-          (canAccessUsage || tabId !== 'usage'),
+          (canAccessUsage || tabId !== 'usage') &&
+          (canAccessCloudInstances || tabId !== 'cloud-instances'),
       ),
-    [canAccessBilling, canAccessUsage, isMac],
+    [canAccessBilling, canAccessUsage, canAccessCloudInstances, isMac],
   );
   const searchContext = useMemo<SettingsSearchContext>(() => ({
     locale,
@@ -335,7 +339,8 @@ function SettingsViewContent() {
       serviceMode: voiceModelSelection.selection.serviceMode,
       asrProvider: voiceModelSelection.selection.asrProvider,
     } : undefined,
-  }), [locale, wallpaperMotionAvailable, mode, user?.membershipKind, voiceModelSelection.ready, voiceModelSelection.selection, voiceRefinementEnabled, speakerFilterStatus?.supported, speakerFilterStatus?.enrolled, agentIslandEnabled, agentIslandSupported, agentIslandSoundEnabled, agentIslandLiveActivitySupported, agentIslandLiveActivity]);
+    canAccessCloudInstances,
+  }), [locale, wallpaperMotionAvailable, mode, user?.membershipKind, voiceModelSelection.ready, voiceModelSelection.selection, voiceRefinementEnabled, speakerFilterStatus?.supported, speakerFilterStatus?.enrolled, agentIslandEnabled, agentIslandSupported, agentIslandSoundEnabled, agentIslandLiveActivitySupported, agentIslandLiveActivity, canAccessCloudInstances]);
   const requestedEntry = resolveSettingsSearchEntry(activeTab, searchParams.get('section'));
   const searchEntry = piExtensionsPanelOpen || (requestedEntry?.isVisible && !requestedEntry.isVisible(searchContext))
     ? null : requestedEntry;
@@ -359,28 +364,7 @@ function SettingsViewContent() {
           左侧保留原来的页头位置；右侧不再为页头预留 56px，贴着 46px 标题栏起排。 */}
       <div className="flex h-full min-h-0 w-full justify-start pb-5">
         {/* Inner sidebar mirrors the main sidebar width for a stable route transition. */}
-        <aside
-          className="flex h-full min-h-0 shrink-0 flex-col gap-2 overflow-y-auto pl-6 pr-4 pt-7"
-          style={{ width: menuWidth }}
-          aria-label={t('settings.title')}
-        >
-          {/* Back navigation — gap 10, pb 18, aligned with menu items via px-3 */}
-          <div className="flex items-center gap-2.5 px-3 pb-[18px]">
-            <Tip text={t('settings.back')} side="bottom">
-              <button data-settings-search-action="Return from settings or close the extensions subpage"
-                type="button"
-                onClick={exitSettings}
-                aria-label={t('settings.back')}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--settings-back-icon)] transition-[color,background-color,transform] duration-150 hover:bg-titlebar-button-hover hover:text-[var(--settings-back-text)] active:scale-[0.98]"
-              >
-                <ArrowLeft size={20} />
-              </button>
-            </Tip>
-            <h1 className="text-24 font-medium leading-[1.1] text-[var(--settings-back-text)]">
-              {t('settings.title')}
-            </h1>
-          </div>
-
+        <SettingsSidebar width={menuWidth} onBack={exitSettings}>
           <SettingsSidebarNav
             tabIds={visibleTabIds}
             searchContext={searchContext}
@@ -388,7 +372,7 @@ function SettingsViewContent() {
             onSelectTab={handleSelectTab}
             onSelectSearchResult={handleSelectSearchResult}
           />
-        </aside>
+        </SettingsSidebar>
 
         {/* Content column — capped and centered in the remaining space.
             Most tabs scroll as a page; Session Import and Plugins use a fixed-height
@@ -554,6 +538,16 @@ function SettingsViewContent() {
                     </section>
                   </>
                 )}
+              </div>
+            )}
+
+            {activeTab === 'cloud-instances' && (
+              <div
+                role="tabpanel"
+                id="settings-panel-cloud-instances"
+                aria-labelledby="settings-tab-cloud-instances"
+              >
+                <CloudInstancesSection />
               </div>
             )}
 

@@ -1,10 +1,11 @@
-import type { SettingsSearchContext } from './settingsSearchTypes';
+import type { SettingsSearchContext, SettingsSearchEntry } from './settingsSearchTypes';
 import type { ComponentType, ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LucideProps } from 'lucide-react';
 import {
   Boxes,
   ChartColumn,
+  Cloud,
   CircleDollarSign,
   CircleHelp,
   Database,
@@ -74,6 +75,7 @@ const TAB_ICON: Record<VisibleSettingsTab, SettingsNavIcon> = {
   'agent-island': AgentIslandNavIcon,
   import: FileUp,
   'remote-control': MonitorSmartphone,
+  'cloud-instances': Cloud,
   'shared-tasks': Users,
   ghosts: Plug,
   'builtin-tools': Wrench,
@@ -87,7 +89,15 @@ const TAB_ICON: Record<VisibleSettingsTab, SettingsNavIcon> = {
 interface SettingsSidebarNavProps {
   tabIds: readonly VisibleSettingsTab[];
   searchContext?: SettingsSearchContext;
-  activeTab: SettingsTab;
+  allowSearchEntry?: (entry: SettingsSearchEntry) => boolean;
+  activeTab: SettingsTab | null;
+  leadingTab?: {
+    id: string;
+    label: string;
+    icon: SettingsNavIcon;
+    selected: boolean;
+    onSelect(): void;
+  };
   onSelectTab: (tab: SettingsTab) => void;
   onSelectSearchResult?: (result: { tab: SettingsTab; sectionId: string }) => void;
 }
@@ -96,19 +106,34 @@ interface SettingsSidebarNavProps {
 export function SettingsSidebarNav({
   tabIds,
   searchContext,
+  allowSearchEntry,
   activeTab,
   onSelectTab,
   onSelectSearchResult,
+  leadingTab,
 }: SettingsSidebarNavProps) {
   const { t } = useTranslation();
+  const items = [
+    ...(leadingTab ? [leadingTab] : []),
+    ...tabIds.map((tabId) => ({
+      id: tabId,
+      label: t(TAB_LABEL_KEY[tabId]),
+      icon: TAB_ICON[tabId],
+      selected: activeTab === tabId,
+      onSelect: () => onSelectTab(tabId),
+    })),
+  ];
 
   return (
     <>
-      <SettingsSearchBox visibleTabIds={tabIds} searchContext={searchContext} onSelect={onSelectSearchResult} />
+      <SettingsSearchBox
+        allowSearchEntry={allowSearchEntry}
+        visibleTabIds={tabIds}
+        searchContext={searchContext}
+        onSelect={onSelectSearchResult}
+      />
       <nav role="tablist" aria-label={t('settings.title')} className="flex flex-col gap-0.5">
-        {tabIds.map((tabId) => {
-          const selected = activeTab === tabId;
-          const Icon = TAB_ICON[tabId];
+        {items.map(({ id: tabId, label, icon: Icon, selected, onSelect }) => {
           return (
             <button
               key={tabId}
@@ -117,7 +142,7 @@ export function SettingsSidebarNav({
               role="tab"
               aria-selected={selected}
               aria-controls={`settings-panel-${tabId}`}
-              onClick={() => onSelectTab(tabId)}
+              onClick={onSelect}
               className={cn(NAV_ITEM_CLASS, selected ? NAV_ITEM_ACTIVE_CLASS : NAV_ITEM_IDLE_CLASS)}
             >
               <Icon
@@ -131,7 +156,7 @@ export function SettingsSidebarNav({
                     : 'text-[var(--settings-menu-text)]',
                 )}
               />
-              <span className="leading-none">{t(TAB_LABEL_KEY[tabId])}</span>
+              <span className="leading-none">{label}</span>
             </button>
           );
         })}

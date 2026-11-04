@@ -160,6 +160,16 @@ import { removeBotImConnectionsForBot } from '../im/shared/botImConnectionRuntim
 import { configureBotImLaneRuntime } from '../im/shared/botImLaneRuntime.js';
 import { markImSessionManualRouteOverride } from '../im/shared/manualRouteOverride.js';
 import { configureAppDefaultModelSelection, inspectAppDefaultModel } from './appDefaultModelControl.js';
+import { configureCloudMemoryManagement, configureCloudMcpCredentials } from '../host-settings/managementData.js';
+import { cloudMcpCredentialStore } from '../secrets/providerSecretStore.js';
+import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudManagementExecution, registerPrivateCloudManagementCall } from '../host-settings/managementCalls.js';
+import { configureAdditionalModelRuntime, configureAdditionalLiveApplication } from '../host-settings/additionalRuntime.js';
+import { installHostNewMakerDefaultsSource } from '../host-settings/cache.js';
+import { prepareHostSettingsSkill } from '../host-settings/cindy-settings-skill.js';
+import { hostOwnsNewTaskDefaults, onNewTaskDefaultsChanged, commitNewTaskDefaults, applyHostRemoteDraftPreference } from '../host-settings/new-task-defaults.js';
+import { onModelPresentationPreferencesChanged } from '../host-settings/model-presentation-preferences.js';
+import { refreshSettingsModelRecommendation } from '../host-settings/catalog.js';
+import { onAuthStateChange } from '../authManager.js';
 import type { BuiltinApiKeyBridgeDeps } from '../secrets/builtinApiKeyBridge.js';
 import { setBotInvitationWelcomeDispatch } from './botInvitation.js';
 import { createQueuedDispatchReceipts } from './queuedDispatchReceipts.js';
@@ -1015,6 +1025,15 @@ import {
 } from './orcaInterAgentDispatcher.js';
 import { resolveOrcaImageAttachmentInput } from './orcaImageAttachments.js';
 import { OrcaWorkerPermissionConfirmBridge } from './orcaWorkerPermissionConfirmBridge.js';
+import { SettingsConfirmationBridge, SETTINGS_CONFIRM_CAPABILITY, SETTINGS_CONFIRM_TOOL } from '../host-settings/confirmation.js';
+import { buildHostSettingsConfirmationPreview } from '../host-settings/confirmationHostPresentation.js';
+import { configureHostSettingsCaller } from '../host-settings/helper.js';
+import { createHostSettingsCallerResolver } from './hostSettingsCaller.js';
+import { currentSettingsOwner, assertSettingsOwner } from '../host-settings/personalization.js';
+import { captureHostPersonalization } from '../host-settings/startup.js';
+import { HostSettingsError } from '../host-settings/operations.js';
+import * as settingsSubscriptions from '../device-link/subscriptions.js';
+import { isAppContentWindow } from '../windowFocusClassifier.js';
 import { assertTaskActionCurrent, captureTaskActionGuard, bindTaskActionInput, hasTaskActionAuthorization, taskActionInputGuard, taskActionPrincipal, settleTaskActionInput, TaskActionAuthorizationError, type TaskActionDeliveryGuard, type TaskActionConfirmation } from './taskActionAuthorization.js';
 import {
   getOrcaWorkspaceInfoReadOnly,
@@ -2502,7 +2521,7 @@ function memorySettingsWire() {
  * bridge」的顺序约束, 并用翻转守卫包住 (同值调用不白杀 bridge)。失败只记
  * warn — 设置已落盘, 旧 bridge 的失配窗口由下一次 bridge 重建收敛。
  */
-async function shutdownAgentMcpEnvironmentsBestEffort(reason: string): Promise<void> {
+export async function shutdownAgentMcpEnvironmentsBestEffort(reason: string): Promise<void> {
   // Codex 与 Pi 各有一个懒启动的 MCP bridge 单例,server 集合在 doStart 时冻结。MCP /
   // contacts / memory 开关变更后两者都要 invalidate,否则新会话仍连到旧 bridge:被禁用的
   // 工具没被真正撤销、新启用的工具不可用(Pi 侧 codex review P1)。best-effort:失败只 warn,
@@ -2518,7 +2537,7 @@ async function shutdownAgentMcpEnvironmentsBestEffort(reason: string): Promise<v
   invalidatePiEnvironment();
 }
 
-async function applyMemoryChangeWithCodexRestart<T extends object>(
+export async function applyMemoryChangeWithCodexRestart<T extends object>(
   parts: MemoryChangeParts<T>,
 ): Promise<T & { codexRestartDeferred: boolean }> {
   // 本次变更若覆盖了一个 pending 登记,被门挡住的会话队列必须在 clear 后补
@@ -3484,6 +3503,8 @@ const renameSessionsConfirmBridge = new RenameSessionsConfirmBridge({
     desktopConfirmImNotifier(sessionId, '「批量重命名任务」的确认卡'),
 });
 
+const settingsConfirmationBridge = new SettingsConfirmationBridge((channel, payload) => broadcastToAllWindows(channel, payload));
+
 const orcaWorkerPermissionConfirmBridge = new OrcaWorkerPermissionConfirmBridge({
   broadcast: (channel, payload) => broadcastToAllWindows(channel, payload),
   logger: log,
@@ -3877,6 +3898,7 @@ function getPendingInteractionsForSession(sessionId: string): PendingInteraction
   }
   out.push(
     ...mcpSetupBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
+    ...settingsConfirmationBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
     ...issueConfirmBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
     ...renameSessionsConfirmBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
     ...taskActionConfirmBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
@@ -4203,6 +4225,7 @@ function inputHandoffNoteDelivered(sessionId: string): void {
 
 function cleanupPendingInteractionsForSession(sessionId: string, reason: string): void {
   mcpSetupBridge.cleanupForSession(sessionId);
+  settingsConfirmationBridge.cleanupForSession(sessionId);
   cleanupPendingAgentInteractionsForSession(sessionId, reason);
   taskActionConfirmBridge.cleanupForSession(sessionId, reason === 'session_closed' ? 'session_closed' : 'session_aborted');
   // Desktop-only 确认只跟随真实会话终止/中止清理。权威 NO_ACTIVE_TURN 的
@@ -6786,13 +6809,20 @@ export function applyNewMakerDraftRoute(route: BotModelRoute): void {
 export function registerModelVisibilitySyncIpc(): void {
   registerPreferenceControlIpc();
   registerModelFavoritesSync(broadcastToAllWindows);
-  configureAppDefaultModelSelection((appDefaultSelection) => {
-    broadcastToAllWindows(MAKER_PUSH.DRAFT_PREF_APPLY, {
-      agent: appDefaultSelection.route.harness === 'claude' ? 'claude-code' : appDefaultSelection.route.harness,
-      providerId: appDefaultSelection.route.providerId ?? '', modelId: appDefaultSelection.route.model,
-      active: true, appDefaultSelection,
+  if (hostOwnsNewTaskDefaults()) {
+    // 托管云实例的新任务默认由 Host 保存；普通桌面仍由 Renderer 草稿推送镜像。
+    installHostNewMakerDefaultsSource();
+    onNewTaskDefaultsChanged(broadcastNewMakerDraftChanged);
+  } else {
+    configureAppDefaultModelSelection((appDefaultSelection) => {
+      broadcastToAllWindows(MAKER_PUSH.DRAFT_PREF_APPLY, {
+        agent: appDefaultSelection.route.harness === 'claude' ? 'claude-code' : appDefaultSelection.route.harness,
+        providerId: appDefaultSelection.route.providerId ?? '', modelId: appDefaultSelection.route.model,
+        active: true, appDefaultSelection,
+      });
     });
-  });
+  }
+  onModelPresentationPreferencesChanged(() => { broadcastToAllWindows(MAKER_PUSH.PROVIDER_CHANGED, {}); });
   // Register with model visibility before the first window; a cold-start preference
   // push must not be lost while the larger Maker bundle is still initializing.
   ipcMain.on(MAKER_SEND.SYNC_NEW_MAKER_DRAFT, (event, payload: unknown) => {
@@ -6829,6 +6859,30 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     return live ? live.runHostInteraction(request, () => requestHostInteraction(target, request, signal))
       : requestHostInteraction(target, request, signal);
   });
+  configureCloudMemoryManagement(maker);
+  configureCloudMcpCredentials(cloudMcpCredentialStore);
+  configureHostSettingsCaller(createHostSettingsCallerResolver({
+    getOwner: currentSettingsOwner,
+    assertOwner: assertSettingsOwner,
+    getSession: id => maker.getSession(id),
+    getSessionSource: async sessionId => {
+      const [row] = await getDbClient().drizzle.select({ source: sessions.source }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+      return row?.source;
+    },
+    confirm: async (sessionId, input, recheck) => {
+      const local = BrowserWindow.getAllWindows().some(win => !win.isDestroyed() && isAppContentWindow(win));
+      const remote = settingsSubscriptions.getControllersForTopic(`session:${sessionId}`).some(id => settingsSubscriptions.controllerSupports(id, SETTINGS_CONFIRM_CAPABILITY));
+      if (!local && !remote) throw new HostSettingsError('CONFIRMATION_UNSUPPORTED');
+      const preview = buildHostSettingsConfirmationPreview(input);
+      return settingsConfirmationBridge.request(sessionId, { preview }, { title: preview.title, description: preview.description }, recheck);
+    },
+  }));
+  // 推荐只取执行端真实目录，生命周期预热保证没有 Renderer 时也能创建后续任务。
+  const refreshTaskRecommendation = () => {
+    if (hostOwnsNewTaskDefaults()) void refreshSettingsModelRecommendation().catch(() => {});
+  };
+  refreshTaskRecommendation();
+  onAuthStateChange(refreshTaskRecommendation);
   // Catalog updates and explicit budget edits share one serial refresh boundary.
   let contextRefresh = Promise.resolve();
   /**
@@ -6889,6 +6943,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     contextRefresh = next.catch(() => {});
     return next;
   };
+  configureAdditionalLiveApplication({ applyMemoryChangeWithCodexRestart, applyCodexSpawnConfigChangeWithRestart, shutdownAgentMcpEnvironmentsBestEffort });
+  configureAdditionalModelRuntime({ pricingChanged: broadcastReferenceModelPricing, refreshTools: async () => { await refreshCodexMcpEnvironment({ restartCodex: restartCodexAfterAuthModeChange, shutdownCodexEnvironment, onDeferred: () => deferredCodexRestartHolder?.schedule('Codex Browser capability routing changed'), logger: log }); }, refreshContext: () => refreshContextSettings(), accessChanged: () => { broadcastToAllWindows(MAKER_PUSH.PROVIDER_CHANGED, {}); refreshTaskRecommendation(); } });
   /**
    * 预算对账（**锁内**，调用方已持 send 锁）：把偏好文件里的当前预算落到活实例。
    *
@@ -7032,6 +7088,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   };
 
   setModelContextRuntimeRefreshListener(() => {
+    refreshTaskRecommendation();
     if (!getMakerIfReady()) return;
     void refreshContextSettings().catch((error) => log.warn('model default context refresh failed', {
       error: error instanceof Error ? error.message : String(error),
@@ -7645,7 +7702,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // newMakerDefaultsCache(那只是镜像、renderer 才是真相),而是把 pref 转发给自身 renderer
   // (DRAFT_PREF_APPLY,非转发 channel,只落本地窗口),由 renderer 调它原来的本地 setter 写真实草稿;
   // 草稿变更经既有 SYNC_NEW_MAKER_DRAFT re-mirror + 上面的 NEW_MAKER_DRAFT_CHANGED 广播回控制端。
-  ipcMain.handle(MAKER_INVOKE.APPLY_NEW_MAKER_DRAFT_PREF, (_e, pref: unknown) => {
+  ipcMain.handle(MAKER_INVOKE.APPLY_NEW_MAKER_DRAFT_PREF, async (event, pref: unknown) => {
     if (!pref || typeof pref !== 'object') throwIpcError('INVALID_PARAMS', 'pref required');
     const p = pref as {
       agent?: unknown;
@@ -7688,6 +7745,22 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     ) {
       throwIpcError('INVALID_PARAMS', 'taskProviderId must be a string of at most 256 chars');
     }
+    if (hostOwnsNewTaskDefaults()) {
+      // 托管云实例直接写执行 Host 的偏好；无 Renderer 时同样落盘并广播，不等窗口转发/ACK。
+      if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
+      await applyHostRemoteDraftPreference({
+        agent: p.agent,
+        providerId: p.providerId ?? '',
+        modelId: p.modelId,
+        active: p.active === true,
+        ...(typeof p.markModelChoice === 'boolean' ? { markModelChoice: p.markModelChoice } : {}),
+        ...(p.taskProviderId ? { taskProviderId: p.taskProviderId } : {}),
+        ...(p.effort !== undefined ? { effort: p.effort } : {}),
+        ...(p.fast !== undefined ? { fast: p.fast } : {}),
+        ...(p.thinking !== undefined ? { thinking: p.thinking } : {}),
+      }).catch(() => throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
+      return;
+    }
     broadcastToAllWindows(MAKER_PUSH.DRAFT_PREF_APPLY, {
       agent: p.agent,
       providerId: p.providerId ?? '',
@@ -7711,6 +7784,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     assertTrustedCaller: (event) =>
       assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]),
     broadcast: broadcastToAllWindows,
+    // 托管云实例由 Host 保存，广播只在真实提交后发生。
+    ...(hostOwnsNewTaskDefaults()
+      ? { savePreference: async (enabled: boolean) => { await commitNewTaskDefaults({ set: { worktree: enabled } }); } }
+      : {}),
   });
 
   // worktree 源分支不是设备全局草稿字段，而是 canonical baseRepo scoped 的 host 真相。
@@ -7728,7 +7805,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // 旧控制端的 device-link 会话模型预设写穿兼容入口。转发给被控端 renderer 后,renderer 将值
   // 收敛到 providerModelMemory 全局预设,同时经 SYNC_SESSION_MODEL_PREF 回流供旧控制端的
   // session-scoped 镜像显示。新控制端统一走 APPLY_NEW_MAKER_DRAFT_PREF。
-  ipcMain.handle(MAKER_INVOKE.SET_SESSION_MODEL_PREF, (_e, pref: unknown) => {
+  ipcMain.handle(MAKER_INVOKE.SET_SESSION_MODEL_PREF, async (event, pref: unknown) => {
     if (!pref || typeof pref !== 'object') throwIpcError('INVALID_PARAMS', 'pref required');
     const p = pref as {
       sessionId?: unknown;
@@ -7755,6 +7832,24 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     }
     if (p.fast !== undefined && (typeof p.fast !== 'boolean' && p.fast !== 'ultrafast')) {
       throwIpcError('INVALID_PARAMS', 'fast must be boolean or ultrafast');
+    }
+    if (hostOwnsNewTaskDefaults()) {
+      // 托管云实例直接写 Host，成功后只向对应会话广播镜像，不依赖 Renderer 存活。
+      if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
+      const ownerScope = activeOwnerScopeKey();
+      await applyHostRemoteDraftPreference({ agent: p.agent, providerId: p.providerId, modelId: p.model, active: false,
+        ...(p.effort !== undefined ? { effort: p.effort } : {}), ...(p.fast !== undefined ? { fast: p.fast } : {}),
+      }).catch(() => throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
+      if (isAppSessionBoundaryPending() || activeOwnerScopeKey() !== ownerScope) throwIpcError('PRECONDITION_FAILED', 'Owner changed');
+      tapWindowBroadcast(MAKER_PUSH.SESSION_MODEL_PREF_CHANGED, {
+        sessionId: p.sessionId,
+        agent: p.agent,
+        providerId: p.providerId,
+        model: p.model,
+        ...(p.effort !== undefined ? { effort: p.effort } : {}),
+        ...(p.fast !== undefined ? { fast: p.fast } : {}),
+      });
+      return;
     }
     broadcastToAllWindows(MAKER_PUSH.SESSION_PREF_APPLY, {
       sessionId: p.sessionId,
@@ -7825,8 +7920,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   options.onProviderModelAutoRefreshConfigured();
 
   registerLocalModelHandlers(createElectronIpcHandlerRegistry(), {
-    assertTrustedSender: (event) =>
-      assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]),
+    assertTrustedSender: (event) => {
+      if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]);
+    },
     refreshCatalog: () => refreshCustomProvidersIntoCatalog(),
     broadcastChanged: () => broadcastToAllWindows(MAKER_PUSH.PROVIDER_CHANGED, {}),
     broadcastStatus: (status) => broadcastToAllWindows(MAKER_PUSH.LOCAL_MODEL_STATUS, status),
@@ -7856,7 +7952,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     return { dataOwnerId: session.dataOwnerId, generation: session.generation };
   });
 
-  configureModelSettingsActions(registerProviderHandlers(createElectronIpcHandlerRegistry(), {
+  configureModelSettingsActions(registerProviderHandlers(cloudManagementProviderRegistry(createElectronIpcHandlerRegistry()), {
+    registerCloudCredentialReplacement: handler => registerPrivateCloudManagementCall('cloud:provider:key-replace', handler),
     listProviders: (opts) => getDesktopProviderService().listProviders(opts),
     isOrganizationManagedProviderId: (providerId) =>
       getActiveCatalog().providers.some(
@@ -7937,8 +8034,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       return selected.canceled ? null : selected.filePaths[0] ?? null;
     },
     // 重新发现会用订阅凭证发起真实上游请求，限主页面 sender（子 frame / WebView 拒绝）。
-    assertTrustedSender: (event) =>
-      assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]),
+    assertTrustedSender: (event) => {
+      if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]);
+    },
     // provider:list 是只读通道且要服务 device-link（合成 event），不能加会抛的 guard；
     // 改用不抛的判定决定「这次读取要不要放行本机绑定自愈 + 清单拉取」。
     isTrustedSender: (event) =>
@@ -8099,6 +8197,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     // 通用 OAuth（目录 auth.oauth 描述符驱动）：login 成功后 best-effort 拉动态模型发现
     // (additions-only merge 进 active-catalog) 并广播 PROVIDER_CHANGED 让 UI 刷新连接态。
     oauthLogin: async (providerId, isCurrent, onBrowserUrl, method, onDeviceCode) => {
+      const cloudExecution = cloudManagementExecution();
+      const originalIsCurrent = isCurrent;
+      isCurrent = () => {
+        try { cloudExecution?.assertCurrent(); return originalIsCurrent(); } catch { return false; }
+      };
       if (subscriptionAccountKind(providerId)) {
         const result = await loginSubscriptionAccount(providerId, isCurrent, {
           method,
@@ -8301,7 +8404,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       // 与 codex 分支独立(不依赖 codexRestarted),下一次 startSession lazy 重建。
       invalidatePiEnvironment();
     };
-  registerMcpHandlers(createElectronIpcHandlerRegistry(), {
+  registerMcpHandlers(cloudManagementProviderRegistry(createElectronIpcHandlerRegistry()), {
     listDuplicates: () => listMcpDuplicates(),
     chooseDuplicate: saveMcpDuplicateChoice,
     listMcpServers: listBotRuntimeMcpServers,
@@ -8495,13 +8598,14 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           ? false
           : await measureTraceOperation('maker:list-agent-skills:project-links',
             () => preparePaletteProjectSkillLinks(skillParams.workingDir));
-        if (kind === 'codex' && linksChanged) {
+        const hostSkillChanged = !skillParams.remoteHostId && (await prepareHostSettingsSkill()).changed;
+        if (kind === 'codex' && (linksChanged || hostSkillChanged)) {
           skillParams.forceReload = true;
         }
         await measureTraceOperation('maker:list-agent-skills:global-assets', async () => {
           if (kind === 'codex' && !skillParams.remoteHostId) {
             await desktopCodexAuthAdapter.ensureGlobalCodexAssets();
-          } else {
+          } else if (!skillParams.remoteHostId) {
             // Pi scans ~/.agents/skills directly. Refresh the managed projection here so a
             // Codex-only skill added after Cindy startup is visible without using another agent
             // or restarting the app first. Claude keeps the same shared-root refresh semantics.
@@ -8759,6 +8863,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         kinds?: unknown;
       };
       const agentKind = p.agentKind !== undefined ? requireAgentKind(p.agentKind) : undefined;
+      await prepareHostSettingsSkill();
       if (agentKind === undefined || agentKind === 'codex') {
         await desktopCodexAuthAdapter.ensureGlobalCodexAssets();
       } else if (agentKind === 'pi') {
@@ -9380,11 +9485,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         });
       });
     }
-    o.hostStartupPreferences = {
-      userPrompt: o.userPrompt,
-      makerMemoryEnabled: o.makerMemoryEnabled,
-      displayReasoning: o.displayReasoning,
-    };
+    // 托管云实例由执行 Host 提供个性化正文，不接受控制端或 Renderer 传来的副本。
+    captureHostPersonalization(o);
     assertAccess?.();
     await options.waitForAccountProviderModelsReady();
     assertAccess?.();
@@ -11773,7 +11875,15 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     setPendingHandoff: (sessionId, handoff, expectedGeneration) =>
       agentHandoffPending.set(sessionId, handoff, expectedGeneration),
     readPendingHandoffGeneration: (sessionId) => agentHandoffPending.readGeneration(sessionId),
-    rememberThinkingIntent: ({ agentKind, providerId, model, thinking }) => {
+    rememberThinkingIntent: async ({ agentKind, providerId, model, thinking }) => {
+      if (hostOwnsNewTaskDefaults()) {
+        if (!providerId || !model) return;
+        // 托管云实例由 Host 保存模型偏好，没有本机 Renderer 时也在 bootstrap 前落盘。
+        await applyHostRemoteDraftPreference({
+          agent: agentKind, providerId, modelId: model, active: false, thinking,
+        });
+        return;
+      }
       setThinkingEnabledInMemory(agentKind, providerId, model, thinking);
       // 同步本机 renderer 的记忆：主进程写的只是镜像，renderer 才是 providerModelMemory
       // 的真相源。不写回这一笔，renderer 的全量快照会一直「尚未包含该选择」，提交时写入
@@ -23170,6 +23280,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         assertTrustedAppRendererEvent(event);
         return { accepted: mcpSetupBridge.resolve(requestId, decision) };
       }
+      if (settingsConfirmationBridge.resolveFromIpc(requestId, decision, {
+        isDeviceLink: isDeviceLinkInvoke(),
+        supportsSettingsConfirmation: deviceLinkInvokeControllerSupports(SETTINGS_CONFIRM_CAPABILITY),
+        assertTrustedSender: () => assertTrustedAppRendererEvent(event),
+      })) return { accepted: true };
       if (issueConfirmBridge.resolve(requestId, decision)) return { accepted: true };
       if (renameSessionsConfirmBridge.resolve(requestId, decision)) return { accepted: true };
       if (!sharedTask && taskActionConfirmBridge.resolveFromIpc(requestId, decision, {
@@ -23212,7 +23327,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // 快照:打开/重连/刷新会话时,renderer 拉当前挂起交互重建面板(本机 + device-link 远程共用)。
   ipcMain.handle(MAKER_INVOKE.GET_PENDING_INTERACTIONS, (_e, sessionId: unknown) => {
     if (typeof sessionId !== 'string' || !sessionId) return [];
-    let pending = getPendingInteractionsForSession(sessionId);
+    let pending = getPendingInteractionsForSession(sessionId).filter(({ request }) =>
+      !isDeviceLinkInvoke() || deviceLinkInvokeControllerSupports(SETTINGS_CONFIRM_CAPABILITY)
+      || request.kind !== 'permission' || request.toolName !== SETTINGS_CONFIRM_TOOL);
     // Shared-task guests never see the owner's input handoff.
     if (getDeviceLinkInvokeContext()?.sharedTask)
       pending = pending.filter(({ request }) => request.kind !== 'input_handoff');

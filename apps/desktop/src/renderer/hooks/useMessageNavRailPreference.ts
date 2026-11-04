@@ -15,6 +15,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import * as host from '@/state/hostDesktop/useMessageNavRailPreference';
+import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
+
+/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
+const hostDesktop = hasHostDesktopPreferences();
+export const getMessageNavRailEnabled = hostDesktop ? host.getMessageNavRailEnabled : getMessageNavRailEnabledLocal;
+export const useMessageNavRailPreference = hostDesktop ? host.useMessageNavRailPreference : useMessageNavRailPreferenceLocal;
 
 const STORAGE_KEY = 'chat.messageNavRail.enabled';
 const DEFAULT_ENABLED = true;
@@ -47,13 +54,13 @@ function readPreference(): { value: boolean; customized: boolean } {
 }
 
 /** 同步读——给非 hook 路径用。 */
-export function getMessageNavRailEnabled(): boolean {
+function getMessageNavRailEnabledLocal(): boolean {
   return readPreference().value;
 }
 
 const listeners = new Set<() => void>();
 
-export function useMessageNavRailPreference(): {
+function useMessageNavRailPreferenceLocal(): {
   enabled: boolean;
   /** 是否存在用户 override(≠ 系统默认)。设置页据此显示「恢复默认」。 */
   isCustomized: boolean;

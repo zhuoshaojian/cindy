@@ -162,6 +162,67 @@ export function SubagentModelSection() {
   );
 
   return (
+    <SubagentModelSectionView
+      claudeCode={settings.claudeCode}
+      claudeCodeProviderId={settings.claudeCodeProviderId}
+      codexSmartSubagentRouting={settings.codexSmartSubagentRouting}
+      claudeCustomized={claudeCustomized}
+      smartRoutingCustomized={smartRoutingCustomized}
+      pending={pending}
+      providersLoading={providersLoading}
+      claudeSourceDisconnected={claudeSourceDisconnected}
+      onNavigateToProviders={
+        providersLoading || hasCatalogClaudeModel
+          ? undefined
+          : () => navigate('/settings?tab=providers')
+      }
+      setClaudeModel={setClaudeModel}
+      resolveClaudeProviderId={resolveClaudeProviderId}
+      resetClaude={() => void resetKeys(CLAUDE_SUBAGENT_MODEL_KEYS)}
+      resetSmartRouting={() => void resetKeys(CODEX_SUBAGENT_MODEL_KEYS)}
+      setSmartRouting={(next) => void persistPatch({ codexSmartSubagentRouting: next })}
+    />
+  );
+}
+
+/** Subagent 卡片的展示部分;云实例设置传入目标实例的值与 deviceId(模型目录所在设备)。 */
+export function SubagentModelSectionView({
+  claudeCode,
+  claudeCodeProviderId,
+  codexSmartSubagentRouting,
+  claudeCustomized,
+  smartRoutingCustomized,
+  pending,
+  providersLoading,
+  claudeSourceDisconnected,
+  onNavigateToProviders,
+  deviceId,
+  setClaudeModel,
+  resolveClaudeProviderId,
+  resetClaude,
+  resetSmartRouting,
+  setSmartRouting,
+}: {
+  claudeCode: string | null;
+  claudeCodeProviderId: string | null;
+  codexSmartSubagentRouting: boolean;
+  claudeCustomized: boolean;
+  smartRoutingCustomized: boolean;
+  pending: boolean;
+  providersLoading: boolean;
+  claudeSourceDisconnected: boolean;
+  onNavigateToProviders?: () => void;
+  deviceId?: string;
+  setClaudeModel: (model: string | null, providerId: string | null) => Promise<boolean | undefined>;
+  resolveClaudeProviderId: (modelId: string, providerId: string | null) => string | null;
+  resetClaude: () => void;
+  resetSmartRouting: () => void;
+  setSmartRouting: (next: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const settings = { claudeCode, claudeCodeProviderId, codexSmartSubagentRouting };
+
+  return (
     <SettingsSection
       title={t('settings.subagentModels.title')}
       description={t('settings.subagentModels.description')}
@@ -177,11 +238,13 @@ export function SubagentModelSection() {
               <DefaultOverrideControls
                 isCustomized={claudeCustomized}
                 disabled={pending}
-                onReset={() => void resetKeys(CLAUDE_SUBAGENT_MODEL_KEYS)}
+                onReset={resetClaude}
               />
               <div className="min-w-0 flex-1">
                 <ModelSelector
-                  localOnlyReason="subagent-in-parent-task"
+                  {...(deviceId
+                    ? { deviceId, remoteAgent: undefined }
+                    : { localOnlyReason: 'subagent-in-parent-task' as const })}
                   modelId={settings.claudeCode ?? ''}
                   effort=""
                   onModelChange={(modelId) => {
@@ -191,11 +254,7 @@ export function SubagentModelSection() {
                   vendorKey="cc"
                   currentProviderId={settings.claudeCodeProviderId}
                   sourceDisconnected={claudeSourceDisconnected}
-                  onNavigateToProviders={
-                    providersLoading || hasCatalogClaudeModel
-                      ? undefined
-                      : () => navigate('/settings?tab=providers')
-                  }
+                  onNavigateToProviders={onNavigateToProviders}
                   reselectEmitsChange
                   onProviderChange={(providerId, modelId) => {
                     const nextModel = modelId ?? settings.claudeCode;
@@ -238,14 +297,12 @@ export function SubagentModelSection() {
               <DefaultOverrideControls
                 isCustomized={smartRoutingCustomized}
                 disabled={pending}
-                onReset={() => void resetKeys(CODEX_SUBAGENT_MODEL_KEYS)}
+                onReset={resetSmartRouting}
               />
               <Switch data-setting-id={subagentModelSettings.subagentModelsSmartRoutingLabel.id}
                 checked={settings.codexSmartSubagentRouting}
                 disabled={pending}
-                onCheckedChange={(next) => {
-                  void persistPatch({ codexSmartSubagentRouting: next });
-                }}
+                onCheckedChange={setSmartRouting}
                 aria-label={t('settings.subagentModels.smartRouting.aria')}
               />
             </div>

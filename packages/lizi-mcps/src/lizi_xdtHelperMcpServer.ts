@@ -69,6 +69,7 @@ import {
   type CreateTaskWorktreeCallback,
 } from './xdt-helper/create_task_worktree.js';
 import { registerProjectManagementTools, type ProjectManagementCallbacks } from './xdt-helper/project_management.js';
+import { registerHostSettingsTools, type HostSettingsCallbacks } from './xdt-helper/settings.js';
 import {
   registerGetCapabilitiesTool,
   registerAppUpdateTools,
@@ -810,6 +811,7 @@ export interface XdtHelperMcpDeps {
   github?: GithubToolCallbacks;
   getSessionProject?: import('./xdt-helper/get_current_session_id.js').GetCurrentSessionIdDeps['getSessionProject'];
   logger?: LiziMcpLogger;
+  settings?: HostSettingsCallbacks;
   appUpdate?: AppUpdateCallbacks;
   grokLogin?: GrokLoginCallbacks;
   /** 代输入: hand an on-screen step to the owner; values stay on the host. */
@@ -956,7 +958,8 @@ export function createXdtHelperMcpServer(
     const context = resolveLiziMcpSessionContext(sessionCtx);
     const sessionId = context.sessionId;
     const remoteBotOnly = !!context.remoteHostId && context.agentKind !== 'pi';
-    const defaultCategories = new Set(CATEGORY_ENUM.filter((category) => category !== 'bots'));
+    const defaultCategories = new Set<string>(CATEGORY_ENUM.filter((category) => category !== 'bots' && category !== 'settings'));
+    if (deps.settings && await deps.settings.allowed(context).catch(() => false)) defaultCategories.add('settings');
     // Remote Pi retains the regular helper surface, but a remote task cannot
     // check the local desktop updater; keep that unavailable tool undiscoverable.
     if (context.remoteHostId) {
@@ -982,6 +985,7 @@ export function createXdtHelperMcpServer(
   };
 
   if (deps.github) registerGithubTools(registry, deps.github, () => resolveLiziMcpSessionContext(sessionCtx).sessionId);
+  if (deps.settings) registerHostSettingsTools(registry, deps.settings, () => resolveLiziMcpSessionContext(sessionCtx));
 
   // 'cindy' 类: 自省 (无 host 依赖, 始终注册)。
   registerGetCapabilitiesTool(registry, deps.runtimeCapabilities

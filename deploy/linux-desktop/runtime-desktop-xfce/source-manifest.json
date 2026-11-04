@@ -1,0 +1,65 @@
+{
+  "upstreamVersion": "v0.1.108",
+  "clientBaseCommit": "d4b39020bf083d79b352fcb56ea5a4941432fb39",
+  "clientPatchSha256": {
+    "apps/desktop/src/main/host-settings/managementAuthorization.ts": "cb648929e86cee49446a140ca8cac3ba00f72e68028e5c1535693be805aedeef",
+    "apps/desktop/src/main/maker-host/codex-account-auth.ts": "ae0c670abc2b815becc61965923c485679e9aacd356447961c5ac752684a37ab",
+    "apps/desktop/src/main/instance-runtime/authorization-browser.ts": "13cf26f50eac1c33628ff3c6b76257c8e32e32ea09d727fb3d91ab993a70d9ec",
+    "apps/desktop/src/main/instance-runtime/__tests__/authorization-browser.test.ts": "952a4f04bf3689a9db890bc4226d7775fa4e291a3e6ec66743508c603247ffdc",
+    "apps/desktop/native/remote-desktop/linux-input-guard.py": "60739cbd19ecd419dc4bc0395b3fa2daf6e235fbd2687bce747f56d433ed2abf",
+    "apps/desktop/native/remote-desktop/linux-input-guard.test.py": "711e259f77f38d5e842308a11b234989bcd40bbaadc809d9731ffce8499dfa69",
+    "apps/desktop/src/main/remote-desktop/linuxInputGuard.ts": "bb2a07c71d2dac87debf0354405307c5672779d12c5ac3816ae10663dbd58cef",
+    "apps/desktop/src/main/remote-desktop/linuxInputHost.ts": "504cd46ca7bf903603f9d518c8ad1d285dd17a41cf0f04fb80da046c4600081d",
+    "apps/desktop/src/main/remote-desktop/linuxX11Input.ts": "ad57e70072b6eab97ddb135198d4b7a8c2a56cd1805b7670af19a0009fae0f48",
+    "apps/desktop/src/main/remote-desktop/__tests__/linuxInputGuard.test.ts": "39349b9a74b2b361163b5f50f5077a65215e3b489bd3e744c28d7818602f5a33",
+    "apps/desktop/src/main/remote-desktop/__tests__/linuxInputHost.test.ts": "29ca69b800d3c15df667e004bee3c8bad20d78162c84ba3139f036de66ae6759",
+    "apps/desktop/src/main/device-link/index.ts": "c6848dc0a1dfed0af180c6814236ebe8e1877c7944362162e371e7335fce37de",
+    "apps/desktop/src/main/device-link/__tests__/remoteInvokeSendGuard.test.ts": "ae5cecdb8d3a3b091d6dd3d169d2fe4df56ead98ed5087d1e7a3ca8c70b33f76",
+    "packages/device-link/src/client.ts": "a11ff08bc6b78bb099e6b2a01188c71c8e448e6d7f15cbfa321e4f79f465e8c2",
+    "packages/device-link/src/__tests__/client.test.ts": "2b2c37bb34bde7de4738e2bfdea73831ba2895e45fb9d74fa1cfb509111d0da1",
+    "apps/desktop/src/main/remote-desktop/clipboard.ts": "c3aedb3aa509d3520f13ab86ed8cab6861e9c4fceef245c7e3c8df9112cc923f",
+    "apps/desktop/src/main/remote-desktop/index.ts": "c2de6bdca15b8a521704e6d965604aa7ee960005d10957f696e163a6f286977c",
+    "apps/desktop/src/main/remote-desktop/linuxClipboardNative.ts": "a944a1c17c25dfa044373843f6d561b3baa2505d8172088b135116add8a6ed4c",
+    "apps/desktop/src/main/remote-desktop/linuxX11Clipboard.ts": "5ba20585a78785c2a241da7bf4bd5ef67f229f356a2e307d29ab46aa491cd2d3",
+    "apps/desktop/src/main/remote-desktop/__tests__/linuxClipboardNative.test.ts": "1bfe2d57bc474979714765768a11eee90f9d003d1b6caa423709576d93774802",
+    "apps/desktop/src/main/remote-desktop/__tests__/linuxClipboardTransfer.test.ts": "b82c9a484d42b94821b53ebe1a20a70fb46048ebc8c51f86f9562c8c716b7843",
+    "apps/desktop/src/main/remote-desktop/__tests__/linuxX11Clipboard.test.ts": "91295715a2af5fd0293bd6002a23b6769c80bab21129179f19fd280eef32b445",
+    "apps/desktop/src/main/remote-desktop/linuxClipboard.ts": "b1bdadf1c0516ee962d5eff5bbdc06ba8d8a0cc258d02fc98e7781baf1095858",
+    "apps/desktop/src/main/remote-desktop/__tests__/linuxClipboard.test.ts": "f5db10e417fd95b792bb46a338bec3df713ffdbdd4411e82ae1339e56f6f7163"
+  },
+  "runtimeVersion": "0.1.108-xfce-dock-r5.20261019",
+  "runtimeManifestDigest": "sha256:472134a7ea610497c71d1692ae1aca8f41ef842daf39d92bac298c6e0cf1c647",
+  "runtimeAsarSha256": "717a70c6d68b3611dee579f91e90b1a760f7a5a196f1265d1726de49064b4781",
+  "r5LayerBaseDigest": "sha256:4eafc9afc12486d1f2c74ebf8f7303cc705d06dda2e7549e4fe2346b0a1e4394",
+  "sourceSha256": {
+    "cindy-linux-desktop": "0df9bb42dcc3703b89133f965c8ef46a9dc37c0776c9909287ae0fb68a77a02e",
+    "xfce-session": "b91002fb99ac1702d40b0a6cc113e1a3c1bc567ecc19fd801c77dedeaf35e877",
+    "apply-appearance.py": "caced5f2b7f7e907ef66191fe8741d88a1ced86da9030b2ec7e4ac184a2da683",
+    "apply-dock.py": "df6e641cc800800520cd77667f4903e1b7cda4ab643b8d1fffab641f825df090",
+    "seccomp.json": "c21ad5704a7154137e417c3769c3d473ab6f277e25ece9b23b24f711680fe2a8",
+    "apply-dock-apps.py": "fa30f9715ad758d8dd2e8d78744234c2e49eab705f588881245625f345f6f7a6",
+    "cindy-dock-chrome": "41f2f32362a42a3a23414881ecd64ca525da437cafd07a74fc13c4c040fd7b6f",
+    "cindy-dock-terminal": "0cd98f0e084020451f8048f4858c94328bd04099d506a19338a01e5d534601ce",
+    "com.cindy.cloud-chrome.desktop": "dba64ae496426bb1ab08ac02ac8d06a4fbef30cacb409d3deeb12188fa8be316",
+    "com.cindy.cloud-terminal.desktop": "b19a92d2252780067bcecf3a7f98f037fb4be23933152d6018ee527a875b8019"
+  },
+  "windowOverlaySha256": {
+    "policy.mjs": "d4565920de95b4619a918291c2db818de553613196a0d1aaffb1da6e8976eff6",
+    "overlay.mjs": "7332d438d4ecca6e6092271e59ced9208660f9a7e8c149b12df287ea6d7b8b0b",
+    "overlay.test.mjs": "dd58f4271456e6108e85195819ce20689dae6de1d588f31604691f604eb58cf4"
+  },
+  "verifiedPackages": {
+    "google-chrome-stable": "155.0.8059.84-1",
+    "plank": "0.11.89-4+b1",
+    "xfce4-terminal": "1.0.4-1",
+    "xfwm4": "4.18.0-1",
+    "xfdesktop4": "4.18.1-1"
+  },
+  "themeResources": {
+    "arc-theme": "20221218-1",
+    "papirus-icon-theme": "20230104-2"
+  },
+  "qualification": "Isolated Linux, native X11 input; not DeviceLink end-to-end",
+  "clientSourceSnapshotCommit": "1b1ca95cc63d820e9cad2fdfda3d425097073d62",
+  "clientRuntimeFixCommit": "aea2f91c12aad7e3f9ce02362be7b26c1c763cde"
+}

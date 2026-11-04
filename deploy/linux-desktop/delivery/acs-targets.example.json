@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "name": "example-cn",
+      "regionId": "cn-shanghai",
+      "vSwitchIds": ["vsw-example"],
+      "securityGroupId": "sg-example",
+      "repositories": ["registry.example.com/cindy/cloud-runtime-cn"],
+      "profiles": [
+        {
+          "name": "new-claims",
+          "main": "$runtime",
+          "initContainers": [{"name": "initialize-persistent-volume", "image": "$runtime"}]
+        },
+        {
+          "name": "verified-profile",
+          "main": "$runtime",
+          "initContainers": [{"name": "prepare-profile-status", "image": "$runtime"}]
+        }
+      ]
+    }
+  ]
+}

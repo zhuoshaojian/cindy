@@ -38,6 +38,33 @@ export function GitSafetySection() {
   }, [reset, saving, t]);
 
   return (
+    <GitSafetySectionView
+      mode={mode}
+      isCustomized={isCustomized}
+      saving={saving}
+      handleModeChange={handleModeChange}
+      handleReset={handleReset}
+    />
+  );
+}
+
+/** Shared native view. Local and cloud controllers provide the same state/actions. */
+export function GitSafetySectionView({
+  mode,
+  isCustomized,
+  saving,
+  handleModeChange,
+  handleReset,
+}: {
+  mode: GitSafetyMode;
+  isCustomized: boolean;
+  saving: boolean;
+  handleModeChange: (next: GitSafetyMode) => void;
+  handleReset: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
     <SettingsSection title={t('settings.gitSafety.title')}>
       <SettingsCard>
         <SettingsRow

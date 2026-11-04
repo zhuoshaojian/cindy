@@ -105,6 +105,7 @@ import {
   patchVendorPrefsPreservingModelChoice,
   applySuggestedDefaultTuple,
   fallbackUnavailableVendor,
+  hasHostDraftPreferences,
   markDefaultTupleCustomized,
   clearDefaultTupleTuningCustomization,
   resetDraftWorkspaceTargets,
@@ -724,7 +725,22 @@ interface DraftTargetRequest {
 export function NewMakerDraftRoute() {
   const { t, i18n } = useTranslation();
   const { dataOwnerId, dataOwnerGeneration } = useAuth();
-  const draft = useNewMakerDraft();
+  const localDraft = useNewMakerDraft();
+  // 执行端的引擎与本机草稿分开；切回本机时仍保留用户原来的本机选择。
+  const [remoteVendor, setRemoteVendor] = useState<{
+    deviceId: string; ownerId: typeof dataOwnerId; vendor: MakerVendor;
+  } | null>(null);
+  const draft = localDraft.deviceLinkDeviceId &&
+    remoteVendor?.deviceId === localDraft.deviceLinkDeviceId && remoteVendor.ownerId === dataOwnerId
+    ? { ...localDraft, vendor: remoteVendor.vendor }
+    : localDraft;
+  const switchDraftVendor = useCallback((vendor: MakerVendor) => {
+    if (localDraft.deviceLinkDeviceId) {
+      setRemoteVendor({ deviceId: localDraft.deviceLinkDeviceId, ownerId: dataOwnerId, vendor });
+    } else {
+      switchVendor(vendor);
+    }
+  }, [localDraft.deviceLinkDeviceId, dataOwnerId]);
   const location = useLocation();
   const navigate = useNavigate();
   const dialogueTargetRequest = useMemo(
@@ -1521,6 +1537,8 @@ export function NewMakerDraftRoute() {
   }, [calibrationProviders, draftModelChosenByUser, draftPreferredProviderId]);
   const draftCalibration = useMemo<DraftModelCalibrationResult>(() => {
     if (usesDeviceCatalog) return { model: chatPrefs.model, providerId: null };
+    // Host 已负责推荐与用户 override；失联/移除只显示不可用，不能在 Renderer 换成别的型号。
+    if (hasHostDraftPreferences()) return { model: chatPrefs.model, providerId: chatPrefs.providerId ?? null };
     return calibrateDraftModel({
       providers: autoCalibrationProviders,
       // 远端 model/list 已是可选清单,本机可见性偏好不适用于它。
@@ -1680,6 +1698,7 @@ export function NewMakerDraftRoute() {
     remoteDefaults, usesDeviceCatalog, catalogDeviceId, capabilityAgentKind, agentCatalogProviders,
     capabilities, capabilitiesLoading, deviceProvidersLoading, deviceProvidersUnsupported,
     deviceDraftDefaultsReady, deviceDraftDefaults, isAgentDeviceDraft,
+    availableAgentsLoaded, availableVendors, deviceProvidersError, dataOwnerId, switchDraftVendor,
   });
 
   // 记住这次对运行 Agent 的电脑的选择(仅本次运行)，切走再切回时恢复。
@@ -2012,6 +2031,7 @@ export function NewMakerDraftRoute() {
         providerId: string | null;
         modelId: string;
         effort?: Effort;
+        markModelChoice?: boolean;
       },
       /**
        * 这次选择落在被控电脑自己的目录里(从另一台电脑改回被控电脑):此刻闭包里 Agent 仍在
@@ -2049,7 +2069,8 @@ export function NewMakerDraftRoute() {
               : (dlSel?.providerId ?? deviceLinkInitial?.providerId ?? ''),
             modelId: model,
             active: true,
-            markModelChoice: false,
+            // 显式目标只由选中模型的动作提供；纯 effort / Fast 调整保留原来的选择标记。
+            markModelChoice: target !== undefined && target.markModelChoice !== false,
             ...(activeEffort !== undefined ? { effort: activeEffort } : {}),
             ...(patch.fast !== undefined ? { fast: patch.fast } : {}),
           },
@@ -2114,11 +2135,13 @@ export function NewMakerDraftRoute() {
     : supportsFastMode
       ? sshCodexDraftHostId ? (sshDraftSelection?.fastMode ?? false) : resolveDraftFast(calibratedDraftModel)
       : false;
-  // 远程开关仅属于这台设备的当前引擎，不读写控制端的本机偏好。
+  // 远程开关仅属于这台设备的当前引擎，不读写控制端的本机偏好；未切换时沿用执行 Host 的计划默认，
+  // 旧端缺字段仍为关闭。
   const remotePlanKey = `${effectiveDeviceLinkDeviceId ?? ''}:${capabilityAgentKind}`;
   const [remoteDraftPlan, setRemoteDraftPlan] = useState<{ key: string; enabled: boolean } | null>(null);
   const effectivePlanMode = isDeviceLinkDraft
-    ? capabilities?.planMode?.supported === true && remoteDraftPlan?.key === remotePlanKey && remoteDraftPlan.enabled
+    ? capabilities?.planMode?.supported === true && (remoteDraftPlan?.key === remotePlanKey
+      ? remoteDraftPlan.enabled : remoteDraftState.value?.planMode === true)
     : chatPrefs.planMode === true;
 
   // 选中模型 + effort:device-link 用镜像 holder(deviceLinkInitial,被控端草稿值已按 capabilities
@@ -2666,7 +2689,7 @@ export function NewMakerDraftRoute() {
         }
         // 草稿里选中的那条收藏跟着会话走(见 carryDraftFavoriteAnchorToSession)。
         carryDraftFavoriteAnchorToSession(newSession.id, draftVendor, sshModel, sshProviderId);
-        if (effectivePlanMode) patchVendorPrefs(draftVendor, { planMode: false });
+        if (effectivePlanMode && !hasHostDraftPreferences() && !isDeviceLinkDraft) patchVendorPrefs(draftVendor, { planMode: false });
         makerChatStore.setSessionRuntime(newSession.id, {
           agentKind: dbToMakerAgentKind(draftVendor),
           fastMode: sshFastMode,
@@ -2760,17 +2783,25 @@ export function NewMakerDraftRoute() {
   // ChatInput 的 initial* 由父级传入,vendor 切换后 ChatInput 重新 mount(key 变化)
   // 自动 pickup 新 vendor 的 lastByVendor 值。
   const handleVendorChange = useCallback((next: MakerVendor) => {
-    markDefaultTupleCustomized();
-    switchVendor(next);
-  }, []);
+    if (isDeviceLinkDraft) dlRuntimeTouchedRef.current = true;
+    else markDefaultTupleCustomized();
+    switchDraftVendor(next);
+  }, [isDeviceLinkDraft, switchDraftVendor]);
 
   // 当前草稿选中的 vendor 变为不可用(如 Pi 未注册 / 被控端无 Pi)时,coerce 到首个可用来源
   // (优先 cc),避免 tablist 卡在被隐藏段、且防止创建出注定 requireAgent 报错的会话。
   // 只在已加载可用性后收敛;fallback 一定可见,收敛一次即稳定(switchVendor 同值早返,不成环)。
   useEffect(() => {
     if (!availableAgentsLoaded) return;
+    if (isDeviceLinkDraft) {
+      if (!availableVendors.has(draft.vendor)) {
+        const fallback = (['cc', 'codex', 'pi'] as const).find((v) => availableVendors.has(v));
+        if (fallback) switchDraftVendor(fallback);
+      }
+      return;
+    }
     fallbackUnavailableVendor(availableVendors);
-  }, [availableAgentsLoaded, availableVendors]);
+  }, [availableAgentsLoaded, availableVendors, isDeviceLinkDraft, draft.vendor, switchDraftVendor]);
 
   // ─── 用户在 ChatInput 改 model/effort/permission 后,落进当前 vendor 的 prefs ──
   // 权限 / 计划模式不是默认模型 tuple：按界面 Harness 的槽写，但不改变 storage 中最新
@@ -2820,6 +2851,12 @@ export function NewMakerDraftRoute() {
           permissionMode: prev?.permissionMode,
           providerId: prev?.providerId ?? null,
         }));
+        pushActiveDraftPref({ effort: resolved.effort ?? undefined, fast: resolved.fastMode }, {
+          agent: capabilityAgentKind,
+          providerId: dlSel?.providerId ?? deviceLinkInitial?.providerId ?? null,
+          modelId: newModelId,
+          effort: resolved.effort ?? undefined,
+        });
         return;
       }
       markDefaultTupleCustomized();
@@ -2835,6 +2872,7 @@ export function NewMakerDraftRoute() {
       deviceDraftDefaults,
       patchActiveTuplePrefs,
       capabilityAgentKind,
+      pushActiveDraftPref, dlSel, deviceLinkInitial,
       agentCatalogProviders,
     ],
   );
@@ -2994,7 +3032,7 @@ export function NewMakerDraftRoute() {
       // event 到达前的旧 Harness。switchVendor 自身同值早返，不会制造额外写入。
       // 手动选了普通模型 = 取消插件模型。
       if (getDraft().pluginModel) patchDraft({ pluginModel: null });
-      switchVendor(selection.vendor);
+      switchDraftVendor(selection.vendor);
       // ── 远程 Agent:模型面板里选到了另一台电脑上的模型(或从那台回到任务所在电脑)──────
       // 连 Agent 的运行位置一起换。任务、项目、附件都在任务所在电脑(本机或被控电脑),一概不动;
       // 只有模型目录与这次选择改按目标电脑。
@@ -3135,6 +3173,7 @@ export function NewMakerDraftRoute() {
             providerId: selection.providerId,
             modelId: selection.modelId,
             ...(selection.effort ? { effort: selection.effort } : {}),
+            markModelChoice: selection.resetToRecommended !== true,
           },
         );
         return;
@@ -3187,6 +3226,7 @@ export function NewMakerDraftRoute() {
       capabilityAgentKind,
       agentCatalogProviders,
       pushActiveDraftPref,
+      switchDraftVendor,
     ],
   );
 
@@ -4455,9 +4495,8 @@ export function NewMakerDraftRoute() {
             }
             // 草稿里选中的那条收藏跟着会话走(见 carryDraftFavoriteAnchorToSession)。
             carryDraftFavoriteAnchorToSession(newSession.id, persistedAgentKind, model, providerId);
-            // 计划模式是一次性选择:随本次发送被消耗,草稿勾选同步熄灭,
-            // 下一次 New Maker 不延续。
-            if (effectivePlanMode) patchActivePrefs({ planMode: false });
+            // 仅旧端沿用一次性计划开关；不能把新 Host 的持续默认反写成 false。
+            if (effectivePlanMode && !hasHostDraftPreferences() && !isDeviceLinkDraft) patchActivePrefs({ planMode: false });
 
             // 先把真实 session 收进项目列表，让用户可以切走、再开 New Maker。
             const sendAt = new Date();
@@ -4731,8 +4770,8 @@ export function NewMakerDraftRoute() {
           }
           // 草稿里选中的那条收藏跟着会话走(见 carryDraftFavoriteAnchorToSession)。
           carryDraftFavoriteAnchorToSession(newSession.id, persistedAgentKind, model, providerId);
-          // 计划模式是一次性选择:随本次发送被消耗,草稿勾选同步熄灭。
-          if (effectivePlanMode) patchActivePrefs({ planMode: false });
+          // 仅旧端在发送后熄灭计划勾选，新 Host 默认由用户显式更改。
+          if (effectivePlanMode && !hasHostDraftPreferences() && !isDeviceLinkDraft) patchActivePrefs({ planMode: false });
           // 本机/SSH 首条在下面直接 sendMessage,createOpts 读 chat store 的
           // planModeEnabled / remoteHostId —— ensureInitialMessages 的行水合是异步的,
           // 必须先确定性 seed store,否则勾了计划模式的首条可能以 planMode:false 发出,

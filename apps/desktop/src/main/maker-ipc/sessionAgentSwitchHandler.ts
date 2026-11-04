@@ -335,7 +335,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
     providerId: string | null;
     model: string;
     thinking: boolean;
-  }): void;
+  }): void | Promise<void>;
   bootstrapSwitchedSession(sessionId: string, opts?: { thinkingEnabled?: boolean; nativeHistoryResume?: boolean }): Promise<void>;
   /**
    * close→bootstrap 窗口的 onClose 重副作用抑制(desktop 注入
@@ -1230,7 +1230,7 @@ export async function performSessionAgentSwitch(
     if (typeof thinkingEnabled === 'boolean') {
       // 跨引擎切换提交后把用户的思考选择落到本机偏好镜像：普通 send 的 lazy-create
       // 只读镜像（不经过 bootstrap），否则远端推送未回流时会用旧值建会话。
-      deps.rememberThinkingIntent?.({
+      await deps.rememberThinkingIntent?.({
         agentKind: targetAgentKind,
         providerId: normalizedProviderId ?? row.providerId ?? null,
         model,

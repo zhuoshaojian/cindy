@@ -1,4 +1,5 @@
 import { wireIMessageOrchestrator } from './imessage/adapter';
+import { configureCloudWechatManagement } from '../host-settings/managementBots.js';
 /**
  * main/im/index.ts
  * ---------------------------------------------------------------------------
@@ -279,6 +280,11 @@ export function startImOrchestrators(): void {
   wireWechatOrchestrator(wechatIm, WECHAT_CONFIG);
   wireWecomOrchestrator(wecomIm, WECOM_CONFIG);
 
+  configureCloudWechatManagement({
+    state: () => wechatIm.getState(),
+    authorize: signal => connectionLifecycle.runWhileStarted(() => wechatIm.authorize(signal)),
+    unbind: () => connectionLifecycle.runWhileStarted(() => wechatIm.unbind()),
+  });
   // 伙伴自有 IM 连接: 每条记录一份传输层 + 编排器, 与上面设置页那份并存。
   // 实例在 initializeImConnection 里按记录起, 这里只注入装配方式。
   configureBotImConnectionRuntime({

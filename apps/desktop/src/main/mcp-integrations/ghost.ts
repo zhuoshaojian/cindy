@@ -117,6 +117,7 @@ import { compressInlineImage } from './inlineImageCompressor.js';
 import { drainGhostCallMedia } from '../cindy-brain/ghostMediaLedger.js';
 import {
   getGhostCardService,
+  connectGhostGithubAccount,
   getGhostManager,
   listInstalledGhostsAsync,
   getGhostPipeDispatcher,
@@ -2115,6 +2116,17 @@ export function getCindyGhostsMcpDeps(
       const visible = classifyGhostVisibility(target.id, workingDir, ghostVisibilityDeps,
         target.kind === 'plugin' ? target.namespace : undefined);
       if (!visible.ok) return visible;
+      if (target.id === 'cindy-github') {
+        const result = await connectGhostGithubAccount({ sessionId, signal,
+          ...(target.reauthorize ? { reauthorize: true } : {}),
+          assertCurrent: () => {
+            if (signal?.aborted
+              || !classifyGhostVisibility(target.id, workingDir, ghostVisibilityDeps,
+                target.kind === 'plugin' ? target.namespace : undefined).ok)
+              throw new Error('AUTH_FAILED');
+          } });
+        if (result) return result;
+      }
       const instanceId = installedGhostStoragePart(visible.ghost);
       const assessment = getGhostSetupAssessment(instanceId);
       const ghCliSecret = visible.ghost.manifest.network?.secrets?.find((secret) => secret.source === 'gh-cli');

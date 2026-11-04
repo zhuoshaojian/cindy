@@ -29,7 +29,6 @@ import { useLspMode } from '@/hooks/useLspMode';
 const log = createLogger('LspBetaCell');
 
 export function LspBetaCell() {
-  const setting = useSettingDefinition(additionalSettings.lsp);
   const { t } = useTranslation();
   const { enabled, setEnabled } = useLspMode();
   const [pending, setPending] = useState(false);
@@ -42,17 +41,11 @@ export function LspBetaCell() {
       try {
         await window.electronAPI.maker.lspModeSet(next);
         toast.success(
-          next
-            ? t('settings.lspMode.toast.enabled')
-            : t('settings.lspMode.toast.disabled'),
+          next ? t('settings.lspMode.toast.enabled') : t('settings.lspMode.toast.disabled'),
         );
       } catch (err) {
         log.warn('lspModeSet failed', err);
-        toast.error(
-          err instanceof Error
-            ? err.message
-            : t('settings.lspMode.toast.toggleFailed'),
-        );
+        toast.error(err instanceof Error ? err.message : t('settings.lspMode.toast.toggleFailed'));
         setEnabled(prev);
       } finally {
         setPending(false);
@@ -61,6 +54,21 @@ export function LspBetaCell() {
     [enabled, setEnabled, t],
   );
 
+  return <LspBetaCellView enabled={enabled} pending={pending} handleToggle={handleToggle} />;
+}
+
+/** Shared native view. Local and cloud controllers provide the same state/actions. */
+export function LspBetaCellView({
+  enabled,
+  pending,
+  handleToggle,
+}: {
+  enabled: boolean;
+  pending: boolean;
+  handleToggle: (next: boolean) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const setting = useSettingDefinition(additionalSettings.lsp);
   const title = setting.title;
   const description = setting.description;
 

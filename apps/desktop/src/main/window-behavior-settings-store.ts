@@ -1,3 +1,4 @@
+import { validateAdditionalSettingsOverrides } from '../shared/settingsEditableCatalog.js';
 /**
  * window-behavior-settings-store —— main 进程对窗口交互行为开关的持久化。
  *
@@ -13,8 +14,8 @@
  *  - awayGuardDelaySeconds: null (离开多久后遮住;null 跟随系统熄屏时间)
  *
  * swallowActivationClick 仍由 renderer localStorage 承担运行时事实标准,main
- * 侧文件只供下次创建 BrowserWindow 时读取。平台关闭行为则完全由 main 侧
- * 持久化与执行,renderer 通过 IPC 读写同一份状态。
+ * 侧文件只供下次创建 BrowserWindow 时读取(托管云实例改读 Host profile 正本)。
+ * 平台关闭行为则完全由 main 侧持久化与执行,renderer 通过 IPC 读写同一份状态。
  */
 
 import { app } from 'electron';
@@ -30,7 +31,20 @@ import {
 } from '../shared/windowBehavior.js';
 import { isAwayGuardDelaySeconds, type AwayGuardDelaySeconds } from '../shared/awayGuard.js';
 
+import { inspectSettingsFile, isSettingBoolean, validateOptionalSettingsFields } from './maker-host/settings-inspection.js';
+import { hostDesktopPreference } from './host-settings/desktop-preferences.js';
+
 const log = desktopMakerLogger.child('window-behavior-settings-store');
+
+export function inspectWindowBehaviorSettings() {
+  return inspectSettingsFile({ filePath: settingsFilePath, defaults: DEFAULTS, normalize,
+    validate: (raw) => validateOptionalSettingsFields(raw, {
+      swallowActivationClick: isSettingBoolean,
+      windowsCloseBehavior: (value) => value === null || isWindowsCloseBehavior(value),
+      linuxCloseBehavior: (value) => value === null || isLinuxCloseBehavior(value),
+    }),
+  });
+}
 
 export interface WindowBehaviorSettings {
   swallowActivationClick: boolean;
@@ -74,6 +88,7 @@ function normalize(raw: unknown): WindowBehaviorSettings {
 }
 
 const store = createOverrideSettingsFile<WindowBehaviorSettings>({
+  validateOverrides: raw => validateAdditionalSettingsOverrides('linuxWindow', raw),
   filePath: settingsFilePath,
   defaults: DEFAULTS,
   normalize,
@@ -82,7 +97,9 @@ const store = createOverrideSettingsFile<WindowBehaviorSettings>({
 });
 
 export function readWindowBehaviorSettings(): WindowBehaviorSettings {
-  return store.read();
+  const settings = store.read();
+  const swallowActivationClick = hostDesktopPreference('swallowActivationClick');
+  return swallowActivationClick === undefined ? settings : { ...settings, swallowActivationClick };
 }
 
 export function writeSwallowActivationClick(swallowActivationClick: boolean): void {
@@ -116,3 +133,5 @@ export const __testing = { normalize };
 // The away guard needs this computer's own Accessibility grant, like remote desktop,
 // so it is turned on per computer instead of being copied over.
 export const windowBehaviorPortableSettings = portableOverrideSettings(store, { omitKeys: ['awayGuard'] });
+/** Internal Host settings adapter; no new IPC or persistence location. */
+export function getWindowBehaviorSettingsStore() { return store; }

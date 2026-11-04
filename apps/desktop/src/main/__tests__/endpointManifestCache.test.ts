@@ -208,6 +208,7 @@ describe('缓存端点的受信任域约束(安全边界)', () => {
 
   it.each([
     'deviceLinkApiBaseUrl',
+    'cloudInstanceApiBaseUrl',
     'oauthBrokerApiBaseUrl',
     'modelAccessApiBaseUrl',
     'voiceApiBaseUrl',

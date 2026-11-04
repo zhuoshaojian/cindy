@@ -384,12 +384,7 @@ export function StorageManagementCard() {
   const fixedCaches = stats?.success ? stats.fixedCaches : null;
 
   return (
-    <SettingsSection
-      variant="page"
-      id="settings-storage-section"
-      title={t(storageManagementCardSettings.storage.sectionKey)}
-      description={t('settings.about.storage.overviewDescription')}
-    >
+    <StorageSectionFrame>
       {/* 目录与占用总览同属一组，彼此 14px */}
       <SettingsSection>
         <DialogueDirectorySection />
@@ -603,7 +598,7 @@ export function StorageManagementCard() {
           </SettingsField>
         </SettingsCard>
       </SettingsSection>
-    </SettingsSection>
+    </StorageSectionFrame>
   );
 }
 
@@ -611,6 +606,42 @@ type DbSlimmingPhase =
   | { kind: 'idle' }
   | { kind: 'scanned'; scan: DbSlimmingScanResult }
   | { kind: 'done'; result: DbSlimmingResult };
+
+
+/** 存储空间页框架:页标题与说明 + 各分区。云实例设置复用同一框架。 */
+export function StorageSectionFrame({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <SettingsSection
+      variant="page"
+      id="settings-storage-section"
+      title={t(storageManagementCardSettings.storage.sectionKey)}
+      description={t('settings.about.storage.overviewDescription')}
+    >
+      {children}
+    </SettingsSection>
+  );
+}
+
+/** 「数据库」卡片内容的留白(与 SettingsField 一致),本机清理区与云实例阈值设置共用。 */
+export const STORAGE_DATABASE_BODY_CLASS = 'flex flex-col gap-3 px-4 py-4';
+
+/** 「数据库」分区:标题、占用(可选)与卡片。 */
+export function StorageDatabaseSection({ usage, children }: { usage?: string; children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <SettingsSection
+      title={t(storageManagementCardSettings.aboutStorageDatabaseSectionTitle.titleKey)}
+      action={
+        usage !== undefined ? (
+          <span className="text-11 text-[var(--settings-section-sublabel)]">{usage}</span>
+        ) : undefined
+      }
+    >
+      <SettingsCard>{children}</SettingsCard>
+    </SettingsSection>
+  );
+}
 
 function DatabaseSlimmingSection({
   warningThresholdGiB,
@@ -1041,68 +1072,21 @@ function DatabaseSlimmingSection({
         onConfirm={handleSchedule}
       />
 
-      <div id={storageManagementCardSettings.aboutStorageDbSizeWarningThresholdLabel.targetId} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg border border-[var(--settings-theme-card-border)] px-3 py-2.5">
-        <FormField
-          id="db-size-warning-threshold"
-          label={t(storageManagementCardSettings.aboutStorageDbSizeWarningThresholdLabel.titleKey)}
-          hint={t(storageManagementCardSettings.aboutStorageDbSizeWarningThresholdLabel.descriptionKey)}
-          error={warningThresholdInvalid ? t('settings.about.storage.dbSizeWarningThresholdInvalid') : undefined}
-          reserveFeedback
-          className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto] items-center [&>div:last-child]:col-span-2"
-        >
-          {({ error, ...control }) => (
-            <div className="flex items-center gap-1.5">
-              {/* Group reset sits left of the first control, only when customized (CONTROLS decision 3). */}
-              <DefaultOverrideControls
-                isCustomized={warningCustomized}
-                disabled={warningSaving}
-                onReset={() => void persistWarningSettings()}
-              />
-              <SettingsTextInput data-setting-id={storageManagementCardSettings.aboutStorageDbSizeWarningThresholdLabel.id}
-                {...control}
-                type="number"
-                size="sm"
-                surface="ivory"
-                min={1}
-                max={1024}
-                step={1}
-                value={warningThresholdDraft}
-                disabled={warningSaving}
-                error={error}
-                onChange={(next) => {
-                  warningThresholdDirtyRef.current = true;
-                  warningThresholdEditVersionRef.current += 1;
-                  setWarningThresholdDraft(next);
-                  setWarningThresholdInvalid(false);
-                }}
-                onBlur={() => void saveWarningThreshold()}
-                className="w-16"
-                inputClassName="text-center"
-              />
-              <span className="text-12 text-[var(--settings-section-sublabel)]">G</span>
-            </div>
-          )}
-        </FormField>
-
-        <label
-          htmlFor="db-size-warning-disabled"
-          className="flex min-w-0 cursor-pointer flex-col gap-0.5"
-        >
-          <span id={storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.targetId} className="text-12 text-[var(--settings-section-sublabel)]">
-            {t(storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.titleKey)}
-          </span>
-          <span className="text-11 leading-[1.4] text-[var(--text-secondary)]">
-            {t(storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.descriptionKey)}
-          </span>
-        </label>
-        <Switch data-setting-id={storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.id}
-          id="db-size-warning-disabled"
-          checked={warningDisabled}
-          disabled={warningSaving}
-          onCheckedChange={(checked) => void persistWarningSettings({ disabled: checked })}
-          aria-label={t(storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.titleKey)}
-        />
-      </div>
+      <DatabaseWarningSettingsView
+        warningThresholdDraft={warningThresholdDraft}
+        warningThresholdInvalid={warningThresholdInvalid}
+        warningSaving={warningSaving}
+        warningDisabled={warningDisabled}
+        warningCustomized={warningCustomized}
+        saveWarningThreshold={saveWarningThreshold}
+        persistWarningSettings={persistWarningSettings}
+        onThresholdChange={(value) => {
+          warningThresholdDirtyRef.current = true;
+          warningThresholdEditVersionRef.current += 1;
+          setWarningThresholdDraft(value);
+          setWarningThresholdInvalid(false);
+        }}
+      />
     </SettingsField>
   );
 }
@@ -1297,5 +1281,99 @@ function CardButton({
     >
       {children}
     </Button>
+  );
+}
+
+
+export function DatabaseWarningSettingsView({
+  warningThresholdDraft,
+  warningThresholdInvalid,
+  warningSaving,
+  warningDisabled,
+  warningCustomized,
+  saveWarningThreshold,
+  persistWarningSettings,
+  onThresholdChange,
+}: {
+  warningThresholdDraft: string;
+  warningThresholdInvalid: boolean;
+  warningSaving: boolean;
+  warningDisabled: boolean;
+  warningCustomized: boolean;
+  saveWarningThreshold: () => Promise<void> | undefined;
+  persistWarningSettings: (patch?: { disabled?: boolean; thresholdGiB?: number }) => Promise<void>;
+  onThresholdChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      id={storageManagementCardSettings.aboutStorageDbSizeWarningThresholdLabel.targetId}
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg border border-[var(--settings-theme-card-border)] px-3 py-2.5"
+    >
+      <FormField
+        id="db-size-warning-threshold"
+        label={t(storageManagementCardSettings.aboutStorageDbSizeWarningThresholdLabel.titleKey)}
+        hint={t(storageManagementCardSettings.aboutStorageDbSizeWarningThresholdLabel.descriptionKey)}
+        error={
+          warningThresholdInvalid
+            ? t('settings.about.storage.dbSizeWarningThresholdInvalid')
+            : undefined
+        }
+        reserveFeedback
+        className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto] items-center [&>div:last-child]:col-span-2"
+      >
+        {({ error, ...control }) => (
+          <div className="flex items-center gap-1.5">
+            {/* Group reset sits left of the first control, only when customized (CONTROLS decision 3). */}
+            <DefaultOverrideControls
+              isCustomized={warningCustomized}
+              disabled={warningSaving}
+              onReset={() => void persistWarningSettings()}
+            />
+            <SettingsTextInput data-setting-id={storageManagementCardSettings.aboutStorageDbSizeWarningThresholdLabel.id}
+              {...control}
+              type="number"
+              size="sm"
+              surface="ivory"
+              min={1}
+              max={1024}
+              step={1}
+              value={warningThresholdDraft}
+              disabled={warningSaving}
+              error={error}
+              onChange={(next) => {
+                onThresholdChange(next);
+              }}
+              onBlur={() => void saveWarningThreshold()}
+              className="w-16"
+              inputClassName="text-center"
+            />
+            <span className="text-12 text-[var(--settings-section-sublabel)]">G</span>
+          </div>
+        )}
+      </FormField>
+
+      <label
+        htmlFor="db-size-warning-disabled"
+        className="flex min-w-0 cursor-pointer flex-col gap-0.5"
+      >
+        <span
+          id={storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.targetId}
+          className="text-12 text-[var(--settings-section-sublabel)]"
+        >
+          {t(storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.titleKey)}
+        </span>
+        <span className="text-11 leading-[1.4] text-[var(--text-secondary)]">
+          {t(storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.descriptionKey)}
+        </span>
+      </label>
+      <Switch data-setting-id={storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.id}
+        id="db-size-warning-disabled"
+        checked={warningDisabled}
+        disabled={warningSaving}
+        onCheckedChange={(checked) => void persistWarningSettings({ disabled: checked })}
+        aria-label={t(storageManagementCardSettings.aboutStorageDbSizeWarningDisableLabel.titleKey)}
+      />
+    </div>
   );
 }
