@@ -1,0 +1,9 @@
+{
+  "commit": "d55ef4c2e161dc8cdcedc3656538b31ffaceaca1",
+  "upstream": "v0.1.121",
+  "cloudParent": "a805b2514c194988c0d65ebfd0bdb58d964140a1",
+  "packagingAllowed": true,
+  "formalPromotionAllowed": false,
+  "includedPatch": {},
+  "scope": "fork-upstream-0121-validation"
+}

@@ -15,7 +15,7 @@
  * 浏览器开关读写完全复用 builtin plugin IPC, 不新造持久化通道。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useInstalledGhosts } from '@/cindy-brain/useInstalledGhosts';
@@ -1515,52 +1515,10 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
 
   return (
     <div className="flex flex-col gap-[14px]">
-      <div className="flex flex-col gap-1 min-w-0">
-        <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-          {t('settings.computerUse.title')}
-        </h2>
-        <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
-          {t('settings.computerUse.description')}
-        </p>
-      </div>
+      <ComputerUseSectionHeader />
 
-      <div
-        id="automation-browser"
-        className={cn(
-          'flex flex-col overflow-hidden rounded-xl',
-          'bg-[var(--settings-theme-card-bg)]',
-          'border border-[var(--settings-theme-card-border)]',
-        )}
-      >
-        <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              className={cn(
-                'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                'bg-[var(--settings-input-bg)]',
-              )}
-            >
-              <Globe size={16} className="text-[var(--settings-section-title)]" />
-            </div>
-            <div className="flex min-w-0 flex-col gap-[8px]">
-              <p
-                id="settings-search-settings-computerUse-browser-title"
-                className="truncate text-14 font-medium leading-none text-[var(--settings-section-title)]"
-              >
-                {t('settings.computerUse.browser.title')}
-              </p>
-              <p className="truncate text-12 leading-none text-[var(--settings-section-desc)]">
-                {t('settings.computerUse.browser.description')}
-              </p>
-            </div>
-          </div>
-          <Switch
-            checked={browserEnabled ?? false}
-            disabled={browserEnabled === null || togglePending}
-            onCheckedChange={handleToggleBrowser}
-            aria-label={t('settings.computerUse.browser.toggleAria')}
-          />
-        </div>
+      <AutomationCard id="automation-browser">
+        <BrowserAutomationHeader checked={browserEnabled ?? false} disabled={browserEnabled === null || togglePending} onChange={handleToggleBrowser} />
         <ConfigurationReadStatus
           label={t('settings.computerUse.browser.title')}
           status={browserRead.status}
@@ -1646,7 +1604,7 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
             )}
           </div>
         ) : null}
-      </div>
+      </AutomationCard>
 
       {browserBackendKind === 'external' && availability?.detected ? (
         <p className="text-12 leading-[1.5] text-[var(--settings-section-desc)]">
@@ -1659,43 +1617,8 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
 
       <div aria-hidden="true" className="h-px bg-[var(--settings-theme-card-border)]" />
 
-      <div
-        id="automation-computer"
-        className={cn(
-          'flex flex-col overflow-hidden rounded-xl',
-          'bg-[var(--settings-theme-card-bg)]',
-          'border border-[var(--settings-theme-card-border)]',
-        )}
-      >
-        <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              className={cn(
-                'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                'bg-[var(--settings-input-bg)]',
-              )}
-            >
-              <MonitorCog size={16} className="text-[var(--settings-section-title)]" />
-            </div>
-            <div className="flex min-w-0 flex-col gap-[8px]">
-              <p
-                id="settings-search-settings-computerUse-directControl-title"
-                className="truncate text-14 font-medium leading-none text-[var(--settings-section-title)]"
-              >
-                {t('settings.computerUse.directControl.title')}
-              </p>
-              <p className="truncate text-12 leading-none text-[var(--settings-section-desc)]">
-                {t('settings.computerUse.directControl.description')}
-              </p>
-            </div>
-          </div>
-          <Switch
-            checked={computerSwitchChecked}
-            disabled={computerSwitchDisabled}
-            onCheckedChange={handleToggleComputer}
-            aria-label={t('settings.computerUse.directControl.toggleAria')}
-          />
-        </div>
+      <AutomationCard id="automation-computer">
+        <ComputerAutomationHeader checked={computerSwitchChecked} disabled={computerSwitchDisabled} onChange={handleToggleComputer} />
         <ConfigurationReadStatus
           label={t('settings.computerUse.directControl.title')}
           status={computerRead.status}
@@ -1990,47 +1913,16 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
             ) : null}
           </>
         )}
-      </div>
+      </AutomationCard>
 
       <div aria-hidden="true" className="h-px bg-[var(--settings-theme-card-border)]" />
 
-      <div
-        id="automation-android"
-        className={cn(
-          'flex flex-col overflow-hidden rounded-xl',
-          'bg-[var(--settings-theme-card-bg)]',
-          'border border-[var(--settings-theme-card-border)]',
-        )}
-      >
-        <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              className={cn(
-                'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                'bg-[var(--settings-input-bg)]',
-              )}
-            >
-              <Smartphone size={16} className="text-[var(--settings-section-title)]" />
-            </div>
-            <div className="flex min-w-0 flex-col gap-[8px]">
-              <p
-                id="settings-search-settings-computerUse-android-title"
-                className="truncate text-14 font-medium leading-none text-[var(--settings-section-title)]"
-              >
-                {t('settings.computerUse.android.title')}
-              </p>
-              <p className="truncate text-12 leading-none text-[var(--settings-section-desc)]">
-                {t('settings.computerUse.android.description')}
-              </p>
-            </div>
-          </div>
-          <Switch
-            checked={androidEnabled ?? false}
-            disabled={androidEnabled === null || androidTogglePending}
-            onCheckedChange={handleToggleAndroid}
-            aria-label={t('settings.computerUse.android.toggleAria')}
-          />
-        </div>
+      <AutomationCard id="automation-android">
+        <AndroidAutomationHeader
+          checked={androidEnabled ?? false}
+          disabled={androidEnabled === null || androidTogglePending}
+          onChange={handleToggleAndroid}
+        />
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--settings-theme-card-border)] px-4 py-[14px]">
           <div className="flex min-w-0 flex-col gap-1">
             <p className="text-12 font-medium leading-[1.5] text-[var(--settings-section-title)]">
@@ -2225,11 +2117,172 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
             </Button>
           </div>
         </div>
-      </div>
+      </AutomationCard>
 
       <p className="text-12 leading-[1.5] text-[var(--settings-section-desc)]">
         {t('settings.computerUse.android.toggleHint')}
       </p>
+    </div>
+  );
+}
+
+
+export function BrowserAutomationHeader({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+            'bg-[var(--settings-input-bg)]',
+          )}
+        >
+          <Globe size={16} className="text-[var(--settings-section-title)]" />
+        </div>
+        <div className="flex min-w-0 flex-col gap-[8px]">
+          <p
+            id="settings-search-settings-computerUse-browser-title"
+            className="truncate text-14 font-medium leading-none text-[var(--settings-section-title)]"
+          >
+            {t('settings.computerUse.browser.title')}
+          </p>
+          <p className="truncate text-12 leading-none text-[var(--settings-section-desc)]">
+            {t('settings.computerUse.browser.description')}
+          </p>
+        </div>
+      </div>
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onChange}
+        aria-label={t('settings.computerUse.browser.toggleAria')}
+      />
+    </div>
+  );
+}
+
+export function ComputerAutomationHeader({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+            'bg-[var(--settings-input-bg)]',
+          )}
+        >
+          <MonitorCog size={16} className="text-[var(--settings-section-title)]" />
+        </div>
+        <div className="flex min-w-0 flex-col gap-[8px]">
+          <p
+            id="settings-search-settings-computerUse-directControl-title"
+            className="truncate text-14 font-medium leading-none text-[var(--settings-section-title)]"
+          >
+            {t('settings.computerUse.directControl.title')}
+          </p>
+          <p className="truncate text-12 leading-none text-[var(--settings-section-desc)]">
+            {t('settings.computerUse.directControl.description')}
+          </p>
+        </div>
+      </div>
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onChange}
+        aria-label={t('settings.computerUse.directControl.toggleAria')}
+      />
+    </div>
+  );
+}
+
+export function AndroidAutomationHeader({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-[14px]">
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+            'bg-[var(--settings-input-bg)]',
+          )}
+        >
+          <Smartphone size={16} className="text-[var(--settings-section-title)]" />
+        </div>
+        <div className="flex min-w-0 flex-col gap-[8px]">
+          <p
+            id="settings-search-settings-computerUse-android-title"
+            className="truncate text-14 font-medium leading-none text-[var(--settings-section-title)]"
+          >
+            {t('settings.computerUse.android.title')}
+          </p>
+          <p className="truncate text-12 leading-none text-[var(--settings-section-desc)]">
+            {t('settings.computerUse.android.description')}
+          </p>
+        </div>
+      </div>
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onChange}
+        aria-label={t('settings.computerUse.android.toggleAria')}
+      />
+    </div>
+  );
+}
+
+/** 自动操作页标题与说明。 */
+export function ComputerUseSectionHeader() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-1 min-w-0">
+      <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
+        {t('settings.computerUse.title')}
+      </h2>
+      <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
+        {t('settings.computerUse.description')}
+      </p>
+    </div>
+  );
+}
+
+/** 浏览器 / 电脑 / Android 自动化各自的卡片外框。 */
+export function AutomationCard({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <div
+      id={id}
+      className={cn(
+        'flex flex-col overflow-hidden rounded-xl',
+        'bg-[var(--settings-theme-card-bg)]',
+        'border border-[var(--settings-theme-card-border)]',
+      )}
+    >
+      {children}
     </div>
   );
 }

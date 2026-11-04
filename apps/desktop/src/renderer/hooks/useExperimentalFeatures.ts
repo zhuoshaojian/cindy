@@ -12,6 +12,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import * as host from '@/state/hostDesktop/useExperimentalFeatures';
+import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
+
+/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
+const hostDesktop = hasHostDesktopPreferences();
+export const getExperimentalFlag = hostDesktop ? host.getExperimentalFlag : getExperimentalFlagLocal;
+export const useExperimentalFlag = hostDesktop ? host.useExperimentalFlag : useExperimentalFlagLocal;
 
 export interface ExperimentalFeatureMeta {
   /** localStorage key 后缀，最终 key = 'experimental.<key>' */
@@ -44,7 +51,7 @@ function storageKey(featureKey: string): string {
 }
 
 /** 同步读：给非 hook 路径用（例如条件渲染 sidebar 入口）。坏数据当默认值 false。 */
-export function getExperimentalFlag(featureKey: string): boolean {
+function getExperimentalFlagLocal(featureKey: string): boolean {
   try {
     const raw = localStorage.getItem(storageKey(featureKey));
     return raw === 'true';
@@ -54,7 +61,7 @@ export function getExperimentalFlag(featureKey: string): boolean {
 }
 
 /** 单 feature hook —— 返回 [enabled, setEnabled] 元组风格 */
-export function useExperimentalFlag(featureKey: string): {
+function useExperimentalFlagLocal(featureKey: string): {
   enabled: boolean;
   setEnabled: (next: boolean) => void;
 } {

@@ -39,6 +39,8 @@ function setup(mode: 'cloud' | 'local' | 'signed-out', passive = false) {
   });
   const deps = {
     stableOwnerPostCommitCoordinator: coordinator,
+    // Cloud fork: not a managed instance, so initialize keeps the ordinary path.
+    getInstanceConfig: () => null,
     isPassiveSharedUserDataInstance: () => passive,
     getActiveAppSession: () => state,
     isOwnerChangeShellPending: () => !stable,

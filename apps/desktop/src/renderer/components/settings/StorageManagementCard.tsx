@@ -381,18 +381,7 @@ export function StorageManagementCard() {
   const fixedCaches = stats?.success ? stats.fixedCaches : null;
 
   return (
-    <div id="settings-storage-section" className="flex flex-col gap-3">
-      <div className="flex items-end justify-between gap-4 px-0.5">
-        <div className="min-w-0">
-          <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-            {t('settings.about.storage.title')}
-          </h2>
-          <p className="mt-1 text-13 leading-[1.5] text-[var(--settings-section-desc)]">
-            {t('settings.about.storage.overviewDescription')}
-          </p>
-        </div>
-      </div>
-
+    <StorageSectionFrame>
       <DialogueDirectorySection />
 
       <ProjectsRootSection />
@@ -483,28 +472,18 @@ export function StorageManagementCard() {
         </div>
       </div>
 
-      <div className="flex items-baseline justify-between gap-3 px-0.5">
-        <h3 className="text-13 font-medium text-[var(--settings-section-title)]">
-          {t('settings.about.storage.databaseSectionTitle')}
-        </h3>
-        <span className="text-11 text-[var(--settings-section-sublabel)]">
-          {databaseBytes === null
+      <StorageDatabaseSection
+        usage={
+          databaseBytes === null
             ? t('settings.about.storage.unknown')
-            : t('settings.about.storage.databaseUsage', { size: formatBytes(databaseBytes) })}
-        </span>
-      </div>
-      <div
-        className={cn(
-          'overflow-hidden rounded-xl',
-          'bg-[var(--settings-theme-card-bg)]',
-          'border border-[var(--settings-theme-card-border)]',
-        )}
+            : t('settings.about.storage.databaseUsage', { size: formatBytes(databaseBytes) })
+        }
       >
         <DatabaseSlimmingSection
           warningThresholdGiB={warningThresholdGiB}
           onWarningThresholdChange={setWarningThresholdGiB}
         />
-      </div>
+      </StorageDatabaseSection>
 
       <div className="flex items-start gap-2 rounded-xl bg-[var(--warning-bg-soft)] px-3.5 py-3 text-12 text-[var(--warning-fg)]">
         <span className="text-14 font-semibold leading-none" aria-hidden>
@@ -646,7 +625,7 @@ export function StorageManagementCard() {
           </p>
         )}
       </div>
-    </div>
+    </StorageSectionFrame>
   );
 }
 
@@ -654,6 +633,57 @@ type DbSlimmingPhase =
   | { kind: 'idle' }
   | { kind: 'scanned'; scan: DbSlimmingScanResult }
   | { kind: 'done'; result: DbSlimmingResult };
+
+
+/** 存储空间页框架:页标题与说明 + 各分区。云实例设置复用同一框架。 */
+export function StorageSectionFrame({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <div id="settings-storage-section" className="flex flex-col gap-3">
+      <div className="flex items-end justify-between gap-4 px-0.5">
+        <div className="min-w-0">
+          <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
+            {t('settings.about.storage.title')}
+          </h2>
+          <p className="mt-1 text-13 leading-[1.5] text-[var(--settings-section-desc)]">
+            {t('settings.about.storage.overviewDescription')}
+          </p>
+        </div>
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+/** 「数据库」卡片内容的留白,本机清理区与云实例阈值设置共用。 */
+export const STORAGE_DATABASE_BODY_CLASS = 'flex flex-col gap-3 px-[18px] py-4';
+
+/** 「数据库」分区:标题、占用(可选)与卡片。 */
+export function StorageDatabaseSection({ usage, children }: { usage?: string; children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <div className="flex items-baseline justify-between gap-3 px-0.5">
+        <h3 className="text-13 font-medium text-[var(--settings-section-title)]">
+          {t('settings.about.storage.databaseSectionTitle')}
+        </h3>
+        {usage !== undefined && (
+          <span className="text-11 text-[var(--settings-section-sublabel)]">{usage}</span>
+        )}
+      </div>
+      <div
+        className={cn(
+          'overflow-hidden rounded-xl',
+          'bg-[var(--settings-theme-card-bg)]',
+          'border border-[var(--settings-theme-card-border)]',
+        )}
+      >
+        {children}
+      </div>
+    </>
+  );
+}
 
 function DatabaseSlimmingSection({
   warningThresholdGiB,
@@ -942,7 +972,7 @@ function DatabaseSlimmingSection({
   );
 
   return (
-    <div className="flex flex-col gap-3 px-[18px] py-4" aria-busy={scanLoading}>
+    <div className={STORAGE_DATABASE_BODY_CLASS} aria-busy={scanLoading}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <span id="settings-search-settings-about-storage-dbSlimmingLabel" className="text-13 text-[var(--settings-section-sublabel)]">
@@ -1136,70 +1166,21 @@ function DatabaseSlimmingSection({
         onConfirm={handleSchedule}
       />
 
-      <div id="settings-search-settings-about-storage-dbSizeWarningThresholdLabel" className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg border border-[var(--settings-theme-card-border)] px-3 py-2.5">
-        <FormField
-          id="db-size-warning-threshold"
-          label={t('settings.about.storage.dbSizeWarningThresholdLabel')}
-          hint={t('settings.about.storage.dbSizeWarningThresholdDescription')}
-          error={warningThresholdInvalid ? t('settings.about.storage.dbSizeWarningThresholdInvalid') : undefined}
-          reserveFeedback
-          className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto] items-center [&>div:last-child]:col-span-2"
-        >
-          {({ error, ...control }) => (
-            <div className="flex items-center gap-1.5">
-              <input
-                {...control}
-                type="number"
-                min={1}
-                max={1024}
-                step={1}
-                value={warningThresholdDraft}
-                disabled={warningSaving}
-                onChange={(event) => {
-                  warningThresholdDirtyRef.current = true;
-                  warningThresholdEditVersionRef.current += 1;
-                  setWarningThresholdDraft(event.target.value);
-                  setWarningThresholdInvalid(false);
-                }}
-                onBlur={() => void saveWarningThreshold()}
-                className={cn(
-                  'h-8 w-16 rounded-full border border-[var(--settings-input-border)] bg-[var(--settings-input-bg)] px-2.5 text-center text-12 text-[var(--settings-input-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring-soft)] disabled:cursor-not-allowed disabled:opacity-50',
-                  error && 'border-[var(--error-border)] focus-visible:ring-[var(--error-fg)]',
-                )}
-              />
-              <span className="text-12 text-[var(--settings-section-sublabel)]">G</span>
-            </div>
-          )}
-        </FormField>
-
-        <label
-          htmlFor="db-size-warning-disabled"
-          className="flex min-w-0 cursor-pointer flex-col gap-0.5"
-        >
-          <span id="settings-search-settings-about-storage-dbSizeWarningDisableLabel" className="text-12 text-[var(--settings-section-sublabel)]">
-            {t('settings.about.storage.dbSizeWarningDisableLabel')}
-          </span>
-          <span className="text-11 leading-[1.4] text-[var(--text-secondary)]">
-            {t('settings.about.storage.dbSizeWarningDisableDescription')}
-          </span>
-        </label>
-        <Switch
-          id="db-size-warning-disabled"
-          checked={warningDisabled}
-          disabled={warningSaving}
-          onCheckedChange={(checked) => void persistWarningSettings({ disabled: checked })}
-          aria-label={t('settings.about.storage.dbSizeWarningDisableLabel')}
-        />
-        <div className="col-span-2 flex justify-end">
-          <DefaultOverrideControls
-            isCustomized={warningCustomized}
-            alwaysVisible
-            showCustomizedBadge={false}
-            disabled={warningSaving}
-            onReset={() => void persistWarningSettings()}
-          />
-        </div>
-      </div>
+      <DatabaseWarningSettingsView
+        warningThresholdDraft={warningThresholdDraft}
+        warningThresholdInvalid={warningThresholdInvalid}
+        warningSaving={warningSaving}
+        warningDisabled={warningDisabled}
+        warningCustomized={warningCustomized}
+        saveWarningThreshold={saveWarningThreshold}
+        persistWarningSettings={persistWarningSettings}
+        onThresholdChange={(value) => {
+          warningThresholdDirtyRef.current = true;
+          warningThresholdEditVersionRef.current += 1;
+          setWarningThresholdDraft(value);
+          setWarningThresholdInvalid(false);
+        }}
+      />
     </div>
   );
 }
@@ -1390,5 +1371,101 @@ function CardButton({
     >
       {children}
     </Button>
+  );
+}
+
+
+export function DatabaseWarningSettingsView({
+  warningThresholdDraft,
+  warningThresholdInvalid,
+  warningSaving,
+  warningDisabled,
+  warningCustomized,
+  saveWarningThreshold,
+  persistWarningSettings,
+  onThresholdChange,
+}: {
+  warningThresholdDraft: string;
+  warningThresholdInvalid: boolean;
+  warningSaving: boolean;
+  warningDisabled: boolean;
+  warningCustomized: boolean;
+  saveWarningThreshold: () => Promise<void> | undefined;
+  persistWarningSettings: (patch?: { disabled?: boolean; thresholdGiB?: number }) => Promise<void>;
+  onThresholdChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      id="settings-search-settings-about-storage-dbSizeWarningThresholdLabel"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg border border-[var(--settings-theme-card-border)] px-3 py-2.5"
+    >
+      <FormField
+        id="db-size-warning-threshold"
+        label={t('settings.about.storage.dbSizeWarningThresholdLabel')}
+        hint={t('settings.about.storage.dbSizeWarningThresholdDescription')}
+        error={
+          warningThresholdInvalid
+            ? t('settings.about.storage.dbSizeWarningThresholdInvalid')
+            : undefined
+        }
+        reserveFeedback
+        className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto] items-center [&>div:last-child]:col-span-2"
+      >
+        {({ error, ...control }) => (
+          <div className="flex items-center gap-1.5">
+            <input
+              {...control}
+              type="number"
+              min={1}
+              max={1024}
+              step={1}
+              value={warningThresholdDraft}
+              disabled={warningSaving}
+              onChange={(event) => {
+                onThresholdChange(event.target.value);
+              }}
+              onBlur={() => void saveWarningThreshold()}
+              className={cn(
+                'h-8 w-16 rounded-full border border-[var(--settings-input-border)] bg-[var(--settings-input-bg)] px-2.5 text-center text-12 text-[var(--settings-input-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring-soft)] disabled:cursor-not-allowed disabled:opacity-50',
+                error && 'border-[var(--error-border)] focus-visible:ring-[var(--error-fg)]',
+              )}
+            />
+            <span className="text-12 text-[var(--settings-section-sublabel)]">G</span>
+          </div>
+        )}
+      </FormField>
+
+      <label
+        htmlFor="db-size-warning-disabled"
+        className="flex min-w-0 cursor-pointer flex-col gap-0.5"
+      >
+        <span
+          id="settings-search-settings-about-storage-dbSizeWarningDisableLabel"
+          className="text-12 text-[var(--settings-section-sublabel)]"
+        >
+          {t('settings.about.storage.dbSizeWarningDisableLabel')}
+        </span>
+        <span className="text-11 leading-[1.4] text-[var(--text-secondary)]">
+          {t('settings.about.storage.dbSizeWarningDisableDescription')}
+        </span>
+      </label>
+      <Switch
+        id="db-size-warning-disabled"
+        checked={warningDisabled}
+        disabled={warningSaving}
+        onCheckedChange={(checked) => void persistWarningSettings({ disabled: checked })}
+        aria-label={t('settings.about.storage.dbSizeWarningDisableLabel')}
+      />
+      <div className="col-span-2 flex justify-end">
+        <DefaultOverrideControls
+          isCustomized={warningCustomized}
+          alwaysVisible
+          showCustomizedBadge={false}
+          disabled={warningSaving}
+          onReset={() => void persistWarningSettings()}
+        />
+      </div>
+    </div>
   );
 }

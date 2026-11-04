@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { commitNewTaskDefaults, hostOwnsNewTaskDefaults, inspectNewTaskDefaults } from '../host-settings/new-task-defaults.js';
 import { effectiveSourceIdForModel, isModelVisible, type ProviderView } from '@cindy/model-providers';
 import type { resolveNewMakerDefaultTuple } from '../../shared/newMakerDefaultTuple.js';
 import type { BotModelRoute } from '../../shared/botModelChain.js';
@@ -165,6 +166,16 @@ export async function changeAppDefaultModel(id: string, effort?: string, assertC
   if (!choice || (effort !== undefined && effort !== '' && !choice.efforts.some(value => value === effort)))
     throw new Error('该模型或思考档不可用，请重新查询已启用模型');
   const route = { ...choice.route, ...(effort !== undefined ? { effort } : {}) };
+  if (hostOwnsNewTaskDefaults()) {
+    // 托管云实例直接提交 Host CAS，不依赖 Renderer 存活或 localStorage ACK。
+    const settings = inspectNewTaskDefaults();
+    if (settings.status !== 'ready') throw new Error('默认设置不可读，请重新查询');
+    const result = await commitNewTaskDefaults({ set: {
+      harness: route.harness === 'claude' ? 'claude-code' : route.harness,
+      providerId: route.providerId, modelId: route.model, effort: route.effort || null, fast: route.fastMode,
+    } }, { expectedRevision: settings.revision, assertCurrent: () => { state.assertOwner(); assertCaller(); } });
+    return { current: route, saved: true, revision: result.revision, application: 'next_task' as const };
+  }
   if (!dispatchSelection) throw new Error('客户端默认模型设置入口尚未就绪');
   state.assertOwner();
   assertCaller();
