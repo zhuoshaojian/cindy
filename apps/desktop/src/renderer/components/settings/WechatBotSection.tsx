@@ -374,7 +374,7 @@ export function WechatBotSectionView({
   );
 }
 
-function WechatWorkingDirectory({
+export function WechatWorkingDirectory({
   settings,
   pending,
   onChoose,
