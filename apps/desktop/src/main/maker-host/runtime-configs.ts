@@ -27,6 +27,8 @@ import { readUserToolSearchOverride } from './claude-user-tool-search.js';
 import claudeSystemPrompt from './claude-system-prompt.md?raw';
 import codexSystemPrompt from './codex-system-prompt.md?raw';
 import hostSystemPrompt from './host-system-prompt.md?raw';
+import { getInstanceConfig } from '../instance-runtime/config.js';
+import { appendCloudPluginOauthPrompt } from '../plugin-oauth/prompt.js';
 import businessOwnershipPrompt from './business-ownership-prompt.md?raw';
 import skillSourcePrecedencePrompt from './skill-source-precedence-prompt.md?raw';
 import { DEFAULT_MODEL_COMPACTION_PCT } from '../../shared/modelContextLimit.js';
@@ -191,8 +193,10 @@ export function buildDesktopClaudeRuntimeConfig(endpointFn: () => string): Agent
     // 代输入: sudo / ssh / git password prompts of this task go to the owner.
     taskShellEnv: inputHandoffTaskShellEnv,
     // 产品身份 + Skill 来源优先级 + Claude 专属段，按顺序拼接后给 maker-core append。
-    systemPrompt: composeHostPrompt(claudeSystemPrompt),
-    answerDeliveryPrompt: ANSWER_DELIVERY_PROMPT,
+    get systemPrompt() {
+      return appendCloudPluginOauthPrompt(composeHostPrompt(claudeSystemPrompt), getInstanceConfig() !== null);
+    },
+ answerDeliveryPrompt: ANSWER_DELIVERY_PROMPT,
     // Maker Memory 需要的 user-data 绝对路径 (maker-core 没 Electron 依赖, 必须 host 注入)。
     userDataPath: app.getPath('userData'),
     get memoryEnabled() {
@@ -314,8 +318,10 @@ export const desktopCodexRuntimeConfig: AgentRuntimeConfig = {
   // 代输入: sudo / ssh / git password prompts of this task go to the owner.
   taskShellEnv: inputHandoffTaskShellEnv,
   // 产品身份 + Skill 来源优先级 + Codex 专属段。
-  systemPrompt: composeHostPrompt(codexSystemPrompt),
-  answerDeliveryPrompt: ANSWER_DELIVERY_PROMPT,
+  get systemPrompt() {
+    return appendCloudPluginOauthPrompt(composeHostPrompt(codexSystemPrompt), getInstanceConfig() !== null);
+  },
+ answerDeliveryPrompt: ANSWER_DELIVERY_PROMPT,
   // lazy getter(与 endpoint/memoryEnabled 同一惯用法,issue #1956):import 期
   // 不探测 bundled ripgrep,纯 node / vitest 环境 import 本模块不再炸;真正的
   // fail-fast 由 maker-host 启动期的 ensureBundledRipgrepReady() 承担,此处 getter

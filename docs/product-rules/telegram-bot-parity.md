@@ -58,6 +58,11 @@ ID 分开保存。官方在入队前组装引用，沿用既有任务持久化�
 机器人」重新选择模型的指引，失败原因写入主日志。服务端快照（主动推送与重连镜像）改动某目录
 的 Agent 或模型时，同键的配对来源一并清除；多个 Slack team 共用的 null-team 兜底来源不因
 单个 team 改路由被清，以免其它 team 静默改走默认来源。
+2026-09-24 云桌面授权窗口：官方 Telegram（及同入口的 Slack、X）在云实例中
+使用专用 Chromium 授权窗口，绑定完成、取消或过期后回收该次窗口；等待用户确认
+时保留。个人 bot 的 Token 配置不打开这类窗口。普通 Desktop 仍使用系统浏览器。
+窗口回收不撤销绑定、不删除浏览器登录资料，也不关闭用户另外打开的页面；实现位于
+`main/instance-runtime/hook-authorization-windows.ts`。
 
 > 这张表存在的理由与 `botCommands.ts` 注册表一样：把「散落两个仓、谁也不知道差在哪」
 > 变成「表里显式登记」。**新增或修改任一 bot 的用户可见行为时，必须同步更新本表对应
@@ -94,6 +99,8 @@ ID 分开保存。官方在入队前组装引用，沿用既有任务持久化�
 | **缺口** | 该有而没有，或两边各写一套。这一列是待办 |
 
 ---
+
+2026-10-30 云端设置的个人 Telegram 复用本地 `TelegramBotSectionView`（表单、状态、指南与解绑）及行为/群组展示组件，控制器只提交目标云端票据与配置。官方 hook 继续使用独立作用域，不能把个人群组设置应用到官方 bot；云端未提供的人设、账号详情和上下线动作明确保留限制，不借用本机数据。
 
 ## 一、已同源
 
@@ -488,6 +495,13 @@ bot 身份按入站使用的稳定 ID 校验；Discord 取 gateway application i
 - 呈现大脑：`apps/desktop/src/main/im/shared/turnPresenter.ts`
 - 呈现能力契约：`packages/lizi-im/src/telegram/presentationCapabilities.ts`
 - 任务 / 对话 / 消息的用词：`docs/product-rules/task-and-conversation-naming.md`
+
+### 原生云设置入口（2026-10-30）
+
+个人 Telegram 的引用、表情和群激活模式与本地共用展示组件，经目标 CIS settingsWeb
+保存；未在发现列表中的已保存群也保留。官方 Telegram 仍走独立 Hook 绑定，不能通过
+个人行为域修改。官方行为/群组的原生云设置适配尚未完成，不将个人入口记为双侧完成。
+完整设置差异与真实验收边界见 [云设置对照](../cloud-settings-parity.md)。
 
 ## 按消息号读取群历史图片（2026-10-29）
 

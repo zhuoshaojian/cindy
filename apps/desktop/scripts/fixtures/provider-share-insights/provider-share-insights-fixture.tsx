@@ -216,6 +216,8 @@ void mountPage({
           return history;
         case 'own-usage':
           return { providerId: 'xd', local: null, devices: [], relays: [] };
+        case 'get-idle-release':
+          return { value: { idleMinutes: 0 }, defaults: { idleMinutes: 0 }, isCustomized: false };
         case 'get-run-limits':
           return {
             value: { ...DEFAULT_REMOTE_AGENT_LIMITS },

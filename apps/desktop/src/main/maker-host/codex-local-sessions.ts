@@ -1,3 +1,4 @@
+import { cindyManagedHomeDir, isCloudPilotDistribution } from '../cloudPilotDistribution.js';
 /**
  * Codex local session bridge.
  *
@@ -14,7 +15,6 @@ import fs from 'node:fs';
 import { promises as fsp } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
@@ -3951,7 +3951,7 @@ function buildSyntheticRollout(threadId: string, row: SqlRow, messages: Syntheti
       session_id: threadId,
       id: threadId,
       timestamp: metaIso,
-      cwd: stringValue(row.cwd) || os.homedir(),
+      cwd: stringValue(row.cwd) || cindyManagedHomeDir(),
       // Normalize missing/legacy-Cindy identity to `cindy`, but keep a genuine
       // external Codex originator: recovery must not silently change the
       // outbound identity of an imported thread.
@@ -4057,12 +4057,12 @@ export function getDesktopCodexHome(): string {
   // 兜底路径按现有区域目录映射取值(global=CindyGlobal,cn=Cindy，同机双装分库)。
   const dirName = brandUserDataDirName(CURRENT_CINDY_REGION);
   if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', dirName, 'codex-home');
+    return path.join(cindyManagedHomeDir(), 'Library', 'Application Support', dirName, 'codex-home');
   }
   if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming'), dirName, 'codex-home');
+    return path.join(process.env.APPDATA ?? path.join(cindyManagedHomeDir(), 'AppData', 'Roaming'), dirName, 'codex-home');
   }
-  return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config'), dirName, 'codex-home');
+  return path.join(process.env.XDG_CONFIG_HOME ?? path.join(cindyManagedHomeDir(), '.config'), dirName, 'codex-home');
 }
 
 
@@ -4936,15 +4936,15 @@ function externalCodexHomeCandidates(targetHome: string): Set<string> {
     if (p) candidates.add(path.resolve(p));
   };
 
-  add(process.env.CODEX_HOME);
-  add(path.join(os.homedir(), '.codex'));
+  if (!isCloudPilotDistribution()) add(process.env.CODEX_HOME);
+  add(path.join(cindyManagedHomeDir(), '.codex'));
 
   // 身份翻转只迁了主库,历史 sessions.sdk_session_id 仍可能指向旧品牌 HOME。
   // 从统一品牌身份表取 legacy 名称,未来再次改名只需扩表,此处无需再追补字面量。
   for (const legacyHome of legacyBrandedCodexHomes(targetHome)) add(legacyHome);
 
   if (process.platform === 'darwin') {
-    const appSupport = path.join(os.homedir(), 'Library', 'Application Support');
+    const appSupport = path.join(cindyManagedHomeDir(), 'Library', 'Application Support');
     add(path.join(appSupport, 'Codex', 'codex-home'));
     add(path.join(appSupport, 'Codex'));
   } else if (process.platform === 'win32') {
@@ -4952,7 +4952,7 @@ function externalCodexHomeCandidates(targetHome: string): Set<string> {
     add(appData ? path.join(appData, 'Codex', 'codex-home') : undefined);
     add(appData ? path.join(appData, 'Codex') : undefined);
   } else {
-    add(path.join(os.homedir(), '.config', 'codex'));
+    add(path.join(cindyManagedHomeDir(), '.config', 'codex'));
   }
   return candidates;
 }
@@ -5031,7 +5031,7 @@ export function normalizeThreadRow(
     ? Math.max(rowUpdatedAt, indexEntry.updatedAt)
     : rowUpdatedAt;
   const createdAt = timestampMs(row.created_at_ms, row.created_at) ?? updatedAt;
-  const cwd = stringValue(row.cwd) || os.homedir();
+  const cwd = stringValue(row.cwd) || cindyManagedHomeDir();
   const rolloutPath = stringValue(row.rollout_path);
   const title = firstNonEmpty(
     indexEntry?.customTitle ?? '',

@@ -19,6 +19,15 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { getSidebarInstallVintage } from '@/features/cc-agent/lib/sidebarInstallVintage';
+import * as host from '@/state/hostDesktop/useSidebarCardMode';
+import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
+
+/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
+const hostDesktop = hasHostDesktopPreferences();
+export const getSidebarViewMode = hostDesktop ? host.getSidebarViewMode : getSidebarViewModeLocal;
+export const getSidebarMainViewMode = hostDesktop ? host.getSidebarMainViewMode : getSidebarMainViewModeLocal;
+export const useSidebarCardMode = hostDesktop ? host.useSidebarCardMode : useSidebarCardModeLocal;
+export const useSidebarMainViewMode = hostDesktop ? host.useSidebarMainViewMode : useSidebarMainViewModeLocal;
 
 export type SidebarViewMode = 'text' | 'card' | 'list';
 /** 主列表显示模式:无 card 档(卡片版仅置顶区支持)。 */
@@ -51,7 +60,7 @@ let memoryValue: SidebarViewMode | null = null;
 let mainMemoryValue: SidebarMainViewMode | null = null;
 
 /** 同步读(置顶段)——给非 hook 路径用。 */
-export function getSidebarViewMode(): SidebarViewMode {
+function getSidebarViewModeLocal(): SidebarViewMode {
   if (memoryValue !== null) return memoryValue;
   try {
     const parsed = parseMode(localStorage.getItem(STORAGE_KEY));
@@ -69,7 +78,7 @@ export function getSidebarViewMode(): SidebarViewMode {
  * 后保持文字视图**——包括从没动过显示模式、localStorage 里没有 cardMode 的那批人
  * (他们靠 sidebarInstallVintage 的使用痕迹识别)。
  */
-export function getSidebarMainViewMode(): SidebarMainViewMode {
+function getSidebarMainViewModeLocal(): SidebarMainViewMode {
   if (mainMemoryValue !== null) return mainMemoryValue;
   try {
     const parsed = parseMainMode(localStorage.getItem(MAIN_STORAGE_KEY));
@@ -124,7 +133,7 @@ function ensurePinnedModeStorageListener(): void {
   });
 }
 
-export function useSidebarCardMode(): {
+function useSidebarCardModeLocal(): {
   mode: SidebarViewMode;
   setMode: (next: SidebarViewMode) => void;
 } {
@@ -164,7 +173,7 @@ export function useSidebarCardMode(): {
 /** 主列表显示模式 hook——与置顶段同构,独立 key 与 listener 集合。 */
 const mainListeners = new Set<() => void>();
 
-export function useSidebarMainViewMode(): {
+function useSidebarMainViewModeLocal(): {
   mode: SidebarMainViewMode;
   setMode: (next: SidebarMainViewMode) => void;
 } {

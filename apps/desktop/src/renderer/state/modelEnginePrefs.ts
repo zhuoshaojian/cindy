@@ -54,12 +54,15 @@
  *
  * 账号分区:key 带 dataOwnerId 后缀(setModelEnginePrefsOwner,与 newMakerDraft 同形),
  * 吸取 providerModelMemory 不分账号导致多账号串号的教训。
+ *
+ * 托管云实例除外:真源在 Host 文件,导出函数转交 hostModelPresentationStores。
  */
 
 import { useSyncExternalStore } from 'react';
 
 import { isSelectableVendor, type SelectableVendor } from '@/lib/agentVendors';
 
+import { hasHostModelPresentation, hostModelEngines as host } from './hostModelPresentationStores';
 import { MODEL_PRESET_SLOT_ID } from './providerModelMemory';
 import { createStorageReconciler } from './storageOpReplay';
 
@@ -282,6 +285,7 @@ function persist(next: EnginePrefsMap): void {
 }
 
 function subscribe(cb: () => void): () => void {
+  if (hasHostModelPresentation()) return host.subscribe(cb);
   listeners.add(cb);
   return () => {
     listeners.delete(cb);
@@ -289,6 +293,7 @@ function subscribe(cb: () => void): () => void {
 }
 
 function getVersion(): number {
+  if (hasHostModelPresentation()) return host.version();
   return version;
 }
 
@@ -339,6 +344,7 @@ export function getModelEngineOverride(
   modelId: string,
 ): ModelEngine | undefined {
   if (!isUsableProviderId(providerId) || !modelId) return undefined;
+  if (hasHostModelPresentation()) return host.get(providerId, modelId);
   return load()[keyOf(providerId, modelId)]?.agent;
 }
 
@@ -356,6 +362,7 @@ export function setModelEngineOverride(
   agent: ModelEngine,
 ): void {
   if (!isUsableProviderId(providerId) || !modelId || !isSelectableVendor(agent)) return;
+  if (hasHostModelPresentation()) return host.set(providerId, modelId, agent);
   // 基底取**重读后的**持久化快照(见 freshMap):整表写回不能带着陈旧缓存,否则会抹掉
   // 另一个窗口刚写入、事件还没到达的 override。跨 renderer 的**并发**交错另由 commitOp
   // 的锁内重放收敛(见文件头「并发写」)。
@@ -368,6 +375,7 @@ export function setModelEngineOverride(
  */
 export function clearModelEngineOverride(providerId: string, modelId: string): void {
   if (!isUsableProviderId(providerId) || !modelId) return;
+  if (hasHostModelPresentation()) return host.clear(providerId, modelId);
   commitOp({ kind: 'clear', key: keyOf(providerId, modelId) });
 }
 
@@ -398,6 +406,7 @@ export function hasModelEngineOverride(providerId: string, modelId: string): boo
 
 /** 当前账号是否存在任一显式 Harness 选择；用于旧草稿迁移时保护用户意图。 */
 export function hasAnyModelEngineOverride(): boolean {
+  if (hasHostModelPresentation()) return host.hasAny();
   return Object.keys(load()).length > 0;
 }
 
@@ -419,6 +428,7 @@ export function useModelEnginePrefsVersion(): number {
  * 切换后丢缓存重新惰性加载 —— 不同账号各读各的分区,不串号。
  */
 export function setModelEnginePrefsOwner(ownerId: string | null): void {
+  if (hasHostModelPresentation()) return host.setOwner();
   const normalized = typeof ownerId === 'string' && ownerId.trim().length > 0 ? ownerId : null;
   if (activeDataOwnerId === normalized) return;
   activeDataOwnerId = normalized;

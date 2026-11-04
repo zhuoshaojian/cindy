@@ -25,6 +25,7 @@ import {
   LINK_OPEN_DEFAULTS,
   useLinkOpenPreference,
   type LinkOpenKind,
+  type LinkOpenPreference,
 } from '@/hooks/useLinkOpenPreference';
 import { SettingsCard, SettingsRow, SettingsSection } from '@/components/ui/settings-rows';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
@@ -32,17 +33,43 @@ import { DefaultOverrideControls } from './DefaultOverrideControls';
 function LinkOpenPreferenceRow({ kind }: { kind: LinkOpenKind }) {
   const { t } = useTranslation();
   const { preference, isCustomized, setPreference } = useLinkOpenPreference(kind);
-  const setting = useSettingDefinition(
-    kind === 'web'
-      ? personalizationDetailsSettings.linkOpenWebLabel
-      : personalizationDetailsSettings.linkOpenLocalLabel,
-  );
 
   const onReset = useCallback(() => {
     setPreference(LINK_OPEN_DEFAULTS[kind]);
     toast.success(t('settings.defaults.restored'));
   }, [kind, setPreference, t]);
 
+  return (
+    <LinkOpenPreferenceRowView
+      kind={kind}
+      preference={preference}
+      isCustomized={isCustomized}
+      onReset={onReset}
+      onChange={setPreference}
+    />
+  );
+}
+
+type LinkOpenControl = {
+  preference: LinkOpenPreference;
+  isCustomized: boolean;
+  onReset(): void;
+  onChange(next: LinkOpenPreference): void;
+};
+function LinkOpenPreferenceRowView({
+  kind,
+  preference,
+  isCustomized,
+  onReset,
+  onChange,
+  disabled = false,
+}: LinkOpenControl & { kind: LinkOpenKind; disabled?: boolean }) {
+  const { t } = useTranslation();
+  const setting = useSettingDefinition(
+    kind === 'web'
+      ? personalizationDetailsSettings.linkOpenWebLabel
+      : personalizationDetailsSettings.linkOpenLocalLabel,
+  );
   return (
     <SettingsRow
       {...setting.anchorProps}
@@ -51,12 +78,17 @@ function LinkOpenPreferenceRow({ kind }: { kind: LinkOpenKind }) {
       hint={setting.description}
       trailing={
         <div className="cindy-segmented-row-actions">
-          <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
+          <DefaultOverrideControls
+            isCustomized={isCustomized}
+            onReset={onReset}
+            disabled={disabled}
+          />
           <SegmentedControl
             {...setting.controlProps}
             aria-label={t(`settings.linkOpen.${kind}.ariaLabel`)}
             value={preference}
-            onValueChange={setPreference}
+            onValueChange={onChange}
+            disabled={disabled}
             options={setting.options}
           />
         </div>
@@ -66,14 +98,37 @@ function LinkOpenPreferenceRow({ kind }: { kind: LinkOpenKind }) {
 }
 
 export function LinkOpenSection() {
+  return (
+    <LinkOpenSectionFrame>
+      <LinkOpenPreferenceRow kind="web" />
+      <LinkOpenPreferenceRow kind="local" />
+    </LinkOpenSectionFrame>
+  );
+}
+
+export function LinkOpenSectionView({
+  web,
+  local,
+  disabled,
+}: {
+  web: LinkOpenControl;
+  local: LinkOpenControl;
+  disabled?: boolean;
+}) {
+  return (
+    <LinkOpenSectionFrame>
+      <LinkOpenPreferenceRowView kind="web" {...web} disabled={disabled} />
+      <LinkOpenPreferenceRowView kind="local" {...local} disabled={disabled} />
+    </LinkOpenSectionFrame>
+  );
+}
+
+function LinkOpenSectionFrame({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
 
   return (
     <SettingsSection title={t('settings.linkOpen.title')} description={t('settings.linkOpen.description')}>
-      <SettingsCard>
-        <LinkOpenPreferenceRow kind="web" />
-        <LinkOpenPreferenceRow kind="local" />
-      </SettingsCard>
+      <SettingsCard>{children}</SettingsCard>
     </SettingsSection>
   );
 }

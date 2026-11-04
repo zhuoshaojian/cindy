@@ -1,3 +1,4 @@
+import { CLOUD_CLIENT_ERRORS, type CloudClientErrorCode } from './cloudSettingsErrors';
 import { CONTRIBUTION_ERROR_CODES } from './pluginContributionContract';
 import { WRITABLE_DIRECTORY_GRANT_ERROR_CODES, type WritableDirectoryGrantErrorCode } from './writableDirectoryGrantError';
 import type { BrowserOpenForLoginErrorCode } from './browserBackend';
@@ -76,6 +77,7 @@ export type IpcErrorCode =
   | 'SUBSCRIPTION_ACCOUNT_FAILED'
   | 'SUBSCRIPTION_CODEX_PROVIDER_AUTH'
   | WritableDirectoryGrantErrorCode
+  | CloudClientErrorCode
   | (typeof CONTRIBUTION_ERROR_CODES)[number]
   | (typeof COMPANION_IMPORT_ERROR_CODES)[number]
   // 通用错误
@@ -361,6 +363,7 @@ const IPC_ERROR_CODES: ReadonlySet<IpcErrorCode> = new Set<IpcErrorCode>([
   'SUBSCRIPTION_CODEX_PROVIDER_AUTH',
   ...WRITABLE_DIRECTORY_GRANT_ERROR_CODES,
   ...COMPANION_IMPORT_ERROR_CODES,
+  ...CLOUD_CLIENT_ERRORS,
   ...CONTRIBUTION_ERROR_CODES,
   'INVALID_PARAMS',
   'NOT_FOUND',

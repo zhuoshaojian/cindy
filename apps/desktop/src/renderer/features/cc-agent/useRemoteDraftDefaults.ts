@@ -6,7 +6,7 @@ import { extractIpcError } from '@/utils/ipcError';
 import type { AgentCapabilities, AgentKind } from '@/hooks/useAgentCapabilities';
 import type { ProviderView } from '@cindy/model-providers';
 import { getRemoteDraftDefaults, rememberRemoteDraftDefaults } from './remoteDraftDefaultsCache';
-import { resolveDeviceLinkDraftDefaults, shouldReseedDeviceLinkDraftDefaults, type RemoteDraftDefaults, type DeviceLinkDraftSelection } from './deviceLinkDraftDefaults';
+import { resolveDeviceLinkDraftAgent, resolveDeviceLinkDraftDefaults, shouldReseedDeviceLinkDraftDefaults, type RemoteDraftDefaults, type DeviceLinkDraftSelection } from './deviceLinkDraftDefaults';
 
 export function useRemoteDraftDefaults({
   isDeviceLinkDraft, effectiveDeviceLinkDeviceId, capabilityAgentKind, wtPreferenceTransactionRef, dataOwnerId, dataOwnerGeneration
@@ -138,6 +138,7 @@ export function useRemoteDraftSelection({
   deviceDraftDefaultsReady,
   deviceDraftDefaults,
   isAgentDeviceDraft,
+  availableAgentsLoaded, availableVendors, deviceProvidersError, dataOwnerId, switchDraftVendor,
 }: {
   remoteDefaults: ReturnType<typeof useRemoteDraftDefaults>;
   usesDeviceCatalog: boolean;
@@ -151,13 +152,22 @@ export function useRemoteDraftSelection({
   deviceDraftDefaultsReady: boolean;
   deviceDraftDefaults: RemoteDraftDefaults | null;
   isAgentDeviceDraft: boolean;
+  availableAgentsLoaded: boolean;
+  availableVendors: ReadonlySet<'cc' | 'codex' | 'pi' | 'orca'>;
+  deviceProvidersError: string | null;
+  dataOwnerId: string | null;
+  switchDraftVendor: (vendor: 'cc' | 'codex' | 'pi') => void;
 }) {
   const { dlSeedKeyRef, dlSeedCapabilitiesRef, dlSeedDefaultsRef, dlRuntimeTouchedRef, setDlSel } = remoteDefaults;
+  const dlSeedProvidersRef = useRef<ProviderView[] | null>(null);
+  const dlAgentSeedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!usesDeviceCatalog || !catalogDeviceId) {
       dlSeedKeyRef.current = null;
       dlSeedCapabilitiesRef.current = null;
       dlSeedDefaultsRef.current = null;
+      dlSeedProvidersRef.current = null;
+      dlAgentSeedRef.current = null;
       dlRuntimeTouchedRef.current = false;
       setDlSel(null);
       return;
@@ -171,11 +181,28 @@ export function useRemoteDraftSelection({
       !capabilities ||
       capabilitiesLoading ||
       !deviceDraftDefaultsReady ||
-      !deviceProviderCatalogReady
+      !deviceProviderCatalogReady || !availableAgentsLoaded ||
+      (!!deviceProvidersError && !deviceProvidersUnsupported)
     ) return;
+    if (!isAgentDeviceDraft) {
+      const agentSeedKey = `${dataOwnerId}:${catalogDeviceId}`;
+      if (dlAgentSeedRef.current !== agentSeedKey) {
+        dlAgentSeedRef.current = agentSeedKey;
+        if (!dlRuntimeTouchedRef.current || !dlSeedKeyRef.current?.startsWith(`${catalogDeviceId}:`)) {
+          const preferred = resolveDeviceLinkDraftAgent({
+            currentAgent: capabilityAgentKind, remoteDraft: deviceDraftDefaults,
+            providers: agentCatalogProviders, availableVendors,
+          });
+          if (preferred !== capabilityAgentKind) {
+            switchDraftVendor(preferred === 'claude-code' ? 'cc' : preferred);
+            return;
+          }
+        }
+      }
+    }
     const key = `${catalogDeviceId}:${capabilityAgentKind}`;
     const newTarget = dlSeedKeyRef.current !== key;
-    const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities;
+    const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities || (dlSeedProvidersRef.current !== agentCatalogProviders && (!!dlSeedProvidersRef.current?.length || agentCatalogProviders.length > 0));
     if (
       !shouldReseedDeviceLinkDraftDefaults({
         currentSeedKey: dlSeedKeyRef.current,
@@ -188,6 +215,7 @@ export function useRemoteDraftSelection({
     ) {
       if (capabilitiesChanged) {
         dlSeedCapabilitiesRef.current = capabilities;
+        dlSeedProvidersRef.current = agentCatalogProviders;
         // 显式意图只禁止“换成区域默认”，不能把已从新能力清单消失的 model / effort /
         // permission 留在草稿里。用当前控制端选择合成 active draft，只做合法性夹紧。
         setDlSel((current) =>
@@ -195,6 +223,7 @@ export function useRemoteDraftSelection({
             ? resolveDeviceLinkDraftDefaults(
                 capabilities,
                 {
+                  hostAuthoritative: deviceDraftDefaults?.hostAuthoritative,
                   model: current.model,
                   modelChosenByUser: true,
                   effort: current.effort,
@@ -204,7 +233,7 @@ export function useRemoteDraftSelection({
                 },
                 current.model,
                 capabilityAgentKind,
-                agentCatalogProviders,
+                deviceProvidersUnsupported ? undefined : agentCatalogProviders,
               )
             : current,
         );
@@ -214,6 +243,7 @@ export function useRemoteDraftSelection({
     dlSeedKeyRef.current = key;
     dlSeedCapabilitiesRef.current = capabilities;
     dlSeedDefaultsRef.current = deviceDraftDefaults;
+    dlSeedProvidersRef.current = agentCatalogProviders;
     if (newTarget) dlRuntimeTouchedRef.current = false;
     setDlSel(
       resolveDeviceLinkDraftDefaults(
@@ -221,7 +251,7 @@ export function useRemoteDraftSelection({
         deviceDraftDefaults,
         undefined,
         capabilityAgentKind,
-        agentCatalogProviders,
+        deviceProvidersUnsupported ? undefined : agentCatalogProviders,
       ),
     );
   }, [
@@ -236,6 +266,7 @@ export function useRemoteDraftSelection({
     deviceDraftDefaultsReady,
     deviceDraftDefaults,
     isAgentDeviceDraft,
+    availableAgentsLoaded, availableVendors, deviceProvidersError, dataOwnerId, switchDraftVendor,
   ]);
 }
 

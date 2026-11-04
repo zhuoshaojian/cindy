@@ -18,6 +18,9 @@ import { readDisabledSkillPaths } from '../skillhub/activationPreferences';
 import { resolveLocalMcpDuplicateChoices } from './mcp-duplicate-preferences.js';
 import { cindyMakeManager } from '../cindy-make/manager.js';
 import { makeSourceRoot } from '../cindy-make/sourcePaths.js';
+import { prepareHostSettingsSkillDiscovery } from '../host-settings/cindy-settings-skill.js';
+import { captureHostPersonalization } from '../host-settings/startup.js';
+import { hostOwnsPersonalization } from '../host-settings/personalization.js';
 import { clearCodexAccountUsageSnapshot } from '../usageBroadcaster.js';
 /**
  * apps/desktop/src/main/maker-host
@@ -1460,6 +1463,7 @@ export function getMaker(): Maker {
       getDisabledSkillPaths: readDisabledSkillPaths,
       getManagedSkills: listCindyManagedSkills,
       scanLocalCustomizations,
+      prepareHostOwnedSkills: () => prepareHostSettingsSkillDiscovery('claude-code'),
       auth: desktopClaudeAuthAdapter,
       runtimeConfig: buildDesktopClaudeRuntimeConfig(getClaudeEndpoint),
       binaryPath: claudePath,
@@ -1783,6 +1787,7 @@ export function getMaker(): Maker {
       getManagedSkills: listCindyManagedSkills,
       scanLocalCustomizations,
       prepareCodexSkills: prepareCindyCodexSkills,
+      prepareHostOwnedSkills: () => prepareHostSettingsSkillDiscovery('codex'),
       auth: desktopCodexAuthAdapter,
       runtimeConfig: desktopCodexRuntimeConfig,
       binaryPath: codexPath,
@@ -2729,6 +2734,8 @@ export function getMaker(): Maker {
           }
           // 所有创建路径共用的派发边界,opts.providerId 此刻已是本次启动的终值。
           freezeSessionProviderAtStart(sessionId, opts.providerId);
+          // 托管云实例:没有经过 IPC 装配的创建路径也读 Host 正文。
+          if (!opts.hostStartupPreferences && hostOwnsPersonalization()) captureHostPersonalization(opts);
           const interfaceProvider = getActiveCatalog().providers.find(p => p.id === opts.providerId);
           const interfaceModel = interfaceProvider?.models[opts.agentKind]?.find(m => m.id === opts.model);
           if (interfaceProvider && interfaceModel) sessionModelInterface(sessionId, interfaceProvider.id, opts.agentKind,

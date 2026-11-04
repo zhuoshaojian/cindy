@@ -26,7 +26,6 @@ import { BetaChannelCell } from './BetaChannelCell';
 import { additionalSettings } from './AdditionalSettings.settings-search';
 
 export function ExperimentalSection() {
-  const { t } = useTranslation();
   const betaChannelSupported = additionalSettings.betaChannel.isVisible({
     platform: window.electronAPI?.platform ?? '',
     supportsBetaUpdateChannel: window.electronAPI?.supportsBetaUpdateChannel,
@@ -40,6 +39,12 @@ export function ExperimentalSection() {
     })),
   ];
 
+  return <ExperimentalSectionView rows={rows} />;
+}
+
+/** 实验功能卡片:一张卡片里的设置行,分割线只出现在可见行之间。云实例设置复用。 */
+export function ExperimentalSectionView({ rows }: { rows: { key: string; node: ReactNode }[] }) {
+  const { t } = useTranslation();
   return (
     <SettingsSection title={t('settings.experimental.title')}>
       <SettingsCard>

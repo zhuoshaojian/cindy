@@ -10,12 +10,12 @@
  */
 
 import { createReadStream, promises as fsp } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 import { sanitizeClaudeProjectKey } from '@cindy/maker-core';
 
 import { claudeConfigDir } from '../../remote-agent/controller/projectFiles.js';
+import { cindyManagedHomeDir, cloudPilotClaudeCliEnv } from '../../cloudPilotDistribution.js';
 
 import { stripCompleteIdeOpenedFileBlocks } from '../../maker-host/imported-user-content.js';
 import { migrationNativeContext } from '../../session-share/migrationNativeContext.js';
@@ -43,7 +43,8 @@ interface ClaudeLocator {
 
 /** Claude Code 的 projects 根目录（尊重 CLAUDE_CONFIG_DIR，与 Cindy 运行 Claude Code 时一致）。 */
 export function resolveClaudeProjectsRoot(): string {
-  return path.join(claudeConfigDir(), 'projects');
+  // A pilot build runs Claude Code under its own managed configuration root.
+  return path.join(claudeConfigDir({ ...process.env, ...cloudPilotClaudeCliEnv() }, cindyManagedHomeDir()), 'projects');
 }
 
 function sessionIdFromFile(file: string): string {
@@ -334,7 +335,7 @@ async function materialize(session: SourceSession, ctx: ReadContext): Promise<Na
   const oldId = session.sourceSessionId;
   const context = importContext(oldId, ctx);
   const newId = context.id(oldId);
-  const cwd = session.cwd || os.homedir();
+  const cwd = session.cwd || cindyManagedHomeDir();
   const targetDir = path.join(resolveClaudeProjectsRoot(), sanitizeClaudeProjectKey(cwd));
   const target = path.join(targetDir, `${newId}.jsonl`);
   await writeMigratedTranscript(createReadStream(file), target, { context, agent: 'cc' });
@@ -354,7 +355,7 @@ async function materialize(session: SourceSession, ctx: ReadContext): Promise<Na
 }
 
 async function verify(m: NativeMaterialization, session: SourceSession): Promise<VerifyOutcome> {
-  const cwd = session.cwd || os.homedir();
+  const cwd = session.cwd || cindyManagedHomeDir();
   const target = path.join(resolveClaudeProjectsRoot(), sanitizeClaudeProjectKey(cwd), `${m.sdkSessionId}.jsonl`);
   let sawOwnRecord = false;
   try {

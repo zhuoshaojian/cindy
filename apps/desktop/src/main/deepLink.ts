@@ -1,3 +1,4 @@
+import { isCloudPilotDistribution } from './cloudPilotDistribution.js';
 /**
  * deepLink — cindy:// (+ 历史 xdt-maker://) custom URL scheme + folder-context-menu handoff
  * ---------------------------------------------------------------------------
@@ -725,6 +726,7 @@ export function registerDeepLinkProtocol(): void {
   // Packaged smoke runs use a disposable profile, but OS protocol ownership is
   // outside that profile and must remain with the installed desktop client.
   if (!app.isPackaged || process.argv.includes('--smoke-test')) return;
+  if (isCloudPilotDistribution()) return;
 
   for (const scheme of DEEP_LINK_SCHEMES) {
     const registered = app.setAsDefaultProtocolClient(scheme);

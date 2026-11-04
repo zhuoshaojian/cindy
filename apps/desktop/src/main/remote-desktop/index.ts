@@ -1,3 +1,6 @@
+import { supportsManagedX11Clipboard } from './linuxX11Clipboard';
+import { readLinuxInputSupport } from './linuxInputHost';
+import { getInstanceConfig } from '../instance-runtime/config.js';
 import {
   desktopCapturer,
   ipcMain,
@@ -181,6 +184,12 @@ let privacyExcluded: number[] = [];
 let overlayExcluded: number[] = [];
 const applyExcludedWindows = () =>
   nativeCapture.setExcludedWindows([...privacyExcluded, ...overlayExcluded]);
+async function linuxInputSupported(): Promise<boolean> {
+  // The managed cloud X11 desktop keeps its guarded X11 input adapter.
+  if (!wayland() && getInstanceConfig()) return readLinuxInputSupport();
+  // Portal-selected Wayland surfaces must remain view-only.
+  return (nativeWayland() || isX11Desktop()) && (await readLinuxDesktopInputSupport());
+}
 // While the phone shows picture-in-picture the input helper is stopped on purpose;
 // the local exit confirmation then has nothing to pause, and cancelling it must not
 // bring remote control back.
@@ -826,6 +835,7 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
     const settings = readDeviceLinkSettings();
     const enabled = settings.remoteDesktopEnabled && settings.remoteControlEnabled;
     const viewerDisplay = enabled && (await viewerDisplaySupported());
+    const x11Clipboard = enabled && await supportsManagedX11Clipboard();
     const linuxDisplays =
       enabled && nativeWayland() && supportsLinuxDisplay()
         ? (await linuxMonitors()).map(linuxDisplay)
@@ -843,15 +853,15 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
       clipboardContent:
         process.platform === 'darwin' ||
         process.platform === 'win32' ||
-        (supportsLinuxLock() && supportsLinuxClipboard()),
+        (supportsLinuxLock() && supportsLinuxClipboard()) || x11Clipboard,
       clipboardSync:
         process.platform === 'darwin' ||
         process.platform === 'win32' ||
-        (supportsLinuxLock() && supportsLinuxClipboard()),
+        (supportsLinuxLock() && supportsLinuxClipboard()) || x11Clipboard,
       clipboardInline:
         process.platform === 'darwin' ||
         process.platform === 'win32' ||
-        (supportsLinuxLock() && supportsLinuxClipboard()),
+        (supportsLinuxLock() && supportsLinuxClipboard()) || x11Clipboard,
       privacyScreen:
         supportsPrivacyScreen || (enabled && nativeWayland() && (await supportsLinuxPrivacy())),
       hostMute:
@@ -859,7 +869,7 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
       clipboardText:
         process.platform === 'darwin' ||
         process.platform === 'win32' ||
-        (supportsLinuxLock() && supportsLinuxClipboard()),
+        (supportsLinuxLock() && supportsLinuxClipboard()) || x11Clipboard,
       videoSettings: true,
       trickleIce: true,
       backgroundViewing: true,
@@ -878,7 +888,7 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
       canControl:
         process.platform === 'darwin' ||
         process.platform === 'win32' ||
-        (enabled && (await readLinuxDesktopInputSupport())),
+        (enabled && (await linuxInputSupported())),
       platform: process.platform,
       ...(enabled ? { permissions: await permissions.read() } : {}),
       displays:
@@ -1040,10 +1050,7 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
   startInput: async (displayId, window) => {
     // A portal-selected window is not the whole compositor coordinate space.
     // Never allow a forged control request to drive that view-only fallback.
-    if (
-      process.platform === 'linux' &&
-      ((!nativeWayland() && !isX11Desktop()) || !(await readLinuxDesktopInputSupport()))
-    )
+    if (process.platform === 'linux' && !(await linuxInputSupported()))
       throw new Error('DESKTOP_INPUT_UNSUPPORTED');
     if (window) await input.start(displayId, { windowId: window.windowId, pid: window.pid });
     else await input.start(displayId);

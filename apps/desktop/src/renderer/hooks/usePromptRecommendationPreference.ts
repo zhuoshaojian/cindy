@@ -1,4 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
+import * as host from '@/state/hostDesktop/usePromptRecommendationPreference';
+import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
+
+/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
+const hostDesktop = hasHostDesktopPreferences();
+export const getPromptRecommendationPreference = hostDesktop ? host.getPromptRecommendationPreference : getPromptRecommendationPreferenceLocal;
+export const syncPromptRecommendationPreferenceFromStorageValue = hostDesktop ? host.syncPromptRecommendationPreferenceFromStorageValue : syncPromptRecommendationPreferenceFromStorageValueLocal;
+export const usePromptRecommendationPreference = hostDesktop ? host.usePromptRecommendationPreference : usePromptRecommendationPreferenceLocal;
+export const subscribePromptRecommendationPreference = hostDesktop ? host.subscribePromptRecommendationPreference : subscribePromptRecommendationPreferenceLocal;
 
 export const PROMPT_RECOMMENDATION_KEY = 'prompt-recommendation-enabled';
 
@@ -21,14 +30,14 @@ function readFromStorage(): boolean {
   }
 }
 
-export function getPromptRecommendationPreference(): boolean {
+function getPromptRecommendationPreferenceLocal(): boolean {
   if (memoryValue !== null) return memoryValue;
   memoryValue = readFromStorage();
   return memoryValue;
 }
 
 /** 跨窗口 storage push 同步模块级真值；Store 与 hook 共用，避免首次 render 读旧缓存。 */
-export function syncPromptRecommendationPreferenceFromStorageValue(
+function syncPromptRecommendationPreferenceFromStorageValueLocal(
   storageValue: string | null,
 ): boolean {
   memoryValue = storageValue !== 'false';
@@ -36,7 +45,7 @@ export function syncPromptRecommendationPreferenceFromStorageValue(
   return memoryValue;
 }
 
-export function usePromptRecommendationPreference(): {
+function usePromptRecommendationPreferenceLocal(): {
   enabled: boolean;
   setEnabled: (next: boolean) => void;
 } {
@@ -80,7 +89,7 @@ export function usePromptRecommendationPreference(): {
 }
 
 /** 运行期消费者订阅偏好变化（推荐状态 Store 用于全局清理）。 */
-export function subscribePromptRecommendationPreference(
+function subscribePromptRecommendationPreferenceLocal(
   listener: (enabled: boolean) => void,
 ): () => void {
   lifecycleListeners.add(listener);

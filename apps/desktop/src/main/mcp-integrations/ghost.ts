@@ -264,6 +264,7 @@ export interface GhostGatewayPorts {
   publishImage: typeof import('../cindy-media/publishImage.js').publishImage;
   getSessionFsSnapshot: typeof import('../localDb/ipc/sessions.js').getSessionFsSnapshot;
   getGhostCardService: typeof import('../cindy-brain/index.js').getGhostCardService;
+  connectGhostGithubAccount: typeof import('../cindy-brain/index.js').connectGhostGithubAccount;
   getGhostManager: typeof import('../cindy-brain/index.js').getGhostManager;
   listInstalledGhostsAsync: typeof import('../cindy-brain/index.js').listInstalledGhostsAsync;
   getGhostPipeDispatcher: typeof import('../cindy-brain/index.js').getGhostPipeDispatcher;
@@ -300,7 +301,7 @@ export type PluginGatewayPorts = Omit<GhostGatewayPorts, PlatformService> & Part
 
 export function createGhostGateway(ports: PluginGatewayPorts) {
 const { classifyGhostVisibility, classifyInstalledGhostVisibility, preferLatestLocalOrPublicGhosts } = createGhostVisibility(ports.t);
-const { publishPluginAppResult, pluginModelResult, getBotAuthorizationService, isBotAuthorizationSession, getSessionFsSnapshot, getGhostCardService, getGhostManager, listInstalledGhostsAsync, getGhostPipeDispatcher, getGhostSetupAssessment, captureGhostMutationOwnerForMcp, acquireGhostMutationLeaseForMcp, isGhostAvailableForActiveSession, getGhostHandoffStore, blobStore, commitMessageMediaRefs, resolveGhostAttachmentUrl, t } = ports;
+const { publishPluginAppResult, pluginModelResult, getBotAuthorizationService, isBotAuthorizationSession, getSessionFsSnapshot, getGhostCardService, connectGhostGithubAccount, getGhostManager, listInstalledGhostsAsync, getGhostPipeDispatcher, getGhostSetupAssessment, captureGhostMutationOwnerForMcp, acquireGhostMutationLeaseForMcp, isGhostAvailableForActiveSession, getGhostHandoffStore, blobStore, commitMessageMediaRefs, resolveGhostAttachmentUrl, t } = ports;
 const getGhostGrantConfirmBridge = ports.getGhostGrantConfirmBridge ?? desktopGrantBridge;
 const getGhostSetupCoordinator = ports.getGhostSetupCoordinator ?? desktopSetupCoordinator;
 function requireService<K extends PlatformService>(key: K): GhostGatewayPorts[K] {
@@ -2246,6 +2247,17 @@ function getCindyGhostsMcpDeps(
       const visible = classifyGhostVisibility(target.id, workingDir, ghostVisibilityDeps,
         target.kind === 'plugin' ? target.namespace : undefined);
       if (!visible.ok) return visible;
+      if (target.id === 'cindy-github') {
+        const result = await connectGhostGithubAccount({ sessionId, signal,
+          ...(target.reauthorize ? { reauthorize: true } : {}),
+          assertCurrent: () => {
+            if (signal?.aborted
+              || !classifyGhostVisibility(target.id, workingDir, ghostVisibilityDeps,
+                target.kind === 'plugin' ? target.namespace : undefined).ok)
+              throw new Error('AUTH_FAILED');
+          } });
+        if (result) return result;
+      }
       const instanceId = installedGhostStoragePart(visible.ghost);
       const assessment = getGhostSetupAssessment(instanceId);
       const ghCliSecret = visible.ghost.manifest.network?.secrets?.find((secret) => secret.source === 'gh-cli');

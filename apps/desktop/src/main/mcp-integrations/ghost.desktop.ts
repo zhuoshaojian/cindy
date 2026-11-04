@@ -8,7 +8,7 @@ import { getBotAuthorizationService } from '../maker-ipc/botAuthorizationService
 import { isBotAuthorizationSession } from '../maker-ipc/botAuthorizationHost.js';
 import { publishImage } from '../cindy-media/publishImage.js';
 import { getSessionFsSnapshot } from '../localDb/ipc/sessions.js';
-import { getGhostCardService, getGhostManager, listInstalledGhostsAsync, getGhostPipeDispatcher, getGhostSetupAssessment, ghostForgeForbiddenRootDirs, captureGhostMutationOwnerForMcp, acquireGhostMutationLeaseForMcp, installOrUpdateLocalGhostPackageFromForge, isGhostAvailableForActiveSession, getGhostHandoffStore } from '../cindy-brain/index.js';
+import { getGhostCardService, connectGhostGithubAccount, getGhostManager, listInstalledGhostsAsync, getGhostPipeDispatcher, getGhostSetupAssessment, ghostForgeForbiddenRootDirs, captureGhostMutationOwnerForMcp, acquireGhostMutationLeaseForMcp, installOrUpdateLocalGhostPackageFromForge, isGhostAvailableForActiveSession, getGhostHandoffStore } from '../cindy-brain/index.js';
 import { writeForgeScaffoldWithStableParent } from '../cindy-brain/forgeScaffoldCapability.js';
 import { currentPublisherIdentity, getPluginPublisherOrchestrator, startPluginPublish } from '../plugin-publisher/host.js';
 import * as blobStore from '../cindy-media/blobStore.desktop.js';
@@ -35,6 +35,7 @@ const gateway = createGhostGateway({
   publishImage: (...args) => publishImage(...args),
   getSessionFsSnapshot: (...args) => getSessionFsSnapshot(...args),
   getGhostCardService: (...args) => getGhostCardService(...args),
+  connectGhostGithubAccount: (...args) => connectGhostGithubAccount(...args),
   getGhostManager: (...args) => getGhostManager(...args),
   listInstalledGhostsAsync: (...args) => listInstalledGhostsAsync(...args),
   getGhostPipeDispatcher: (...args) => getGhostPipeDispatcher(...args),

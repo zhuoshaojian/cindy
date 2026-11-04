@@ -43,6 +43,7 @@ import {
   PROVIDER_SHARE_RELAY_CAPABILITY,
   sharedTaskTopics,
   SHARED_TASK_CAPABILITY,
+  CONTROLLER_CAPABILITY_HOST_SETTINGS_CONFIRMATION_V1,
   CONTROLLER_CAPABILITY_MAKER_EVENT_BATCH_V1,
   CONTROLLER_CAPABILITY_SESSION_TEXT_SNAPSHOT_V1,
   CONTROLLER_CAPABILITY_SESSION_LIST_MESSAGES_V1,
@@ -620,6 +621,7 @@ const RESPONSIVENESS_PROBE_TICK_MS = 5_000;
 const CONTROLLER_CAPABILITIES = [
   CONTROLLER_CAPABILITY_SESSION_LIST_MESSAGES_V1,
   SHARED_TASK_CAPABILITY,
+  CONTROLLER_CAPABILITY_HOST_SETTINGS_CONFIRMATION_V1,
   CONTROLLER_CAPABILITY_SESSION_TEXT_SNAPSHOT_V1,
   CONTROLLER_CAPABILITY_PROVIDER_LOGO_KINDS_V2,
   CONTROLLER_CAPABILITY_SET_MODEL_EXPLICIT_PROVIDER_NULL_V1,
@@ -2531,6 +2533,9 @@ export async function remoteSubscribe(
       // 建链是新的 await 边界:引用可能又变了,发送前按最新快照重取。
       liveTopics = liveTopicsNow();
       if (liveTopics.length === 0) return { ok: true, result: null };
+    }
+    if ((openLinkCloseEpochs.get(deviceId) ?? 0) !== closeEpoch) {
+      throw new DeviceLinkError('LINK_NOT_OPEN', 'link closed while waiting to reconnect');
     }
     assertRemoteControlTargetEnabledAfterReopen(deviceId);
     if ((openLinkCloseEpochs.get(deviceId) ?? 0) !== closeEpoch) {

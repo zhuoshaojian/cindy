@@ -1353,7 +1353,7 @@ export class DeviceLinkClient {
   /** Even unlinked reads queue behind a previously negotiated reliable link. */
   needsLinkRecovery(dst: string): boolean {
     const peer = this.peerTransport.get(dst);
-    return !!peer?.reliable && !this.isPeerSendReady(peer);
+    return !!peer?.reliable && !peer.explicitlyClosed && !this.isPeerSendReady(peer);
   }
 
   /** Mirror admission uses the existing authorized path; reliable peers still need send readiness. */

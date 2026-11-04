@@ -63,6 +63,10 @@ vi.mock('electron-store', () => ({ default: class {
   }
   delete(key: string) { this.values.delete(key); }
 } }));
+vi.mock('../../../host-settings/new-task-defaults.js', () => ({
+  inspectNewTaskDefaults: () => ({ status: 'ready', revision: 'fixture' }),
+  commitNewTaskDefaults: () => { throw new Error('Teammate model changes must not write app defaults'); },
+}));
 vi.mock('../../../maker-ipc/appDefaultModelControl.js', async importOriginal => ({
   ...await importOriginal<typeof import('../../../maker-ipc/appDefaultModelControl.js')>(),
   validateTaskModel: vi.fn(async () => true),

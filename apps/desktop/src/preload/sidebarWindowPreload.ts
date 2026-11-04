@@ -1,6 +1,7 @@
 import { createAccessibilitySupportBridge } from './accessibilitySupport';
 import { invokeOpenPath } from './openPath';
 import { COPY_PNG_TO_CLIPBOARD_CHANNEL, type CopyPngToClipboardParams } from '../shared/pngClipboard';
+import { createDesktopPreferencesReadApi } from './desktopPreferences';
 import { SELECTION_CONTEXT_MENU_ADD_TO_CHAT_CHANNEL } from '../shared/selectionContextMenu';
 /**
  * 鍙充晶鏍忓瓙绐楀彛涓撶敤 preload锛氬彧鏆撮湶 RSB 绐楀彛鎵€闇€鐨勬渶灏忚兘鍔涖€?
@@ -107,6 +108,7 @@ const fanOutFullscreenChange = (cb: (isFullscreen: boolean) => void): (() => voi
   onPayload('fullscreen-change', cb);
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  desktopPreferences: createDesktopPreferencesReadApi(ipcRenderer),
   platform: process.platform,
   onSelectionContextMenuAddToChat: (callback: () => void): (() => void) =>
     onPayload(SELECTION_CONTEXT_MENU_ADD_TO_CHAT_CHANNEL, () => callback()),

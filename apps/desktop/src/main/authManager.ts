@@ -18,6 +18,8 @@ import { resolveRuntimeDeviceId } from './deviceId.js';
  */
 
 import { BrowserWindow, net, safeStorage, app, shell, powerMonitor } from 'electron';
+import { getInstanceConfig, instanceRefreshDelay } from './instance-runtime/config.js';
+import { acknowledgeInstanceLogin, assertInstanceAuthMutationAllowed, getInstanceSession, instanceAuthReady } from './instance-runtime/host.js';
 import crypto from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -3158,6 +3160,10 @@ function scheduleRefresh(token: string): void {
     clearTimeout(refreshTimer);
     refreshTimer = null;
   }
+  if (getInstanceConfig()) {
+    refreshTimer = setTimeout(() => { void refresh(); }, instanceRefreshDelay(token));
+    return;
+  }
   // 续期节奏对 passive 实例不设闸门。本 PR 的契约是「passive 不写/不删共享的
   // auth 持久状态」;「谁负责续期」是正交问题,不在这里解决。让 passive 停止续期
   // 会让它的 access token 过期后再无替换途径(primary 的续期只更新磁盘 token,
@@ -3960,6 +3966,7 @@ async function expireRuntimeAuth(
  * racing teardown and local credential deletion.
  */
 export function invalidateSession(reason: string): Promise<void> {
+  if (getInstanceConfig() && reason !== 'instance-grant-invalid') return Promise.resolve();
   if (sessionInvalidationPromise) return sessionInvalidationPromise;
 
   const rejectedAccountKey =
@@ -4020,6 +4027,7 @@ export async function waitForSessionInvalidation(): Promise<void> {
 // ── Public API ──────────────────────────────────────────────────────────────
 
 export function getAccessToken(): string | null {
+  if (getInstanceConfig() && !instanceAuthReady(accessToken)) return null;
   return accessToken;
 }
 
@@ -4040,6 +4048,23 @@ export function getLoginCaptchaChallengeUrl(): string {
 /** SkillHub v0.2.1: 返回当前登录用户 id（cuid），未登录时返回 null */
 export function getCurrentUserId(): string | null {
   return currentUser?.id ?? null;
+}
+
+export interface CommittedAuthIdentity {
+  userId: string;
+  membershipKind: 'personal' | 'org';
+  isAuthenticated: boolean;
+}
+
+/** 只投影现有内存身份；不初始化鉴权、不读凭据，也不返回令牌或用户资料。 */
+export function peekCommittedAuthIdentity(): CommittedAuthIdentity | null {
+  if (!currentUser || typeof currentUser.id !== 'string' || !currentUser.id
+    || (currentUser.membershipKind !== 'personal' && currentUser.membershipKind !== 'org')) return null;
+  return {
+    userId: currentUser.id,
+    membershipKind: currentUser.membershipKind,
+    isAuthenticated: typeof accessToken === 'string' && accessToken.length > 0,
+  };
 }
 
 /**
@@ -4150,6 +4175,7 @@ export async function switchSavedAccount(
     validateBeforeCommit?: (loginEpoch: number) => void;
   } = {},
 ): Promise<void> {
+  assertInstanceAuthMutationAllowed();
   const switchLoginFlowEpoch = loginFlowEpoch;
   const parsedKey = parseDesktopAccountKey(rawAccountKey);
   if (!parsedKey) throw new AuthApiError('INVALID_AUTH_ACTION', 400, 'Invalid account key');
@@ -4255,6 +4281,7 @@ export async function switchSavedAccount(
 }
 
 export async function beginAddAccountLogin(): Promise<DesktopLoginActionResult> {
+  assertInstanceAuthMutationAllowed();
   if (isPassiveSharedUserDataInstance()) {
     throw new AuthApiError(
       'PASSIVE_AUTH_MUTATION_BLOCKED',
@@ -4313,6 +4340,7 @@ export function hasNoPersistedAuthCredentials(): boolean {
 
 /** Enter the account-free local session through the shared projection boundary. */
 export async function enterLocalMode(): Promise<AuthState> {
+  assertInstanceAuthMutationAllowed();
   stopColdStartRecovery();
   browserAuthorizationSlot.cancelActive();
   // Local mode has a different data owner. Drop process-local generic OAuth
@@ -4660,6 +4688,44 @@ export async function updateServerProfile(
   };
 }
 
+let managedAuthFlight: Promise<void> | null = null;
+
+/** Only the Pod-local CIS control calls this; never exposed through account IPC. */
+export async function recoverManagedInstanceLogin(requestId: string, refreshToken: string): Promise<void> {
+  if (!getInstanceConfig()) throw new Error('INSTANCE_NOT_CONFIGURED');
+  if (managedAuthFlight) await managedAuthFlight.catch(() => undefined);
+  if (managedAuthFlight) throw new Error('INSTANCE_RECOVERY_BUSY');
+  managedAuthFlight = (async () => {
+    const managed = getInstanceSession(authServerUrl(AUTH_REGION), AUTH_REGION, hasNoPersistedAuthCredentials);
+    const pair = await managed.recover(requestId, refreshToken);
+    await completeLogin({ status: 'ok', ...pair });
+  })().finally(() => { managedAuthFlight = null; });
+  return managedAuthFlight;
+}
+
+function authenticateManagedInstance(): Promise<void> {
+  if (managedAuthFlight) return managedAuthFlight;
+  managedAuthFlight = (async () => {
+    // Transient retries belong to the auth state that started this attempt.
+    const epoch = authStateEpoch;
+    try {
+      const managed = getInstanceSession(authServerUrl(AUTH_REGION), AUTH_REGION, hasNoPersistedAuthCredentials);
+      const pair = await managed.rotate();
+      await completeLogin({ status: 'ok', ...pair });
+    } catch (error) {
+      if (error instanceof AuthApiError && [401, 403].includes(error.statusCode)) {
+        await invalidateSession('instance-grant-invalid');
+      } else {
+        scheduleRefreshRetryAfterTransientFailure(epoch);
+      }
+      const code = error instanceof Error && /^INSTANCE_[A-Z_]+$/.test(error.message) ? error.message : 'INSTANCE_AUTH_DEPENDENCY_FAILED';
+      log.warn('instance authentication not ready', { code });
+      throw new Error('INSTANCE_AUTH_NOT_READY');
+    }
+  })().finally(() => { managedAuthFlight = null; });
+  return managedAuthFlight;
+}
+
 export async function initialize(options: AuthInitializeOptions = {}): Promise<AuthState> {
   if (authRefreshOverride) {
     receiveHostAuthState(await authRefreshOverride());
@@ -4673,6 +4739,14 @@ export async function initialize(options: AuthInitializeOptions = {}): Promise<A
   if (isOwnerChangeShellPending()) {
     return snapshotLoggedOutAuthState(true);
   }
+  if (getInstanceConfig()) {
+    if (!instanceAuthReady(accessToken)) await authenticateManagedInstance();
+    return snapshotAuthState();
+  }
+  // A renderer can mount after the boundary-pending broadcast. Keep startup
+  // fail-closed until the serialized owner transition settles instead of
+  // restoring the outgoing owner's credentials and turns from disk.
+
   // Local mode is a committed account-free session. It must win before any
   // persisted cloud refresh token is inspected or any auth network call runs.
   if (getActiveAppSession().mode === 'local') {
@@ -5345,6 +5419,7 @@ async function completeLogin(
     validateBeforeCommit?: (loginEpoch: number) => void;
   } = {},
 ): Promise<AuthFlowState> {
+  assertInstanceAuthMutationAllowed(outcome);
   assertLoginFlowCurrent(expectedLoginFlowEpoch);
   const loginEpoch = ++authStateEpoch;
   const deletionWasRestored =
@@ -5441,6 +5516,7 @@ async function completeLogin(
                 foreignDeviceLocalSignOut = false;
                 currentUser = nextUser;
                 credentialStoreHealth.noteRecovered();
+                acknowledgeInstanceLogin(outcome);
                 if (!isPassiveSharedUserDataInstance()) {
                   canaryFlagStore.clear();
                 }
@@ -5991,6 +6067,7 @@ async function runLoginAction(
 }
 
 export async function dispatchLoginAction(action: unknown): Promise<DesktopLoginActionResult> {
+  assertInstanceAuthMutationAllowed();
   const dispatchLoginFlowEpoch = loginFlowEpoch;
   // Terminal logout clears credentials synchronously, then tears down the old
   // account boundary in the background so the rejecting request can unwind.
@@ -6053,6 +6130,14 @@ export async function refresh(options?: { serverRejectedToken?: boolean }): Prom
   if (authRefreshOverride !== null) {
     receiveHostAuthState(await authRefreshOverride(options));
     return delegatedAuthState!.isAuthenticated;
+  }
+  if (getInstanceConfig()) {
+    try {
+      await authenticateManagedInstance();
+      return true;
+    } catch {
+      return false;
+    }
   }
   if (getActiveAppSession().mode === 'local') {
     log.debug('runtime refresh skipped in local mode');
@@ -6426,6 +6511,7 @@ function revokeLoggedOutAccountBestEffort(input: {
 }
 
 export async function logout(): Promise<void> {
+  assertInstanceAuthMutationAllowed();
   if (isPassiveSharedUserDataInstance()) {
     throw new AuthApiError(
       'PASSIVE_AUTH_MUTATION_BLOCKED',

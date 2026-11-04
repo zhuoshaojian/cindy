@@ -11,6 +11,7 @@ import type { ClassicalReplyStyleId } from '@cindy/maker-shared/classical-reply'
 import { classicalStyleOptions, languageSettings } from './LanguageSection.settings-search';
 import { Select } from '@/components/ui/select';
 import { SettingsCard, SettingsRow, SettingsSection } from '@/components/ui/settings-rows';
+import '@/components/ui/segmented-control.css';
 
 import { useLocale } from '@/hooks/useLocale';
 import type { LocalePreference } from '@/i18n';
@@ -23,8 +24,38 @@ type LanguageOption = LocalePreference | typeof CLASSICAL_OPTION;
 // 「跟随系统」优先,英语作为第一个显式语言,其余语言按支持列表顺序排列;古典版本合为一项放最后。
 
 export function LanguageSection() {
-  const { t } = useTranslation();
   const { locale, effectiveLocale, setLocale, classicalStyle, setClassicalStyle } = useLocale();
+  return (
+    <LanguageSectionView
+      locale={locale}
+      effectiveLocale={effectiveLocale}
+      onChange={setLocale}
+      classicalStyle={classicalStyle}
+      onClassicalStyleChange={setClassicalStyle}
+    />
+  );
+}
+
+/**
+ * The section body for a given preference. The cloud instance settings page renders it
+ * for the instance's language; without a style handler the classical style picker is hidden.
+ */
+export function LanguageSectionView({
+  locale,
+  effectiveLocale,
+  onChange: setLocale,
+  classicalStyle,
+  onClassicalStyleChange: setClassicalStyle,
+  disabled = false,
+}: {
+  locale: LocalePreference;
+  effectiveLocale?: string;
+  onChange(next: LocalePreference): void;
+  classicalStyle?: ClassicalReplyStyleId;
+  onClassicalStyleChange?(next: ClassicalReplyStyleId): void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
   const classical = isClassicalLocale(locale) ? locale : null;
 
   const chooseLanguage = (option: LanguageOption) => {
@@ -42,6 +73,7 @@ export function LanguageSection() {
       <SettingsCard>
         <SettingsRow
           id={languageSettings.language.targetId}
+          className="cindy-segmented-row"
           title={t(languageSettings.language.titleKey)}
           hint={t(languageSettings.language.descriptionKey)}
           trailing={
@@ -56,6 +88,7 @@ export function LanguageSection() {
               label={t('settings.language.ariaLabel')}
               width="md"
               className="shrink-0"
+              disabled={disabled}
             />
           }
         />
@@ -63,6 +96,7 @@ export function LanguageSection() {
         {classical ? (
           <SettingsRow
             id={languageSettings.classical.targetId}
+            className="cindy-segmented-row"
             title={t(languageSettings.classical.titleKey)}
             hint={t(languageSettings.classical.descriptionKey)}
             trailing={
@@ -77,18 +111,22 @@ export function LanguageSection() {
                   onValueChange={(next) => setLocale(next as ClassicalLocale)}
                   label={t('settings.language.classical.scriptAriaLabel')}
                   className="w-[112px] shrink-0"
+                  disabled={disabled}
                 />
-                <Select
-                  data-setting-id={languageSettings.classical.id}
-                  value={classicalStyle}
-                  options={classicalStyleOptions.map((style) => ({
-                    value: style.value,
-                    label: t(style.labelKey),
-                  }))}
-                  onValueChange={(next) => setClassicalStyle(next as ClassicalReplyStyleId)}
-                  label={t('settings.language.classical.styleAriaLabel')}
-                  className="flex-1"
-                />
+                {classicalStyle && setClassicalStyle ? (
+                  <Select
+                    data-setting-id={languageSettings.classical.id}
+                    value={classicalStyle}
+                    options={classicalStyleOptions.map((style) => ({
+                      value: style.value,
+                      label: t(style.labelKey),
+                    }))}
+                    onValueChange={(next) => setClassicalStyle(next as ClassicalReplyStyleId)}
+                    label={t('settings.language.classical.styleAriaLabel')}
+                    className="flex-1"
+                    disabled={disabled}
+                  />
+                ) : null}
               </div>
             }
           />

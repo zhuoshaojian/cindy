@@ -68,6 +68,8 @@ import {
  *   序号,先前同步返回给调用方的 uid 会指到对方那条 —— 条目本身两条都在(不丢数据),
  *   只是那一瞬的选中锚点可能指错。修它要改 uid 格式(现在是 `fav-<单调序号>`,sanitize /
  *   uidSeq 的单调性契约都建在上面),代价大于收益,故按已知取舍留下。
+ *
+ * 托管云实例除外:真源在 Host 文件,导出函数转交 hostModelPresentationStores。
  */
 
 import { useSyncExternalStore } from 'react';
@@ -82,6 +84,7 @@ import {
   type ModelConfigCopy,
 } from './modelConfigCopy';
 import type { ModelEngine } from './modelEnginePrefs';
+import { hasHostModelPresentation, hostModelFavorites as host } from './hostModelPresentationStores';
 import { createStorageReconciler } from './storageOpReplay';
 
 let requireDurableWrite = false;
@@ -503,6 +506,7 @@ function persist(next: FavoritesState): void {
 }
 
 function subscribe(cb: () => void): () => void {
+  if (hasHostModelPresentation()) return host.subscribe(cb);
   listeners.add(cb);
   return () => {
     listeners.delete(cb);
@@ -510,6 +514,7 @@ function subscribe(cb: () => void): () => void {
 }
 
 function getItemsSnapshot(): readonly ModelFavoriteItem[] {
+  if (hasHostModelPresentation()) return host.list();
   return load().items;
 }
 
@@ -561,7 +566,7 @@ export function listModelFavorites(): readonly ModelFavoriteItem[] {
 /** 按锚点取一条收藏(hover / 浮层绑定 / 选中态解析)。 */
 export function getModelFavorite(uid: string): ModelFavoriteItem | undefined {
   if (!uid) return undefined;
-  return load().items.find((item) => item.uid === uid);
+  return getItemsSnapshot().find((item) => item.uid === uid);
 }
 
 /**
@@ -575,6 +580,7 @@ export function getModelFavorite(uid: string): ModelFavoriteItem | undefined {
  * effort 非法只丢该字段(条目仍建,回落推荐档)。
  */
 export function addModelFavorite(config: ModelFavoriteConfig): string {
+  if (hasHostModelPresentation()) return host.add(config);
   const normalized = normalizeModelConfigCopy(config);
   if (!normalized) return '';
   // 基底取**重读后的**持久化快照(见 freshState):另一窗口刚加的条目要一起带上,
@@ -602,6 +608,7 @@ export function addModelFavorite(config: ModelFavoriteConfig): string {
  *   - 配置字段与普通收藏同一套校验(normalizeModelConfigCopy),effort / fast 缺省跟随推荐档。
  */
 export function seedDefaultFavorite(config: ModelFavoriteConfig): void {
+  if (hasHostModelPresentation()) return host.seed(config);
   // 同 addModelFavorite:基底必须新鲜 —— 另一窗口若已投放过种子,这里读到的 seeded
   // 就是 true,不会重复投放,也不会把它的标记写回成未投放。
   const state = freshState();
@@ -620,6 +627,7 @@ export function seedDefaultFavorite(config: ModelFavoriteConfig): void {
  */
 export function updateModelFavorite(uid: string, patch: ModelFavoritePatch): void {
   if (!uid) return;
+  if (hasHostModelPresentation()) return host.update(uid, patch);
   // 具体的 patch 语义(引擎非法整条放弃 / effort null 即清除 / fast false 即缺省)在
   // applyOp 里,同步写与锁内重放共用同一份 —— 各写一遍必然漂移。
   commitOp({ kind: 'update', uid, patch });
@@ -631,6 +639,7 @@ export function updateModelFavorite(uid: string, patch: ModelFavoritePatch): voi
  */
 export function removeModelFavorite(uid: string): void {
   if (!uid) return;
+  if (hasHostModelPresentation()) return host.remove(uid);
   commitOp({ kind: 'remove', uid });
 }
 
@@ -652,6 +661,7 @@ export function useModelFavorites(): readonly ModelFavoriteItem[] {
  * 切换后丢缓存重新惰性加载 —— 不同账号各读各的收藏,不串号。
  */
 export function setModelFavoritesOwner(ownerId: string | null): void {
+  if (hasHostModelPresentation()) return host.setOwner();
   const normalized = typeof ownerId === 'string' && ownerId.trim().length > 0 ? ownerId : null;
   if (activeDataOwnerId === normalized) return;
   activeDataOwnerId = normalized;
@@ -681,6 +691,7 @@ export const __STORAGE_KEY = STORAGE_KEY;
 /** Narrow host RPC entry: preserve old data and use existing per-item operations.
  * Synchronous execution prevents an owner change between comparison and write. */
 export function accessHostModelFavorites(ownerId: string | null, mutation?: ModelFavoriteMutation): readonly ModelFavoriteItem[] {
+  if (hasHostModelPresentation()) return host.access(ownerId, mutation, LOCAL_FAVORITE_PROVIDER_ID_MAX_LENGTH);
   if (activeDataOwnerId !== ownerId) throw new Error('Favorites owner not ready');
   const readDurable = () => {
     const raw = window.localStorage.getItem(storageKey());

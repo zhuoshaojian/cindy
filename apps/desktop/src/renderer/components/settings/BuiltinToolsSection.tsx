@@ -194,11 +194,13 @@ export function BuiltinToolsSection({ workingDir }: BuiltinToolsSectionProps) {
   if (!plugins) return null;
 
   return (
-    <SettingsSection
-      titleId={builtinToolsSettings.title.targetId}
-      title={t(builtinToolsSettings.title.titleKey)}
-      description={t(builtinToolsSettings.title.descriptionKey)}
-      action={
+    <BuiltinToolsSectionView
+      plugins={plugins}
+      pendingIds={pendingIds}
+      effectiveWorkingDir={effectiveWorkingDir}
+      handleToggle={handleToggle}
+      handleClearOverride={handleClearOverride}
+      scopePicker={
         <ScopePicker
           effectiveWorkingDir={effectiveWorkingDir}
           activeSessionWorkingDir={activeProjectWorkingDir}
@@ -206,6 +208,33 @@ export function BuiltinToolsSection({ workingDir }: BuiltinToolsSectionProps) {
           onPick={setSelectedScope}
         />
       }
+    />
+  );
+}
+
+export function BuiltinToolsSectionView({
+  plugins,
+  pendingIds,
+  effectiveWorkingDir,
+  handleToggle,
+  handleClearOverride,
+  scopePicker,
+}: {
+  plugins: BuiltinToolListItem[];
+  pendingIds: Set<string>;
+  effectiveWorkingDir?: string | null;
+  handleToggle: (id: string, next: boolean, label: string) => void;
+  handleClearOverride: (id: string, label: string) => void;
+  scopePicker?: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <SettingsSection
+      titleId={builtinToolsSettings.title.targetId}
+      title={t(builtinToolsSettings.title.titleKey)}
+      description={t(builtinToolsSettings.title.descriptionKey)}
+      action={scopePicker}
       caption={t('settings.builtinTools.toggleHint')}
     >
       {/* 工具列表自带图标与来源标签，行样式保留 */}

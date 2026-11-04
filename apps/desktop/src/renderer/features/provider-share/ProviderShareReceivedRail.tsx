@@ -31,6 +31,7 @@ import { extractIpcError, mapIpcErrorToI18nKey } from '@/utils/ipcError';
 import { providerShareAgentDeviceId } from './providerShareFormat';
 import { providerShareDisplayNames } from './providerShareNames';
 import { useProviderShareReceived } from './providerShareStore';
+import { useProviderShareSource } from './providerShareSource';
 import { ShareAvatar } from './ShareAvatar';
 import { SharedProviderGroupStatus } from './SharedProviderGroupStatus';
 
@@ -55,7 +56,8 @@ function StatusDot({ status }: { status: ReceivedStatus }) {
       aria-hidden="true"
       className="h-1.5 w-1.5 shrink-0 rounded-full"
       style={{
-        backgroundColor: status === 'active' ? 'var(--remote-status-ready)' : 'var(--border-default)',
+        backgroundColor:
+          status === 'active' ? 'var(--remote-status-ready)' : 'var(--border-default)',
       }}
     />
   );
@@ -75,7 +77,10 @@ export function ProviderShareReceivedRailGroup({
   hiddenShareIds?: ReadonlySet<string>;
 }) {
   const { t } = useTranslation();
-  const { received: all } = useProviderShareReceived();
+  // Another device's shares (cloud instance page) replace this device's list.
+  const source = useProviderShareSource();
+  const local = useProviderShareReceived();
+  const { received: all } = source?.received ?? local;
   const received = hiddenShareIds?.size
     ? all.filter((share) => share.shareId === selectedShareId || !hiddenShareIds.has(share.shareId))
     : all;
@@ -116,12 +121,19 @@ export function ProviderShareReceivedRailGroup({
                   : 'hover:bg-[var(--settings-menu-bg-hover)]',
               )}
             >
-              <ShareAvatar displayName={share.owner.displayName} avatarUrl={share.owner.avatarUrl} size="sm" />
+              <ShareAvatar
+                displayName={share.owner.displayName}
+                avatarUrl={share.owner.avatarUrl}
+                size="sm"
+              />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span
                   className="truncate text-13 font-medium"
                   style={{
-                    color: status === 'active' ? 'var(--settings-section-title)' : 'var(--text-tertiary)',
+                    color:
+                      status === 'active'
+                        ? 'var(--settings-section-title)'
+                        : 'var(--text-tertiary)',
                   }}
                 >
                   {share.providerLabel}
@@ -148,12 +160,15 @@ function useCredentialConsent(shareId: string) {
   const [skip, setSkip] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const revision = useRef(0);
+  // Trust is per device: another device's page asks that device.
+  const source = useRef(useProviderShareSource());
+  const command: Window['electronAPI']['providerShare']['command'] = (value) =>
+    (source.current?.command ?? window.electronAPI.providerShare.command)(value);
   useEffect(() => {
     const currentRevision = ++revision.current;
     setSkip(null);
     setSaving(false);
-    void window.electronAPI.providerShare
-      .command({ action: 'get-credential-consent', shareId })
+    void command({ action: 'get-credential-consent', shareId })
       .then((view) => {
         if (revision.current === currentRevision) setSkip(view.skip === true);
       })
@@ -167,8 +182,7 @@ function useCredentialConsent(shareId: string) {
   const update = (next: boolean) => {
     const currentRevision = revision.current;
     setSaving(true);
-    void window.electronAPI.providerShare
-      .command({ action: 'set-credential-consent', shareId, skip: next })
+    void command({ action: 'set-credential-consent', shareId, skip: next })
       .then((view) => {
         if (revision.current === currentRevision) setSkip(view.skip === true);
       })
@@ -189,10 +203,14 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
   const { confirm } = useConfirmDialog();
   const [leaving, setLeaving] = useState(false);
   const credentialConsent = useCredentialConsent(share.shareId);
+  const source = useProviderShareSource();
   const status = receivedStatus(share);
   const catalogDeviceId = providerShareAgentDeviceId(share.shareId);
   const catalog = useDeviceProviders(status === 'active' ? catalogDeviceId : undefined);
-  const provider = catalog.providers.find((entry) => entry.id === share.providerId) ?? catalog.providers[0] ?? null;
+  const provider =
+    catalog.providers.find((entry) => entry.id === share.providerId) ??
+    catalog.providers[0] ??
+    null;
 
   const models = useMemo(
     () => readOnlyProviderModels(provider, catalog.modelVisibilityOverrides),
@@ -213,9 +231,15 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
     if (!ok) return;
     setLeaving(true);
     try {
-      await window.electronAPI.providerShare.command({ action: 'leave', memberId: share.memberId });
+      await (source?.command ?? window.electronAPI.providerShare.command)({
+        action: 'leave',
+        memberId: share.memberId,
+      });
       toast.success(
-        t('providerShare.received.left', { name: share.owner.displayName, provider: share.providerLabel }),
+        t('providerShare.received.left', {
+          name: share.owner.displayName,
+          provider: share.providerLabel,
+        }),
       );
     } catch (error) {
       toast.error(t(mapIpcErrorToI18nKey(error)));
@@ -225,13 +249,16 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
   };
 
   // 只写来自谁；分享者建了供应商组时补一句组里有几台，不写是哪几台(provider-sharing.md §6)。
-  const { received: allReceived } = useProviderShareReceived();
+  const localReceived = useProviderShareReceived();
+  const { received: allReceived } = source?.received ?? localReceived;
   const groupSize = readProviderShareGroupSize(provider);
-  const ownerName = providerShareDisplayNames(allReceived, t).get(share.shareId)
-    ?? t('providerShare.received.fromOwner', { name: share.owner.displayName });
-  const owner = groupSize !== null
-    ? `${ownerName} · ${t('settings.providers.remote.groupBadge', { count: groupSize })}`
-    : ownerName;
+  const ownerName =
+    providerShareDisplayNames(allReceived, t).get(share.shareId) ??
+    t('providerShare.received.fromOwner', { name: share.owner.displayName });
+  const owner =
+    groupSize !== null
+      ? `${ownerName} · ${t('settings.providers.remote.groupBadge', { count: groupSize })}`
+      : ownerName;
   let body: string | null = null;
   if (status === 'paused') body = t('providerShare.received.pausedNote');
   else if (status === 'offline') body = t('providerShare.received.offlineNote');
@@ -240,15 +267,18 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
     // 分享者电脑拒绝(关了远程控制 / 允许被远程调用，或那边还没加载好分享)与连不上要分开说；
     // 其余错误带上错误代码，截图就能看出卡在哪一步。
     const code = extractIpcError(new Error(catalog.error))?.code ?? null;
-    body = code === 'REMOTE_AGENT_SHARE_UNAVAILABLE'
-      ? t('providerShare.received.modelsRefused')
-      : t('providerShare.received.modelsFailedWithCode', { code: code ?? 'UNKNOWN' });
-  }
-  else if (catalog.loading) body = t('providerShare.received.modelsLoading');
+    body =
+      code === 'REMOTE_AGENT_SHARE_UNAVAILABLE'
+        ? t('providerShare.received.modelsRefused')
+        : t('providerShare.received.modelsFailedWithCode', { code: code ?? 'UNKNOWN' });
+  } else if (catalog.loading) body = t('providerShare.received.modelsLoading');
   else if (models.length === 0) body = t('providerShare.received.modelsEmpty');
 
   return (
-    <div data-testid="provider-share-received-detail" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div
+      data-testid="provider-share-received-detail"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+    >
       <div className="shrink-0 px-5 py-4">
         <div className="flex flex-wrap items-center gap-3 gap-y-2">
           <div className="flex min-w-0 flex-auto basis-[220px] items-center gap-3">
@@ -263,7 +293,9 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
               {provider && hasProviderLogo(provider.id, provider.routing) ? (
                 <ProviderLogoMark providerId={provider.id} routing={provider.routing} size={18} />
               ) : (
-                <span className="text-15 font-medium leading-none">{providerMonogram(share.providerLabel)}</span>
+                <span className="text-15 font-medium leading-none">
+                  {providerMonogram(share.providerLabel)}
+                </span>
               )}
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -282,9 +314,16 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2.5">
-            <span role="status" className="inline-flex items-center gap-1.5 text-12 text-[var(--text-secondary)]">
+            <span
+              role="status"
+              className="inline-flex items-center gap-1.5 text-12 text-[var(--text-secondary)]"
+            >
               <StatusDot status={status} />
-              {t(status === 'active' && groupSize !== null ? 'providerShare.received.groupStatus.shareActive' : STATUS_LABEL_KEY[status])}
+              {t(
+                status === 'active' && groupSize !== null
+                  ? 'providerShare.received.groupStatus.shareActive'
+                  : STATUS_LABEL_KEY[status],
+              )}
             </span>
             <Button
               variant="secondary"
@@ -306,8 +345,15 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
         className="flex shrink-0 items-start gap-3 border-t px-5 py-3"
         style={{ borderColor: 'var(--settings-theme-card-border)' }}
       >
-        <ShareAvatar displayName={share.owner.displayName} avatarUrl={share.owner.avatarUrl} size="sm" />
-        <p className="min-w-0 flex-1 text-13 leading-[1.5]" style={{ color: 'var(--settings-section-desc)' }}>
+        <ShareAvatar
+          displayName={share.owner.displayName}
+          avatarUrl={share.owner.avatarUrl}
+          size="sm"
+        />
+        <p
+          className="min-w-0 flex-1 text-13 leading-[1.5]"
+          style={{ color: 'var(--settings-section-desc)' }}
+        >
           {t('providerShare.received.detailNote', { name: share.owner.displayName })}
         </p>
       </div>
@@ -340,7 +386,12 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
       </div>
 
       {status === 'active' && groupSize !== null && (
-        <SharedProviderGroupStatus key={catalogDeviceId} deviceId={catalogDeviceId} providerId={share.providerId} initialSize={groupSize} />
+        <SharedProviderGroupStatus
+          key={catalogDeviceId}
+          deviceId={catalogDeviceId}
+          providerId={share.providerId}
+          initialSize={groupSize}
+        />
       )}
 
       <ProviderShareInsightsSection key={share.shareId} share={share} />
@@ -350,16 +401,20 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
           title={t('providerShare.received.modelsTitle')}
           models={models}
           note={body}
-          onRefresh={status === 'active'
-            ? () => void refreshRemoteCatalogSnapshot(catalogDeviceId).catch(() => undefined)
-            : undefined}
+          onRefresh={
+            status === 'active'
+              ? () => void refreshRemoteCatalogSnapshot(catalogDeviceId).catch(() => undefined)
+              : undefined
+          }
           refreshing={catalog.loading}
           action={
             status === 'active' && catalog.error ? (
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => void refreshRemoteCatalogSnapshot(catalogDeviceId).catch(() => undefined)}
+                onClick={() =>
+                  void refreshRemoteCatalogSnapshot(catalogDeviceId).catch(() => undefined)
+                }
               >
                 {t('providerShare.received.retryModels')}
               </Button>

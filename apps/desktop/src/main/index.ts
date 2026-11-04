@@ -3,6 +3,7 @@ import { configureWindowsAtomicRename } from './windowsAtomicRename.js';
 import './personalLaunchCwd.js';
 // Entry: Electron startup → bootstrap-electron.ts (dynamic import).
 import fixPath from 'fix-path';
+import { resolveCloudPilotDistribution } from './cloudPilotDistribution.js';
 import { ensureMacPackageManagerPath } from './agentToolPath.js';
 import { app, utilityProcess } from 'electron';
 import { configureGhostSnapshotProcess } from './cindy-brain/ghostSnapshotCapability.js';
@@ -19,6 +20,42 @@ import { createLogger, initLogger } from './logger.js';
 import { configureUserDataDir, configureAppDataDir } from './userDataPath.js';
 import { beginDesktopDevInstance, type DesktopDevMode } from './devStartupStatus.js';
 import { ensureSystemBinPathForMachineId } from './deviceId.js';
+import { initializeInstanceConfig } from './instance-runtime/config.js';
+import { initializeProfilePreflight, runProfilePreflight } from './instance-runtime/profile-preflight-stage.js';
+import { initializeProfileMaintenance } from './instance-runtime/profile-maintenance.js';
+
+const cloudPilot = resolveCloudPilotDistribution({ resourcesPath: process.resourcesPath,
+  appData: app.getPath('appData'), packaged: app.isPackaged,
+  region: CURRENT_CINDY_REGION, version: app.getVersion() });
+if (cloudPilot) {
+  app.setPath('userData', cloudPilot.userData);
+  app.setName(cloudPilot.appName);
+  app.setPath('sessionData', cloudPilot.userData);
+  app.setPath('appData', cloudPilot.appData);
+  process.env.XDT_USER_DATA_DIR = cloudPilot.userData;
+  process.env.XDT_DEVICE_ID_OVERRIDE = cloudPilot.deviceId;
+  process.env.CLAUDE_CONFIG_DIR = path.join(cloudPilot.managedHome, '.claude');
+  process.env.GH_CONFIG_DIR = path.join(cloudPilot.managedHome, '.config', 'gh');
+  process.env.PI_CODING_AGENT_DIR = path.join(cloudPilot.managedHome, '.pi', 'agent');
+  process.env.CODEX_HOME = path.join(cloudPilot.userData, 'codex-home');
+  process.env.XDT_BROWSER_RUNTIME_DIR = path.join(cloudPilot.userData, 'browser-runtime');
+}
+
+const profilePreflight = initializeProfilePreflight();
+const profileMaintenance = profilePreflight ? false : initializeProfileMaintenance();
+const instanceConfig = profilePreflight || profileMaintenance ? null : initializeInstanceConfig();
+if (instanceConfig || profilePreflight || profileMaintenance) {
+  // Container /dev/shm is only 64 MiB. Software-composited windows and plugins
+  // share it; a failed 256 KiB image allocation terminates the renderer. Use
+  // Chromium's private, unlinked files in the existing ephemeral /tmp instead.
+  // Ordinary Desktop profiles and all sandbox/storage controls stay unchanged.
+  app.commandLine.appendSwitch('disable-dev-shm-usage');
+}
+if (instanceConfig) {
+  app.setPath('userData', instanceConfig.userDataDir);
+  process.env.XDT_DEVICE_ID_OVERRIDE = instanceConfig.deviceId;
+  app.commandLine.appendSwitch('password-store', 'gnome-libsecret');
+}
 import { configureLinuxPasswordStore } from './linuxPasswordStore.js';
 import { recognizeLinuxUserInstallation, linuxUserDesktopName } from './linuxInstallation.js';
 import { prepareCindyVersionStartup, dispatchCindyVersionStartup } from './cindy-make/versionStartup.js';
@@ -46,7 +83,7 @@ const regionUserDataDirName = resolveRegionUserDataDirName({
   argv: process.argv,
   envUserDataDir: process.env.XDT_USER_DATA_DIR,
 });
-if (regionUserDataDirName) {
+if (regionUserDataDirName && !cloudPilot && !instanceConfig && !profileMaintenance && !profilePreflight) {
   app.setPath('userData', path.join(app.getPath('appData'), regionUserDataDirName));
 }
 // A verified version handoff retains the launching original's profile and keychain identity.
@@ -76,7 +113,7 @@ configureGhostSnapshotProcess((parentDir) => utilityProcess.fork(
 
 const log = createLogger('fix-path');
 log.debug(`[fix-path] before PATH=${process.env.PATH ?? ''}`);
-fixPath();
+if (!cloudPilot && !instanceConfig && !profileMaintenance && !profilePreflight) fixPath();
 ensureMacPackageManagerPath();
 log.debug(`[fix-path] after PATH=${process.env.PATH ?? ''}`);
 
@@ -109,6 +146,10 @@ const stripped = stripAnthropicEnvPreservingImportDirectory(stripSensitiveAnthro
 if (stripped.length > 0) {
   stderr.write(`[cindy] stripped user-level Anthropic env: ${stripped.join(', ')}\n`);
 }
+
+// The inherited credential redirect is stripped above. Reapply only the signed
+// pilot's own directory after that strip, before any credential consumers load.
+if (cloudPilot) process.env.CLAUDE_CONFIG_DIR = path.join(cloudPilot.managedHome, '.claude');
 
 installInvokeCapture();
 
@@ -332,6 +373,12 @@ if (!process.env.XDT_BROWSER_RUNTIME_DIR) {
 refreshBrowserRuntimeConfigDir();
 
 async function dispatch(): Promise<void> {
+  if (profilePreflight) { await runProfilePreflight(); return; }
+  if (profileMaintenance) {
+    const maintenance = await import('./instance-runtime/profile-maintenance.js');
+    await maintenance.runProfileMaintenance();
+    return;
+  }
   if (await dispatchCindyVersionStartup()) return;
   const cleanupDevInstance = await beginDesktopDevInstance(desktopDevInstanceOptions);
   // Windows updater forceQuit() ends in process.exit(0), which bypasses Electron will-quit.

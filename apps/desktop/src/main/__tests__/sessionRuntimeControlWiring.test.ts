@@ -1101,14 +1101,19 @@ describe('session runtime control wiring', () => {
     );
     // 提交写入镜像后同步本机 renderer 记忆：renderer 的全量快照才会带上该选择，
     // 镜像里的钉子得以撤销（否则会长期压住被控端后来的显式改动）。
+    // 托管云实例改由 owner-fenced Host 写入，不依赖 renderer ACK。
     const rememberThinking = registerSource.slice(
-      registerSource.indexOf('rememberThinkingIntent: ({'),
+      registerSource.indexOf('rememberThinkingIntent: async ({'),
       registerSource.indexOf('bootstrapSwitchedSession: async (sessionId, opts)'),
     );
     expect(rememberThinking).toContain(
       'setThinkingEnabledInMemory(agentKind, providerId, model, thinking)',
     );
     expect(rememberThinking).toContain('DRAFT_PREF_APPLY');
+    const cloudBranch = rememberThinking.slice(0, rememberThinking.indexOf('setThinkingEnabledInMemory'));
+    expect(cloudBranch).toContain('if (hostOwnsNewTaskDefaults()) {');
+    expect(cloudBranch).toContain('await applyHostRemoteDraftPreference({');
+    expect(cloudBranch).toContain('active: false, thinking');
   });
 
   it('only relinks retained cross-host writers without rewriting native history', () => {
