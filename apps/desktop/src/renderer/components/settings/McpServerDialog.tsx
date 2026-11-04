@@ -12,7 +12,7 @@
  * Codex 端只支持 Bearer 型鉴权,用户自定义的非 Bearer header 仅 Claude 生效。
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Sparkles, Trash2 } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -34,12 +34,24 @@ import {
 
 import { MCP_TRANSPORTS, type CustomMcpConfig, type McpTransport } from '@/../shared/customMcp';
 
+/**
+ * Saves the server somewhere other than this computer. Credentials are then managed apart from
+ * this dialog, so the token and header fields are not shown, and an empty URL on edit keeps a
+ * stored endpoint that is not shown back.
+ */
+export interface McpServerPersistence {
+  create(config: CustomMcpConfig): Promise<void>;
+  update(config: CustomMcpConfig): Promise<void>;
+  credentialsNote?: ReactNode;
+}
+
 interface McpServerDialogProps {
   initial?: CustomMcpConfig;
   /** 已占用的全部 MCP id;新建自动生成 id 时避让。 */
   existingIds?: string[];
   onSaved: () => void;
   onClose: () => void;
+  persistence?: McpServerPersistence;
 }
 
 interface HeaderRow {
@@ -73,7 +85,13 @@ function uniqueId(name: string, existing: ReadonlySet<string>): string {
   return `${base}-${i}`;
 }
 
-export function McpServerDialog({ initial, existingIds, onSaved, onClose }: McpServerDialogProps) {
+export function McpServerDialog({
+  initial,
+  existingIds,
+  onSaved,
+  onClose,
+  persistence,
+}: McpServerDialogProps) {
   const { t } = useTranslation();
   const editing = !!initial;
 
@@ -105,7 +123,7 @@ export function McpServerDialog({ initial, existingIds, onSaved, onClose }: McpS
 
   // 编辑态:回填已存 token(让 token 框「能看」/可核对,据此点亮「已保存」徽标)。
   useEffect(() => {
-    if (!editing || !initial) return;
+    if (!editing || !initial || persistence) return;
     let cancelled = false;
     void (async () => {
       const k = await readCustomMcpToken(initial.id);
@@ -118,7 +136,7 @@ export function McpServerDialog({ initial, existingIds, onSaved, onClose }: McpS
     return () => {
       cancelled = true;
     };
-  }, [editing, initial]);
+  }, [editing, initial, persistence]);
 
   const handleSave = useCallback(async () => {
     if (savingRef.current) return;
@@ -126,13 +144,15 @@ export function McpServerDialog({ initial, existingIds, onSaved, onClose }: McpS
     const trimmedUrl = url.trim();
     const nextErrors: { name?: string; url?: string } = {};
     if (!trimmedName) nextErrors.name = t('settings.mcp.errors.nameRequired');
-    try {
-      const u = new URL(trimmedUrl);
-      if (u.protocol !== 'http:' && u.protocol !== 'https:')
+    const keepStoredUrl = !!persistence && editing && !initial?.url && !trimmedUrl;
+    if (!keepStoredUrl)
+      try {
+        const u = new URL(trimmedUrl);
+        if (u.protocol !== 'http:' && u.protocol !== 'https:')
+          nextErrors.url = t('settings.mcp.errors.urlInvalid');
+      } catch {
         nextErrors.url = t('settings.mcp.errors.urlInvalid');
-    } catch {
-      nextErrors.url = t('settings.mcp.errors.urlInvalid');
-    }
+      }
     setErrors(nextErrors);
     if (nextErrors.name || nextErrors.url) {
       const invalid = document.getElementById(`${id}-${nextErrors.name ? 'name' : 'url'}`);
@@ -157,7 +177,11 @@ export function McpServerDialog({ initial, existingIds, onSaved, onClose }: McpS
     savingRef.current = true;
     setSaving(true);
     try {
-      if (editing) {
+      if (persistence) {
+        if (editing) await persistence.update(config);
+        else await persistence.create(config);
+        toast.success(t(editing ? 'settings.mcp.toast.updated' : 'settings.mcp.toast.created'));
+      } else if (editing) {
         // clearToken=true：只有在 token 已加载（hasToken=true）且字段被清空时才撤销鉴权；
         // 若 token 字段为空但 hasToken=false（async 回填尚未完成），则保留已存 token。
         const clearToken = hasToken && !token.trim();
@@ -186,6 +210,7 @@ export function McpServerDialog({ initial, existingIds, onSaved, onClose }: McpS
     initial,
     existingIds,
     onSaved,
+    persistence,
     t,
   ]);
 
@@ -294,102 +319,107 @@ export function McpServerDialog({ initial, existingIds, onSaved, onClose }: McpS
                   />
                 )}
               </FormField>
-              <McpTokenField
-                id={`${id}-token`}
-                value={token}
-                onChange={setToken}
-                hasToken={hasToken}
-                placeholder={tokenPlaceholder}
-              />
-              <fieldset className="flex min-w-0 flex-col gap-2">
-                <legend className="mb-2 text-13 font-medium text-[var(--settings-section-title)]">
-                  {t('settings.mcp.fields.headers')}
-                </legend>
-                {headers.map((h, i) => (
-                  <div key={h._key} className="flex min-w-0 items-center gap-2">
-                    <FormField
-                      id={`${id}-header-${h._key}-name`}
-                      label={`${t('settings.mcp.fields.headerNamePlaceholder')} ${i + 1}`}
-                      hideLabel
-                      className="flex-1"
+              {persistence ? (
+                persistence.credentialsNote
+              ) : (
+                <>
+                  <McpTokenField
+                    id={`${id}-token`}
+                    value={token}
+                    onChange={setToken}
+                    hasToken={hasToken}
+                    placeholder={tokenPlaceholder}
+                  />
+                  <fieldset className="flex min-w-0 flex-col gap-2">
+                    <legend className="mb-2 text-13 font-medium text-[var(--settings-section-title)]">
+                      {t('settings.mcp.fields.headers')}
+                    </legend>
+                    {headers.map((h, i) => (
+                      <div key={h._key} className="flex min-w-0 items-center gap-2">
+                        <FormField
+                          id={`${id}-header-${h._key}-name`}
+                          label={`${t('settings.mcp.fields.headerNamePlaceholder')} ${i + 1}`}
+                          hideLabel
+                          className="flex-1"
+                        >
+                          {(control) => (
+                            <SettingsTextInput
+                              {...control}
+                              surface="ivory"
+                              value={h.name}
+                              onChange={(value) =>
+                                setHeaders((prev) =>
+                                  prev.map((row) =>
+                                    row._key === h._key ? { ...row, name: value } : row,
+                                  ),
+                                )
+                              }
+                              placeholder={t('settings.mcp.fields.headerNamePlaceholder')}
+                            />
+                          )}
+                        </FormField>
+                        <FormField
+                          id={`${id}-header-${h._key}-value`}
+                          label={`${t('settings.mcp.fields.headerValuePlaceholder')} ${i + 1}`}
+                          hideLabel
+                          className="flex-1"
+                        >
+                          {(control) => (
+                            <SettingsTextInput
+                              {...control}
+                              surface="ivory"
+                              value={h.value}
+                              onChange={(value) =>
+                                setHeaders((prev) =>
+                                  prev.map((row) =>
+                                    row._key === h._key ? { ...row, value } : row,
+                                  ),
+                                )
+                              }
+                              placeholder={t('settings.mcp.fields.headerValuePlaceholder')}
+                            />
+                          )}
+                        </FormField>
+                        <Tip text={t('settings.mcp.fields.removeRow')} contentClassName="z-[10001]">
+                          <Button
+                            variant="secondary"
+                            className="w-9 px-0"
+                            size="lg"
+                            aria-label={`${t('settings.mcp.fields.removeRow')} ${i + 1}`}
+                            onClick={() => {
+                              const next = headers[i + 1] ?? headers[i - 1];
+                              setHeaders((prev) => prev.filter((row) => row._key !== h._key));
+                              requestAnimationFrame(() => {
+                                (next
+                                  ? document.getElementById(`${id}-header-${next._key}-name`)
+                                  : addHeaderRef.current
+                                )?.focus();
+                              });
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </Button>
+                        </Tip>
+                      </div>
+                    ))}
+                    <Button
+                      ref={addHeaderRef}
+                      variant="secondary"
+                      className="gap-1.5 self-start"
+                      onClick={() => {
+                        const key = headerKeyRef.current++;
+                        setHeaders((prev) => [...prev, { name: '', value: '', _key: key }]);
+                        requestAnimationFrame(() =>
+                          document.getElementById(`${id}-header-${key}-name`)?.focus(),
+                        );
+                      }}
                     >
-                      {(control) => (
-                        <SettingsTextInput
-                          {...control}
-                          surface="ivory"
-                          value={h.name}
-                          onChange={(value) =>
-                            setHeaders((prev) =>
-                              prev.map((row) =>
-                                row._key === h._key ? { ...row, name: value } : row,
-                              ),
-                            )
-                          }
-                          placeholder={t('settings.mcp.fields.headerNamePlaceholder')}
-                        />
-                      )}
-                    </FormField>
-                    <FormField
-                      id={`${id}-header-${h._key}-value`}
-                      label={`${t('settings.mcp.fields.headerValuePlaceholder')} ${i + 1}`}
-                      hideLabel
-                      className="flex-1"
-                    >
-                      {(control) => (
-                        <SettingsTextInput
-                          {...control}
-                          surface="ivory"
-                          value={h.value}
-                          onChange={(value) =>
-                            setHeaders((prev) =>
-                              prev.map((row) => (row._key === h._key ? { ...row, value } : row)),
-                            )
-                          }
-                          placeholder={t('settings.mcp.fields.headerValuePlaceholder')}
-                        />
-                      )}
-                    </FormField>
-                    <Tip
-                      text={t('settings.mcp.fields.removeRow')}
-                      contentClassName="z-[10001]"
-                    >
-                      <Button
-                        variant="secondary"
-                        className="w-9 px-0"
-                        size="lg"
-                        aria-label={`${t('settings.mcp.fields.removeRow')} ${i + 1}`}
-                        onClick={() => {
-                          const next = headers[i + 1] ?? headers[i - 1];
-                          setHeaders((prev) => prev.filter((row) => row._key !== h._key));
-                          requestAnimationFrame(() => {
-                            (next
-                              ? document.getElementById(`${id}-header-${next._key}-name`)
-                              : addHeaderRef.current
-                            )?.focus();
-                          });
-                        }}
-                      >
-                        <Trash2 size={16} />
-                      </Button>
-                    </Tip>
-                  </div>
-                ))}
-                <Button
-                  ref={addHeaderRef}
-                  variant="secondary"
-                  className="gap-1.5 self-start"
-                  onClick={() => {
-                    const key = headerKeyRef.current++;
-                    setHeaders((prev) => [...prev, { name: '', value: '', _key: key }]);
-                    requestAnimationFrame(() =>
-                      document.getElementById(`${id}-header-${key}-name`)?.focus(),
-                    );
-                  }}
-                >
-                  <Plus size={14} />
-                  {t('settings.mcp.fields.addHeader')}
-                </Button>
-              </fieldset>
+                      <Plus size={14} />
+                      {t('settings.mcp.fields.addHeader')}
+                    </Button>
+                  </fieldset>
+                </>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-2.5 p-4">

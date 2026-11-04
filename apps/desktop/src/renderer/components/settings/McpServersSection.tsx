@@ -100,7 +100,7 @@ export function McpRow({
   );
 }
 
-function AddRow({ onClick }: { onClick: () => void }) {
+export function McpAddRow({ onClick }: { onClick: () => void }) {
   const { t } = useTranslation();
   return (
     <button
@@ -212,7 +212,7 @@ export function McpServersSection() {
             </Fragment>
           ))}
           {servers.length > 0 && <Divider />}
-          <AddRow onClick={() => setDialog({ mode: 'create' })} />
+          <McpAddRow onClick={() => setDialog({ mode: 'create' })} />
         </div>
       )}
 
