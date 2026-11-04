@@ -43,7 +43,7 @@ describe('cloud IM authorization', () => {
       const client = createTrialCloudSettingsClient(),
         manage = vi.spyOn(client, 'manage');
       const props = { client, online: true, active: true, name: 'Cloud', trial: true };
-      const view = render(<CloudBotAuthorization {...props} />);
+      const view = render(<CloudBotAuthorization deviceId="cloud-test-device" {...props} />);
       const toggle = await screen.findByRole('switch', { name: label });
       fireEvent.click(toggle);
       const complete = await screen.findByRole('button', {
@@ -53,7 +53,7 @@ describe('cloud IM authorization', () => {
       await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
       expect(manage.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1);
       expect(manage.mock.calls[0][0]).toMatchObject({ section: 'bots' });
-      view.rerender(<CloudBotAuthorization {...props} online={false} />);
+      view.rerender(<CloudBotAuthorization deviceId="cloud-test-device" {...props} online={false} />);
       expect(toggle.matches(':disabled')).toBe(true);
     },
   );
@@ -63,7 +63,7 @@ describe('cloud IM authorization', () => {
 // text as status; they must show the local channel copy and the local status badge.
 it('shows official channels with the local description and status badge', async () => {
   const client = createTrialCloudSettingsClient();
-  render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+  render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" trial />);
   for (const [label, description] of [
     ['Slack', 'settings.remoteControl.hook.slackDescription'],
     ['Telegram', 'settings.remoteControl.hook.telegram.description'],
@@ -99,7 +99,7 @@ it.each([
       if (command.operation === 'run') submitted = structuredClone(command);
       return original(command);
     });
-    const view = render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+    const view = render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" trial />);
     for (const id of ['wechat', 'wecom', 'feishu', 'dingtalk', 'discord', 'telegram']) {
       expect(await screen.findByText(`settings.${id}Bot.title`)).toBeTruthy();
       expect(screen.getByText(`settings.${id}Bot.description`)).toBeTruthy();
@@ -126,7 +126,7 @@ it.each([
     await screen.findByText('cloudSettings.imConnectionDetailsUnavailable');
     expect(screen.queryByLabelText(`settings.${channel}Bot.tokenLabel`)).toBeNull();
     view.rerender(
-      <CloudBotAuthorization client={client} online={false} active name="Cloud" trial />,
+      <CloudBotAuthorization deviceId="cloud-test-device" client={client} online={false} active name="Cloud" trial />,
     );
     expect(document.querySelector('input[type="password"]')).toBeNull();
   },
@@ -137,7 +137,7 @@ it.each([
 it('uses native WeChat authorization and a single unbind confirmation', async () => {
   const client = createTrialCloudSettingsClient();
   const manage = vi.spyOn(client, 'manage');
-  render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+  render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" trial />);
   fireEvent.click(await screen.findByText('settings.wechatBot.title'));
   expect(screen.queryByRole('switch', { name: 'settings.wechatBot.title' })).toBeNull();
   const authorize = await screen.findByRole('button', {
@@ -167,7 +167,7 @@ it('allows checking an unknown credential operation without a second submission'
     if (command.operation === 'run') throw Error('CONNECTION_LOST');
     return original(command);
   });
-  render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+  render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" trial />);
   fireEvent.click(await screen.findByText('settings.wechatBot.title'));
   fireEvent.click(
     await screen.findByRole('button', { name: 'settings.wechatBot.actions.connect' }),
@@ -199,7 +199,7 @@ it('keeps a read-only remote connection visible without enabling unsupported act
         },
       ],
     });
-  render(<CloudBotAuthorization client={client} online active name="Cloud" />);
+  render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" />);
   fireEvent.click(await screen.findByText('settings.feishuBot.title'));
   const clear = await screen.findByRole('button', { name: 'settings.feishuBot.connected.clear' });
   expect(clear.matches(':disabled')).toBe(true);
@@ -213,7 +213,7 @@ it('keeps a read-only remote connection visible without enabling unsupported act
 // Credentials must not survive leaving the native card (previous generic forms unmounted).
 it('clears a credential draft when the channel card is collapsed', async () => {
   const client = createTrialCloudSettingsClient();
-  render(<CloudBotAuthorization client={client} online active name="Cloud" trial />);
+  render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" trial />);
   const card = await screen.findByText('settings.discordBot.title');
   fireEvent.click(card);
   const input = await screen.findByLabelText('settings.discordBot.tokenLabel');

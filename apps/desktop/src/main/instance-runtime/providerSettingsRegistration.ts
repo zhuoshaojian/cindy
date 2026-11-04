@@ -12,16 +12,18 @@ import {
   applyHostModelEffort,
   readNewTaskPreferenceHistory,
 } from '../host-settings/new-task-defaults.js';
-import { currentSettingsOwner } from '../host-settings/personalization.js';
+import { commitPersonalization, currentSettingsOwner, inspectPersonalization } from '../host-settings/personalization.js';
 import { getCustomProvider } from '../maker-host/custom-provider-store.js';
 import { executeProviderShareGuestCommand } from '../device-link/providerShareRuntime.js';
 import { cloudModelAccessControl } from '../model-access/index.js';
 import { providerSecretStorageKey } from '../../shared/providerSecrets.js';
 import { getInstanceConfig } from './config.js';
 import { createProviderSettingsChannel } from './providerSettingsChannel.js';
+import { createPersonalizationChannel } from './personalizationChannel.js';
+import { createImSettingsChannel } from './imSettingsChannel.js';
 import { createProviderSetup, setProviderSetup } from './providerSetup.js';
 
-/** Managed cloud instances only: the owner's cloud settings page manages providers over DeviceLink. */
+/** Managed cloud instances only: the owner's cloud settings page manages providers, the prompt and IM settings over DeviceLink. */
 export function registerCloudProviderSettings(): () => void {
   const instance = getInstanceConfig();
   if (!instance) return () => {};
@@ -75,6 +77,23 @@ export function registerCloudProviderSettings(): () => void {
               : '[INTERNAL] the provider was not updated',
           );
       },
+    }),
+  );
+  // The owner's cloud page edits the instance prompt like the local page (text stays on DeviceLink).
+  setCloudPrivateInvokeHandler(
+    createPersonalizationChannel({
+      isInstanceOwner,
+      owner: currentSettingsOwner,
+      inspect: inspectPersonalization,
+      commit: commitPersonalization,
+    }),
+  );
+  // The local IM settings handlers for the owner's cloud IM cards (binding stays on tickets).
+  setCloudPrivateInvokeHandler(
+    createImSettingsChannel({
+      isInstanceOwner,
+      owner: currentSettingsOwner,
+      call: (channel, args, execution) => callCloudManagement(channel, args, execution),
     }),
   );
   return () => {
