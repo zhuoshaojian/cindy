@@ -5,7 +5,6 @@ import {
   type CloudSettingsTab,
 } from '../../../shared/cloudSettings';
 const targetDomain: Record<string, CloudSettingsDomain> = {
-  'settings-notifications': 'desktopNotifications',
   'settings-collaboration': 'collaboration',
   'settings-agent-resource': 'agentResource',
   'settings-search-target-general-git-safety': 'gitSafety',
@@ -18,8 +17,6 @@ const targetDomain: Record<string, CloudSettingsDomain> = {
   'settings-bots': 'botModelChain',
   'settings-contacts': 'contacts',
   'settings-search-target-personalization-terminal-shell': 'terminal',
-  'settings-search-target-personalization-link-open': 'desktopChat',
-  'settings-composer': 'desktopChat',
   'settings-search-target-general-language': 'desktopGeneral',
 };
 export function cloudSearchEntryAllowed(
@@ -28,33 +25,10 @@ export function cloudSearchEntryAllowed(
   trial: boolean,
 ): boolean {
   if (!(entry.tab in CLOUD_SETTINGS_GROUPS)) return false;
-  if (entry.id === 'settings.promptRecommendation.label') return domains.includes('desktopChat');
+  // Shares the tips section but only changes the instance's own window.
+  if (entry.id === 'settings.promptRecommendation.label') return false;
   if ((entry.fallbackTargetId ?? entry.targetId) === 'settings-search-target-personalization-tips')
-    return domains.some(
-      (d) => d === 'desktopChat' || d === 'silentEncryptedRetry' || d === 'chatEmbedding',
-    );
-  if (entry.tab === 'appearance') {
-    if (['appearance.streamFade', 'settings.streamFade.label'].includes(entry.id))
-      return domains.includes('desktopChat');
-    const themed = domains.includes('desktopGeneral') && domains.includes('appearance');
-    if (entry.id === 'appearance') return themed || domains.includes('desktopChat');
-    // Wallpaper, local theme files and terminal fonts are not part of the target's settings.
-    return (
-      themed &&
-      [
-        'appearance.fonts',
-        'appearance.sidebar',
-        'settings.appearance.modeLabel',
-        'settings.appearance.themeLabel',
-        'settings.appearance.font.uiFamily.label',
-        'settings.appearance.font.uiSize.label',
-        'settings.appearance.font.codeFamily.label',
-        'settings.appearance.font.codeSize.label',
-        'settings.appearance.sidebarCardMode.label',
-        'settings.appearance.sidebarMainListMode.label',
-      ].includes(entry.id)
-    );
-  }
+    return domains.some((d) => d === 'silentEncryptedRetry' || d === 'chatEmbedding');
   if (entry.tab === 'storage')
     return (
       domains.includes('databaseWarning') &&
