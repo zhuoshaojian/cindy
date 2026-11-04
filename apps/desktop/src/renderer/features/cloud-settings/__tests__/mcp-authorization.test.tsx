@@ -3,15 +3,20 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CloudMcpAuthorization } from '../CloudMcpAuthorization';
 import { createTrialCloudSettingsClient } from '../trial';
+import { toast } from '@/lib/toast';
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (k: string) => k }),
 }));
+const confirm = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({
-  useConfirmDialog: () => ({ confirm: vi.fn(async () => true) }),
+  useConfirmDialog: () => ({ confirm }),
 }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 const props = { active: true, online: true, name: 'Cloud', trial: true };
 async function setup() {
   Object.assign(window, {
@@ -100,5 +105,87 @@ describe('native cloud MCP credentials', () => {
     await screen.findByText('cloudSettings.authPhase.succeeded');
     expect(spy.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1);
     expect(f.token.value).toBe('');
+  });
+});
+
+// 2026-11-04 product review: add, edit and delete use the local dialog and delete confirmation.
+describe('native cloud MCP servers', () => {
+  const open = async () => {
+    Object.assign(window, {
+      electronAPI: new Proxy(
+        {},
+        {
+          get() {
+            throw Error('LOCAL_API_FORBIDDEN');
+          },
+        },
+      ),
+    });
+    const client = createTrialCloudSettingsClient(),
+      manage = vi.spyOn(client, 'manage');
+    render(<CloudMcpAuthorization {...props} client={client} />);
+    await screen.findByText('Documentation');
+    const runs = () => manage.mock.calls.filter(([c]) => c.operation === 'run').map(([c]) => c);
+    return { manage, runs };
+  };
+  const field = (name: string) =>
+    screen.getByLabelText(`settings.mcp.fields.${name}`) as HTMLInputElement;
+  it('adds a server through the local dialog without collecting credentials in it', async () => {
+    const f = await open();
+    fireEvent.click(screen.getByText('settings.mcp.addCustom.title'));
+    expect(screen.queryByLabelText('settings.mcp.fields.token')).toBeNull();
+    expect(screen.getByText(/cloudSettings\.mcpCredentialsAfterSave/)).toBeTruthy();
+    fireEvent.change(field('name'), { target: { value: 'Search' } });
+    fireEvent.change(field('url'), { target: { value: 'https://example.com/search' } });
+    fireEvent.click(screen.getByRole('button', { name: 'settings.mcp.save' }));
+    await screen.findByText('Search');
+    expect(f.runs()).toHaveLength(1);
+    expect(f.runs()[0]).toMatchObject({
+      values: { name: 'Search', url: 'https://example.com/search', transport: 'http' },
+    });
+    expect(toast.success).toHaveBeenCalledWith('settings.mcp.toast.created');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+  it('edits the name and transport, and keeps credentials away from a changed endpoint', async () => {
+    const f = await open();
+    fireEvent.click(screen.getAllByRole('button', { name: 'settings.mcp.editAria' })[1]);
+    expect(field('url').value).toBe('https://example.com/sse');
+    fireEvent.change(field('name'), { target: { value: 'Team Tools 2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'settings.mcp.save' }));
+    await screen.findByText('Team Tools 2');
+    expect(f.runs()[0]).toMatchObject({
+      values: { name: 'Team Tools 2', url: 'https://example.com/sse', transport: 'sse' },
+    });
+    // The first server has a token and a header: the dialog says why its URL cannot move yet.
+    fireEvent.click(screen.getAllByRole('button', { name: 'settings.mcp.editAria' })[0]);
+    expect(screen.getByText(/cloudSettings\.mcpClearCredentialsBeforeUrl/)).toBeTruthy();
+    fireEvent.change(field('url'), { target: { value: 'https://example.org/mcp' } });
+    fireEvent.click(screen.getByRole('button', { name: 'settings.mcp.save' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('settings.mcp.toast.saveFailed'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('https://example.com/mcp')).toBeTruthy();
+  });
+  it('deletes only after the local confirmation', async () => {
+    const f = await open();
+    fireEvent.click(screen.getAllByRole('button', { name: 'settings.mcp.deleteAria' })[1]);
+    await waitFor(() => expect(screen.queryByText('Team Tools')).toBeNull());
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'settings.mcp.deleteConfirm.title' }),
+    );
+    expect(f.runs()).toHaveLength(1);
+    expect(toast.success).toHaveBeenCalledWith('settings.mcp.toast.deleted');
+  });
+  it('offers no add entry on an instance that cannot create servers here', async () => {
+    const client = createTrialCloudSettingsClient(),
+      base = client.manage!.bind(client);
+    vi.spyOn(client, 'manage').mockImplementation(async (command) => {
+      const result = await base(command);
+      return result.kind === 'page'
+        ? { ...result, items: result.items.filter((item) => item.id !== 'mcp:create') }
+        : result;
+    });
+    render(<CloudMcpAuthorization {...props} client={client} />);
+    await screen.findByText('Documentation');
+    expect(screen.queryByText('settings.mcp.addCustom.title')).toBeNull();
   });
 });

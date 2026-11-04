@@ -105,6 +105,7 @@ describe('native CIS settings client using existing settingsWeb commands', () =>
     'shortcuts',
     'desktopGeneral',
     'appearance',
+    'desktopChat',
     'linuxWindow',
     'personalization',
     'gitSafety',
@@ -177,7 +178,9 @@ it('keeps the same request ID after a lost upgrade response, without automatic r
   expect(f.bridge.instanceUpgrade).toHaveBeenCalledTimes(2);
 });
 
-it('round-trips cloud-only desktop preferences through the real Main bridge and existing wire validators', async () => {
+// Instance-window-only preferences are left to the remote desktop (2026-11-04 review).
+// Older instances still advertise them; the page must ignore them, not render or write them.
+it('ignores instance-window-only desktop preferences still advertised by an older instance', async () => {
   const f = setup({
     domain: 'desktopChat',
     defaults: {
@@ -189,25 +192,9 @@ it('round-trips cloud-only desktop preferences through the real Main bridge and 
       messageNavRailEnabled: true,
     },
   });
-  expect((await f.client.connect()).domains).toEqual(['desktopChat']);
-  const [state] = await f.client.read(['desktopChat']);
-  const edited = await f.client.save(state, {
-    webLinkOpenPreference: 'sidebar',
-    messageNavRailEnabled: false,
-  });
-  const reset = await f.client.save(edited.state, {}, ['webLinkOpenPreference']);
-  expect(reset.state.value).toMatchObject({
-    webLinkOpenPreference: 'external',
-    messageNavRailEnabled: false,
-    localLinkOpenPreference: 'sidebar',
-  });
-  expect(reset.state.customizedKeys).toEqual(['messageNavRailEnabled']);
-  f.revokeUi();
-  const count = f.request.mock.calls.length;
-  await expect(
-    f.client.save(reset.state, { composerSendShortcut: 'modifier-enter' }),
-  ).rejects.toThrow('SCOPE_CHANGED');
-  expect(f.request).toHaveBeenCalledTimes(count);
+  expect((await f.client.connect()).domains).toEqual([]);
+  await expect(f.client.read(['desktopChat' as never])).rejects.toThrow('UNSUPPORTED');
+  expect(f.history).toEqual([]);
 });
 
 it('reads and changes the cloud locale without altering other desktop fields', async () => {

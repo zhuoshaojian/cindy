@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/lib/toast';
-import { NotificationSectionView } from '@/components/settings/NotificationSection';
-import { StreamFadeSectionView } from '@/components/settings/StreamFadeSection';
 import { AgentResourceSectionView } from '@/components/settings/AgentResourceSection';
 import { CollaborationSectionView } from '@/components/settings/CollaborationSection';
 import { MemorySectionView } from '@/components/settings/MemorySection';
@@ -10,10 +8,7 @@ import { GitSafetySectionView } from '@/components/settings/GitSafetySection';
 import { TerminalShellSectionView } from '@/components/settings/TerminalShellSection';
 import { SilentEncryptedRetryCellView } from '@/components/settings/SilentEncryptedRetryCell';
 import { ChatEmbeddingCellView } from '@/components/settings/ChatEmbeddingCell';
-import { TipsSectionView, PromptRecommendationCellView } from '@/components/settings/TipsSection';
-import { MessageNavRailCellView } from '@/components/settings/MessageNavRailCell';
-import { LinkOpenSectionView } from '@/components/settings/LinkOpenSection';
-import { ComposerSendShortcutSectionView } from '@/components/settings/ComposerSendShortcutSection';
+import { TipsSectionView } from '@/components/settings/TipsSection';
 import { LanguageSectionView } from '@/components/settings/LanguageSection';
 import type { LocalePreference } from '@/i18n';
 import { LspBetaCellView } from '@/components/settings/LspBetaCell';
@@ -46,7 +41,8 @@ import {
   UserPromptEditor,
 } from '@/components/settings/UserPromptSection';
 import { CloudUserPromptSection } from './CloudUserPromptSection';
-import { CloudAppearanceSettings } from './CloudAppearanceSettings';
+import { CloudStorageUsage } from './CloudStorageUsage';
+import { CloudDesktopFallback } from './CloudDesktopFallback';
 import {
   CloudAuxiliarySettings,
   CloudBotsSettings,
@@ -64,6 +60,8 @@ type Props = {
   tab: CloudSettingsTab;
   /** Target device; model pickers read its catalog. */
   deviceId: string;
+  /** The instance's display name. */
+  name: string;
   states: Partial<Record<CloudSettingsDomain, CloudSettingsState>>;
   disabled: boolean;
   cpuCount?: number;
@@ -203,7 +201,7 @@ function Storage({
 }
 
 export function NativeCloudSections(props: Props) {
-  const { tab, states, save, disabled, changed, trial, deviceId, appVersion } = props;
+  const { tab, states, save, disabled, changed, trial, deviceId, name, appVersion } = props;
   const { t } = useTranslation();
   // The three-mode Git control requires the native mode wire field. The legacy
   // boolean cloud field cannot distinguish existing repositories from all projects.
@@ -241,43 +239,6 @@ export function NativeCloudSections(props: Props) {
   const reset = (d: CloudSettingsDomain) => attempt(d, {}, Object.keys(states[d]?.defaults ?? {}));
   const s = (d: CloudSettingsDomain) => states[d]!;
   const c = (d: CloudSettingsDomain) => !!s(d).isCustomized;
-  const chatCustomized = (key: string) => s('desktopChat').customizedKeys?.includes(key) ?? false;
-  // Like the local hooks, choosing the current default clears the override.
-  const chatChoice = (key: string, next: unknown) =>
-    next === s('desktopChat').defaults?.[key]
-      ? attempt('desktopChat', {}, [key])
-      : attempt('desktopChat', { [key]: next });
-  const linkControl = (key: 'webLinkOpenPreference' | 'localLinkOpenPreference') => ({
-    preference: s('desktopChat').value?.[key] as 'external' | 'sidebar',
-    isCustomized: chatCustomized(key),
-    onChange: (next: 'external' | 'sidebar') => void chatChoice(key, next),
-    onReset: () => attempt('desktopChat', {}, [key]),
-  });
-  if (tab === 'appearance')
-    return (
-      <>
-        {ready('desktopGeneral') && ready('appearance') && (
-          <section className="pb-[18px]" aria-label={t('settings.sections.appearance')}>
-            <CloudAppearanceSettings
-              general={s('desktopGeneral')}
-              appearance={s('appearance')}
-              disabled={disabled}
-              attempt={attempt}
-              changed={changed}
-            />
-          </section>
-        )}
-        {ready('desktopChat') &&
-          section(
-            'settings-search-target-appearance-stream-fade',
-            <StreamFadeSectionView
-              enabled={s('desktopChat').value?.streamFadePreference === 'on'}
-              onChange={(value) => void chatChoice('streamFadePreference', value ? 'on' : 'off')}
-            />,
-            'pt-[18px] pb-[18px]',
-          )}
-      </>
-    );
   if (tab === 'general')
     return (
       <>
@@ -288,30 +249,6 @@ export function NativeCloudSections(props: Props) {
               locale={s('desktopGeneral').value?.locale as LocalePreference}
               disabled={disabled}
               onChange={(locale) => void attempt('desktopGeneral', { locale })}
-            />,
-          )}
-        {ready('desktopNotifications') &&
-          generalSection(
-            'settings-notifications',
-            <NotificationSectionView
-              enabled={bool(s('desktopNotifications'), 'notificationsEnabled')}
-              onChange={(notificationsEnabled) =>
-                void attempt('desktopNotifications', { notificationsEnabled })
-              }
-            />,
-          )}
-        {ready('desktopChat') &&
-          generalSection(
-            'settings-composer',
-            <ComposerSendShortcutSectionView
-              preference={
-                s('desktopChat').value?.composerSendShortcut as 'enter' | 'modifier-enter'
-              }
-              isCustomized={chatCustomized('composerSendShortcut')}
-              shortcut="Ctrl+Enter"
-              disabled={disabled}
-              onChange={(next) => void chatChoice('composerSendShortcut', next)}
-              onReset={() => attempt('desktopChat', {}, ['composerSendShortcut'])}
             />,
           )}
         {ready('botModelChain') &&
@@ -420,18 +357,21 @@ export function NativeCloudSections(props: Props) {
               makerEnabled={bool(s('memory'), 'maker')}
               makerTogglePending={disabled}
               makerResetPending={false}
+              // Like the local page, Cindy memory turns the native Claude Code and Codex memory off
+              // at runtime without rewriting their saved choices.
               slots={{
-                'claude-code': { enabled: bool(s('memory'), 'claudeCode'), pending: disabled },
-                codex: { enabled: bool(s('memory'), 'codex'), pending: disabled },
+                'claude-code': {
+                  enabled: !bool(s('memory'), 'maker') && bool(s('memory'), 'claudeCode'),
+                  pending: disabled,
+                },
+                codex: {
+                  enabled: !bool(s('memory'), 'maker') && bool(s('memory'), 'codex'),
+                  pending: disabled,
+                },
                 pi: { enabled: bool(s('memory'), 'pi'), pending: disabled },
               }}
               handleResetSettings={() => reset('memory')}
-              handleMakerToggle={(next) =>
-                attempt(
-                  'memory',
-                  next ? { maker: true, claudeCode: false, codex: false } : { maker: false },
-                )
-              }
+              handleMakerToggle={(next) => attempt('memory', { maker: next })}
               handleMakerReset={undefined}
               handleReset={undefined}
               handleToggle={(kind, next) =>
@@ -530,28 +470,10 @@ export function NativeCloudSections(props: Props) {
               }
             />,
           )}
-        {ready('desktopChat') &&
-          section(
-            'settings-search-target-personalization-link-open',
-            <LinkOpenSectionView
-              web={linkControl('webLinkOpenPreference')}
-              local={linkControl('localLinkOpenPreference')}
-              disabled={disabled}
-            />,
-          )}
-        {(ready('silentEncryptedRetry') || ready('chatEmbedding') || ready('desktopChat')) &&
+        {(ready('silentEncryptedRetry') || ready('chatEmbedding')) &&
           section(
             'settings-search-target-personalization-tips',
             <TipsSectionView>
-              {ready('desktopChat') && (
-                <PromptRecommendationCellView
-                  enabled={bool(s('desktopChat'), 'promptRecommendationEnabled')}
-                  disabled={disabled}
-                  onChange={(next) =>
-                    void attempt('desktopChat', { promptRecommendationEnabled: next })
-                  }
-                />
-              )}
               {ready('silentEncryptedRetry') && (
                 <SilentEncryptedRetryCellView
                   enabled={bool(s('silentEncryptedRetry'), 'enabled')}
@@ -568,15 +490,6 @@ export function NativeCloudSections(props: Props) {
                   pending={disabled}
                   handleToggle={(next) => attempt('chatEmbedding', { enabled: next })}
                   handleReset={() => reset('chatEmbedding')}
-                />
-              )}
-              {ready('desktopChat') && (
-                <MessageNavRailCellView
-                  enabled={bool(s('desktopChat'), 'messageNavRailEnabled')}
-                  isCustomized={chatCustomized('messageNavRailEnabled')}
-                  disabled={disabled}
-                  onChange={(next) => void chatChoice('messageNavRailEnabled', next)}
-                  onReset={() => attempt('desktopChat', {}, ['messageNavRailEnabled'])}
                 />
               )}
             </TipsSectionView>,
@@ -675,11 +588,25 @@ export function NativeCloudSections(props: Props) {
   if (tab === 'storage' && ready('databaseWarning'))
     return (
       <StorageSectionFrame>
+        {/* The instance disk is fixed in size (2026-11-04 product review); the preview has none. */}
+        {!trial && (
+          <CloudStorageUsage
+            deviceId={deviceId}
+            name={name}
+            thresholdGiB={Number(s('databaseWarning').value?.thresholdGiB) || 0}
+            active
+          />
+        )}
         <StorageDatabaseSection>
           <div className={STORAGE_DATABASE_BODY_CLASS}>
             <Storage {...props} state={s('databaseWarning')} />
           </div>
         </StorageDatabaseSection>
+        <CloudDesktopFallback
+          deviceId={deviceId}
+          name={name}
+          label={t('cloudSettings.storageCleanupTitle')}
+        />
       </StorageSectionFrame>
     );
   if (

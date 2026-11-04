@@ -122,6 +122,7 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 - `cloud:personalization:v1`：个人指令正文 `read` / `save` / `reset`，与本地编辑器一样按 revision 拒绝过期写入（`REVISION_CONFLICT`），恢复默认即 `clear`。日志不记录正文；Agent 设置工具读取正文仍需实例上的真人确认。
 - `cloud:im-settings:v1`：一次转发一个本地 IM 设置 handler，名单见 `shared/cloudImSettings.ts`，并编译进 cloud management 的封闭 call 集。覆盖官方 Slack/Telegram/X 的连接快照、工作目录映射、默认目录、目录偏好与上线播报、官方 Telegram 行为与群，个人 Telegram 人格/行为/群、智能通讯录开关、个人微信工作目录，以及个人机器人的连接状态（回执顶层的 secret/token/password/webhook 字符串置空）。
+- `cloud:storage-usage:v1`：只读 `read`，返回实例数据卷总量与剩余，以及与本地存储页相同的数据库、媒体、旧图片缓存与聊天附件字节数；单项测量失败只把该项置 `null`。只回字节数，不回路径或文件名；清理仍在实例原生页。
 - 发起绑定（开 Slack、添加/重新授权 workspace、关联 Telegram/X、Telegram 上线）仍走云授权票据，授权页在控制端打开；通道内 `set-enabled` 只接受 `false`，`telegramBot:set-online` 只接受下线。目录在实例的目录浏览器中选择，不在实例上弹窗，微信目录写入经私有 `cloud:wechat:working-dir-set` 复用本地路径校验。provider 链接（加群、bot 主页）由实例校验后返回，在控制端打开。
 
 ### 共用校验与纯读取边界
