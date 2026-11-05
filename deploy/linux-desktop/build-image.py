@@ -70,6 +70,23 @@ def git(*args, env=None):
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
+def base_recipe_commit(revision, reuse=None):
+    """The commit whose base inputs build the base image (its cache key and label).
+
+    A rebase rewrites the commit that last changed the base inputs. The freeze may name
+    the earlier commit instead, but only when every base input is byte-identical, so the
+    base built and cached from it is reused rather than rebuilt from the package archive."""
+    paths = ['deploy/linux-desktop/' + p for p in BASE_INPUTS]
+    latest = git('log', '-1', '--format=%H', revision, '--', *paths).decode().strip()
+    if not reuse:
+        return latest
+    if not re.fullmatch('[a-f0-9]{40}', reuse):
+        raise ValueError('BASE_RECIPE_COMMIT_REQUIRED')
+    for path in paths:
+        if git('rev-parse', reuse + ':' + path) != git('rev-parse', revision + ':' + path):
+            raise ValueError('BASE_RECIPE_REUSE_MISMATCH:' + path)
+    return reuse
+
 def export(revision, destination, *paths):
     destination.mkdir(parents=True, exist_ok=True)
     # Some Git installations apply LFS filters to archive, others export pointers.
@@ -144,8 +161,7 @@ def prepare(output, revision):
               'recipeFiles': {p.relative_to(recipe).as_posix(): digest(p.read_bytes())
                               for p in sorted(recipe.rglob('*')) if p.is_file()}}
     (recipe / 'build-inputs.json').write_text(json.dumps(inputs, indent=2) + '\n')
-    inputs['baseRecipeCommit'] = git('log', '-1', '--format=%H', revision, '--',
-        *('deploy/linux-desktop/' + p for p in BASE_INPUTS)).decode().strip()
+    inputs['baseRecipeCommit'] = base_recipe_commit(revision, freeze.get('baseRecipeCommit'))
     if not re.fullmatch('[a-f0-9]{40}', inputs['baseRecipeCommit']):
         raise ValueError('BASE_RECIPE_COMMIT_REQUIRED')
     inputs['baseInputs'] = {p: inputs['recipeFiles'][p] for p in BASE_INPUTS}

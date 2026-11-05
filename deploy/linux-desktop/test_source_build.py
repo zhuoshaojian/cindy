@@ -265,6 +265,28 @@ class BuildGraphTest(unittest.TestCase):
             self.assertNotEqual(base,snapshot(root/'base-recipe'))
             self.assertNotEqual(app,snapshot(root/'build-recipe'))
 
+    def test_base_reuse_requires_identical_inputs_at_the_named_commit(self):
+        # A rebase gives the base inputs a new last commit; only byte-identical inputs may reuse the old base.
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            run = lambda *args: subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
+            run('init', '-q'); run('config', 'user.email', 'fixture@example.test'); run('config', 'user.name', 'Fixture')
+            for name in build.BASE_INPUTS:
+                p = repo / 'deploy/linux-desktop' / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_text('locked ' + name)
+            run('add', '.'); run('commit', '-qm', 'base'); old = run('rev-parse', 'HEAD')
+            (repo / 'deploy/linux-desktop/runtime-base/packages.lock').write_text('locked runtime-base/packages.lock')
+            (repo / 'other').write_text('rebased'); run('add', '.'); run('commit', '-qm', 'rebased'); same = run('rev-parse', 'HEAD')
+            (repo / 'deploy/linux-desktop/runtime-base/packages.lock').write_text('changed lock')
+            run('add', '.'); run('commit', '-qm', 'changed'); changed = run('rev-parse', 'HEAD')
+            with patch.object(build, 'REPO', repo):
+                self.assertEqual(build.base_recipe_commit(same), old)
+                self.assertEqual(build.base_recipe_commit(same, old), old)
+                self.assertEqual(build.base_recipe_commit(changed), changed)
+                with self.assertRaisesRegex(ValueError, 'BASE_RECIPE_REUSE_MISMATCH'):
+                    build.base_recipe_commit(changed, old)
+                with self.assertRaisesRegex(ValueError, 'BASE_RECIPE_COMMIT_REQUIRED'):
+                    build.base_recipe_commit(same, 'main')
+
     def test_remote_targets_use_fresh_base_without_registry_roundtrip(self):
         plan = build.bake_plan(Path('/private/records'), 'example:unique', 'commit', 'entrysha', True)['target']
         self.assertEqual(plan['base']['target'], 'runtime-base-slim')
