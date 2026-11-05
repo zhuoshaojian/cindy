@@ -1,7 +1,8 @@
 import { additionalSettingsRuntime, additionalNativeOperations } from './additionalRuntime.js';
 import { getHostBrowserBackendStore } from '../browser-backend-settings-store.js';
 import { inspectHostChatEmbeddingSettings, commitHostChatEmbeddingSettings } from '../maker-host/chat-embedding-settings-store.js';
-import { additionalSettingsSchemas, CLOUD_SETTINGS_LOCALES, RETIRED_ADDITIONAL_SETTINGS_DOMAINS, type AdditionalSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
+import { additionalSettingsSchemas, RETIRED_ADDITIONAL_SETTINGS_DOMAINS, type AdditionalSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
+import { SETTINGS_DISPLAY_LOCALES } from '../../shared/settingsReadCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import type { OverrideSettingsCommitOptions, OverrideSettingsFile } from '../maker-host/override-settings-file.js';
 import { getCollaborationSettingsStore } from '../maker-host/collaboration-settings-store.js';
@@ -83,12 +84,13 @@ export function inspectAdditionalSettings(domain: AdditionalSettingsDomain, work
     if (domain === 'linuxWindow' && process.platform !== 'linux') return { status: 'unavailable', revision: null };
     if (domain === 'piCompaction' && inspectPiCompactionSettings(ownerScopedUserDataPath()).status !== 'ready') return { status: 'unavailable', revision: null };
     const source = desktopDomains.has(domain) ? inspectDesktopPreferences() : storeFor(domain).inspect();
-    // The frozen cloud wire carries six display languages. A newer one chosen on the instance
-    // stays in its own settings rather than failing the whole read.
+    // A language outside the cloud wire stays in the instance's own settings rather than failing the read.
     if (domain === 'desktopGeneral' && source.status === 'ready'
-      && !(CLOUD_SETTINGS_LOCALES as readonly unknown[]).includes((source.value as { locale?: unknown }).locale)) return { status: 'unavailable', revision: null };
+      && !(SETTINGS_DISPLAY_LOCALES as readonly unknown[]).includes((source.value as { locale?: unknown }).locale)) return { status: 'unavailable', revision: null };
     const state = project(domain, source);
-    if (domain === 'desktopGeneral' && state.status === 'ready') return { ...state, choices: { themeFamilyId: additionalNativeOperations()?.themeChoices() ?? [] } };
+    // Listing the languages tells cloud pages this Host accepts more than the original six.
+    if (domain === 'desktopGeneral' && state.status === 'ready') return { ...state, choices: { themeFamilyId: additionalNativeOperations()?.themeChoices() ?? [],
+      locale: SETTINGS_DISPLAY_LOCALES.map(value => ({ value, label: value })) } };
     return state;
   } catch { return { status: 'unreadable', revision: null }; }
 }
