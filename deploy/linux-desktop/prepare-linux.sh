@@ -20,10 +20,28 @@ const {extract}=req('@electron-internal/extract-zip');
 })().catch(e=>{console.error(e);process.exit(1)});
 JS
 CI=1 npm_config_nodedir=/usr/local pnpm install --frozen-lockfile
-# snapshot.debian.org can answer 5xx for minutes; retry like the base image build.
-apt-get -o APT::Sandbox::User=root -o Acquire::Retries=8 update
+# Build-only Debian downloads use a nearby mirror of the signed Debian archive:
+# snapshot.debian.org is reached through the runner's overseas forwarder, which
+# answered 504 for minutes at a time. apt still verifies every index with the
+# Debian keyring and each package stays pinned to its exact version. The
+# setting persists into the Dock build-tools stage; runtime images keep their
+# canonical snapshot sources.
+mirror="${DEBIAN_BUILD_MIRROR:-https://mirrors.aliyun.com}"
+case "$mirror" in https://*) ;; *) echo 'DEBIAN_BUILD_MIRROR must be an https URL' >&2; exit 1 ;; esac
+cat > /etc/apt/cindy-build-mirror.list <<LIST
+deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] ${mirror%/}/debian bookworm main
+deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] ${mirror%/}/debian bookworm-updates main
+deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] ${mirror%/}/debian-security bookworm-security main
+LIST
+cat > /etc/apt/apt.conf.d/99cindy-build-mirror <<CONF
+Dir::Etc::SourceList "/etc/apt/cindy-build-mirror.list";
+Dir::Etc::SourceParts "/etc/apt/cindy-build-mirror.d";
+Acquire::Retries "8";
+CONF
+mkdir -p /etc/apt/cindy-build-mirror.d
+apt-get -o APT::Sandbox::User=root update
 cd /workspace/debs
-apt-get -o APT::Sandbox::User=root -o Acquire::Retries=8 download \
+apt-get -o APT::Sandbox::User=root download \
   libjson-c-dev=0.16-2 libjson-c5=0.16-2 \
   libturbojpeg0-dev=1:2.1.5-2 libturbojpeg0=1:2.1.5-2 \
   libxkbcommon-dev=1.5.0-1 libxkbcommon0=1.5.0-1 \
