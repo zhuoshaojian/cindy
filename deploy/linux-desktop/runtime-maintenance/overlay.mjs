@@ -62,7 +62,8 @@ export function transformMaintenanceSource(code, relative) {
       + code.replace(marker, `    configureMaintenanceActivity(readMaintenanceActivity);\n${marker}`);
   }
   if (relative === 'packages/maker-scheduler/src/engine/scheduler.ts') {
-    const anchor = '        next = computeNextFireAt(current, now);';
+    // An unfinished Once claim computes no wake; the gate keeps an undefined wake unchanged.
+    const anchor = '        next = unfinishedOnce ? undefined : computeNextFireAt(current, now);';
     assert.equal(code.split(anchor).length, 2, 'Maintenance schedule recovery integration changed');
     code = code.replace(anchor, `${anchor}\n        next = cloudMaintenance.restoreScheduleWake(current, next, now);`);
   }

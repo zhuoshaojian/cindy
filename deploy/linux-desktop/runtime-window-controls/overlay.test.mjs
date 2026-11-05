@@ -75,7 +75,8 @@ test('real integration transforms compile, preserve native files, and render the
     assert.throws(() => transformCloudWindowSource(transformed, target), /twice/);
     if (target.endsWith('bootstrap-electron.ts')) {
       assert.ok(!transformed.includes('restoreMinimized'));
-      assert.match(transformed, /\(BrowserWindow.fromWebContents\(event.sender\) \?\? mainWindowRef\)\?\.minimize\(\);/);
+      // Upstream minimizes through minimizeWindow; on Xfce that stays a native minimize.
+      assert.match(transformed, /const window = BrowserWindow\.fromWebContents\(event\.sender\) \?\? mainWindowRef;\n\s+if \(window\) minimizeWindow\(window\);/);
     }
     if (!target.endsWith('WindowControls.tsx')) continue;
     const api = { platform: 'linux', windowMaximize() {}, windowMinimize() {}, windowClose() {} };
