@@ -16,7 +16,7 @@ separately:
 
 The cloud.10 history from before the rebase is kept as
 `backup/cloud-settings-native-client-0121`. The source freeze names it as
-`cloudParent`. Release identity: `0.1.125-cloud.1`.
+`cloudParent`. Release identity: `0.1.125-cloud.2`.
 
 ## Compatibility decisions
 
@@ -40,9 +40,19 @@ Upstream added 1,937 commits. Electron is unchanged (42.11.12).
   is kept in window storage beside the workspace draft. It is not in the Host
   history, because older runtimes reject unknown history fields.
 - **Classical editions (文言).** The host locale copy carries upstream's classical
-  reply style in window storage, as upstream does. The editable `desktopGeneral.locale`
-  accepts all twelve supported locales. The frozen read catalog keeps its original
-  value set.
+  reply style in window storage, as upstream does.
+- **Display languages.** Upstream now has twelve display languages. The frozen CIS v2
+  contract carries five of them for `desktopGeneral.locale`, plus `system`: `zh-CN`,
+  `zh-TW`, `en`, `ja` and `ko`. CIS validates both the commands it queues and the
+  results an instance posts.
+  - The cloud page offers only these values. Cloud.1 offered all twelve languages, and
+    CIS rejected the others, so the page showed an unconfirmed save.
+  - An instance whose own language is one of the seven newer ones reports
+    `desktopGeneral` as `unavailable`. The cloud page then points to the cloud
+    desktop for the language, and the rest of the page still loads.
+  - The instance's own settings accept every upstream language.
+  - Choosing the newer languages from the cloud page needs a CIS contract change
+    first.
 - **Translations.** The 301 cloud strings are translated into the seven new
   locales.
 - **Linux input.** Upstream's input helper now also has an X11/XTest backend. The
@@ -76,3 +86,34 @@ These ran on a macOS checkout and are not real-account acceptance:
   environment.
 - Recipe checks: node 140 passed, 1 skipped; all Python suites pass.
 - `stage-cloud-overlays.mjs` applies all 30 overlays to the frozen source.
+
+## Owner acceptance
+
+Only the owner's instance was upgraded. It was idle both times, so neither upgrade
+was skipped. Other instances and the defaults for new instances are unchanged.
+
+**cloud.1.** The upgrade completed with an encrypted backup, unchanged databases
+and schedules, and the two new schedule columns. The Dev client then found one
+problem. The cloud page offered all twelve display languages, and CIS rejected
+文言 as an unconfirmed save. The instance value was not changed.
+
+**cloud.2** freezes `41dc15701b` and keeps cloud display languages to the CIS
+contract. It went through the same upgrade checks. The Dev client
+`0.1.125-dev.cloud.20261105.2` was used against the real instance:
+
+- The cloud page loads every tab. It reports `0.1.125-cloud.2`, and contacts are
+  absent.
+- The cloud language menu offers the six contract values. The local menu keeps
+  all twelve. Saving 日本語 and then 简体中文 succeeded.
+- With the instance's own language set to Español in the cloud desktop, the cloud
+  page still loaded. The language row pointed to the cloud desktop, and no read
+  failure was shown. The instance language is back to 简体中文.
+- The image-input override saved to the instance's model catalog overrides and was
+  reset afterwards.
+- Remote desktop: clicks and typing reach the instance. Upstream's computer privacy
+  screen, lock on exit and idle lock all show as unsupported on the instance, so
+  their new defaults do not lock the cloud desktop. Reopening the viewer finds the
+  desktop unlocked.
+- The first viewer session after the cloud.2 restart showed a frozen first frame.
+  Input still reached the instance. Closing and reopening the viewer restored live
+  video, and the later sessions stayed live.
