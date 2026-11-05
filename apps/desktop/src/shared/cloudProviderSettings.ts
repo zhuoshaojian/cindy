@@ -24,6 +24,8 @@ export const CLOUD_PROVIDER_SETTINGS_OPS = [
   'refresh',
   'rediscover',
   'model-call',
+  // Image-input capability override of the model panel (upstream v0.1.125).
+  'image-input',
   'effort',
   'model-edit',
   'cli-scan',
@@ -55,6 +57,8 @@ export const CLOUD_MODEL_CALLS = {
   'price-get': 'maker:model-price-override:get',
   'price-set': 'maker:model-price-override:set',
   'price-reset': 'maker:model-price-override:reset',
+  'image-input-get': 'maker:model-image-input:get',
+  'image-input-set': 'maker:model-image-input:set',
 } as const;
 export type CloudModelCall = keyof typeof CLOUD_MODEL_CALLS;
 
@@ -160,10 +164,11 @@ export const cloudProviderSettingsRequestSchema = z.discriminatedUnion('op', [
       target: modelTarget
         .extend({ relatedTargets: z.array(modelTarget).max(2).optional() })
         .strict(),
-      /** Limit or compaction percentage (null resets), or the desired price quote. */
+      /** Limit, compaction percentage or image input (null resets), or the desired price quote. */
       value: z
         .union([
           z.number().finite().nullable(),
+          z.boolean(),
           z
             .object({
               currency: z.enum(['CNY', 'USD']),

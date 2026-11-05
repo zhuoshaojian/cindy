@@ -2,9 +2,6 @@ import { nativeProjectToolSettings } from './additionalProjectTools.js';
 import { getHostBrowserBackendStore } from '../browser-backend-settings-store.js';
 import { nativeWorkspaceProviderSettings } from './additionalWorkspaceProviders.js';
 import { commitHostBrowserBackendKind } from '../mcp-integrations/browser.js';
-import { getContactsSettingsStore } from '../maker-host/contacts-settings-store.js';
-import { setContactsDeviceSyncEnabled } from '../contacts-sync/driver.js';
-import { getActiveAppSession } from '../appSessionState.js';
 import type { OverrideSettingsCommitOptions } from '../maker-host/override-settings-file.js';
 import type { SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import { HostSettingsError } from './operations.js';
@@ -39,9 +36,8 @@ export const nativeSettingsOperations = {
     const families = [...BUILTIN_THEME_FAMILIES, ...local.themes.map(theme => ({ id: theme.family ? `${theme.family}${LOCAL_THEME_SUFFIX}` : theme.id, name: theme.name }))];
     return families.filter((item, index) => families.findIndex(other => other.id === item.id) === index).map(item => ({ value: item.id, label: item.name }));
   },
-  contactsSyncAvailable: () => getActiveAppSession().mode === 'cloud',
-  async commit(domain: 'contactsSync' | 'browserBackend', change: { set: Values; clear: string[] }, options: OverrideSettingsCommitOptions) {
-    const store = domain === 'contactsSync' ? getContactsSettingsStore() : getHostBrowserBackendStore();
+  async commit(_domain: 'browserBackend', change: { set: Values; clear: string[] }, options: OverrideSettingsCommitOptions) {
+    const store = getHostBrowserBackendStore();
     let receipt: Awaited<ReturnType<typeof store.commitAtomic>> | undefined;
     const assertCurrent = () => {
       options.assertCurrent?.();
@@ -49,19 +45,11 @@ export const nativeSettingsOperations = {
     };
     assertCurrent();
     try {
-      if (domain === 'contactsSync') {
-        if (!nativeSettingsOperations.contactsSyncAvailable()) throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
-        await setContactsDeviceSyncEnabled(change.set.deviceSyncEnabled === true, {
-          ...options, assertCurrent, clearOverride: change.clear.includes('deviceSyncEnabled'),
-          onCommitted: state => { receipt = state; },
-        });
-      } else {
-        const kind = change.clear.includes('kind') ? 'external' : change.set.kind;
-        if (kind !== 'external' && kind !== 'rsb-webview') throw new HostSettingsError('INVALID_PARAMS');
-        await commitHostBrowserBackendKind(kind, async () => {
-          receipt = await getHostBrowserBackendStore().commitAtomic(change as never, { ...options, assertCurrent });
-        });
-      }
+      const kind = change.clear.includes('kind') ? 'external' : change.set.kind;
+      if (kind !== 'external' && kind !== 'rsb-webview') throw new HostSettingsError('INVALID_PARAMS');
+      await commitHostBrowserBackendKind(kind, async () => {
+        receipt = await store.commitAtomic(change as never, { ...options, assertCurrent });
+      });
       if (!receipt) throw new HostSettingsError('CONFLICT');
       options.assertCurrent?.();
       return { ...receipt, applicationFailed: false };
