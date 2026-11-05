@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => {
     forbidden: vi.fn(() => { throw new Error('No runtime, credential, filesystem, or network initialization'); }),
     stores: {
       collaboration: inspect(), agentResource: inspect(), gitSafety: inspect(), memory: inspect(),
-      compaction: inspect(), piCompaction: inspect(), contacts: inspect(), silentEncryptedRetry: inspect(),
+      compaction: inspect(), piCompaction: inspect(), silentEncryptedRetry: inspect(),
       chatEmbedding: inspect(), lsp: inspect(), subagentModel: inspect(), auxiliaryModel: inspect(),
       botModelChain: inspect(), visionBridge: inspect(), terminal: inspect(), windowBehavior: inspect(),
       deviceLink: inspect(), updateChannel: inspect(), autoUpdate: inspect(), analytics: inspect(),
@@ -26,7 +26,6 @@ vi.mock('../../maker-host/memory-settings-store.js', () => ({ inspectMemorySetti
 vi.mock('../../maker-host/compaction-settings-store.js', () => ({
   inspectCompactionSettings: mocks.stores.compaction, inspectPiCompactionSettings: mocks.stores.piCompaction,
 }));
-vi.mock('../../maker-host/contacts-settings-store.js', () => ({ inspectContactsSettings: mocks.stores.contacts }));
 vi.mock('../../maker-host/silent-encrypted-retry-store.js', () => ({ inspectSilentEncryptedRetrySettings: mocks.stores.silentEncryptedRetry }));
 vi.mock('../../maker-host/chat-embedding-settings-store.js', () => ({ inspectChatEmbeddingSettings: mocks.stores.chatEmbedding }));
 vi.mock('../../maker-host/lsp-mode-store.js', () => ({ inspectLspModeSettings: mocks.stores.lsp }));
@@ -83,10 +82,11 @@ describe('core production reader adapter', () => {
     expect(result.collections?.visionBridgeTargets).toEqual({ status: 'unreadable' });
     expect(result.fields['voice.refinerChain']).toBe(result.fields['auxiliaryModel.models']);
     const context = mocks.context!;
-    for (const name of ['memory', 'compaction', 'piCompaction', 'contacts', 'subagentModel', 'botModelChain'] as const) {
+    for (const name of ['memory', 'compaction', 'piCompaction', 'subagentModel', 'botModelChain'] as const) {
       expect(mocks.stores[name]).toHaveBeenCalledWith(context.ownerRoot);
     }
     expect(result.fields['iosSimulator.autoOpenEmbeddedPanel']).toEqual({ status: 'unsupported' });
+    expect(result.fields['contacts.enabled']).toEqual({ status: 'unsupported' });
     expect(mocks.stores.chatEmbedding).toHaveBeenCalledWith({
       ownerRoot: context.ownerRoot, userDataPath: context.userDataPath,
       context: { mode: 'cloud', isAuthenticated: true, userId: context.dataOwnerId, membershipKind: 'org' },

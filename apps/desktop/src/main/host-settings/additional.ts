@@ -1,7 +1,7 @@
 import { additionalSettingsRuntime, additionalNativeOperations } from './additionalRuntime.js';
 import { getHostBrowserBackendStore } from '../browser-backend-settings-store.js';
 import { inspectHostChatEmbeddingSettings, commitHostChatEmbeddingSettings } from '../maker-host/chat-embedding-settings-store.js';
-import { additionalSettingsSchemas, type AdditionalSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
+import { additionalSettingsSchemas, RETIRED_ADDITIONAL_SETTINGS_DOMAINS, type AdditionalSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import type { OverrideSettingsCommitOptions, OverrideSettingsFile } from '../maker-host/override-settings-file.js';
 import { getCollaborationSettingsStore } from '../maker-host/collaboration-settings-store.js';
@@ -9,7 +9,6 @@ import { getAgentResourceSettingsStore } from '../maker-host/agent-resource-sett
 import { getGitSafetySettingsStore } from '../maker-host/git-safety-settings-store.js';
 import { getMemorySettingsStore } from '../maker-host/memory-settings-store.js';
 import { getClaudeCompactionSettingsStore, getPiCompactionSettingsStore, inspectPiCompactionSettings, sealExplicitPiCompactionChoice } from '../maker-host/compaction-settings-store.js';
-import { getContactsSettingsStore } from '../maker-host/contacts-settings-store.js';
 import { getSilentEncryptedRetrySettingsStore } from '../maker-host/silent-encrypted-retry-store.js';
 import { getLspSettingsStore } from '../maker-host/lsp-mode-store.js';
 import { getAnalyticsSettingsStore } from '../analytics-settings-store.js';
@@ -32,14 +31,15 @@ const stores = {
   collaboration: getCollaborationSettingsStore, agentResource: getAgentResourceSettingsStore,
   gitSafety: getGitSafetySettingsStore, memory: getMemorySettingsStore,
   claudeCompaction: getClaudeCompactionSettingsStore, piCompaction: getPiCompactionSettingsStore,
-  contacts: getContactsSettingsStore, silentEncryptedRetry: getSilentEncryptedRetrySettingsStore,
-  contactsSync: getContactsSettingsStore, browserBackend: getHostBrowserBackendStore,
+  silentEncryptedRetry: getSilentEncryptedRetrySettingsStore, browserBackend: getHostBrowserBackendStore,
   telegramPersona: getTelegramPersonaSettingsStore,
   lsp: getLspSettingsStore, privacy: getAnalyticsSettingsStore, diagnostics: getLogUploadSettingsStore,
   linuxWindow: getWindowBehaviorSettingsStore, telegramBehavior: getTelegramBehaviorSettingsStore,
   terminal: getTerminalSettingsStore,
 };
 const desktopDomains = new Set(['desktopGeneral', 'desktopChat', 'desktopNotifications']);
+// Retired domains stay in the wire catalog for existing callers and always read as unavailable.
+const retiredDomains = new Set<AdditionalSettingsDomain>(RETIRED_ADDITIONAL_SETTINGS_DOMAINS);
 const toolDomains = new Set(['builtinTools', 'browserTools', 'computerTools', 'androidTools']);
 function toolReader() { return new SettingsReader({ userDataPath: ownerScopedUserDataPath(), logger: { warn() {} } }); }
 function projectTools(domain: AdditionalSettingsDomain, snapshot: ReturnType<SettingsReader['inspectUserDefaults']>): State {
@@ -65,6 +65,7 @@ function project(domain: AdditionalSettingsDomain, state: { status: string; revi
 }
 export function inspectAdditionalSettings(domain: AdditionalSettingsDomain, workspaceId?: string): State {
   try {
+    if (retiredDomains.has(domain)) return { status: 'unavailable', revision: null };
     if (domain === 'imWorkspaceProviders') return additionalNativeOperations()?.imWorkspaceProviders.inspect() ?? { status: 'unavailable', revision: null };
     if (domain === 'workspaceTools') return additionalNativeOperations()?.workspaceTools.read(workspaceId) ?? { status: 'unavailable', revision: null };
     if (domain === 'imWorkspaces') return additionalNativeOperations()?.imWorkspaces.inspect() ?? { status: 'unavailable', revision: null };
@@ -73,7 +74,6 @@ export function inspectAdditionalSettings(domain: AdditionalSettingsDomain, work
     if (domain === 'telegramGroups') return additionalNativeOperations()?.telegramGroups.inspect() ?? { status: 'unavailable', revision: null };
     if (domain === 'pluginCindy' || domain === 'pluginSidebar' || domain === 'pluginErrand') return (additionalNativeOperations()?.plugins.inspect(domain) ?? { status: 'unavailable', revision: null }) as State;
     if (domain === 'shortcuts') return (additionalNativeOperations()?.shortcuts.read() ?? { status: 'unavailable', revision: null }) as State;
-    if (domain === 'contactsSync' && !additionalNativeOperations()?.contactsSyncAvailable()) return { status: 'unavailable', revision: null };
     if (domain === 'browserBackend' && !additionalNativeOperations()) return { status: 'unavailable', revision: null };
     if (domain === 'chatEmbedding') {
       const runtime = additionalSettingsRuntime()?.chatEmbedding;
@@ -96,6 +96,7 @@ export async function readAdditionalSettings(domain: AdditionalSettingsDomain, w
 }
 export async function commitAdditionalSettings(domain: AdditionalSettingsDomain, change: { set: Values; clear: string[] }, options: OverrideSettingsCommitOptions, workspaceId?: string): Promise<State & { status: 'ready'; applicationFailed?: boolean }> {
   options.assertCurrent?.();
+  if (retiredDomains.has(domain)) throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
   if (inspectAdditionalSettings(domain, workspaceId).status !== 'ready') throw new HostSettingsError('UNREADABLE');
   if (domain === 'imWorkspaceProviders') {
     const native = additionalNativeOperations(); if (!native) throw new HostSettingsError('NOT_READY');
@@ -131,7 +132,7 @@ export async function commitAdditionalSettings(domain: AdditionalSettingsDomain,
     if (!native) throw new HostSettingsError('NOT_READY');
     return await native.shortcuts.commit(change, options) as State & { status: 'ready' };
   }
-  if (domain === 'contactsSync' || domain === 'browserBackend') {
+  if (domain === 'browserBackend') {
     const native = additionalNativeOperations();
     if (!native) throw new HostSettingsError('NOT_READY');
     const state = await native.commit(domain, change, options);

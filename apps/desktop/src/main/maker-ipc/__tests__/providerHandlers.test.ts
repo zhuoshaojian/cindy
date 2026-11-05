@@ -4226,7 +4226,8 @@ describe('provider:oauth mutation ordering', () => {
         discoveredSource: { kind: 'magpie', providerId: 'New account' } }], 'pi', 'fixture-request');
     });
     const broadcastToAllWindows = vi.fn();
-    const bindings = { subscriptionAccountKind: () => null, isCodexAccountProvider: () => false,
+    // The cloud fork's closure first checks for a cloud settings call; none is running here.
+    const bindings = { cloudManagementExecution: () => null, subscriptionAccountKind: () => null, isCodexAccountProvider: () => false,
       getActiveCatalog: () => catalog, storedCustomProviderId, runGenericOAuthLogin,
       broadcastToAllWindows, MAKER_PUSH, deriveModelsDiscoveryUrl, discoverGenericOAuthModels,
       getCustomProvider, mergeDiscoveredModelsIntoConfig, updateCustomProviderIfUnchanged,

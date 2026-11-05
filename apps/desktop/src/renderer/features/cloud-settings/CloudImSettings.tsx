@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ModelSelector } from '@/components/new-chat/ModelSelector';
+import { ModelSelector, type RemoteAgentSelectorOptions } from '@/components/new-chat/ModelSelector';
 import {
   ImDefaultSettingsSectionFrame,
   ImDefaultSettingsSectionView,
@@ -24,6 +24,10 @@ import type { CloudSettingsDomain, CloudSettingsState } from '../../../shared/cl
 import type { ImDefaultSettingsState } from '../../../shared/imDefaultSettings';
 import { createCloudImCaller } from './cloudImTarget';
 import { CloudDesktopFallback } from './CloudDesktopFallback';
+
+// Instance bots run on the instance. The cloud page reads only its catalog and cannot see the
+// computers paired with it, so agents on other computers are unavailable here.
+const INSTANCE_ONLY_AGENTS: RemoteAgentSelectorOptions | undefined = undefined;
 
 const channels = {
   feishu: 'imFeishu',
@@ -250,6 +254,7 @@ export function CloudImSettings({
             modelPicker={
               <ModelSelector
                 deviceId={deviceId}
+                remoteAgent={INSTANCE_ONLY_AGENTS}
                 modelId={shown?.route.model ?? active.modelId}
                 effort={shown?.route.effort ?? active.effort}
                 disabled={disabled}

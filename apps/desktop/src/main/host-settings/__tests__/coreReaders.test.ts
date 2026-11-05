@@ -44,7 +44,6 @@ import { inspectAgentResourceSettings } from '../../maker-host/agent-resource-se
 import { inspectGitSafetySettings } from '../../maker-host/git-safety-settings-store.js';
 import { inspectMemorySettings } from '../../maker-host/memory-settings-store.js';
 import { inspectCompactionSettings, inspectPiCompactionSettings } from '../../maker-host/compaction-settings-store.js';
-import { inspectContactsSettings } from '../../maker-host/contacts-settings-store.js';
 import { inspectSilentEncryptedRetrySettings } from '../../maker-host/silent-encrypted-retry-store.js';
 import { inspectChatEmbeddingSettings } from '../../maker-host/chat-embedding-settings-store.js';
 import { inspectLspModeSettings } from '../../maker-host/lsp-mode-store.js';
@@ -61,6 +60,7 @@ import { inspectAnalyticsSettings } from '../../analytics-settings-store.js';
 import { inspectLogUploadSettings } from '../../log-upload/logUploadSettingsStore.js';
 import { encodeCatalogModelPin } from '../../../shared/catalogModelPin.js';
 import { SETTINGS_READ_CATALOG } from '../../../shared/settingsReadCatalog.js';
+import { supportsBetaUpdateChannel } from '../../../shared/updateChannelCapability.js';
 import { CORE_SETTINGS_FIELD_IDS, readCoreSettings, type CoreSettingsStores, type CoreSettingsReadContext } from '../readers/core.js';
 import type { SettingsFileInspection } from '../../maker-host/settings-inspection.js';
 
@@ -68,7 +68,7 @@ const stores: CoreSettingsStores = {
   collaboration: inspectCollaborationSettings, agentResource: inspectAgentResourceSettings,
   gitSafety: inspectGitSafetySettings, memory: inspectMemorySettings,
   compaction: inspectCompactionSettings, piCompaction: inspectPiCompactionSettings,
-  contacts: inspectContactsSettings, silentEncryptedRetry: inspectSilentEncryptedRetrySettings,
+  silentEncryptedRetry: inspectSilentEncryptedRetrySettings,
   chatEmbedding: inspectChatEmbeddingSettings, lsp: inspectLspModeSettings,
   subagentModel: inspectSubagentModelSettings, auxiliaryModel: inspectAuxiliaryModelSettings,
   botModelChain: inspectBotModelChainSettings, visionBridge: inspectVisionBridgeSettings,
@@ -108,7 +108,6 @@ const fixtures: Fixture[] = [
   { file: 'memory-settings.json', owner: true, inspect: () => inspectMemorySettings(ownerRoot()), leaf: 'maker', value: false, expected: false, bad: null },
   { file: 'compaction-settings.json', owner: true, inspect: () => inspectCompactionSettings(ownerRoot()), leaf: 'claudeCodeAutoCompactPct', value: 67.8, expected: 68, bad: '90' },
   { file: 'pi-compaction-settings.json', owner: true, inspect: () => inspectPiCompactionSettings(ownerRoot()), leaf: 'piAutoCompactPct', value: 200, expected: 95, bad: null },
-  { file: 'contacts-settings.json', owner: true, inspect: () => inspectContactsSettings(ownerRoot()), leaf: 'deviceSyncEnabled', value: true, expected: true, bad: 'false' },
   { file: 'silent-encrypted-retry-settings.json', inspect: inspectSilentEncryptedRetrySettings, leaf: 'enabled', value: false, expected: false, bad: [] },
   { file: 'chat-embedding-settings.json', owner: true, inspect: inspectEmbedding, leaf: 'enabled', value: false, expected: false, bad: 'true' },
   { file: 'lsp-mode-settings.json', inspect: inspectLspModeSettings, leaf: 'enabled', value: true, expected: true, bad: 1, source: 'unknown' },
@@ -302,7 +301,8 @@ it.each(['darwin', 'win32', 'linux'] as const)('marks inapplicable fields on %s 
   expect(result.fields['windowBehavior.linuxCloseBehavior'].status).toBe(platform === 'linux' ? 'value' : 'unsupported');
   // The embedded iOS simulator was retired upstream on every platform.
   expect(result.fields['iosSimulator.autoOpenEmbeddedPanel'].status).toBe('unsupported');
-  expect(result.fields['updateChannel.enableBeta'].status).toBe(platform === 'linux' ? 'unsupported' : 'value');
+  expect(result.fields['updateChannel.enableBeta'].status).toBe(supportsBetaUpdateChannel(platform, state.arch) ? 'value' : 'unsupported');
+  expect(result.fields['contacts.deviceSyncEnabled'].status).toBe('unsupported');
 });
 
 it.each(['owner', 'generation', 'profile'] as const)('invalidates the complete aggregate on %s drift', (kind) => {

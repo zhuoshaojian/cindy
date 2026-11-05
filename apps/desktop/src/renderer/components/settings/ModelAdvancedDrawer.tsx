@@ -1198,7 +1198,7 @@ export function ModelAdvancedDrawer({
                               width="sm"
                               value={field.value}
                               options={field.options}
-                              disabled={imageInputOverride.loading || localConfigurationBlocked}
+                              disabled={imageInputOverride.loading || imageInputOverride.unavailable || localConfigurationBlocked}
                               onValueChange={(value) => void imageInputOverride.setValue(
                                 value === 'default' ? null : value === 'true',
                               )}

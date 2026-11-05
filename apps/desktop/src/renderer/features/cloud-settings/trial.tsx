@@ -74,8 +74,6 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
     visionBridge: { enabled: false, primary: null, fallback: null, targetModels: [] },
     browserBackend: { kind: 'external' },
     memory: { maker: true, claudeCode: false, codex: false, pi: true },
-    contacts: { enabled: false },
-    contactsSync: { deviceSyncEnabled: false },
     chatEmbedding: { enabled: true },
     silentEncryptedRetry: { enabled: true },
     terminal: { defaultShellPref: 'auto' },

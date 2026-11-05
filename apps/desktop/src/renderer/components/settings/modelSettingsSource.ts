@@ -42,7 +42,9 @@ export interface ModelSettingsSource {
     | 'getModelPriceOverride'
     | 'setModelPriceOverride'
     | 'resetModelPriceOverride'
-  >;
+  > &
+    /** Absent when the device's runtime predates the image-input override. */
+    Partial<Pick<Maker, 'getModelImageInputOverride' | 'setModelImageInputOverride'>>;
 }
 
 export const ModelSettingsSourceContext = createContext<ModelSettingsSource | null>(null);

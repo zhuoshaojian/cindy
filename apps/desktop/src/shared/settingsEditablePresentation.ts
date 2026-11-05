@@ -1,7 +1,7 @@
-import type { AdditionalSettingsDomain } from './settingsEditableCatalog.js';
+import type { ActiveAdditionalSettingsDomain } from './settingsEditableCatalog.js';
 export interface SettingsFieldPresentation { labelKey: string; options?: Array<[string | null, string]>; number?: [number, number, number | 'any']; select?: 'one' | 'chain' | 'many' | 'routes' | 'route' | 'table' | 'effort'; limit?: number; columns?: Record<string, SettingsFieldPresentation>; identity?: string[]; labels?: Record<string, string>; text?: number; nullable?: boolean; choiceSource?: string; merge?: boolean; mergeKeys?: string[] }
 /** Labels reuse the client settings vocabulary in all five locales. */
-export const additionalSettingsPresentation: Record<AdditionalSettingsDomain, { labelKey: string; brand?: string; tab: string; applies: string; fields: Record<string, SettingsFieldPresentation> }> = {
+export const additionalSettingsPresentation: Record<ActiveAdditionalSettingsDomain, { labelKey: string; brand?: string; tab: string; applies: string; fields: Record<string, SettingsFieldPresentation> }> = {
   "wecomNotifications": {
     "labelKey": "hostSettings.editor.wecomNotifications",
     "fields": {
@@ -249,16 +249,6 @@ export const additionalSettingsPresentation: Record<AdditionalSettingsDomain, { 
     },
     "brand": "Pi",
     "applies": "next_agent_start",
-    "tab": "personalization"
-  },
-  "contacts": {
-    "labelKey": "settings.contacts.title",
-    "fields": {
-      "enabled": {
-        "labelKey": "settings.contacts.enable.label"
-      }
-    },
-    "applies": "immediate",
     "tab": "personalization"
   },
   "shortcuts": {
@@ -836,16 +826,6 @@ export const additionalSettingsPresentation: Record<AdditionalSettingsDomain, { 
     },
     "applies": "host_desktop_only",
     "tab": "ghosts"
-  },
-  "contactsSync": {
-    "labelKey": "settings.contacts.sync.label",
-    "fields": {
-      "deviceSyncEnabled": {
-        "labelKey": "settings.contacts.sync.label"
-      }
-    },
-    "applies": "immediate",
-    "tab": "personalization"
   },
   "browserBackend": {
     "labelKey": "settings.computerUse.browserBackend.title",
