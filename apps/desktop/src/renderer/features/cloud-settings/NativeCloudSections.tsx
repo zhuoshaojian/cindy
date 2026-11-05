@@ -49,6 +49,7 @@ import {
   CloudVisionBridgeSettings,
 } from './CloudModelSettings';
 import type { AvailableShell, ShellId } from '../../../shared/terminal-bridge';
+import { CLOUD_SETTINGS_LOCALES } from '../../../shared/settingsEditableCatalog';
 import type {
   CloudSettingsDomain,
   CloudSettingsState,
@@ -246,9 +247,21 @@ export function NativeCloudSections(props: Props) {
             'settings-search-target-general-language',
             <LanguageSectionView
               locale={s('desktopGeneral').value?.locale as LocalePreference}
+              locales={CLOUD_SETTINGS_LOCALES}
               disabled={disabled}
               onChange={(locale) => void attempt('desktopGeneral', { locale })}
             />,
+          )}
+        {states.desktopGeneral?.status === 'unavailable' &&
+          generalSection(
+            'settings-search-target-general-language',
+            // A display language newer than the cloud wire stays in the instance's own settings.
+            <div className="flex flex-col gap-[14px]">
+              <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
+                {t('settings.language.title')}
+              </h2>
+              <CloudDesktopFallback deviceId={deviceId} name={name} />
+            </div>,
           )}
         {ready('botModelChain') &&
           generalSection(
