@@ -194,10 +194,17 @@ const core = {
   ...group('android', { enabled: bool }, 'computer-use', 'ComputerUseSection', 'main/maker-host/plugins/settings-reader.ts', 'owner', 'nextTask'),
   ...group('computer', { enabled: bool }, 'computer-use', 'ComputerUseSection', 'main/maker-host/plugins/settings-reader.ts', 'owner', 'nextTask'),
 };
+/**
+ * Display languages on the CIS wire, including `system`. Every Host understands the first six; a Host
+ * lists the newer ones in its `desktopGeneral` locale choices before a cloud page offers them.
+ */
+export const SETTINGS_DISPLAY_LOCALES = [
+  'system', 'zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt-PT', 'pt-BR', 'zh-Hant-x-lzh', 'zh-Hans-x-lzh',
+] as const;
 const desktop = {
   ...group('desktop', {
     theme: z.enum(['system', 'light', 'dark']), themeFamilyIdConfigured: bool,
-    locale: z.enum(['system', 'zh-CN', 'zh-TW', 'en', 'ja', 'ko']),
+    locale: z.enum(SETTINGS_DISPLAY_LOCALES),
     sidebarPinnedMode: z.enum(['text', 'card', 'list']), sidebarMainMode: z.enum(['text', 'list']),
     ghostPanelRestoreMode: z.enum(['bubble', 'sidebar']), notificationsEnabled: bool, swallowActivationClick: bool,
     composerSendShortcut: z.enum(['enter', 'modifier-enter']), webLinkOpenPreference: z.enum(['external', 'sidebar']),
