@@ -234,6 +234,13 @@ export function useCloudProviderCatalog({
         getModelPriceOverride: (target) => modelCall('price-get')(target),
         setModelPriceOverride: (target, desired) => modelCall('price-set')(target, desired),
         resetModelPriceOverride: (target) => modelCall('price-reset')(target),
+        ...(supported.has('image-input')
+          ? {
+              getModelImageInputOverride: (target) => modelCall('image-input-get')(target),
+              setModelImageInputOverride: (target, value) =>
+                modelCall('image-input-set')(target, value),
+            }
+          : {}),
       },
     };
   }, [list, visibilityVersion, write, send, load]);

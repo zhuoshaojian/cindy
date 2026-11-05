@@ -172,10 +172,6 @@ export function createCloudImTarget(
       },
       imDefaultSettingsGet: (channel) => call('maker:im-default-settings:get', channel),
       imDefaultSettingsReset: (channel) => call('maker:im-default-settings:reset', channel),
-      contactsSettings: {
-        get: () => call('maker:contacts:settings:get'),
-        set: (enabled) => call('maker:contacts:settings:set', enabled),
-      },
       showOpenDirectoryDialog: async () => {
         const path = await deps.pickDirectory();
         return path ? { canceled: false, path } : { canceled: true };

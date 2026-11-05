@@ -16,10 +16,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
   type ReactNode,
 } from 'react';
 import { createElement } from 'react';
+import type { ClassicalReplyStyleId } from '@cindy/maker-shared/classical-reply';
 import { getDesktopPreference, setDesktopPreference, useDesktopPreference } from '../hostDesktopPreferences';
+import { readStoredClassicalStyle, writeStoredClassicalStyle } from '@/lib/localePreference';
 
 import {
   i18n,
@@ -36,6 +39,9 @@ interface LocaleContextValue {
   effectiveLocale: SupportedLocale;
   /** 设置偏好 —— 等待 Host 提交后刷 i18next、刷 <html lang>。 */
   setLocale: (next: LocalePreference) => void;
+  /** 古典界面（文言）下 AI 作答的输出风格；与上游一样只存本窗口存储。 */
+  classicalStyle: ClassicalReplyStyleId;
+  setClassicalStyle: (next: ClassicalReplyStyleId) => void;
 }
 
 const LocaleContext = createContext<LocaleContextValue | undefined>(undefined);
@@ -59,6 +65,13 @@ function syncApplicationMenuLocale(loc: SupportedLocale): void {
   if (typeof window === 'undefined') return;
   void window.electronAPI?.setApplicationMenuLocale?.(loc).catch(() => {
     /* Native app menu is macOS-only; renderer locale still updates normally. */
+  });
+}
+
+function syncClassicalStyle(style: ClassicalReplyStyleId): void {
+  if (typeof window === 'undefined') return;
+  void window.electronAPI?.setClassicalReplyStyle?.(style).catch(() => {
+    /* Older hosts ignore it; replies then keep the default classical style. */
   });
 }
 
@@ -90,6 +103,16 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const setLocale = useCallback((next: LocalePreference) => {
     void setDesktopPreference('locale', next);
   }, []);
+  const [classicalStyle, setClassicalStyleState] = useState<ClassicalReplyStyleId>(readStoredClassicalStyle);
+  const setClassicalStyle = useCallback((next: ClassicalReplyStyleId) => {
+    setClassicalStyleState(next);
+    writeStoredClassicalStyle(next);
+  }, []);
+
+  // Main builds each turn's reply note, so it keeps the current style too.
+  useEffect(() => {
+    syncClassicalStyle(classicalStyle);
+  }, [classicalStyle]);
 
   // 初次挂载与跨窗口 Host 回执都同步 i18next 和 <html lang>，不让旧启动缓存覆盖正本。
   useEffect(() => {
@@ -97,8 +120,8 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   }, [effectiveLocale]);
 
   const value = useMemo<LocaleContextValue>(
-    () => ({ locale, effectiveLocale, setLocale }),
-    [locale, effectiveLocale, setLocale],
+    () => ({ locale, effectiveLocale, setLocale, classicalStyle, setClassicalStyle }),
+    [locale, effectiveLocale, setLocale, classicalStyle, setClassicalStyle],
   );
 
   return createElement(LocaleContext.Provider, { value }, children);

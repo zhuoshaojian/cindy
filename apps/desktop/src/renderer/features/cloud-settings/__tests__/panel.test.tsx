@@ -164,31 +164,6 @@ describe('shared native cloud settings', () => {
     expect(read!.mock.calls.flat(2)).not.toContain('claudeCompaction');
     expect(read!.mock.calls.flat(2)).not.toContain('piCompaction');
   });
-  it('keeps contacts usable when only device sync is unavailable', async () => {
-    const { save } = setup((client) => {
-      const read = client.read;
-      client.read = async (domains) =>
-        (await read(domains)).map((s) =>
-          s.domain === 'contactsSync'
-            ? { domain: s.domain, status: 'unavailable', revision: null }
-            : s,
-        );
-    });
-    const enabled = await screen.findByRole('switch', {
-      name: 'settings.contacts.enable.toggleAria',
-    });
-    await ready(enabled);
-    expect(
-      screen
-        .getByRole('switch', { name: 'settings.contacts.sync.toggleAria' })
-        .matches(':disabled'),
-    ).toBe(true);
-    expect(screen.getByText('cloudSettings.settingUnavailable')).toBeTruthy();
-    fireEvent.click(enabled);
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    expect(save.mock.calls[0][0].domain).toBe('contacts');
-    expect(save.mock.calls[0][1]).toEqual({ enabled: true });
-  });
   it('shows an unavailable saved shell instead of an empty selection without changing it', async () => {
     const { save } = setup((client) => {
       const read = client.read;
