@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { SETTINGS_READ_SHORTCUT_IDS, SETTINGS_READ_KEY_CODES } from './settingsReadCatalog.js';
-import { SUPPORTED_LOCALES } from './locale.js';
+
+/** Display languages in the frozen CIS v2 wire contract. Languages added later stay editable in the cloud desktop only. */
+export const CLOUD_SETTINGS_LOCALES = ['system', 'zh-CN', 'zh-TW', 'en', 'ja', 'ko'] as const;
 
 /** Fixed, reviewed settings only. This is not an arbitrary file or IPC interface. */
 const bool = z.boolean();
@@ -74,7 +76,7 @@ export const additionalSettingsSchemas = {
   lsp: z.object({ enabled: bool }).strict(),
   privacy: z.object({ analyticsEnabled: bool }).strict(),
   diagnostics: z.object({ crashAutoUploadEnabled: bool }).strict(),
-  desktopGeneral: z.object({ themeFamilyId: routeId, theme: z.enum(['system', 'light', 'dark']), locale: z.enum(['system', ...SUPPORTED_LOCALES]), sidebarPinnedMode: z.enum(['text', 'card', 'list']), sidebarMainMode: z.enum(['text', 'list']), ghostPanelRestoreMode: z.enum(['bubble', 'sidebar']) }).strict(),
+  desktopGeneral: z.object({ themeFamilyId: routeId, theme: z.enum(['system', 'light', 'dark']), locale: z.enum(CLOUD_SETTINGS_LOCALES), sidebarPinnedMode: z.enum(['text', 'card', 'list']), sidebarMainMode: z.enum(['text', 'list']), ghostPanelRestoreMode: z.enum(['bubble', 'sidebar']) }).strict(),
   desktopChat: z.object({ composerSendShortcut: z.enum(['enter', 'modifier-enter']), webLinkOpenPreference: z.enum(['external', 'sidebar']), localLinkOpenPreference: z.enum(['external', 'sidebar']), streamFadePreference: z.enum(['on', 'off']), promptRecommendationEnabled: bool, messageNavRailEnabled: bool }).strict(),
   desktopNotifications: z.object({ notificationsEnabled: bool, feishuNotificationsEnabled: bool, swallowActivationClick: bool, networkDebugEnabled: bool }).strict(),
   linuxWindow: z.object({ linuxCloseBehavior: z.enum(['quit', 'minimize']).nullable() }).strict(),
