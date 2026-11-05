@@ -545,3 +545,16 @@ With the Mac Dev `0.1.121-dev.cloud.20261102.14` (`277b8473e0`), against the own
   page text is unchanged from `.14`. The viewer was closed afterwards.
 - Not exercised live: MCP endpoint change with saved credentials (refused by the instance, covered
   by tests), the low-disk warning. Fleet admission has not been requested.
+
+### Fleet admission of cloud.10 (2026-11-05)
+
+On 2026-11-05 the user said 「准入」 for cloud.10. The fleet policy (`cis-u121c10-1105-fleet-*`) added
+the cloud.10 approval for the 12 other org instances (10 verified, 2 native) and native admission
+(maintenance list 6 → 7), and made cloud.10 the default for new claims; the keyring list stayed at
+12 with no retirement, and backup, schedule and automation settings were unchanged. Both roles
+rolled out ready and stable. Admission was verified on both roles: every running org instance not
+on cloud.10 offers it as an available update, new claims select it, and no instance, Pod,
+auto-update choice or maintenance policy changed; no operation was active. Nothing was upgraded:
+each instance updates in its own maintenance window if auto-update is on (all ten running ones
+have it on; the next window is 03:00–05:00 Asia/Shanghai), or when its owner clicks 立即升级. The
+stopped personal instance is outside org admission, as before.
