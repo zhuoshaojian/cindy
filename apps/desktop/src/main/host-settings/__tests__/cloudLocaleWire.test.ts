@@ -24,19 +24,25 @@ vi.mock('../desktop-preferences.js', () => ({
 }));
 import { inspectAdditionalSettings } from '../additional.js';
 import { CLOUD_SETTINGS_LOCALES, normalizeAdditionalSettingsChange } from '../../../shared/settingsEditableCatalog.js';
+import { SETTINGS_DISPLAY_LOCALES } from '../../../shared/settingsReadCatalog.js';
+import { SUPPORTED_LOCALES } from '../../../shared/locale.js';
 
-it('keeps display languages to the frozen cloud wire values', () => {
+it('carries every display language on the cloud wire, and keeps the six every Host accepts', () => {
+  // A new upstream language must reach CIS before the instance can report it.
+  expect([...SETTINGS_DISPLAY_LOCALES].sort()).toEqual(['system', ...SUPPORTED_LOCALES].sort());
   expect(CLOUD_SETTINGS_LOCALES).toEqual(['system', 'zh-CN', 'zh-TW', 'en', 'ja', 'ko']);
-  expect(() => normalizeAdditionalSettingsChange('desktopGeneral', { locale: 'zh-Hans-x-lzh' }, [])).toThrow();
-  expect(normalizeAdditionalSettingsChange('desktopGeneral', { locale: 'ko' }, []).set).toEqual({ locale: 'ko' });
+  expect(normalizeAdditionalSettingsChange('desktopGeneral', { locale: 'zh-Hans-x-lzh' }, []).set).toEqual({ locale: 'zh-Hans-x-lzh' });
+  expect(() => normalizeAdditionalSettingsChange('desktopGeneral', { locale: 'xx' }, [])).toThrow();
 });
 
-it.each(['zh-Hans-x-lzh', 'fr', 'pt-BR'])('reports %s chosen on the instance as unavailable, not as a read failure', (locale) => {
+it.each(['ja', 'fr', 'pt-BR', 'zh-Hans-x-lzh'])('reads %s and lists every language the instance accepts', (locale) => {
   context.locale = locale;
-  expect(inspectAdditionalSettings('desktopGeneral')).toEqual({ status: 'unavailable', revision: null });
+  const state = inspectAdditionalSettings('desktopGeneral') as { status: string; value: { locale: string }; choices: { locale: Array<{ value: string }> } };
+  expect(state).toMatchObject({ status: 'ready', value: { locale }, customizedKeys: ['locale'] });
+  expect(state.choices.locale.map((choice) => choice.value)).toEqual([...SETTINGS_DISPLAY_LOCALES]);
 });
 
-it('still reads a wire language with its value', () => {
-  context.locale = 'ja';
-  expect(inspectAdditionalSettings('desktopGeneral')).toMatchObject({ status: 'ready', value: { locale: 'ja' }, customizedKeys: ['locale'] });
+it('reports a language outside the cloud wire as unavailable, not as a read failure', () => {
+  context.locale = 'xx';
+  expect(inspectAdditionalSettings('desktopGeneral')).toEqual({ status: 'unavailable', revision: null });
 });

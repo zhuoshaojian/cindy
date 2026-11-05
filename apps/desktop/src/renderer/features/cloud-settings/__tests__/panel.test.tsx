@@ -7,6 +7,7 @@ import { SETTINGS_SEARCH_ENTRIES } from '@/components/settings/settingsSearchCat
 import { cloudSearchEntryAllowed } from '../search';
 import type { CloudSettingsClient } from '../client';
 import { CLOUD_SETTINGS_DOMAINS } from '../../../../shared/cloudSettings';
+import { SETTINGS_DISPLAY_LOCALES } from '../../../../shared/settingsReadCatalog';
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (key: string) => key }),
@@ -217,7 +218,42 @@ describe('shared native cloud settings', () => {
     await general();
     expect(screen.queryByText('settings.language.title')).toBeNull();
   });
-  // The instance may use a display language newer than the frozen cloud wire.
+  it('offers the newer display languages only when the instance lists them', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    Element.prototype.hasPointerCapture = vi.fn(() => false);
+    Element.prototype.releasePointerCapture = vi.fn();
+    const menu = async () => {
+      await general();
+      fireEvent.keyDown(screen.getByRole('combobox', { name: 'settings.language.ariaLabel' }), {
+        key: 'ArrowDown',
+      });
+      return screen.getAllByRole('option').map((option) => option.textContent);
+    };
+    setup();
+    expect(await menu()).toEqual(
+      ['system', 'en', 'zh-CN', 'zh-TW', 'ja', 'ko'].map((l) => `settings.language.options.${l}`),
+    );
+    cleanup();
+    setup((client) => {
+      const read = client.read;
+      client.read = async (domains) =>
+        (await read(domains)).map((s) =>
+          s.domain === 'desktopGeneral'
+            ? {
+                ...s,
+                choices: {
+                  ...s.choices,
+                  locale: SETTINGS_DISPLAY_LOCALES.map((value) => ({ value, label: value })),
+                },
+              }
+            : s,
+        );
+    });
+    expect((await menu()).slice(6)).toEqual(
+      ['es', 'fr', 'de', 'pt-PT', 'pt-BR', 'classical'].map((l) => `settings.language.options.${l}`),
+    );
+  });
+  // The instance may use a display language outside the cloud wire.
   it('sends an unrepresentable instance language to the cloud desktop', async () => {
     setup((client) => {
       const read = client.read;

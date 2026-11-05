@@ -41,18 +41,20 @@ Upstream added 1,937 commits. Electron is unchanged (42.11.12).
   history, because older runtimes reject unknown history fields.
 - **Classical editions (文言).** The host locale copy carries upstream's classical
   reply style in window storage, as upstream does.
-- **Display languages.** Upstream now has twelve display languages. The frozen CIS v2
-  contract carries five of them for `desktopGeneral.locale`, plus `system`: `zh-CN`,
-  `zh-TW`, `en`, `ja` and `ko`. CIS validates both the commands it queues and the
-  results an instance posts.
-  - The cloud page offers only these values. Cloud.1 offered all twelve languages, and
-    CIS rejected the others, so the page showed an unconfirmed save.
-  - An instance whose own language is one of the seven newer ones reports
-    `desktopGeneral` as `unavailable`. The cloud page then points to the cloud
-    desktop for the language, and the rest of the page still loads.
-  - The instance's own settings accept every upstream language.
-  - Choosing the newer languages from the cloud page needs a CIS contract change
-    first.
+- **Display languages.** Upstream now has twelve display languages. CIS
+  `4ddf33fa` accepts all of them, plus `system`, for `desktopGeneral.locale` and the
+  read-only `desktop.locale`. Before it, the contract carried five and `system`.
+  - From cloud.3, the instance lists its accepted languages in the `desktopGeneral`
+    locale choices. The cloud page and the CIS web offer the newer languages only
+    when the instance lists them. Older instances keep the original six, so neither
+    surface offers a value they would reject.
+  - Cloud.1 offered all twelve before CIS accepted them, which showed an unconfirmed
+    save. Cloud.2 kept the page to the six values.
+  - An instance whose own language is outside the wire reports `desktopGeneral` as
+    `unavailable`. The cloud page then points to the cloud desktop, and the rest of
+    the page still loads. Cloud.2 does this for all seven newer languages.
+  - A test ties the wire list to upstream's supported locales. A future upstream
+    language must reach CIS before an instance can report it.
 - **Translations.** The 301 cloud strings are translated into the seven new
   locales.
 - **Linux input.** Upstream's input helper now also has an X11/XTest backend. The
