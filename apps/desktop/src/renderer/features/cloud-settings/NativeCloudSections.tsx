@@ -50,6 +50,7 @@ import {
 } from './CloudModelSettings';
 import type { AvailableShell, ShellId } from '../../../shared/terminal-bridge';
 import { CLOUD_SETTINGS_LOCALES } from '../../../shared/settingsEditableCatalog';
+import { SETTINGS_DISPLAY_LOCALES } from '../../../shared/settingsReadCatalog';
 import type {
   CloudSettingsDomain,
   CloudSettingsState,
@@ -84,6 +85,13 @@ const section = (id: string, content: ReactNode, className = 'pb-[18px]') => (
   </section>
 );
 const generalSection = (id: string, content: ReactNode) => section(id, content, 'py-[18px]');
+/** Languages the instance listed; an instance that lists none accepts only the original six. */
+const displayLocales = (state: CloudSettingsState): readonly LocalePreference[] => {
+  const listed = state.choices?.locale?.map((choice) => choice.value);
+  return listed?.length
+    ? SETTINGS_DISPLAY_LOCALES.filter((locale) => listed.includes(locale))
+    : CLOUD_SETTINGS_LOCALES;
+};
 
 function Resource({
   state,
@@ -247,7 +255,7 @@ export function NativeCloudSections(props: Props) {
             'settings-search-target-general-language',
             <LanguageSectionView
               locale={s('desktopGeneral').value?.locale as LocalePreference}
-              locales={CLOUD_SETTINGS_LOCALES}
+              locales={displayLocales(s('desktopGeneral'))}
               disabled={disabled}
               onChange={(locale) => void attempt('desktopGeneral', { locale })}
             />,
