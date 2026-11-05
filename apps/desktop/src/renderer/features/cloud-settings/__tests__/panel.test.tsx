@@ -217,6 +217,27 @@ describe('shared native cloud settings', () => {
     await general();
     expect(screen.queryByText('settings.language.title')).toBeNull();
   });
+  // The instance may use a display language newer than the frozen cloud wire.
+  it('sends an unrepresentable instance language to the cloud desktop', async () => {
+    setup((client) => {
+      const read = client.read;
+      client.read = async (domains) =>
+        (await read(domains)).map((s) =>
+          s.domain === 'desktopGeneral'
+            ? { domain: 'desktopGeneral', status: 'unavailable', revision: null }
+            : s,
+        );
+    });
+    await screen.findByText('settings.memory.title');
+    await general();
+    const language = document.querySelector<HTMLElement>('#settings-search-target-general-language')!;
+    expect(within(language).getByText('settings.language.title')).toBeTruthy();
+    expect(
+      within(language).getByRole('button', { name: 'cloudSettings.openInCloudDesktop' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'settings.language.ariaLabel' })).toBeNull();
+    expect(screen.queryByText('cloudSettings.readFailed')).toBeNull();
+  });
   // The page title lived only inside the prompt editor, so it vanished with the prompt.
   it('keeps the personalization title when the cloud does not report the prompt', async () => {
     setup((client) => {
