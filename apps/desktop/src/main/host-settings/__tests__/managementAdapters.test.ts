@@ -6,7 +6,6 @@ import {
   configureCloudMcpCredentials,
   configureCloudMemoryManagement,
   listMcpManagement,
-  listContactsManagement,
   listMemoryManagement,
 } from '../managementData.js';
 
@@ -183,64 +182,6 @@ describe('cloud data management uses isolated domain fixtures', () => {
       entry.actions.find((action) => action.intent === 'delete')!.run({}, execution),
     ).rejects.toThrow('CHANGED');
     expect(servers[0]!.name).toBe('Changed natively');
-  });
-  it('handles contacts with native kind, pagination, minimal updates and sync', async () => {
-    const people = Array.from({ length: 10 }, (_, index) => ({
-      id: `person-${index}`,
-      kind: 'person',
-      displayName: `Person ${index}`,
-      summary: '',
-      aliases: [],
-      updatedAt: 'first',
-      narrative: 'Keep private narrative',
-      agentNotes: 'Keep instructions',
-    }));
-    const sync = vi.fn(() => ({ available: true, enabled: true, phase: 'up-to-date' }));
-    registerCloudDomainCall('maker:contacts:sync:status:get', () => ({
-      available: true,
-      enabled: true,
-      phase: 'up-to-date',
-    }));
-    registerCloudDomainCall('maker:contacts:sync:now', sync);
-    registerCloudDomainCall('maker:contacts:list', (options) => {
-      const { offset, limit } = options as { offset: number; limit: number };
-      return people.slice(offset, offset + limit);
-    });
-    registerCloudDomainCall('maker:contacts:get', (id) => people.find((item) => item.id === id));
-    registerCloudDomainCall('maker:contacts:update', (id, patch) =>
-      Object.assign(
-        people.find((item) => item.id === id)!,
-        patch,
-      ),
-    );
-    const first = await listContactsManagement(caller, 0),
-      second = await listContactsManagement(caller, 8);
-    expect(first.entries).toHaveLength(8);
-    expect(first.hasMore).toBe(true);
-    expect(second.entries.map((item) => item.label)).toEqual([
-      'Person 6',
-      'Person 7',
-      'Person 8',
-      'Person 9',
-    ]);
-    const person = first.entries.find((item) => item.label === 'Person 0')!;
-    expect(
-      person.actions[0]!.fields!.find((field) => field.name === 'kind')!.options!.map(
-        (option) => option.value,
-      ),
-    ).toEqual(['person', 'org']);
-    await person.actions[0]!.run(
-      { displayName: 'Edited', kind: 'org', summary: 'new', aliases: 'alias' },
-      execution,
-    );
-    expect(people[0]).toMatchObject({
-      displayName: 'Edited',
-      kind: 'org',
-      narrative: 'Keep private narrative',
-      agentNotes: 'Keep instructions',
-    });
-    await first.entries[0]!.actions[0]!.run({}, execution);
-    expect(sync).toHaveBeenCalledOnce();
   });
   it('lists memory actions without clearing any data, then clears only the selected native channel', async () => {
     const resetAll = vi.fn(async () => ({ removedCount: 2 })),

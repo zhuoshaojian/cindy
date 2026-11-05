@@ -19,7 +19,8 @@ function record(value: unknown): Record<string, unknown> {
 export function buildSettingsConfirmationPreview(input: Record<string, unknown>, t: Translate): SettingsConfirmationPreview {
   const domain = typeof input.domain === 'string' ? input.domain : '';
   if (!Object.hasOwn(fields, domain)) throw new HostSettingsError('INVALID_PARAMS');
-  const extra = isAdditionalSettingsDomain(domain) ? additionalSettingsPresentation[domain] : undefined;
+  const extra = isAdditionalSettingsDomain(domain) && Object.hasOwn(additionalSettingsPresentation, domain)
+    ? additionalSettingsPresentation[domain as keyof typeof additionalSettingsPresentation] : undefined;
   const label = (field: string) => extra ? extra.fields[field]!.labelKey.startsWith('@') ? extra.fields[field]!.labelKey.slice(1) : t(extra.fields[field]!.labelKey) : t(`hostSettings.card.fields.${field}`);
   const read = input.action === 'read_user_prompt';
   if (read && domain !== 'personalization') throw new HostSettingsError('INVALID_PARAMS');

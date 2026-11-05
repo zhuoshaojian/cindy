@@ -31,7 +31,7 @@ export async function applyAdditionalSettings(domain: AdditionalSettingsDomain, 
     broadcastAnalyticsSettingsChange();
     return;
   }
-  if (domain !== 'memory' && domain !== 'contacts' && domain !== 'subagentModel') return;
+  if (domain !== 'memory' && domain !== 'subagentModel') return;
   const inspect = domain === 'subagentModel' ? () => getSubagentModelSettingsStore().inspect() : inspectAdditionalSettings;
   const owner = currentSettingsOwner();
   if (!owner) throw new Error('OWNER_CHANGED');

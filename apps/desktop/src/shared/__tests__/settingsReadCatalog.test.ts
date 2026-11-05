@@ -88,7 +88,6 @@ describe('settings read catalog independent coverage anchors', () => {
       ['agentResource', 'main/maker-host/agent-resource-settings-store.ts', 'AgentResourceSettings'],
       ['gitSafety', 'main/maker-host/git-safety-settings-store.ts', 'GitSafetySettings'],
       ['memory', 'main/maker-host/memory-settings-store.ts', 'MemorySettings'],
-      ['contacts', 'main/maker-host/contacts-settings-store.ts', 'ContactsSettings'],
       ['subagentModel', 'shared/subagentModelSettings.ts', 'SubagentModelSettings'],
       ['auxiliaryModel', 'shared/auxiliaryModelSettings.ts', 'AuxiliaryModelSettings'],
     ] as const;
@@ -99,6 +98,8 @@ describe('settings read catalog independent coverage anchors', () => {
       expectIds(keys.map(key => `${prefix}.${key}`));
       expect(SETTINGS_READ_FIELD_IDS.filter(id => id.startsWith(`${prefix}.`)).length).toBe(keys.length);
     }
+    // Retired Smart Contacts keeps only its frozen snapshot fields.
+    expectIds(['contacts.enabled', 'contacts.deviceSyncEnabled']);
     const voice = text('shared/voiceInputData.ts').match(/export interface VoiceInputSettings \{([\s\S]*?)\n\}/)![1]!;
     const voiceKeys = [...voice.matchAll(/^  ([A-Za-z]+)(?:\?)?:/gm)].map(match => match[1]!);
     const resources = ['dictionaryEntries', 'dictionaryCandidates', 'suppressedAutomaticDictionaryTexts'];

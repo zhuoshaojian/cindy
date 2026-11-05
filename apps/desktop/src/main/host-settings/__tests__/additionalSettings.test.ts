@@ -37,8 +37,12 @@ afterEach(() => fs.rmSync(context.root, { recursive: true, force: true }));
 
 describe('expanded settings use the real native stores', () => {
   it('reads every file domain without creating files or migrating legacy settings', async () => {
-    for (const domain of ['collaboration', 'agentResource', 'gitSafety', 'memory', 'claudeCompaction', 'piCompaction', 'contacts', 'silentEncryptedRetry', 'lsp', 'privacy', 'diagnostics', 'telegramBehavior', 'terminal'] as const) {
+    for (const domain of ['collaboration', 'agentResource', 'gitSafety', 'memory', 'claudeCompaction', 'piCompaction', 'silentEncryptedRetry', 'lsp', 'privacy', 'diagnostics', 'telegramBehavior', 'terminal'] as const) {
       expect(await getHostSettings(caller, domain)).toMatchObject({ status: 'ready', customizedKeys: [] });
+    }
+    // Smart Contacts moved to a plugin upstream; its retired domains stay readable as unavailable.
+    for (const domain of ['contacts', 'contactsSync'] as const) {
+      expect(await getHostSettings(caller, domain)).toMatchObject({ status: 'unavailable' });
     }
     expect(fs.readdirSync(context.root)).toEqual([]);
   });

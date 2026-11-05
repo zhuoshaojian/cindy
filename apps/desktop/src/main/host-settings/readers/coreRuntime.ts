@@ -3,7 +3,6 @@ import { inspectAgentResourceSettings } from '../../maker-host/agent-resource-se
 import { inspectGitSafetySettings } from '../../maker-host/git-safety-settings-store.js';
 import { inspectMemorySettings } from '../../maker-host/memory-settings-store.js';
 import { inspectCompactionSettings, inspectPiCompactionSettings } from '../../maker-host/compaction-settings-store.js';
-import { inspectContactsSettings } from '../../maker-host/contacts-settings-store.js';
 import { inspectSilentEncryptedRetrySettings } from '../../maker-host/silent-encrypted-retry-store.js';
 import { inspectChatEmbeddingSettings } from '../../maker-host/chat-embedding-settings-store.js';
 import { inspectLspModeSettings } from '../../maker-host/lsp-mode-store.js';
@@ -30,7 +29,6 @@ const stores: CoreSettingsStores = {
   memory: inspectMemorySettings,
   compaction: inspectCompactionSettings,
   piCompaction: inspectPiCompactionSettings,
-  contacts: inspectContactsSettings,
   silentEncryptedRetry: inspectSilentEncryptedRetrySettings,
   chatEmbedding: inspectChatEmbeddingSettings,
   lsp: inspectLspModeSettings,

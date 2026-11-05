@@ -1,5 +1,4 @@
 import {
-  listContactsManagement,
   listMcpManagement,
   listMemoryManagement,
 } from './managementData.js';
@@ -14,8 +13,8 @@ import { listBotNotificationManagement } from './managementNotifications.js';
 import { listProviderManagement } from './managementProviders.js';
 
 const management = createSettingsManagement({
-  async list(section, caller, offset) {
-    if (section === 'contacts') return listContactsManagement(caller, offset);
+  async list(section, caller) {
+    // Smart Contacts moved to the cindy-contacts plugin upstream; its section stays empty.
     if (section === 'mcp') return listMcpManagement(caller);
     if (section === 'memory') return listMemoryManagement(caller);
     if (section === 'providers') return listProviderManagement(caller);

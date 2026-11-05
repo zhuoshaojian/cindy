@@ -25,8 +25,6 @@ export const CLOUD_SETTINGS_GROUPS = {
     'subagentModel',
     'auxiliaryModel',
     'visionBridge',
-    'contacts',
-    'contactsSync',
     'chatEmbedding',
     'silentEncryptedRetry',
     'terminal',
