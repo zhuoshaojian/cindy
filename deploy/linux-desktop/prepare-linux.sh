@@ -27,6 +27,8 @@ apt-get -o APT::Sandbox::User=root download \
   libturbojpeg0-dev=1:2.1.5-2 libturbojpeg0=1:2.1.5-2 \
   libxkbcommon-dev=1.5.0-1 libxkbcommon0=1.5.0-1 \
   libwayland-dev=1.21.0-1 libwayland-bin=1.21.0-1 libwayland-client0=1.21.0-1 \
+  libxtst-dev=2:1.2.3-1.1 libxtst6=2:1.2.3-1.1 libxi-dev=2:1.8-1+b1 libxi6=2:1.8-1+b1 \
+  libxfixes-dev=1:6.0.0-2 libxfixes3=1:6.0.0-2 \
   libpng-dev=1.6.39-2+deb12u5 libpng16-16=1.6.39-2+deb12u5 libpng-tools=1.6.39-2+deb12u5
 for f in *.deb; do dpkg-deb -x "$f" /workspace/sysroot; done
 mkdir -p /root/.cache/node-gyp/42.11.12 /root/.electron-gyp/42.11.12
