@@ -558,3 +558,21 @@ auto-update choice or maintenance policy changed; no operation was active. Nothi
 each instance updates in its own maintenance window if auto-update is on (all ten running ones
 have it on; the next window is 03:00–05:00 Asia/Shanghai), or when its owner clicks 立即升级. The
 stopped personal instance is outside org admission, as before.
+
+### Active upgrade of the other running instances to cloud.10 (2026-11-05)
+
+The user then asked not to wait for maintenance windows and to upgrade the other ten running org
+instances one by one. Each instance ran as its own operation (`cis-cloud121c10-fleet-<id>-1105`)
+on the same verified path as the owner canary: maintenance prepare and seal, OSS backup, candidate
+on the delivered digest, data and schedule comparison, runtime health, release and observation,
+then a live check of the StatefulSet, Pod readiness, cache hit and application version before the
+next instance started. Midway the user asked to skip an instance with running work at once instead
+of waiting for it; the operator was changed before the sixth instance. The fourth instance had
+waited about four minutes for its running work to finish before it was sealed; no work was
+interrupted, and no instance had to be skipped.
+
+All ten passed on the first attempt with zero restarts, the qualified image cache hit, and backups
+of 274,981 files / 3,597,938,433 bytes in total. Afterwards all twelve running org instances are on
+cloud.10 and ready; every instance kept its auto-update choice, desired state and maintenance
+policy; the three stopped instances are unchanged; no maintenance operation is active and no
+operator Pod or script ConfigMap is left.
