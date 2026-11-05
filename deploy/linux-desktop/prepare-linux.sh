@@ -20,9 +20,10 @@ const {extract}=req('@electron-internal/extract-zip');
 })().catch(e=>{console.error(e);process.exit(1)});
 JS
 CI=1 npm_config_nodedir=/usr/local pnpm install --frozen-lockfile
-apt-get -o APT::Sandbox::User=root update
+# snapshot.debian.org can answer 5xx for minutes; retry like the base image build.
+apt-get -o APT::Sandbox::User=root -o Acquire::Retries=8 update
 cd /workspace/debs
-apt-get -o APT::Sandbox::User=root download \
+apt-get -o APT::Sandbox::User=root -o Acquire::Retries=8 download \
   libjson-c-dev=0.16-2 libjson-c5=0.16-2 \
   libturbojpeg0-dev=1:2.1.5-2 libturbojpeg0=1:2.1.5-2 \
   libxkbcommon-dev=1.5.0-1 libxkbcommon0=1.5.0-1 \
