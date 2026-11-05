@@ -126,6 +126,7 @@ export function LanguageSectionView({
   classicalStyle,
   onClassicalStyleChange: setClassicalStyle,
   disabled = false,
+  locales,
 }: {
   locale: LocalePreference;
   effectiveLocale?: string;
@@ -133,9 +134,14 @@ export function LanguageSectionView({
   classicalStyle?: ClassicalReplyStyleId;
   onClassicalStyleChange?(next: ClassicalReplyStyleId): void;
   disabled?: boolean;
+  /** Languages the target can save; the menu offers only these. */
+  locales?: readonly LocalePreference[];
 }) {
   const { t } = useTranslation();
   const classical = isClassicalLocale(locale) ? locale : null;
+  const options = languageSettings.language.options.filter(({ value }) =>
+    !locales || (value === CLASSICAL_OPTION ? locales.some(isClassicalLocale) : locales.includes(value)),
+  );
 
   const chooseLanguage = (option: LanguageOption) => {
     if (option !== CLASSICAL_OPTION) {
@@ -178,7 +184,7 @@ export function LanguageSectionView({
           <PillSelect<LanguageOption>
             data-setting-id={languageSettings.language.id}
             value={classical ? CLASSICAL_OPTION : locale}
-            options={languageSettings.language.options.map((option) => ({
+            options={options.map((option) => ({
               value: option.value,
               label: t(option.labelKey),
             }))}
