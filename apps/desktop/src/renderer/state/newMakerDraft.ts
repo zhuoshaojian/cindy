@@ -703,9 +703,11 @@ function scheduleWrite(
 ): void {
   if (hasHostDraftPreferences() || hostPreferenceWriter) {
     // 工作区与协同草稿仍留本机；不能为了迁默认值顺手搬走这些单次任务状态。
+    // 上游新增的新任务默认权限不在 Host 历史契约里，同样只存本机。
     try {
       window.localStorage.setItem(`${storageKey()}:workspace`, JSON.stringify({
         workingDir: currentDraft.workingDir, remoteHostId: currentDraft.remoteHostId, collab: currentDraft.collab,
+        newChatDefaultPermissionMode: currentDraft.newChatDefaultPermissionMode ?? null,
       }));
     } catch { /* 草稿写盘失败不污染 Host 偏好。 */ }
     hostPreferenceWriter?.(); return;

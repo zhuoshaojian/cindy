@@ -1054,7 +1054,7 @@ export function ModelAdvancedDrawer({
                       {conversational && !isOrganizationManagedProvider(provider) ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button type="button" disabled={imageInputOverride.loading || localConfigurationBlocked}
+                            <button type="button" disabled={imageInputOverride.loading || imageInputOverride.unavailable || localConfigurationBlocked}
                               aria-label={t('settings.providers.models.advanced.imageInput')}
                               className="inline-flex min-h-8 items-center gap-1.5 rounded-full px-2 py-1 text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] disabled:opacity-50">
                               {imageInputMixed

@@ -262,9 +262,10 @@ describe('cloud provider setup with the local wizard', () => {
     const { invoke, stages, runs } = setup();
     fireEvent.click(await screen.findByRole('button', { name: /settings.providers.addProvider/ }));
     const dialog = await screen.findByRole('dialog');
-    // The local wizard's steps and catalog, read from the instance.
-    expect(within(dialog).getByText('settings.providers.wizard.stepModels')).toBeTruthy();
+    // The local wizard's catalog and steps, read from the instance.
+    expect(within(dialog).getByRole('button', { name: 'settings.providers.wizard.customAction' })).toBeTruthy();
     fireEvent.click(await within(dialog).findByRole('button', { name: /DeepSeek/ }));
+    expect(within(dialog).getByText('settings.providers.wizard.stepModels')).toBeTruthy();
     fireEvent.change(within(dialog).getByPlaceholderText('sk-…'), { target: { value: KEY } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'settings.providers.wizard.next' }));
     // Step 3 lists the models the instance discovered with the key.
@@ -321,7 +322,9 @@ describe('adding before the ticket list is read', () => {
     const { releaseList } = setup({ holdFirstList: true });
     fireEvent.click(await screen.findByRole('button', { name: /settings.providers.addProvider/ }));
     const dialog = await screen.findByRole('dialog');
-    expect(await within(dialog).findByText('settings.providers.wizard.stepModels')).toBeTruthy();
+    expect(
+      await within(dialog).findByRole('textbox', { name: 'settings.providers.wizard.searchPlaceholder' }),
+    ).toBeTruthy();
     releaseList();
   });
 });
@@ -332,7 +335,7 @@ describe('cloud provider setup while a keyed detection is running', () => {
     fireEvent.click(await screen.findByRole('button', { name: /settings.providers.addProvider/ }));
     fireEvent.click(
       await within(await screen.findByRole('dialog')).findByRole('button', {
-        name: /settings.providers.wizard.customTitle/,
+        name: /settings.providers.wizard.customAction/,
       }),
     );
     const dialog = await screen.findByRole('dialog');

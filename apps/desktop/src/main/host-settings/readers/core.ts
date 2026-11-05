@@ -25,7 +25,6 @@ export interface CoreSettingsStores {
   memory: typeof import('../../maker-host/memory-settings-store.js').inspectMemorySettings;
   compaction: typeof import('../../maker-host/compaction-settings-store.js').inspectCompactionSettings;
   piCompaction: typeof import('../../maker-host/compaction-settings-store.js').inspectPiCompactionSettings;
-  contacts: typeof import('../../maker-host/contacts-settings-store.js').inspectContactsSettings;
   silentEncryptedRetry: typeof import('../../maker-host/silent-encrypted-retry-store.js').inspectSilentEncryptedRetrySettings;
   chatEmbedding: typeof import('../../maker-host/chat-embedding-settings-store.js').inspectChatEmbeddingSettings;
   lsp: typeof import('../../maker-host/lsp-mode-store.js').inspectLspModeSettings;
@@ -115,7 +114,9 @@ export function readCoreSettings(deps: {
   read('memory', ['maker', 'claudeCode', 'codex', 'pi'], () => s.memory(context.ownerRoot));
   read('compaction', ['claudeCodeAutoCompactPct'], () => s.compaction(context.ownerRoot));
   read('compaction', ['piAutoCompactPct'], () => s.piCompaction(context.ownerRoot));
-  read('contacts', ['enabled', 'deviceSyncEnabled'], () => s.contacts(context.ownerRoot));
+  // Smart Contacts moved to the cindy-contacts plugin upstream; the frozen field IDs remain.
+  fields['contacts.enabled'] = { status: 'unsupported' };
+  fields['contacts.deviceSyncEnabled'] = { status: 'unsupported' };
   read('silentEncryptedRetry', ['enabled'], () => s.silentEncryptedRetry());
   read('chatEmbedding', ['enabled'], () => s.chatEmbedding({
     ownerRoot: context.ownerRoot, userDataPath: context.userDataPath,

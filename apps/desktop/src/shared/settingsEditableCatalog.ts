@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SETTINGS_READ_SHORTCUT_IDS, SETTINGS_READ_KEY_CODES } from './settingsReadCatalog.js';
+import { SUPPORTED_LOCALES } from './locale.js';
 
 /** Fixed, reviewed settings only. This is not an arbitrary file or IPC interface. */
 const bool = z.boolean();
@@ -73,7 +74,7 @@ export const additionalSettingsSchemas = {
   lsp: z.object({ enabled: bool }).strict(),
   privacy: z.object({ analyticsEnabled: bool }).strict(),
   diagnostics: z.object({ crashAutoUploadEnabled: bool }).strict(),
-  desktopGeneral: z.object({ themeFamilyId: routeId, theme: z.enum(['system', 'light', 'dark']), locale: z.enum(['system', 'zh-CN', 'zh-TW', 'en', 'ja', 'ko']), sidebarPinnedMode: z.enum(['text', 'card', 'list']), sidebarMainMode: z.enum(['text', 'list']), ghostPanelRestoreMode: z.enum(['bubble', 'sidebar']) }).strict(),
+  desktopGeneral: z.object({ themeFamilyId: routeId, theme: z.enum(['system', 'light', 'dark']), locale: z.enum(['system', ...SUPPORTED_LOCALES]), sidebarPinnedMode: z.enum(['text', 'card', 'list']), sidebarMainMode: z.enum(['text', 'list']), ghostPanelRestoreMode: z.enum(['bubble', 'sidebar']) }).strict(),
   desktopChat: z.object({ composerSendShortcut: z.enum(['enter', 'modifier-enter']), webLinkOpenPreference: z.enum(['external', 'sidebar']), localLinkOpenPreference: z.enum(['external', 'sidebar']), streamFadePreference: z.enum(['on', 'off']), promptRecommendationEnabled: bool, messageNavRailEnabled: bool }).strict(),
   desktopNotifications: z.object({ notificationsEnabled: bool, feishuNotificationsEnabled: bool, swallowActivationClick: bool, networkDebugEnabled: bool }).strict(),
   linuxWindow: z.object({ linuxCloseBehavior: z.enum(['quit', 'minimize']).nullable() }).strict(),
@@ -87,6 +88,9 @@ export const additionalSettingsSchemas = {
   botModelChain: z.object({ modelChain: z.array(z.object({ harness: z.enum(['claude', 'codex', 'pi']), providerId: routeId.nullable(), model: routeId, effort: z.enum(['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']), fastMode: bool }).strict()).max(5) }).strict(),
 } as const;
 export type AdditionalSettingsDomain = keyof typeof additionalSettingsSchemas;
+/** Smart Contacts moved to the cindy-contacts plugin upstream; these domains stay in the wire catalog only. */
+export const RETIRED_ADDITIONAL_SETTINGS_DOMAINS = ['contacts', 'contactsSync'] as const satisfies readonly AdditionalSettingsDomain[];
+export type ActiveAdditionalSettingsDomain = Exclude<AdditionalSettingsDomain, (typeof RETIRED_ADDITIONAL_SETTINGS_DOMAINS)[number]>;
 export const ADDITIONAL_SETTINGS_DOMAINS = Object.keys(additionalSettingsSchemas) as AdditionalSettingsDomain[];
 export const isAdditionalSettingsDomain = (value: unknown): value is AdditionalSettingsDomain =>
   typeof value === 'string' && Object.hasOwn(additionalSettingsSchemas, value);

@@ -35,7 +35,6 @@ import {
   InfoRow,
 } from '@/components/settings/AboutSection';
 import { ExperimentalSectionView } from '@/components/settings/ExperimentalSection';
-import { ContactsSectionView } from '@/components/settings/contacts/ContactsSection';
 import {
   PersonalizationPageTitle,
   UserPromptEditor,
@@ -406,37 +405,6 @@ export function NativeCloudSections(props: Props) {
               deviceId={deviceId}
               disabled={disabled}
               attempt={confirmSave}
-            />,
-          )}
-        {ready('contacts') &&
-          section(
-            'settings-contacts',
-            <ContactsSectionView
-              enabled={bool(s('contacts'), 'enabled')}
-              togglePending={disabled}
-              aiSessionPending={false}
-              statsLine=""
-              pendingCount={0}
-              syncStatus={{
-                available: !!ready('contactsSync'),
-                enabled: !!ready('contactsSync') && bool(s('contactsSync'), 'deviceSyncEnabled'),
-              }}
-              syncPending={disabled}
-              syncSummary={
-                ready('contactsSync')
-                  ? ''
-                  : t(
-                      states.contactsSync?.status === 'unreadable'
-                        ? 'cloudSettings.readFailed'
-                        : 'cloudSettings.settingUnavailable',
-                    )
-              }
-              handleToggle={(next) => attempt('contacts', { enabled: next })}
-              handleSyncToggle={(next) => attempt('contactsSync', { deviceSyncEnabled: next })}
-              handleSyncNow={undefined}
-              startAiSession={undefined}
-              onManage={undefined}
-              manager={null}
             />,
           )}
         {ready('terminal') &&

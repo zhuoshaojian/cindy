@@ -270,8 +270,12 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
         const stamp = { dataOwnerId: owner.dataOwnerId, ownerGeneration: owner.ownerGeneration };
         const quote = typeof request.value === 'object' && request.value !== null;
         const args =
-          request.call === 'context-set' || request.call === 'compaction-set'
-            ? quote
+          request.call === 'image-input-set'
+            ? typeof request.value === 'boolean' || request.value == null
+              ? [request.target, request.value ?? null, stamp]
+              : fail('INVALID_PARAMS', 'expected a boolean or null')
+            : request.call === 'context-set' || request.call === 'compaction-set'
+            ? quote || typeof request.value === 'boolean'
               ? fail('INVALID_PARAMS', 'expected a number or null')
               : [request.target, request.value ?? null, stamp]
             : request.call === 'context-reset'

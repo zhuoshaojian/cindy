@@ -205,7 +205,7 @@ export function CloudAddProviderDialog({
   const meta = {
     subscription: t('settings.providers.wizard.metaOAuth'),
     apiKey: t('settings.providers.wizard.metaApiKey'),
-    custom: t('settings.providers.wizard.customMeta'),
+    custom: t('settings.providers.wizard.customAction'),
   };
   const groupTitle = {
     subscription: t('settings.providers.wizard.groupSubscription'),
@@ -214,7 +214,7 @@ export function CloudAddProviderDialog({
   };
   const title = choice
     ? t('settings.providers.wizard.titleWith', {
-        name: choice.group === 'custom' ? t('settings.providers.wizard.customTitle') : choice.name,
+        name: choice.group === 'custom' ? t('settings.providers.wizard.groupCustom') : choice.name,
       })
     : t('settings.providers.wizard.title');
   return (
@@ -247,7 +247,7 @@ export function CloudAddProviderDialog({
           {!choice ? (
             <div className="flex min-h-0 flex-col px-4 pb-4">
               <p className="pb-2 text-12" style={{ color: 'var(--text-tertiary)' }}>
-                {t('settings.providers.wizard.pickHint')}
+                {t('settings.providers.wizard.stepPick')}
               </p>
               <SettingsTextInput
                 aria-label={t('settings.providers.wizard.searchPlaceholder')}
@@ -281,7 +281,7 @@ export function CloudAddProviderDialog({
                             style={{ color: 'var(--settings-section-title)' }}
                           >
                             {row.group === 'custom'
-                              ? t('settings.providers.wizard.customTitle')
+                              ? t('settings.providers.wizard.groupCustom')
                               : row.name}
                           </span>
                           <span

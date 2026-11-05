@@ -21,16 +21,6 @@ vi.mock('react-i18next', async (original) => ({
 }));
 const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock('@/lib/toast', () => ({ toast: toasts }));
-vi.mock('@/lib/contactsService', () => ({
-  contactsService: {
-    settingsGet: () => {
-      throw Error('LOCAL_CONTACTS_READ');
-    },
-    settingsSet: () => {
-      throw Error('LOCAL_CONTACTS_WRITE');
-    },
-  },
-}));
 
 const DEVICE = 'cloud-device-1';
 type Handler = (args: unknown[]) => unknown;
@@ -96,12 +86,10 @@ describe('cloud IM native sections', () => {
         groups: [{ chatId: '-100', chatName: 'Team', activation: 'mention' }],
       }),
       'telegramBot:set-group-activation': setGroup,
-      'maker:contacts:settings:get': () => ({ enabled: false }),
     });
     render(<CloudTelegramSettings target={target()} />);
     const name = await screen.findByDisplayValue('Cindy');
     expect(await screen.findByText('Team')).toBeTruthy();
-    expect(await screen.findByText('settings.telegramBot.groups.contactsOff')).toBeTruthy();
     vi.useFakeTimers();
     fireEvent.change(name, { target: { value: 'Cindy Cloud' } });
     await act(async () => {

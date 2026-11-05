@@ -43,7 +43,7 @@ export const SETTINGS_READ_WORKLOUDER_KEYCAPS = [
 ] as const;
 export const SETTINGS_READ_GAMEPAD_BUTTONS = ['a', 'b', 'x', 'y', 'lb', 'rb', 'lt', 'rt', 'view', 'menu', 'xbox', 'ls', 'rs', 'dpadUp', 'dpadDown', 'dpadLeft', 'dpadRight'] as const;
 export const SETTINGS_READ_DIRECTIONS = ['up', 'right', 'down', 'left'] as const;
-export const SETTINGS_READ_BUILTIN_TOOL_IDS = ['android', 'browser', 'computer', 'feishu_bot', 'wechat', 'slack', 'scheduler', 'ssh', 'memory', 'contacts', 'docs', 'xdt_helper', 'collab', 'lsp'] as const;
+export const SETTINGS_READ_BUILTIN_TOOL_IDS = ['android', 'browser', 'computer', 'feishu_bot', 'wechat', 'slack', 'scheduler', 'ssh', 'memory', 'docs', 'xdt_helper', 'collab', 'lsp'] as const;
 export const SETTINGS_READ_CAPABILITIES = ['image.generate', 'image.edit', 'video.generate', 'video.edit', 'text.oneshot', 'embed.text'] as const;
 
 const bool = z.boolean();
@@ -173,7 +173,8 @@ const core = {
   ...group('auxiliaryModel', { models: z.array(modelRoute).max(3) }, 'personalization', 'AuxiliaryModelSection', 'shared/auxiliaryModelSettings.ts#AuxiliaryModelSettings', 'owner', 'nextTask', 'safeProjection'),
   ...group('botModelChain', { modelChain: z.array(route).max(5) }, 'general', 'BotsGlobalSettingsSection', 'shared/botModelChain.ts#BotModelRoute', 'owner', 'nextTask', 'safeProjection'),
   ...group('visionBridge', { enabled: bool, primary: modelRoute.nullable(), fallback: modelRoute.nullable() }, 'personalization', 'VisionBridgeSection', 'shared/visionBridgeSettings.ts#VisionBridgeSettings', 'profile', 'nextTask', 'safeProjection'),
-  ...group('contacts', { enabled: bool, deviceSyncEnabled: bool }, 'personalization', 'ContactsSection', 'main/maker-host/contacts-settings-store.ts', 'owner'),
+  // Smart Contacts moved to the cindy-contacts plugin; the frozen v2 fields always read unsupported.
+  ...group('contacts', { enabled: bool, deviceSyncEnabled: bool }, 'personalization', 'ContactsSection', 'main/host-settings/readers/core.ts', 'owner'),
   ...group('silentEncryptedRetry', { enabled: bool }, 'general', 'SilentEncryptedRetryCell', 'main/maker-host/silent-encrypted-retry-store.ts'),
   ...group('chatEmbedding', { enabled: bool }, 'general', 'ChatEmbeddingCell', 'main/maker-host/chat-embedding-settings-store.ts', 'owner'),
   ...group('lsp', { enabled: bool }, 'general', 'LspBetaCell', 'main/maker-host/lsp-mode-store.ts', 'profile', 'nextAgentStart'),
@@ -316,10 +317,11 @@ export const SETTINGS_READ_EXTERNAL_CATALOG = [
   { id: 'localAgent.applications', tab: 'remote-control', control: 'LocalAgentSection', kind: 'authorization', entry: 'local-agent' },
   { id: 'account.profile', tab: 'general', control: 'UserProfileCard', kind: 'external', entry: 'account' },
   { id: 'account.logout', tab: 'general', control: 'LogoutSection', kind: 'action', entry: 'account' },
+  // The new-task default permission is renderer-local and not part of the deployed v2 snapshot.
+  { id: 'general.newChatDefaultPermission', tab: 'general', control: 'NewChatDefaultPermissionSection', kind: 'external', entry: 'newTask' },
   { id: 'billing.account', tab: 'billing', control: 'BillingSettingsSection', kind: 'external', entry: 'billing' },
   { id: 'usage.history', tab: 'usage', control: 'UsageHistorySection', kind: 'resource', entry: 'usage' },
   { id: 'personalization.memoryContent', tab: 'personalization', control: 'MemorySection', kind: 'resource', entry: 'memory' },
-  { id: 'personalization.contacts', tab: 'personalization', control: 'ContactsSection', kind: 'resource', entry: 'contacts' },
   { id: 'providers.connections', tab: 'providers', control: 'ProvidersSection', kind: 'authorization', entry: 'providers' },
   { id: 'voice.dictionary', tab: 'voice-input', control: 'VoiceInputSection', kind: 'resource', entry: 'voice' },
   // Local microphone filtering is not part of the deployed v2 snapshot contract.

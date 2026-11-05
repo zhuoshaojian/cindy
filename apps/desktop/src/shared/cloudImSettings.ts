@@ -54,9 +54,6 @@ export const CLOUD_IM_SETTINGS_CALLS = [
   'telegramBot:set-behavior',
   'telegramBot:list-groups',
   'telegramBot:set-group-activation',
-  // Smart contacts switch shown in the group section.
-  'maker:contacts:settings:get',
-  'maker:contacts:settings:set',
   // Personal WeChat working directory.
   'wechatBot:get-channel-settings',
   'wechatBot:reset-working-directory',
