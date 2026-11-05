@@ -16,7 +16,7 @@ separately:
 
 The cloud.10 history from before the rebase is kept as
 `backup/cloud-settings-native-client-0121`. The source freeze names it as
-`cloudParent`. Release identity: `0.1.125-cloud.2`.
+`cloudParent`. Release identity: `0.1.125-cloud.3`.
 
 ## Compatibility decisions
 
