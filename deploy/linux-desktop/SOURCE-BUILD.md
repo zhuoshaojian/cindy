@@ -57,6 +57,13 @@ Git LFS in its job directory; it does not change the shared runner or install Gi
   The builder accepts the named commit only when all base inputs are byte-identical
   at both commits. It then labels and caches the base by that commit, so the
   previously built base is reused.
+- Build-only Debian downloads use a nearby mirror of the signed Debian archive
+  (`DEBIAN_BUILD_MIRROR`, default `https://mirrors.aliyun.com`). These are the
+  application stage's sysroot packages, the Dock build tools and the plank
+  sources. snapshot.debian.org is reached only through the runner's overseas
+  forwarder. apt still verifies indexes with the Debian keyring, packages stay
+  pinned to exact versions, and the plank archives keep their SHA-256 checksums.
+  Runtime images keep their canonical snapshot sources.
 - The upstream version and cloud revision are build arguments shared by the
   application, image labels and release records. The pinned dependency base has
   its own source identity, so an application version bump retains its build cache.
