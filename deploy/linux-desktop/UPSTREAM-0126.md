@@ -66,3 +66,31 @@ These ran on a macOS checkout and are not real-account acceptance:
 - `@cindy/mcps` and the Claude Code `maker-core` suites pass.
 - Recipe checks: node 140 passed, 1 skipped; all Python suites pass.
 - `stage-cloud-overlays.mjs` applies all 30 overlays to the frozen source.
+
+## Owner acceptance
+
+Only the owner's instance was upgraded. It was idle both times, so neither upgrade
+was skipped; the operator now checks once instead of waiting for work to finish.
+Other instances, the cloud.3 fleet admission and the defaults for new instances are
+unchanged.
+
+**cloud.1** (`58dfdc642c`) completed with an encrypted backup, unchanged databases
+and schedules, and peer records unchanged. Reading the instance afterwards showed
+the `cindy-settings` Skill still on its version 1 text, which points at `settings`.
+
+**cloud.2** (`1d222ddc26`) passed the same checks, and the instance Skill now
+discovers `host_settings`. Preparing its policy also retired the unreferenced
+`0.1.121-cloud.1` approval; no instance's update or new-claim selection changed.
+The Dev client `0.1.126-dev.cloud.20261106.2` was used against the real instance:
+
+- The cloud page loads all ten tabs and reports `0.1.126-cloud.2`.
+- The language menu lists all twelve languages. Saving Deutsch reached the instance
+  (`de`), and the instance is back to 简体中文 (`zh-CN`).
+- The model panel's advanced drawer opens on the instance, and its image-input row
+  reads from the model catalog.
+- With cloud.1, the remote desktop showed live video and the instance version.
+  Upstream's new setup migration prompt appeared only in the Dev client's own
+  window, not on the instance desktop.
+
+Not checked live: upstream's `update_app_settings` preference path on an instance
+(the Host receipt check is covered by tests).
