@@ -111,7 +111,7 @@ describe('Claude Host 设置逐调用来源', () => {
   const restrictedCalls = [
     { tool_name: 'mcp__cindy_helper__list_tools', tool_input: {} },
     { tool_name: 'mcp__cindy_helper__list_tools', tool_input: { category: '' } },
-    { tool_name: 'mcp__cindy_helper__list_tools', tool_input: { category: 'settings' } },
+    { tool_name: 'mcp__cindy_helper__list_tools', tool_input: { category: 'host_settings' } },
     ...['list_settings', 'get_settings', 'update_settings', 'get_settings_operation'].map(name => ({
       tool_name: 'mcp__cindy_helper__call_tool', tool_input: { name, args: {} },
     })),
@@ -140,7 +140,9 @@ describe('Claude Host 设置逐调用来源', () => {
 
   it.each([
     { tool_name: 'mcp__cindy_helper__list_tools', tool_input: { category: 'control' } },
+    { tool_name: 'mcp__cindy_helper__list_tools', tool_input: { category: 'settings' } },
     { tool_name: 'mcp__cindy_helper__call_tool', tool_input: { name: 'get_session_runtime', args: {} } },
+    { tool_name: 'mcp__cindy_helper__call_tool', tool_input: { name: 'get_app_settings', args: { section: 'preferences' } } },
     { tool_name: 'mcp__other__call_tool', tool_input: { name: 'get_settings', args: {} } },
     { tool_name: 'Read', tool_input: { file_path: '/repo/README.md' } },
   ])('其它 helper 类目、工具和 MCP 不受设置拦截影响：%j', async (call) => {

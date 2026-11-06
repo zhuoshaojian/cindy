@@ -82,9 +82,9 @@ export function buildClaudeHostSettingsCallerProvenanceHooks(): Partial<Record<H
     const args = pre.tool_input && typeof pre.tool_input === 'object' && !Array.isArray(pre.tool_input)
       ? pre.tool_input as Record<string, unknown>
       : {};
-    // 无 category 的总览也会暴露 settings；保留其它明确类目的发现与分派。
+    // 无 category 的总览也会暴露 host_settings；保留其它明确类目的发现与分派。
     const isDiscovery = pre.tool_name === 'mcp__cindy_helper__list_tools'
-      && (!args.category || args.category === 'settings');
+      && (!args.category || args.category === 'host_settings');
     const isSettingsCall = pre.tool_name === 'mcp__cindy_helper__call_tool'
       && typeof args.name === 'string' && HOST_SETTINGS_TOOLS.has(args.name);
     if (!isDiscovery && !isSettingsCall) return { continue: true };

@@ -620,7 +620,7 @@ describe('ClaudeCodeAgent plan mode', () => {
       for (const name of ['list_settings', 'get_settings', 'update_settings', 'get_settings_operation']) {
         expect(await dispatch('mcp__cindy_helper__call_tool', { name, args: {}, caller: 'root' }, 'native-child')).toBe('denied');
       }
-      expect(await dispatch('mcp__cindy_helper__list_tools', { category: 'settings' }, 'native-child')).toBe('denied');
+      expect(await dispatch('mcp__cindy_helper__list_tools', { category: 'host_settings' }, 'native-child')).toBe('denied');
       expect(await dispatch('mcp__cindy_helper__list_tools', {}, 'native-child')).toBe('denied');
       expect(helperDispatch).not.toHaveBeenCalled();
       expect(await dispatch('mcp__cindy_helper__call_tool', { name: 'get_settings', args: {} })).toBe('dispatched');

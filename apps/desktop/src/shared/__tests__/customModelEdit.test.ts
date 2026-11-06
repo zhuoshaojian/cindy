@@ -26,7 +26,7 @@ describe('applyCustomModelEdit', () => {
     ).toBe(true);
     expect(value.runtimes.pi!.models[0]).toEqual({ id: 'm', name: 'M', interfaceId: 'auto' });
   });
-  it('pins an explicit API with its own route', () => {
+  it('pins an explicit API and, like upstream, lets Pi keep the runtime endpoint', () => {
     const value = config();
     expect(
       applyCustomModelEdit(value, 'pi', 'm', {
@@ -37,8 +37,16 @@ describe('applyCustomModelEdit', () => {
     ).toBe(true);
     const model = value.runtimes.pi!.models[0]!;
     expect(model).toMatchObject({ api: 'anthropic-messages', piApi: 'anthropic-messages' });
-    expect(model.route?.wireProtocol).toBe('anthropic-messages');
+    expect(model.route).toBeUndefined();
     expect(model.interfaceId).toBeUndefined();
+  });
+  it('keeps an existing route and switches its wire protocol', () => {
+    const value = config();
+    value.runtimes.pi!.models[0]!.route = { baseUrl: 'https://gateway.example.invalid/v1', wireProtocol: 'openai-chat' };
+    expect(
+      applyCustomModelEdit(value, 'pi', 'm', { kind: 'interface', api: 'anthropic-messages', profile: false }),
+    ).toBe(true);
+    expect(value.runtimes.pi!.models[0]!.route?.wireProtocol).toBe('anthropic-messages');
   });
   it('sets and resets image capability', () => {
     const value = config();
