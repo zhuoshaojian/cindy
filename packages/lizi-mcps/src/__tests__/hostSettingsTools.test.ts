@@ -39,8 +39,8 @@ describe('Host settings 实际 MCP 传输与参数边界', () => {
     try {
       const top = await fixture.client.listTools();
       expect(top.tools.map(tool => tool.name).sort()).toEqual(['call_tool', 'list_tools']);
-      expect(await fixture.list()).toMatchObject({ categories: expect.arrayContaining([{ name: 'settings', tool_count: 4 }]) });
-      expect(await fixture.list('settings')).toMatchObject({ tools: expect.arrayContaining([
+      expect(await fixture.list()).toMatchObject({ categories: expect.arrayContaining([expect.objectContaining({ name: 'host_settings', tool_count: 4 })]) });
+      expect(await fixture.list('host_settings')).toMatchObject({ tools: expect.arrayContaining([
         expect.objectContaining({ name: 'list_settings' }), expect.objectContaining({ name: 'get_settings' }),
         expect.objectContaining({ name: 'update_settings' }), expect.objectContaining({ name: 'get_settings_operation' }),
       ]) });
@@ -55,10 +55,10 @@ describe('Host settings 实际 MCP 传输与参数边界', () => {
   it('发现后权限变化，实际执行仍拒绝，旧工具名不是授权', async () => {
     const fixture = await setup();
     try {
-      expect(await fixture.list('settings')).toHaveProperty('tools');
+      expect(await fixture.list('host_settings')).toHaveProperty('tools');
       fixture.allowed.mockResolvedValue(false);
       expect(await fixture.invoke('list_settings')).toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
-      expect(await fixture.list('settings')).toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
+      expect(await fixture.list('host_settings')).toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
       expect(fixture.call).not.toHaveBeenCalled();
     } finally { await fixture.close(); }
   });
@@ -77,9 +77,9 @@ describe('Host settings 实际 MCP 传输与参数边界', () => {
     try {
       // The generic MCP layer inherits ordinary tools. Real Desktop Bot denial
       // comes from the Host's live source resolver, not a second surface policy.
-      expect(await fixture.list('settings')).toHaveProperty('tools');
+      expect(await fixture.list('host_settings')).toHaveProperty('tools');
       fixture.allowed.mockResolvedValue(false);
-      expect(await fixture.list('settings')).toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
+      expect(await fixture.list('host_settings')).toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
       expect(await fixture.invoke('update_settings', { domain: 'appearance', expected_revision: 'r', operation_id: 'op', set: { uiSize: 16 } })).toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
       expect(fixture.call).not.toHaveBeenCalled();
     } finally { await fixture.close(); }
@@ -88,7 +88,7 @@ describe('Host settings 实际 MCP 传输与参数边界', () => {
   it('restricted 能力面即使 Host 回调允许也不暴露或执行全局设置', async () => {
     const fixture = await setup('pi', 'restricted');
     try {
-      expect(await fixture.list('settings')).toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
+      expect(await fixture.list('host_settings')).toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
       expect(await fixture.invoke('list_settings')).toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
       expect(fixture.call).not.toHaveBeenCalled();
     } finally { await fixture.close(); }
@@ -97,7 +97,7 @@ describe('Host settings 实际 MCP 传输与参数边界', () => {
   it('未注入 Host 设置回调时不出现空壳能力', async () => {
     const fixture = await setup('codex', 'default', false);
     try {
-      expect(JSON.stringify(await fixture.list())).not.toContain('settings');
+      expect(JSON.stringify(await fixture.list())).not.toContain('host_settings');
       expect(await fixture.invoke('list_settings')).toMatchObject({ errorCode: 'UNKNOWN_TOOL' });
     } finally { await fixture.close(); }
   });
