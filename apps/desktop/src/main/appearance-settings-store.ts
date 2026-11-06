@@ -9,6 +9,7 @@ import {
   type AppearanceOverrides,
   type AppearanceSettings,
 } from '../shared/appearanceSettings.js';
+import { normalizePluginAppearanceSettings, type PluginAppearanceSettingsFields } from '../shared/pluginAppearance.js';
 import { desktopMakerLogger } from './maker-host/logger-adapter.js';
 import {
   createOverrideSettingsFile,
@@ -23,6 +24,17 @@ const log = desktopMakerLogger.child('appearance-settings-store');
 
 function settingsFilePath(): string {
   return path.join(app.getPath('userData'), 'appearance-settings.json');
+}
+
+// Plugin appearance writes share this file; each field must survive the same normalizer the reader uses.
+const PLUGIN_APPEARANCE_FIELDS = new Set<string>([
+  'uiFontResource', 'codeFontResource', 'bodyFontResource', 'uiFontTraits', 'codeFontTraits',
+  'bodyFont', 'reading', 'contentStyle', 'themeColors',
+] satisfies Array<keyof PluginAppearanceSettingsFields>);
+
+function isValidStoredAppearanceSetting(key: string, value: unknown): boolean {
+  if (!PLUGIN_APPEARANCE_FIELDS.has(key)) return isValidAppearanceSetting(key, value);
+  return normalizePluginAppearanceSettings({ [key]: value })[key as keyof PluginAppearanceSettingsFields] !== undefined;
 }
 
 const store = createOverrideSettingsFile<AppearanceSettings>({
@@ -40,7 +52,7 @@ const store = createOverrideSettingsFile<AppearanceSettings>({
   validateOverrides: (raw) => {
     for (const [key, value] of Object.entries(raw)) {
       // undefined is an override being removed in memory; it never reaches disk.
-      if (value !== undefined && !isValidAppearanceSetting(key, value)) throw new Error('invalid appearance setting');
+      if (value !== undefined && !isValidStoredAppearanceSetting(key, value)) throw new Error('invalid appearance setting');
     }
   },
 });

@@ -97,6 +97,19 @@ describe('AppShortcutStore', () => {
     await store.commitHost({}, ['toggle-sidebar'], { expectedRevision: saved.revision });
     expect(JSON.parse(fs.readFileSync(filePath(), 'utf8'))).toEqual({ version: 1, overrides: { 'save-file': null }, future: true });
   });
+  // v0.1.128 stores plugin bindings in the same file; a cloud Host edit must keep them.
+  it('Host edits keep plugin shortcut bindings saved in the same file', async () => {
+    const store = makeStore('darwin');
+    const plugin = `plugin:${'c'.repeat(64)}` as const;
+    fs.writeFileSync(filePath(), JSON.stringify({ version: 1, overrides: { [plugin]: combo('KeyK', { meta: true, shift: true }) } }));
+    const before = store.inspectHost();
+    expect(before.status).toBe('ready');
+    if (before.status !== 'ready') return;
+    await store.commitHost({ 'toggle-sidebar': combo('KeyJ', { meta: true }) }, ['toggle-sidebar'], { expectedRevision: before.revision });
+    expect(JSON.parse(fs.readFileSync(filePath(), 'utf8')).overrides).toMatchObject({
+      [plugin]: { code: 'KeyK' }, 'toggle-sidebar': { code: 'KeyJ' },
+    });
+  });
   it('returns registry defaults when no overrides exist', () => {
     const store = makeStore('darwin');
     expect(store.getEffectiveCombos('toggle-sidebar')).toEqual([

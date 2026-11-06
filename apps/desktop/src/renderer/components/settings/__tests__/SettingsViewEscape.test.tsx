@@ -391,8 +391,7 @@ describe('SettingsView Escape', () => {
     auth.cloudAccess = 'allowed';
     const instanceList = vi.fn().mockResolvedValue([]);
     const instanceClaim = vi.fn();
-    vi.stubGlobal('electronAPI', {
-      platform: 'darwin',
+    Object.assign(window.electronAPI, {
       cloudSettings: { instanceList, instanceClaim },
       cloudLoginWindow: { open: vi.fn(), onCompleted: vi.fn(() => () => undefined) },
     });
@@ -411,7 +410,7 @@ describe('SettingsView Escape', () => {
     auth.mode = 'cloud';
     auth.cloudAccess = access;
     const instanceList = vi.fn();
-    vi.stubGlobal('electronAPI', { platform: 'darwin', cloudSettings: { instanceList } });
+    Object.assign(window.electronAPI, { cloudSettings: { instanceList } });
     renderSettings('/settings?tab=cloud-instances&section=cloudInstances');
     expect(screen.queryByTestId('cloud-instances-page')).toBeNull();
     expect(screen.getByRole('tabpanel').id).toBe('settings-panel-general');
@@ -421,14 +420,14 @@ describe('SettingsView Escape', () => {
 
   // 2026-11-04 product review: the instance's remote desktop must not offer keep-awake or quit.
   it.each([false, true])('shows app behavior only outside a managed cloud instance (%s)', (hostOwned) => {
-    vi.stubGlobal('electronAPI', { platform: 'linux', hostSettings: { hostOwned } });
+    Object.assign(window.electronAPI, { platform: 'linux', hostSettings: { hostOwned } });
     renderSettings('/settings');
     expect(!!document.getElementById('settings-window-behavior')).toBe(!hostOwned);
     expect(document.getElementById('settings-search-target-general-language')).toBeTruthy();
   });
   it('does not fetch cloud instances from a signed-out settings deep link', () => {
     const instanceList = vi.fn();
-    vi.stubGlobal('electronAPI', { platform: 'darwin', cloudSettings: { instanceList } });
+    Object.assign(window.electronAPI, { cloudSettings: { instanceList } });
     renderSettings('/settings?tab=cloud-instances');
     expect(screen.queryByTestId('cloud-instances-page')).toBeNull();
     expect(instanceList).not.toHaveBeenCalled();

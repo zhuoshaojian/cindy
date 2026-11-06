@@ -25,6 +25,7 @@ import {
   LINK_OPEN_DEFAULTS,
   useLinkOpenPreference,
   type LinkOpenKind,
+  type LinkOpenPreference,
 } from '@/hooks/useLinkOpenPreference';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 import {

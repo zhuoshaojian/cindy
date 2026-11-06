@@ -77,7 +77,10 @@ export class AppShortcutStore {
         if (raw.overrides !== undefined && !isSettingsRecord(raw.overrides)) throw new Error('Invalid shortcuts');
         const overrides = (raw.overrides ?? {}) as Record<string, unknown>;
         for (const [id, combo] of Object.entries(overrides)) {
-          if (!isAppShortcutId(id) || combo !== null && !normalizeAppShortcutCombo(combo)) throw new Error('Invalid shortcut');
+          // Plugin bindings share this file; their declarations are checked on change, not on read.
+          if (!isAppShortcutId(id) && !isPluginShortcutId(id) || combo !== null && !normalizeAppShortcutCombo(combo)) {
+            throw new Error('Invalid shortcut');
+          }
         }
       }, preserveUnreadableFile: true, maxBytes: 64 * 1024, log, label: 'app-shortcuts',
     });

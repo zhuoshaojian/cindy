@@ -138,6 +138,12 @@ describe('terminal appearance overrides', () => {
     expect(readAppearanceSettingsState().value.uiFamily).toBe('Inter');
   });
 
+  // The cloud write gate must reject a malformed plugin field instead of storing it.
+  it('rejects a plugin appearance field the reader would discard', async () => {
+    await expect(commitAppearanceSettings({ set: { reading: { maxWidth: 5 } } as never })).rejects.toThrow('invalid appearance setting');
+    expect(fs.existsSync(file())).toBe(false);
+  });
+
   it('reads old overrides with unchanged values and adds terminal defaults only in memory', () => {
     const oldOverrides = { uiFamily: 'Inter', codeFamily: 'JetBrains Mono', uiSize: 16, codeSize: 18, windowZoom: 1.2 };
     const file = path.join(host.root, 'appearance-settings.json');
