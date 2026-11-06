@@ -103,3 +103,41 @@ The Dev client `0.1.126-dev.cloud.20261106.2` was used against the real instance
 
 Not checked live: upstream's `update_app_settings` preference path on an instance
 (the Host receipt check is covered by tests).
+
+## Fleet rollout of cloud.2
+
+On 2026-11-06 the owner admitted cloud.2 for every organization instance, with new
+instances defaulting to it. It replaced the cloud.3 (0.1.125) rollout planned for
+that night: the ten running instances with automatic updates on move straight from
+0.1.125-cloud.2 to 0.1.126-cloud.2 in their 03:00–05:00 window. No instance was
+upgraded by hand. The stopped instance with automatic updates on moves when it next
+runs; the other stopped instances and the personal instance are unchanged.
+
+## cloud.3: setup migration on an instance
+
+A read-only review of the new-claim flow found no blocking problem: claim image
+selection, the pod template, a fresh profile's first start (CI native smoke), the
+login bridge and the settings Skill are unaffected. It did find that upstream's setup
+migration misbehaves on an instance, which cloud.3 (`feb049adc9`) fixes as two
+cloud-only commits after the 0.1.126 adaptation (see Compatibility decisions).
+Upstream files only gain a switch; the instance behaviour lives in
+`state/hostDesktop/setupMigrationPrefs.ts`.
+
+Only the owner's instance was upgraded. It was idle, so the upgrade was not
+skipped. It passed the same checks as cloud.2. Its policy also retired the
+unreferenced `0.1.121-cloud.6` approval; the cloud.2 fleet admission and new-claim
+defaults are unchanged.
+
+The owner set a temporary instance prompt and then previewed a migration from the
+instance on the Dev client:
+
+- On cloud.2 the preview carried only the cached theme and language. The prompt
+  was missing.
+- On cloud.3 it also carried the instance prompt, from the Host and under the
+  account's key.
+- The prompt was then reset; the instance has no custom prompt again, and the
+  preview no longer carries one.
+
+The cloud page loads all ten tabs and reports `0.1.126-cloud.3`. Migrating *into* an
+instance and the missing automatic offer are covered by tests only: the owner's
+instance does not look new, and a migration into it would change its settings.
