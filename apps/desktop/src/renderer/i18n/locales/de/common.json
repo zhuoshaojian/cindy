@@ -20099,6 +20099,7 @@
       "claiming": "Wird erstellt…",
       "defaults": "Version, Ressourcen und Standards für automatische Updates werden vom Cloud-Dienst festgelegt.",
       "defaultName": "Cloud-Cindy {{number}}",
+      "defaultNameSole": "Cloud-Cindy",
       "readFailed": "Cloud-Instanzen konnten nicht geladen werden. Lade neu, um es erneut zu versuchen. Bis die Liste verfügbar ist, wird keine Instanz erstellt.",
       "claimUnconfirmed": "Das Ergebnis der Erstellung ist noch nicht bestätigt. Prüfe den Instanzstatus, bevor du erneut sendest.",
       "checkClaim": "Ergebnis der Erstellung prüfen",

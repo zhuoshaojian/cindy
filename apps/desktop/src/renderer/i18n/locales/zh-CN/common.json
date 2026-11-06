@@ -20027,6 +20027,7 @@
       "claiming": "正在领取…",
       "defaults": "版本、资源规格和自动更新默认值由云端统一配置。",
       "defaultName": "云端 Cindy {{number}}",
+      "defaultNameSole": "云端 Cindy",
       "readFailed": "暂时无法读取云实例，请刷新重试。未读取成功前不会创建实例。",
       "claimUnconfirmed": "尚未确认领取结果。请先检查实例状态，避免重复提交。",
       "checkClaim": "检查领取结果",

@@ -20286,6 +20286,7 @@
       "claiming": "Création…",
       "defaults": "La version, les ressources et les paramètres par défaut des mises à jour automatiques sont configurés par le service cloud.",
       "defaultName": "Cindy cloud {{number}}",
+      "defaultNameSole": "Cindy cloud",
       "readFailed": "Impossible de charger les instances cloud. Actualisez pour réessayer. Aucune instance ne sera créée tant que la liste n'est pas disponible.",
       "claimUnconfirmed": "Le résultat de la création n'est pas encore confirmé. Vérifiez le statut de l'instance avant de soumettre à nouveau.",
       "checkClaim": "Vérifier le résultat de la création",

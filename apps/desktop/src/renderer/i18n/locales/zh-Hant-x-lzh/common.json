@@ -19735,6 +19735,7 @@
       "claiming": "方領取…",
       "defaults": "版本、資源規格與自動更新之預設，皆由雲端統一配置。",
       "defaultName": "雲端 Cindy {{number}}",
+      "defaultNameSole": "雲端 Cindy",
       "readFailed": "暫不能讀雲實例，請重整再試。讀取成功前不立實例。",
       "claimUnconfirmed": "領取之果尚未確認。請先察實例之狀，以免重複提交。",
       "checkClaim": "察領取之果",

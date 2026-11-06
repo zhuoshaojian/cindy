@@ -143,7 +143,7 @@ export function registerCloudSettingsClientIpc(windowDeps?: {
         if (targets.length !== 1) throw new CloudClientError('CLOUD_SETTINGS_SCOPE_CHANGED');
         const target = targets[0]!;
         if (!target.loginRequired) throw new CloudClientError('CLOUD_SETTINGS_CONFLICT');
-        return { deviceId: target.deviceId, name: target.name, nameSequence: target.nameSequence };
+        return { deviceId: target.deviceId, name: target.name, ordinal: target.ordinal };
       },
     });
     loginWindow = manager;

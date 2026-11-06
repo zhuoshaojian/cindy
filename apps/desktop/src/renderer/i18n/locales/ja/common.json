@@ -20027,6 +20027,7 @@
       "claiming": "取得中…",
       "defaults": "バージョン、リソース、自動更新の既定値はクラウドサービスで設定されます。",
       "defaultName": "クラウド Cindy {{number}}",
+      "defaultNameSole": "クラウド Cindy",
       "readFailed": "クラウドインスタンスを読み込めません。更新して再試行してください。読み込みが成功するまで作成は行いません。",
       "claimUnconfirmed": "取得結果を確認できていません。重複送信を避けるため、先に状態を確認してください。",
       "checkClaim": "取得結果を確認",

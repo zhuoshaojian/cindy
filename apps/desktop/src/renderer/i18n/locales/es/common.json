@@ -20286,6 +20286,7 @@
       "claiming": "Creando…",
       "defaults": "El servicio en la nube configura la versión, los recursos y los valores predeterminados de actualización automática.",
       "defaultName": "Cindy en la nube {{number}}",
+      "defaultNameSole": "Cindy en la nube",
       "readFailed": "No se pudieron cargar las instancias en la nube. Actualiza para intentarlo de nuevo. No se creará ninguna instancia hasta que la lista esté disponible.",
       "claimUnconfirmed": "El resultado de la creación aún no está confirmado. Comprueba el estado de la instancia antes de volver a enviar.",
       "checkClaim": "Comprobar resultado de la creación",

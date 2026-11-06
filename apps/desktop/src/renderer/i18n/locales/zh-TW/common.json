@@ -20027,6 +20027,7 @@
       "claiming": "正在領取…",
       "defaults": "版本、資源規格及自動更新預設值由雲端統一設定。",
       "defaultName": "雲端 Cindy {{number}}",
+      "defaultNameSole": "雲端 Cindy",
       "readFailed": "暫時無法讀取雲端執行個體，請重新整理。讀取成功前不會建立執行個體。",
       "claimUnconfirmed": "尚未確認領取結果。請先檢查執行個體狀態，避免重複送出。",
       "checkClaim": "檢查領取結果",
