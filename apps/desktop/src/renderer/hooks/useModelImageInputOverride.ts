@@ -25,7 +25,7 @@ export function useModelImageInputOverride(target: ModelImageInputTarget | null)
   const sourceRef = useRef(source);
   sourceRef.current = source;
   // Resolved when a request runs, as the direct preload call was.
-  const maker = () => sourceRef.current?.maker ?? window.electronAPI.maker;
+  const maker = () => sourceRef.current?.maker ?? window.electronAPI?.maker;
   // An older device runtime cannot read or change this override.
   const unavailable = remote && !source.maker.getModelImageInputOverride;
   const generation = useRef(0);
@@ -48,7 +48,7 @@ export function useModelImageInputOverride(target: ModelImageInputTarget | null)
       }
       const request = ++generation.current;
       const api = maker();
-      if (!stableTarget || !api.getModelImageInputOverride || !api.setModelImageInputOverride) {
+      if (!stableTarget || !api?.getModelImageInputOverride || !api.setModelImageInputOverride) {
         setState({ ...EMPTY, key, loading: false, error: false });
         return;
       }
