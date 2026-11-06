@@ -18,13 +18,14 @@ export function SettingsSidebar({
   const { t } = useTranslation();
   return (
     <aside
+      data-plugin-ui-element="sidebar"
       className="flex h-full min-h-0 shrink-0 flex-col gap-2 overflow-y-auto pl-6 pr-4 pt-7"
       style={{ width }}
       aria-label={t('settings.title')}
     >
       <div className="flex items-center gap-2.5 px-3 pb-[18px]">
         <Tip text={t('settings.back')} side="bottom">
-          <button
+          <button data-settings-search-action="Return from settings or close the extensions subpage"
             type="button"
             onClick={onBack}
             disabled={disabled}

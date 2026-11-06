@@ -274,8 +274,10 @@ export function ModelAdvancedDrawer({
   const editProviderModelMemoryBatch: typeof localEditProviderModelMemoryBatch = (ops) => {
     if (!source) return localEditProviderModelMemoryBatch(ops);
     if (ops.some((op) => op.kind !== 'set-effort' && op.kind !== 'clear-effort')) return false;
+    // The batch carries a stored effort string; the panel only offers the model's own efforts.
+    type SourceEffort = Parameters<typeof source.setEffort>[3];
     for (const op of ops)
-      source.setEffort(op.agent, op.providerId, op.model, op.kind === 'set-effort' ? op.effort : null);
+      source.setEffort(op.agent, op.providerId, op.model, op.kind === 'set-effort' ? (op.effort as SourceEffort) : null);
     return true;
   };
 

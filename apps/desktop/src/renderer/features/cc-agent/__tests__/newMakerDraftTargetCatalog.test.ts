@@ -221,7 +221,7 @@ describe('Agent location chosen on a controlled new-task draft', () => {
     const dlRuntimeTouchedRef = { current: false };
     const patchDraft = vi.fn();
     const select = callback<(selection: unknown) => void>('handleUnifiedDraftSelect', {
-      setDraftFavoriteAnchor: vi.fn(), getDraft: () => ({}), switchVendor: vi.fn(), setDlSel: vi.fn(),
+      setDraftFavoriteAnchor: vi.fn(), getDraft: () => ({}), switchVendor: vi.fn(), switchDraftVendor: vi.fn(), setDlSel: vi.fn(),
       normalizeDbAgentKind, dbToMakerAgentKind, modelCatalogKey, patchDraft,
       effectiveAgentDeviceId: undefined, isDeviceLinkDraft: true, deviceLinkInitial: null,
       controlledModelRoute: { catalogHostDeviceId: 'task-device' },

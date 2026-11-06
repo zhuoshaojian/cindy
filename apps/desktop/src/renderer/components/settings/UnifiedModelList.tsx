@@ -620,8 +620,8 @@ export function UnifiedModelList({
   // 按钮方向与计数陈旧)。行内开关读取不 memo,天然新鲜;只有 counts 依赖它。
   const localVisibilityVersion = useModelVisibilityVersion();
   const visibilityVersion = source ? source.visibilityVersion : localVisibilityVersion;
-  const aliasEngineVersion = useModelEnginePrefsVersion();
-  const aliasMemoryVersion = useProviderModelMemoryVersion();
+  const aliasEngineVersion = useModelEnginePrefsVersion(!source);
+  const aliasMemoryVersion = useProviderModelMemoryVersion(!source);
   const isEnabled = source?.isModelEnabled ?? isModelEnabled;
   const writeModelDisable = useCallback(
     (input: Parameters<Window['electronAPI']['maker']['setModelDisable']>[0]) =>
@@ -632,12 +632,18 @@ export function UnifiedModelList({
 
   const selectionAvailable = provider.connected && !provider.suspended;
   const multiAgent = provider.agents.length > 1;
-  const unionRows = useMemo(() => buildUnionRows(provider, (agent, modelId) => ({
+  const unionRows = useMemo(() => buildUnionRows(provider, (agent, modelId) => source ? {
+    // The instance reports visibility and effort; engine, thinking and Fast stay with its own panel.
+    customPrice: (() => { const model = provider.models[agent]!.find((m) => m.id === modelId)!;
+      const p = pricePresentationOf(agent, model); return p?.kind === 'priced' && p.current.source === 'user-override'; })(),
+    effort: source.getEffort(agent, provider.id, modelId),
+    visible: isEnabled(agent, provider.id, provider.models[agent]!.find((m) => m.id === modelId)!),
+  } : ({
     engine: getModelEngineOverride(provider.id, modelId),
     customThinking: getProviderModelThinking(agent, provider.id, modelId) !== undefined,
     customPrice: (() => { const model = provider.models[agent]!.find((m) => m.id === modelId)!;
       const p = pricePresentationOf(agent, model); return p?.kind === 'priced' && p.current.source === 'user-override'; })(),
-    effort: (source?.getEffort ?? getProviderModelEffort)(agent, provider.id, modelId),
+    effort: getProviderModelEffort(agent, provider.id, modelId),
     fast: getProviderModelFast(agent, provider.id, modelId),
     visible: isEnabled(agent, provider.id, provider.models[agent]!.find((m) => m.id === modelId)!),
   })), [provider, visibilityVersion, aliasEngineVersion, aliasMemoryVersion, pricePresentationOf, source, isEnabled]);

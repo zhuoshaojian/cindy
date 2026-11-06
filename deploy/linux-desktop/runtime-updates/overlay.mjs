@@ -43,9 +43,10 @@ export function transformCloudUpdateSource(code, relativePath) {
   } else if (relativePath === aboutSearch) {
     // The catalog is static and independent of the rendered row. Remove its
     // declaration in cloud builds so search and deep links agree with the UI.
+    // The definition stays importable for the About page, which the cloud build hides.
     code = once(code,
-      "    { id: 'settings.about.autoUpdateLabel', fallbackTargetId: 'settings-panel-about', tab: 'about', targetId: 'settings-search-settings-about-autoUpdateLabel', titleKey: 'settings.about.autoUpdateLabel', sectionKey: 'settings.tabs.about' },",
-      '    // cloudUpdatesManaged: desktop auto-update is absent from the cloud catalog.');
+      '  entries: Object.values(aboutSettings),',
+      "  // cloudUpdatesManaged: desktop auto-update is absent from the cloud catalog.\n  entries: Object.values(aboutSettings).filter((entry) => entry.id !== 'settings.about.autoUpdateLabel'),");
   }
   return code;
 }
