@@ -127,6 +127,8 @@ export const cloudInstanceViewSchema = z
     deviceId: z.string().min(1).max(160),
     name: z.string().max(512).nullable(),
     nameSequence: z.number().int().nonnegative(),
+    // Place among the owner's current instances for the default name; null for a sole one.
+    ordinal: z.number().int().positive().nullable(),
     desiredState: z.enum(['running', 'stopped', 'deleted']),
     runtimeState: z.string().max(64),
     ready: z.boolean(),

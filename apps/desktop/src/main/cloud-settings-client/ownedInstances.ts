@@ -61,7 +61,27 @@ export function parseOwnedInstances(raw: unknown): CloudOwnedInstance[] {
   }
   return list.filter((v) => v.status.desiredState !== 'deleted');
 }
-export function projectCloudInstance(target: CloudOwnedInstance) {
+export function projectOwnedInstances(raw: unknown) {
+  const owned = parseOwnedInstances(raw);
+  return owned.map((v) => projectCloudInstance(v, owned));
+}
+/** The default name numbers an instance among the owner's current instances, in claim
+ * order. CIS nameSequence never shrinks after deletions, so it is not shown. A sole
+ * instance gets no number, matching its device name. */
+export function ownedInstanceOrdinal(
+  owned: readonly CloudOwnedInstance[],
+  target: CloudOwnedInstance,
+): number | null {
+  const live = owned
+    .filter((v) => v.status.desiredState !== 'deleted')
+    .sort((a, b) => a.nameSequence - b.nameSequence || (a.deviceId < b.deviceId ? -1 : 1));
+  const index = live.findIndex((v) => v.deviceId === target.deviceId);
+  return live.length < 2 || index < 0 ? null : index + 1;
+}
+export function projectCloudInstance(
+  target: CloudOwnedInstance,
+  owned: readonly CloudOwnedInstance[],
+) {
   const status = target.status;
   const upgrade = target.maintenanceUpgrade;
   if (upgrade && upgrade.instanceId !== target.instanceId)
@@ -72,6 +92,7 @@ export function projectCloudInstance(target: CloudOwnedInstance) {
     deviceId: target.deviceId,
     name: target.customLabel,
     nameSequence: target.nameSequence,
+    ordinal: ownedInstanceOrdinal(owned, target),
     desiredState: status.desiredState,
     runtimeState: status.runtimeState,
     ready: status.readiness.ready,

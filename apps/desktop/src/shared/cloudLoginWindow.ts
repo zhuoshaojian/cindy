@@ -19,7 +19,7 @@ export const CLOUD_LOGIN_WINDOW = {
 
 export interface CloudLoginWindowState {
   generation: number;
-  target: { deviceId: string; name: string | null; nameSequence: number } | null;
+  target: { deviceId: string; name: string | null; ordinal: number | null } | null;
 }
 export type CloudLoginApi = Pick<
   CloudSettingsRendererApi,

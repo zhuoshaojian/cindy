@@ -63,7 +63,7 @@ const api = {
   instanceLoginPoll: vi.fn(async () => structuredClone(view)),
   instanceLoginClose: vi.fn(async () => undefined),
 };
-const target = { deviceId: 'cloud-device-test', name: 'Cloud Test', nameSequence: 1 };
+const target = { deviceId: 'cloud-device-test', name: 'Cloud Test', ordinal: null };
 function mount() {
   const close = vi.fn();
   return { ...render(<CloudInstanceLoginFlow target={target} api={api} onClose={close} />), close };
@@ -128,7 +128,7 @@ it('keeps B’s form when A’s dispatch and state broadcast arrive after switch
   const stateA = { generation: 1, target };
   const stateB = {
     generation: 2,
-    target: { deviceId: 'cloud-device-b', name: 'Cloud B', nameSequence: 2 },
+    target: { deviceId: 'cloud-device-b', name: 'Cloud B', ordinal: 2 },
   };
   const viewB = { ...structuredClone(view), handle: '22222222-2222-4222-8222-222222222222' };
   const bridge = {

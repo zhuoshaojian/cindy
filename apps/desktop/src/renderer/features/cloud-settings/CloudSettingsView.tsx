@@ -32,6 +32,7 @@ import { createCloudSettingsClient, type CloudSettingsClient } from './client';
 import { CloudInstanceSection } from './CloudInstanceSection';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
+import { cloudInstanceName } from './instanceName';
 import { CloudImSettings, cloudImSettingsSummary, useCloudImDisplays } from './CloudImSettings';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
 import { CloudMcpAuthorization } from './CloudMcpAuthorization';
@@ -650,9 +651,7 @@ function AuthorizedCloudSettingsView() {
         name={
           device?.name ??
           instance?.name ??
-          (instance
-            ? t('cloudSettings.onboarding.defaultName', { number: instance.nameSequence })
-            : t('cloudSettings.instance.title'))
+          (instance ? cloudInstanceName(t, instance) : t('cloudSettings.instance.title'))
         }
         client={client}
         online={online}
