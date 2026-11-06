@@ -90,6 +90,17 @@ test('automatic release dialog does not fetch or write read markers on cloud', {
   vm.runInNewContext(compiled, { window: { electronAPI: { cloudUpdatesManaged: true } } });
 });
 
+function workspacePackages(root) {
+  const packages = new Map();
+  for (const dir of fs.readdirSync(path.join(root, 'packages'))) {
+    const manifest = path.join(root, 'packages', dir, 'package.json');
+    if (!fs.existsSync(manifest)) continue;
+    const pkg = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+    packages.set(pkg.name, { dir: path.dirname(manifest), exports: pkg.exports, main: pkg.main });
+  }
+  return packages;
+}
+
 // Bundle the actual catalog and every sidecar. Only replace Vite's glob loader;
 // ranking, visibility, translations and deep-link resolution are production code.
 async function searchCatalog(cloud) {
@@ -103,6 +114,13 @@ async function searchCatalog(cloud) {
     entryPoints: [catalog], bundle: true, write: false, platform: 'node', format: 'cjs',
     alias: { '@': renderer },
     plugins: [{ name: 'real-cloud-search-fixture', setup(build) {
+      // Workspace packages resolve through their own exports, as the app build does.
+      build.onResolve({ filter: /^@cindy\// }, ({ path: specifier }) => {
+        const [scope, name, ...rest] = specifier.split('/');
+        const pkg = workspacePackages(source).get(`${scope}/${name}`);
+        const target = pkg && (rest.length ? pkg.exports?.[`./${rest.join('/')}`] : pkg.exports?.['.'] ?? pkg.main);
+        return typeof target === 'string' ? { path: path.join(pkg.dir, target) } : undefined;
+      });
       build.onLoad({ filter: /settingsSearchCatalog\.ts$/ }, () => {
         const code = fs.readFileSync(catalog, 'utf8');
         const glob = "const modules = import.meta.glob<SettingsSearchModule>('./**/*.settings-search.ts', { eager: true, import: 'default' });";
