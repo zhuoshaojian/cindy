@@ -33,7 +33,7 @@ const callTool = 'mcp__cindy_helper__call_tool';
 const childMarker = 'NATIVE_SETTINGS_PROVENANCE_CHILD';
 const deniedCalls = [
   { id: 'child_overview', name: listTool, input: {} },
-  { id: 'child_settings_catalog', name: listTool, input: { category: 'settings' } },
+  { id: 'child_settings_catalog', name: listTool, input: { category: 'host_settings' } },
   ...['list_settings', 'get_settings', 'update_settings', 'get_settings_operation'].map(name => ({
     id: `child_${name}`, name: callTool, input: { name, args: {} },
   })),

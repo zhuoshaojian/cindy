@@ -15,7 +15,7 @@ This static, Host-owned Skill guides settings work. It is not a settings store, 
 
 ## Discover, read, then change one domain
 
-1. Discover the live `cindy_helper` tools with `list_tools({ category: "settings" })`. If settings are unavailable, report that boundary; do not use shell commands, filesystem edits, browser automation, or another device to bypass it.
+1. Discover the live `cindy_helper` tools with `list_tools({ category: "host_settings" })`. If settings are unavailable, report that boundary; do not use shell commands, filesystem edits, browser automation, or another device to bypass it.
 2. Use the returned `list_settings` tool to inspect the catalog, scope, writability, application behavior, and dedicated entry points. A complete catalog does **not** mean every listed setting is writable. Use only the tool names and schemas actually returned by the Host.
 3. Call `get_settings` for the intended domain before proposing a write. Read the effective/default/override distinction. Use the Host-issued revision and operation ID; do not invent either or reuse them for a different change.
 4. Submit only the user's requested changes to that **one domain**, using `update_settings` with `expected_revision`, `operation_id`, and the minimal `set` / `clear` fields allowed by the live schema. `clear` removes that override and follows the current default; setting today's default value still records a custom override. Do not copy the entire read result back as settings.

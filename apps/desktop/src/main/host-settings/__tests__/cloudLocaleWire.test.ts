@@ -37,7 +37,7 @@ it('carries every display language on the cloud wire, and keeps the six every Ho
 
 it.each(['ja', 'fr', 'pt-BR', 'zh-Hans-x-lzh'])('reads %s and lists every language the instance accepts', (locale) => {
   context.locale = locale;
-  const state = inspectAdditionalSettings('desktopGeneral') as { status: string; value: { locale: string }; choices: { locale: Array<{ value: string }> } };
+  const state = inspectAdditionalSettings('desktopGeneral') as unknown as { status: string; value: { locale: string }; choices: { locale: Array<{ value: string }> } };
   expect(state).toMatchObject({ status: 'ready', value: { locale }, customizedKeys: ['locale'] });
   expect(state.choices.locale.map((choice) => choice.value)).toEqual([...SETTINGS_DISPLAY_LOCALES]);
 });

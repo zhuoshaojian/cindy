@@ -12,7 +12,7 @@ const domain = z.enum(["newTaskDefaults","personalization","databaseWarning","ap
 
 export function registerHostSettingsTools(registry: XdtHelperToolRegistry, callbacks: HostSettingsCallbacks, context: () => LiziMcpSessionContext): void {
   function register(name: HostSettingsTool, description: string, inputShape: z.ZodRawShape) {
-    registry.register({ name, category: 'settings', description, inputShape, handler: async (args) => {
+    registry.register({ name, category: 'host_settings', description, inputShape, handler: async (args) => {
       const current = context();
       if (!await callbacks.allowed(current)) return { isError: true, content: [{ type: 'text', text: JSON.stringify({ ok: false, errorCode: 'SETTINGS_NOT_ALLOWED' }) }] };
       // Host validates caller, operation and revision again; tools never supply identity or consent.

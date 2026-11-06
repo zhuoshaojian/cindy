@@ -83,6 +83,8 @@ export function createDesktopPreferencesClient(options: {
   const queue: Array<{ mutation: PendingMutation; resolve: (saved: boolean) => void }> = [];
   const emit = () => listeners.forEach(fn => fn());
   const discard = () => { for (const entry of queue.splice(0)) entry.resolve(false); };
+  const idle: Array<() => void> = [];
+  const settle = () => { if (stopped || (!writing && !queue.length)) for (const fn of idle.splice(0)) fn(); };
   const accept = (next: DesktopPreferencesSnapshot): boolean => {
     if (stopped) return false;
     if (stamp !== null && next.profileStamp !== stamp) {
@@ -155,6 +157,7 @@ export function createDesktopPreferencesClient(options: {
         dirty = false;
         try { await reload(); } catch { snapshot = null; options.failed?.(); }
       }
+      settle();
     }
   };
   const off = options.api.onChanged(nextStamp => {
@@ -171,7 +174,11 @@ export function createDesktopPreferencesClient(options: {
       if (stopped || options.readOnly || !options.api.update) return false;
       return new Promise(resolve => { queue.push({ mutation, resolve }); void flush(); });
     },
-    stop() { stopped = true; ++sequence; discard(); off(); },
+    /** Resolves once every queued write has its Host receipt (accepted, rejected or discarded). */
+    settled(): Promise<void> {
+      return new Promise(resolve => { idle.push(resolve); settle(); });
+    },
+    stop() { stopped = true; ++sequence; discard(); off(); settle(); },
   };
 }
 
@@ -247,6 +254,14 @@ export async function updateDesktopPreference<K extends DesktopPreferenceKey>(ke
 export async function clearDesktopPreference(key: DesktopPreferenceKey): Promise<boolean> {
   if (!client) connectHostDesktopPreferences();
   return client?.mutate({ clear: [key] }) ?? false;
+}
+/** Waits for the pending Host writes; callers then read the confirmed value, never localStorage. */
+export function whenDesktopPreferencesSettled(): Promise<void> {
+  return client?.settled() ?? Promise.resolve();
+}
+/** The Host-owned preference behind an upstream localStorage key, if this profile stores it on the Host. */
+export function hostDesktopPreferenceForStorageKey(storageKey: string): DesktopPreferenceKey | undefined {
+  return DESKTOP_PREFERENCE_KEYS.find(key => DESKTOP_PREFERENCE_STORAGE_KEYS[key] === storageKey);
 }
 export function __resetDesktopPreferencesForTests(): void {
   client?.stop(); client = null; startup = null; startupHost = null; startupRead = false; subscribers.clear();
