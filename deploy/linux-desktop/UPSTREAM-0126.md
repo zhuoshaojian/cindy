@@ -14,7 +14,7 @@ linear, with no merge commits, in the same order as the
 
 The 0.1.125-cloud.3 history from before the rebase is kept as
 `backup/cloud-settings-native-client-0125`. The source freeze names it as
-`cloudParent`. Release identity: `0.1.126-cloud.1`.
+`cloudParent`. Release identity: `0.1.126-cloud.2`.
 
 ## Compatibility decisions
 
@@ -30,7 +30,10 @@ database migrations are unchanged.
     same gating, the same native-subagent denial and the same human confirmation.
   - Upstream's `settings` category keeps its default visibility and its rule that a
     remote task cannot see it.
-  - The `cindy-settings` Skill discovers `host_settings`.
+  - The `cindy-settings` Skill discovers `host_settings`. Its text is version 2.
+    Cloud.1 changed the text but kept version 1, and an installed copy keeps its
+    text under an unchanged version, so instances kept pointing at `settings`.
+    Cloud.2 raises the version, and a test now ties the version to the text.
   - On an instance, a local task can now also use upstream's tools, which change
     settings directly, as on any desktop. Host settings writes still need the Host
     confirmation.
