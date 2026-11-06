@@ -119,3 +119,38 @@ contract. It went through the same upgrade checks. The Dev client
 - The first viewer session after the cloud.2 restart showed a frozen first frame.
   Input still reached the instance. Closing and reopening the viewer restored live
   video, and the later sessions stayed live.
+
+**cloud.3** (`f0ad1aae27`, with CIS `4ddf33fa`) passed the same owner upgrade checks.
+The Dev client `0.1.125-dev.cloud.20261105.3` was used against the real instance:
+
+- The cloud language menu matches the local one, with all twelve languages. Against
+  cloud.2 it kept the original six.
+- Saving Français, 文言 and Deutsch reached the instance (`fr`, `zh-Hans-x-lzh`,
+  `de`), and the page read each value back. Choosing 繁體 under 文言 saved
+  `zh-Hant-x-lzh`. The instance language is back to 简体中文 (`zh-CN`).
+- One switch from 文言（繁體）to 简体中文 briefly showed `zh-Hans-x-lzh` on the
+  instance before `zh-CN`. Two repeats watched on the instance went straight to
+  `zh-CN`.
+- On the cloud page, 文言 offers the script (简体 / 繁體). The reply style stays in
+  the instance's own window, as the cloud.1 decision describes.
+
+## Fleet rollout
+
+After the owner acceptance of cloud.2, it was admitted for every organization
+instance, with new instances defaulting to it. No instance was upgraded by hand.
+In the 2026-11-06 03:00–05:00 window, CIS upgraded all ten running instances with
+automatic updates on. Stopped instances and the one with automatic updates off were
+left unchanged.
+
+One native instance stopped in `recovery-hold` with `MAINTENANCE_RUNTIME_UNVERIFIED`
+during the five-minute post-release observation. Its runtime had released on the new
+image and was healthy. With the owner's approval, the operation was completed by hand:
+
+- The live state was re-verified: released by the same command on a new boot, a
+  heartbeat advancing, no unknown activity, and matching image and update annotation.
+- Only the operation record changed: completed, the instance slot and pause cleared,
+  and an audit event written. The instance was not restarted.
+- CIS logged only the code, so which observation check failed is not known.
+
+Cloud.3 was then admitted for the fleet in the same way. Instances with automatic
+updates on move to it in their next maintenance window.
