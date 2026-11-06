@@ -7,8 +7,11 @@ import { withSkillMutation } from '../skillhub/sharedMutationLease.js';
 import { createLogger } from '../logger.js';
 import { isOwnedSettingsSkill, reconcileSettingsSkill, SETTINGS_SKILL_NAME, type SettingsSkillLayout, type SettingsSkillResult } from './settings-skill-files.js';
 
-const VERSION = 1;
+// Raise with every text change: an installed copy only takes a newer version, and new text
+// under the same version is treated as a local edit and kept. 2 discovers `host_settings`.
+const VERSION = 2;
 const CONTENT_REVISION = createHash('sha256').update(content).digest('hex');
+export const SETTINGS_SKILL_RELEASE = { version: VERSION, sha256: CONTENT_REVISION } as const;
 const log = createLogger('host-settings-skill');
 
 /** Resolve on each call: Pilot activates after imports; dev may use an isolated Claude config. */
