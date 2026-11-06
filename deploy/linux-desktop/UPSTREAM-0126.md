@@ -14,7 +14,7 @@ linear, with no merge commits, in the same order as the
 
 The 0.1.125-cloud.3 history from before the rebase is kept as
 `backup/cloud-settings-native-client-0125`. The source freeze names it as
-`cloudParent`. Release identity: `0.1.126-cloud.3`.
+`cloudParent`. Release identity: `0.1.126-cloud.4`.
 
 ## Compatibility decisions
 
@@ -141,3 +141,22 @@ instance on the Dev client:
 The cloud page loads all ten tabs and reports `0.1.126-cloud.3`. Migrating *into* an
 instance and the missing automatic offer are covered by tests only: the owner's
 instance does not look new, and a migration into it would change its settings.
+
+## cloud.4: instance names
+
+An instance's default name used CIS `nameSequence`, the account's count of every
+instance it has claimed. The count never goes down after a deletion, so an account's
+only instance could be called 「云端 Cindy 15」, and a fresh claim after deleted test
+instances 「云端 Cindy 4」.
+
+Cloud.4 (`043c464cd6`, one cloud-only commit) numbers an instance by its place among
+the account's current instances, in claim order:
+
+- A sole instance has no number, like its device name.
+- Several instances are numbered 1, 2, …, and the numbers close up after a deletion.
+- A name the user set is kept.
+
+Main computes the place from the CIS instance list. CIS data, `nameSequence` and the
+runtime device name are unchanged. The client's instance cards, login window, sidebar,
+settings header and remote desktop title use the new name, and so does the instance's
+own sidebar from this image on.
