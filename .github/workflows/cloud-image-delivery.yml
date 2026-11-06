@@ -53,6 +53,9 @@ jobs:
             /tools/codex-package/
             /packages/maker-core/src/session.ts
             /packages/maker-scheduler/src/
+            /packages/*/package.json
+            /packages/maker-shared/src/
+            /packages/voice-input-core/src/
             /apps/desktop/package.json
             /apps/desktop/src/main/authManager.ts
             /apps/desktop/src/main/bootstrap-electron.ts
@@ -78,6 +81,8 @@ jobs:
             /apps/desktop/src/renderer/hooks/useUpdateNotice.ts
             /apps/desktop/src/renderer/lib/tabLabels.ts
             /apps/desktop/src/renderer/i18n/locales/
+            /apps/desktop/src/renderer/voice-input/composerShortcut.ts
+            /apps/desktop/src/shared/
           persist-credentials: false
       - name: Use Node bundled in the pinned fork runner
         run: bash deploy/linux-desktop/delivery/use-runner-node.sh
