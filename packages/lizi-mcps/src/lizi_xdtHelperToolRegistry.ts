@@ -51,7 +51,8 @@ export type XdtHelperToolCategory =
   | 'app_update'
   | 'bots'
   | 'github'
-  | 'settings';
+  | 'settings'
+  | 'host_settings';
 
 export type XdtHelperToolContentBlock =
   | { type: 'text'; text: string }

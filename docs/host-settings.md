@@ -45,7 +45,7 @@
 
 ## 工具流程
 
-从 `cindy_helper` 的 `settings` 类目发现四个工具：
+从 `cindy_helper` 的 `host_settings` 类目发现四个工具（上游的 `settings` 类目另有 `list_app_settings` 等本机设置工具，两者互不影响）：
 
 1. `list_settings`：读取完整能力目录、作用范围及其它专用入口。
 2. `get_settings({ domain })`：读取一个领域及来源，取得 `revision` 和 Host 发行的 `operationId`。

@@ -124,8 +124,8 @@ describe('Host settings production caller resolver', () => {
     try {
       await Promise.all([client.connect(left), server.connect(right)]);
       const overview = payload(await client.callTool({ name: 'list_tools', arguments: {} }));
-      expect(overview.categories).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'settings' })]));
-      expect(payload(await client.callTool({ name: 'list_tools', arguments: { category: 'settings' } })))
+      expect(overview.categories).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'host_settings' })]));
+      expect(payload(await client.callTool({ name: 'list_tools', arguments: { category: 'host_settings' } })))
         .toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
       for (const [name, args] of calls) {
         expect(payload(await client.callTool({ name: 'call_tool', arguments: { name, args } })))
@@ -168,7 +168,7 @@ describe('Host settings production caller resolver', () => {
     try {
       await Promise.all([client.connect(left), server.connect(right)]);
       expect(await hostSettingsHelper.allowed(f.context)).toBe(false);
-      expect(payload(await client.callTool({ name: 'list_tools', arguments: { category: 'settings' } })))
+      expect(payload(await client.callTool({ name: 'list_tools', arguments: { category: 'host_settings' } })))
         .toMatchObject({ errorCode: 'CAPABILITY_NOT_AVAILABLE' });
       const args = { domain: 'appearance', expected_revision: 'r', operation_id: 'op', set: { uiSize: 16 } };
       expect(payload(await client.callTool({ name: 'call_tool', arguments: { name: 'update_settings', args } })))

@@ -172,7 +172,7 @@ const CALL_TOOL_INPUT = {
 
 // list_tools 入口类目: cindy(自省) / control(会话控制面) / history(聊天历史) / feedback(官方反馈提交) / handoff(session 间 handoff)。
 // 协同 team 工具已拆到独立 cindy_orca server(插件开关 gate)。
-const CATEGORY_ENUM = ['cindy', 'auth', 'control', 'history', 'feedback', 'handoff', 'skills', 'app_update', 'bots', 'github', 'settings'] as const;
+const CATEGORY_ENUM = ['cindy', 'auth', 'control', 'history', 'feedback', 'handoff', 'skills', 'app_update', 'bots', 'github', 'settings', 'host_settings'] as const;
 
 /**
  * 类目概览里每个类目的一句话用途 + 作用范围(本机 / 可跨电脑)。只陈述事实:模型在概览
@@ -182,6 +182,7 @@ const CATEGORY_ENUM = ['cindy', 'auth', 'control', 'history', 'feedback', 'hando
 export const HELPER_CATEGORY_DESCRIPTIONS: Record<(typeof CATEGORY_ENUM)[number], string> = {
   cindy: `${BRAND_NAME} 能力说明、界面操作帮助（get_capabilities scope=help）与当前任务信息/交付回执（report_task_delivery）；get_capabilities({key:"self-management"}) 是管理自己的任务、定时任务、项目、伙伴的工具索引；get_capabilities({key:"computer-use"}) 说明桌面操作没开时怎么引导用户开启。本机。`,
   settings: '管理 Cindy 的全局设置、默认模型与 API 供应商连接（添加、安全填写密钥、发现型号、测试连接），普通任务和伙伴共用。作用于运行任务的本机；先查询当前值和可选项，再修改或恢复默认。密钥通过电脑或手机的加密代输入卡交给宿主。SSH 主机编辑使用 cindy_ssh。',
+  host_settings: '读取和修改执行 Host 的配置，支持通过设备连接管理云端实例；写入按配置操作确认和当前账号权限校验。',
   auth: 'MCP 设置表单（request_mcp_setup）；Grok 设备码授权的状态查询与取消。要主人亲自输入、扫码或连接账号时用 ask_owner。',
   control: '管理任务与项目：当前任务的原生共享邀请/状态（create_shared_task_invitation / get_shared_task_state）在任务宿主执行，支持手机或同账号另一台电脑控制当前任务，不接受其他任务目标；归档/取消归档支持本机与跨电脑（deviceId::sessionId）；改名、移动、标签、排队消息、插话、停止、运行设置、给当前任务新建托管 worktree（create_task_worktree）、项目列表与增删改、从其他 AI 编程工具导入任务（scan_importable_sessions / import_sessions）仅本机。',
   github: '读取 PR、CI、评审变化与详情，明确管理任务关联。本机与同账号跨电脑；查询不会关联任务或启动跟进。',
@@ -958,8 +959,8 @@ export function createXdtHelperMcpServer(
     const context = resolveLiziMcpSessionContext(sessionCtx);
     const sessionId = context.sessionId;
     const remoteBotOnly = !!context.remoteHostId && context.agentKind !== 'pi';
-    const defaultCategories = new Set<string>(CATEGORY_ENUM.filter((category) => category !== 'bots' && category !== 'settings'));
-    if (deps.settings && await deps.settings.allowed(context).catch(() => false)) defaultCategories.add('settings');
+    const defaultCategories = new Set<string>(CATEGORY_ENUM.filter((category) => category !== 'bots' && category !== 'host_settings'));
+    if (deps.settings && await deps.settings.allowed(context).catch(() => false)) defaultCategories.add('host_settings');
     // Remote Pi retains the regular helper surface, but a remote task cannot
     // check the local desktop updater; keep that unavailable tool undiscoverable.
     if (context.remoteHostId) {
