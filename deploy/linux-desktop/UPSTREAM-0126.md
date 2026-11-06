@@ -112,6 +112,8 @@ that night: the ten running instances with automatic updates on move straight fr
 0.1.125-cloud.2 to 0.1.126-cloud.2 in their 03:00–05:00 window. No instance was
 upgraded by hand. The stopped instance with automatic updates on moves when it next
 runs; the other stopped instances and the personal instance are unchanged.
+Later that day cloud.3 and then cloud.4 replaced this plan; see
+[Fleet rollout](#fleet-rollout).
 
 ## cloud.3: setup migration on an instance
 
@@ -160,3 +162,32 @@ Main computes the place from the CIS instance list. CIS data, `nameSequence` and
 runtime device name are unchanged. The client's instance cards, login window, sidebar,
 settings header and remote desktop title use the new name, and so does the instance's
 own sidebar from this image on.
+
+The first image build failed after 78 minutes. Dependency downloads on the runner
+were very slow, and the registry credential expired before the build cache was
+exported. A rerun on a fresh runner built it in 17 minutes
+(`0.1.126-cloud.4-cn-amd64@sha256:71d30609…`).
+
+Only the owner's instance was upgraded first. It was idle, so the upgrade was not
+skipped. It passed the same checks as cloud.3: an encrypted backup, unchanged
+databases and schedules, and unchanged peer records. Its policy retired the
+unreferenced `0.1.113-cloud.29` keyring approval. With the Dev client
+`0.1.126-dev.cloud.20261106.4`:
+
+- The instance card, the settings header and the client sidebar show 「云端 Cindy」
+  instead of 「云端 Cindy 15」.
+- On the instance itself, the sidebar and the remote desktop title show it too.
+- The cloud page loads all ten tabs and reports `0.1.126-cloud.4`.
+
+Not checked live: the login window title, which needs an instance waiting for login,
+and numbered names, which need several instances. Tests cover both.
+
+## Fleet rollout
+
+On 2026-11-06 the owner admitted cloud.3 for every organization instance, replacing
+the cloud.2 rollout planned for that night. Once the owner's cloud.4 check passed,
+cloud.4 was admitted the same way under the owner's standing approval, and new
+instances default to it. In the 03:00–05:00 window the ten running instances with
+automatic updates move from 0.1.125-cloud.2 straight to 0.1.126-cloud.4. No
+instance was upgraded by hand. The stopped instance with automatic updates on moves
+when it next runs; the stopped instance with automatic updates off is unchanged.
