@@ -20010,6 +20010,7 @@
       "claiming": "Creating…",
       "defaults": "Version, resources and automatic update defaults are configured by the cloud service.",
       "defaultName": "Cloud Cindy {{number}}",
+      "defaultNameSole": "Cloud Cindy",
       "readFailed": "Could not load cloud instances. Refresh to try again. No instance will be created until the list is available.",
       "claimUnconfirmed": "The creation result is not yet confirmed. Check instance status before submitting again.",
       "checkClaim": "Check creation result",

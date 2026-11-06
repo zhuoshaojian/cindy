@@ -26,6 +26,7 @@ const target: CloudInstanceView = {
   deviceId: 'example-device',
   name: 'Cloud A',
   nameSequence: 1,
+  ordinal: null,
   desiredState: 'running',
   runtimeState: 'missing',
   ready: false,
@@ -302,6 +303,23 @@ it('multiple owned instances require an explicit choice and do not auto-login', 
   expect(f.onOpen).toHaveBeenCalledWith('device-b');
   expect(f.api.instanceInitialize).not.toHaveBeenCalled();
   expect(f.api.instanceClaim).not.toHaveBeenCalled();
+});
+
+it('default names count current instances, never the lifetime claim sequence', async () => {
+  const sole = { ...target, name: null, nameSequence: 15, ordinal: null };
+  await setup([sole]);
+  expect(await screen.findByRole('heading', { name: '云端 Cindy' })).toBeTruthy();
+  expect(screen.queryByText(/云端 Cindy 15/)).toBeNull();
+  cleanup();
+  await setup([
+    { ...sole, ordinal: 1 },
+    { ...sole, instanceId: 'b', deviceId: 'device-b', nameSequence: 22, ordinal: 2 },
+  ]);
+  expect(await screen.findByRole('heading', { name: '云端 Cindy 1' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: '云端 Cindy 2' })).toBeTruthy();
+  cleanup();
+  await setup([{ ...sole, name: '工作机' }]);
+  expect(await screen.findByRole('heading', { name: '工作机' })).toBeTruthy();
 });
 
 it('maintenance shortcut opens only the selected instance without changing its policy', async () => {

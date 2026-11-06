@@ -8,6 +8,7 @@ import {
 import type { DesktopLoginAction } from '../../../shared/authIpc';
 
 import type { CloudLoginApi, CloudLoginWindowState } from '../../../shared/cloudLoginWindow';
+import { cloudInstanceName } from './instanceName';
 
 /** Same login UI and actions; scoped to an independent window, never local AuthContext. */
 export function CloudInstanceLoginFlow({
@@ -27,8 +28,7 @@ export function CloudInstanceLoginFlow({
   const handle = useRef<string | null>(null);
   const live = useRef(false);
   const inFlight = useRef(false);
-  const name =
-    target.name ?? t('cloudSettings.onboarding.defaultName', { number: target.nameSequence });
+  const name = cloudInstanceName(t, target);
   useEffect(() => {
     live.current = true;
     let disposed = false;

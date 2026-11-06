@@ -18,6 +18,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import type { CloudSettingsRendererApi } from '../../../shared/cloudSettingsClient';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { stableInstanceState, instanceStatus, canChangeInstancePower } from './instanceState';
+import { cloudInstanceName } from './instanceName';
 
 export type CloudInstancesApi = Pick<
   CloudSettingsRendererApi,
@@ -276,7 +277,7 @@ export function CloudInstancesPage({
           )}
           <div className="flex flex-col gap-4">
             {instances?.map((instance) => {
-              const name = instance.name ?? tr('defaultName', { number: instance.nameSequence });
+              const name = cloudInstanceName(t, instance);
               const state = instanceStatus(instance);
               const pending =
                 powerPending?.deviceId === instance.deviceId ? powerPending : undefined;

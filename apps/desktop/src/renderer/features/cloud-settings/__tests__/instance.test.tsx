@@ -62,6 +62,7 @@ async function setup({
     deviceId: 'cloud-a',
     name: 'Cloud A',
     nameSequence: 1,
+    ordinal: null,
     desiredState: running ? 'running' : 'stopped',
     runtimeState: running ? 'running' : 'stopped',
     ready: running,

@@ -7,7 +7,12 @@ import {
   type CloudClientHttp,
   type CloudClientIdentity,
 } from './transport';
-import { parseCloud, parseOwnedInstances, projectCloudInstance } from './ownedInstances';
+import {
+  parseCloud,
+  parseOwnedInstances,
+  projectCloudInstance,
+  projectOwnedInstances,
+} from './ownedInstances';
 
 const instancesPath = '/instance-login/api/manage/instances';
 const attemptSchema = z.object({ continueUrl: z.string().max(2048) });
@@ -122,14 +127,14 @@ export function createCloudInstanceOnboarding(deps: {
     },
     list(caller: CloudClientCaller) {
       return perform(caller, false, async (call) =>
-        parseOwnedInstances(await call(instancesPath)).map(projectCloudInstance),
+        projectOwnedInstances(await call(instancesPath)),
       );
     },
     claim(caller: CloudClientCaller) {
       return perform(caller, true, async (call, _identity, check) => {
         const before = parseOwnedInstances(await call(instancesPath));
         // Do not wake or allocate on entry, errors, or an existing membership.
-        if (before.length) return before.map(projectCloudInstance);
+        if (before.length) return before.map((v) => projectCloudInstance(v, before));
         try {
           // CIS atomically ensures one default instance and chooses image/quota/defaults.
           await call(`${instancesPath}/wake`, 'POST', {});
@@ -140,7 +145,7 @@ export function createCloudInstanceOnboarding(deps: {
         }
         try {
           const after = parseOwnedInstances(await call(instancesPath));
-          if (after.length) return after.map(projectCloudInstance);
+          if (after.length) return after.map((v) => projectCloudInstance(v, after));
         } catch {
           check();
         }

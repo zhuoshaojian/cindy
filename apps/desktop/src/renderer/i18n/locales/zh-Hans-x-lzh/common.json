@@ -19646,6 +19646,7 @@
       "claiming": "方领取…",
       "defaults": "版本、资源规格与自动更新之预设，皆由云端统一配置。",
       "defaultName": "云端 Cindy {{number}}",
+      "defaultNameSole": "云端 Cindy",
       "readFailed": "暂不能读云实例，请重整再试。读取成功前不立实例。",
       "claimUnconfirmed": "领取之果尚未确认。请先察实例之状，以免重复提交。",
       "checkClaim": "察领取之果",

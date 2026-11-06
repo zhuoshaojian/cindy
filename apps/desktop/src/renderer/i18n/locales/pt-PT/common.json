@@ -20197,6 +20197,7 @@
       "claiming": "A criar…",
       "defaults": "A versão, os recursos e as predefinições de atualização automática são configurados pelo serviço na nuvem.",
       "defaultName": "Cindy na nuvem {{number}}",
+      "defaultNameSole": "Cindy na nuvem",
       "readFailed": "Não foi possível carregar as instâncias na nuvem. Atualize para tentar novamente. Não será criada nenhuma instância até a lista estar disponível.",
       "claimUnconfirmed": "O resultado da criação ainda não está confirmado. Verifique o estado da instância antes de submeter novamente.",
       "checkClaim": "Verificar resultado da criação",
