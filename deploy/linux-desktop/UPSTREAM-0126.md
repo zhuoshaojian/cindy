@@ -14,7 +14,7 @@ linear, with no merge commits, in the same order as the
 
 The 0.1.125-cloud.3 history from before the rebase is kept as
 `backup/cloud-settings-native-client-0125`. The source freeze names it as
-`cloudParent`. Release identity: `0.1.126-cloud.2`.
+`cloudParent`. Release identity: `0.1.126-cloud.3`.
 
 ## Compatibility decisions
 
@@ -44,7 +44,16 @@ database migrations are unchanged.
   dashboard preferences are not Host-owned and keep the upstream check.
 - **Setup migration.** Upstream's new section for moving a setup from another
   computer is listed as a dedicated action in the client's coverage. The CIS v2
-  catalog is unchanged.
+  catalog is unchanged. From cloud.3:
+  - An instance does not offer the migration by itself. A freshly claimed instance
+    always looks new to upstream, but it is set up by its provisioning. Settings
+    still opens the migration assistant.
+  - Interface preferences and the personal prompt that the instance keeps in its
+    Host profile move through the Host in both directions, in upstream's key
+    format. Before, migrating into an instance reported them as done without
+    applying them, and migrating out of one sent only the cached startup keys.
+  - Upstream's offer on another computer to migrate *from* an instance is the
+    official client's own behaviour and is unchanged.
 - **Model interface edits.** As in upstream, choosing Messages for a Pi model on a
   compatible runtime keeps the runtime endpoint instead of generating a route. The
   shared model edit used by the cloud page follows this.
