@@ -33,8 +33,10 @@ function owned(current: string, latest: string | null, available = true) {
     },
   };
 }
-const project = (value: unknown) =>
-  projectCloudInstance(parseOwnedInstances({ instances: [value] })[0]!);
+const project = (value: unknown) => {
+  const owned = parseOwnedInstances({ instances: [value] });
+  return projectCloudInstance(owned[0]!, owned);
+};
 describe('native dual-version projection from CIS qualified releases', () => {
   it.each([
     ['0.1.108-cloud.2-cn-amd64', '0.1.108-cloud.10-cn-amd64'],

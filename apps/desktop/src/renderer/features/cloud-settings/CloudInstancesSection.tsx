@@ -7,6 +7,7 @@ import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDev
 import { toast } from '@/lib/toast';
 import { CloudInstancesPage } from './CloudInstancesPage';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
+import { cloudInstanceName } from './instanceName';
 
 /** Account-level discovery belongs inside local Settings; instance configuration
  * keeps its own explicit target and returns to this category. */
@@ -47,9 +48,7 @@ export function CloudInstancesSection() {
         void window.electronAPI
           .openRemoteDesktop({
             deviceId: instance.deviceId,
-            name:
-              instance.name ??
-              t('cloudSettings.onboarding.defaultName', { number: instance.nameSequence }),
+            name: cloudInstanceName(t, instance),
           })
           .catch(() => toast.error(t('remoteDesktop.connectionError')));
       }}

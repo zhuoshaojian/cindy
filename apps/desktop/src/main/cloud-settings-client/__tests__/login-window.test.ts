@@ -49,7 +49,7 @@ function harness() {
   const authorize = vi.fn(async (_sender: WebContents, deviceId: string) => ({
     deviceId,
     name: null,
-    nameSequence: 1,
+    ordinal: null,
   }));
   const manager = new CloudLoginWindow({
     createWindow: () => {
@@ -133,7 +133,7 @@ it('rejects a foreign opener/sender and an owner change during authorization', a
   expect(f.authorize).not.toHaveBeenCalled();
   f.authorize.mockImplementationOnce(async () => {
     f.setOwner('account-b');
-    return { deviceId: 'cloud-a', name: null, nameSequence: 1 };
+    return { deviceId: 'cloud-a', name: null, ordinal: null };
   });
   await expect(f.manager.open(f.opener, 'cloud-a')).rejects.toThrow('SCOPE_CHANGED');
   expect(f.windows).toHaveLength(0);
@@ -189,7 +189,7 @@ it('resets a minimized login on main close and rejects a late completion/open', 
   expect(f.invalidate).toHaveBeenCalledWith(sender.id);
   expect(() => f.manager.complete(sender, generation)).toThrow('SCOPE_CHANGED');
   expect(f.opener.send).not.toHaveBeenCalled();
-  let authorize!: (target: { deviceId: string; name: null; nameSequence: number }) => void;
+  let authorize!: (target: { deviceId: string; name: null; ordinal: null }) => void;
   f.authorize.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
@@ -198,7 +198,7 @@ it('resets a minimized login on main close and rejects a late completion/open', 
   );
   const opening = f.manager.open(f.opener, 'cloud-b');
   f.manager.reset();
-  authorize({ deviceId: 'cloud-b', name: null, nameSequence: 2 });
+  authorize({ deviceId: 'cloud-b', name: null, ordinal: null });
   await expect(opening).rejects.toThrow('SCOPE_CHANGED');
   expect(f.manager.state().target).toBeNull();
   expect(f.windows[0].isVisible()).toBe(false);
@@ -222,7 +222,7 @@ it('destroys a minimized login on main destruction or quit without recovery left
 // Unit / instance-switch race: existing tests switch already-open targets.
 // A delayed admission response must not replace the newer, already-visible B.
 it('keeps B selected when A’s earlier admission response arrives last', async () => {
-  let resolveA!: (target: { deviceId: string; name: null; nameSequence: number }) => void;
+  let resolveA!: (target: { deviceId: string; name: null; ordinal: null }) => void;
   f.authorize.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
@@ -234,7 +234,7 @@ it('keeps B selected when A’s earlier admission response arrives last', async 
   await f.manager.open(f.opener, 'cloud-b');
   f.ready();
   const selected = f.manager.state();
-  resolveA({ deviceId: 'cloud-a', name: null, nameSequence: 1 });
+  resolveA({ deviceId: 'cloud-a', name: null, ordinal: null });
   await rejected;
   expect(f.manager.state()).toEqual(selected);
   expect(selected.target?.deviceId).toBe('cloud-b');

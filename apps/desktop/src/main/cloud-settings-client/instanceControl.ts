@@ -30,6 +30,7 @@ export function createCloudInstanceControl(deps: {
     run: (
       call: (path: string, method?: 'GET' | 'POST' | 'PATCH', body?: unknown) => Promise<unknown>,
       target: z.infer<typeof listSchema>['instances'][number],
+      owned: z.infer<typeof listSchema>['instances'],
     ) => Promise<T>,
   ) {
     caller.assertCurrent();
@@ -69,7 +70,7 @@ export function createCloudInstanceControl(deps: {
         matches[0]!.status.desiredState === 'deleted'
       )
         throw new CloudClientError('CLOUD_SETTINGS_SCOPE_CHANGED');
-      return await run(call, matches[0]!);
+      return await run(call, matches[0]!, list.instances);
     } finally {
       active.delete(controller);
       if (write) mutations.delete(key);
@@ -78,7 +79,7 @@ export function createCloudInstanceControl(deps: {
   const maintenancePath = (id: string) => `/instances/${encodeURIComponent(id)}/maintenance`;
   return {
     read(caller: CloudClientCaller, deviceId: string): Promise<CloudInstanceView> {
-      return perform(caller, deviceId, false, async (call, target) => {
+      return perform(caller, deviceId, false, async (call, target, owned) => {
         let maintenance = null;
         try {
           maintenance = parse(
@@ -91,11 +92,11 @@ export function createCloudInstanceControl(deps: {
           if (!(error instanceof CloudClientError) || error.code !== 'CLOUD_SETTINGS_UNSUPPORTED')
             throw error;
         }
-        return { ...projectCloudInstance(target), maintenance };
+        return { ...projectCloudInstance(target, owned), maintenance };
       });
     },
     upgrade(caller: CloudClientCaller, deviceId: string, requestId: string) {
-      return perform(caller, deviceId, true, async (call, target) => {
+      return perform(caller, deviceId, true, async (call, target, owned) => {
         const path = `${maintenancePath(target.instanceId)}/upgrade`;
         const current = parse(cloudUpgradeStatusSchema, await call(path));
         if (current.instanceId !== target.instanceId)
@@ -109,7 +110,7 @@ export function createCloudInstanceControl(deps: {
           target.status.runtimeState !== 'running' ||
           target.status.loginRequired ||
           target.status.upgrade.state === 'verifying' ||
-          projectCloudInstance(target).resourceChanging
+          projectCloudInstance(target, owned).resourceChanging
         )
           throw new CloudClientError('CLOUD_SETTINGS_CONFLICT');
         try {

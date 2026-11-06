@@ -10,6 +10,7 @@ import {
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { DeviceSectionHeader } from '@/features/cc-agent/sidebar/DeviceSectionHeader';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
+import { cloudInstanceName } from './instanceName';
 
 /** CIS owns management discovery. A stopped local relay must not remove it.
  * This list never adds task targets or changes DeviceLink availability. */
@@ -85,9 +86,7 @@ function OwnedCloudInstanceSidebarEntries({
   return (
     <div className="flex min-w-0 flex-col gap-1 pt-1 pl-3">
       {missing.map((instance) => {
-        const name =
-          instance.name ??
-          t('cloudSettings.onboarding.defaultName', { number: instance.nameSequence });
+        const name = cloudInstanceName(t, instance);
         return (
           <DeviceSectionHeader key={instance.instanceId} deviceId={instance.deviceId} name={name}>
             <Link
