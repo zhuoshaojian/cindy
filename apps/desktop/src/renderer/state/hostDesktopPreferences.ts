@@ -11,6 +11,23 @@ import { createLogger } from '../lib/logger';
 const log = createLogger('host-desktop-preferences');
 type Mutation = { set?: Partial<DesktopPreferences>; clear?: DesktopPreferenceKey[] };
 type PendingMutation = Mutation | ((current: DesktopPreferences) => Mutation);
+/** 按旧 hook 的窗口存储格式解读一个值；无效值返回 undefined，沿用原 hook 的默认回退。 */
+export function parseStoredDesktopPreference<K extends DesktopPreferenceKey>(key: K, raw: string): DesktopPreferences[K] | undefined {
+  let value: unknown = raw;
+  if (key === 'agentIslandSoundSettings' || key === 'agentIslandDisplayTarget') {
+    // 旧 hook 对坏 JSON 使用组默认值，但仍以键存在表示自定义；兼容迁移保留这一来源事实。
+    try { value = JSON.parse(raw); } catch { value = {}; }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) value = {};
+  } else if (typeof desktopPreferenceDefaults()[key] === 'boolean') {
+    if (raw !== 'true' && raw !== 'false') return undefined;
+    value = raw === 'true';
+  } else if (key === 'sidebarPinnedMode') {
+    if (raw === 'true') value = 'card';
+    if (raw === 'false') value = 'text';
+  }
+  try { return normalizeDesktopPreference(key, value); } catch { return undefined; }
+}
+
 /** 只读白名单中的旧偏好，不删旧值，不读取登录、owner 或凭据存储。 */
 export function captureLegacyDesktopPreferences(includeVintage = true): Partial<DesktopPreferences> | null {
   const result: Partial<DesktopPreferences> = {};
@@ -18,19 +35,8 @@ export function captureLegacyDesktopPreferences(includeVintage = true): Partial<
     for (const key of DESKTOP_PREFERENCE_KEYS) {
       const raw = localStorage.getItem(DESKTOP_PREFERENCE_STORAGE_KEYS[key]);
       if (raw === null) continue;
-      let value: unknown = raw;
-      if (key === 'agentIslandSoundSettings' || key === 'agentIslandDisplayTarget') {
-        // 旧 hook 对坏 JSON 使用组默认值，但仍以键存在表示自定义；兼容迁移保留这一来源事实。
-        try { value = JSON.parse(raw); } catch { value = {}; }
-        if (!value || typeof value !== 'object' || Array.isArray(value)) value = {};
-      } else if (typeof desktopPreferenceDefaults()[key] === 'boolean') {
-        if (raw !== 'true' && raw !== 'false') continue;
-        value = raw === 'true';
-      } else if (key === 'sidebarPinnedMode') {
-        if (raw === 'true') value = 'card';
-        if (raw === 'false') value = 'text';
-      }
-      try { Object.assign(result, { [key]: normalizeDesktopPreference(key, value) }); } catch { /* 无效旧值沿用原 hook 的默认回退。 */ }
+      const value = parseStoredDesktopPreference(key, raw);
+      if (value !== undefined) Object.assign(result, { [key]: value });
     }
     if (!result.themeFamilyId) {
       const family = findFamilyByThemeId(localStorage.getItem('theme.darkId')) ?? findFamilyByThemeId(localStorage.getItem('theme.lightId'));
