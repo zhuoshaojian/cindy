@@ -5,6 +5,8 @@
  */
 import { getDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
 import { isPortableRendererPrefKey } from '../../../shared/setupMigration';
+import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
+import { hostedPortablePrefsApplier, hostedPortablePrefsReader } from '@/state/hostDesktop/setupMigrationPrefs';
 
 const MAX_VALUE_LENGTH = 32 * 1024;
 const USER_PROMPT_KEY_PREFIX = 'userPrompt.value.';
@@ -19,7 +21,7 @@ function isMovablePrefKey(key: string, ownerId: string | null): boolean {
   return ownerId !== null && key === `${USER_PROMPT_KEY_PREFIX}${ownerId}`;
 }
 
-export function readPortableRendererPrefs(
+function readPortableRendererPrefsLocal(
   storage: Storage = window.localStorage,
   ownerId: string | null = getDataOwnerGeneration().dataOwnerId,
 ): Record<string, string> {
@@ -37,7 +39,7 @@ export function readPortableRendererPrefs(
  * Writes the selected values this computer has not set itself; a preference already chosen
  * here (before or after the preview) is kept. Returns how many were written.
  */
-export function applyPortableRendererPrefs(
+function applyPortableRendererPrefsLocal(
   values: Record<string, string>,
   storage: Storage = window.localStorage,
   ownerId: string | null = getDataOwnerGeneration().dataOwnerId,
@@ -51,3 +53,10 @@ export function applyPortableRendererPrefs(
   }
   return changed;
 }
+
+/** 托管云实例除外：Host 保存的偏好与个性化提示词转交 state/hostDesktop。 */
+const hostDesktop = hasHostDesktopPreferences();
+export const readPortableRendererPrefs = hostDesktop
+  ? hostedPortablePrefsReader(readPortableRendererPrefsLocal) : readPortableRendererPrefsLocal;
+export const applyPortableRendererPrefs = hostDesktop
+  ? hostedPortablePrefsApplier(applyPortableRendererPrefsLocal) : applyPortableRendererPrefsLocal;
