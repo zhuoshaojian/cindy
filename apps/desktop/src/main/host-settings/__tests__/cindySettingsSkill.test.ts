@@ -13,7 +13,7 @@ vi.mock('electron', () => ({ app: {
 vi.mock('../../cloudPilotDistribution.js', () => ({ cindyManagedHomeDir: () => host.home, isCloudPilotDistribution: () => host.pilot }));
 vi.mock('../../logger.js', () => ({ createLogger: () => ({ debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() }) }));
 vi.mock('../../logger', () => ({ createLogger: () => ({ debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() }) }));
-import { hostSettingsSkillLayout, prepareHostSettingsSkill, prepareHostSettingsSkillDiscovery } from '../cindy-settings-skill.js';
+import { hostSettingsSkillLayout, prepareHostSettingsSkill, prepareHostSettingsSkillDiscovery, SETTINGS_SKILL_RELEASE } from '../cindy-settings-skill.js';
 import { inspectLocalSkillTarget } from '../../skillhub/localSkillTarget.js';
 import { prepareSharedGlobalSkillLinks } from '../../maker-host/shared-global-skills.js';
 import { prepareCodexGlobalSkillsLinks } from '../../maker-host/codex-global-skills.js';
@@ -233,4 +233,14 @@ it('static guidance uses live tools and human consent, never stores user values'
   for (const name of ['list_tools', 'list_settings', 'get_settings', 'update_settings', 'get_settings_operation', 'expected_revision', 'operation_id']) expect(content).toContain(name);
   for (const concept of ['execution Host', 'control device', 'new-task defaults', 'one domain', 'human confirmation', 'unknown', 'saved', 'application', 'include_user_prompt', 'authorization/input cards']) expect(content).toContain(concept);
   expect(content).toContain('Do not replay');
+});
+
+it('ships every new Skill text under a new version', async () => {
+  // Record the pair when changing the text; reusing a version would leave installed copies on the old text.
+  expect(SETTINGS_SKILL_RELEASE).toEqual({ version: 2, sha256: '9da95d990430d2c96249fd3ee9f418afbd99520e5dc66786a095569caca21bfd' });
+  const previous = content.replace('list_tools({ category: "host_settings" })', 'list_tools({ category: "settings" })');
+  expect(previous).not.toBe(content);
+  expect(reconcileSettingsSkill(layout, previous, 1).status).toBe('ready');
+  expect(await prepareHostSettingsSkill()).toMatchObject({ status: 'ready', changed: true });
+  expect(fs.readFileSync(path.join(settingsSkillPaths(layout).source, 'SKILL.md'), 'utf8')).toBe(content);
 });
