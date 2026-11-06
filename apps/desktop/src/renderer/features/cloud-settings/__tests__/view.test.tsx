@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CloudSettingsView } from '../CloudSettingsView';
 import { createTrialCloudSettingsClient } from '../trial';
@@ -91,6 +91,41 @@ it('uses the Main bridge even if device-link remote control is disabled', async 
     expect.any(Function),
   );
   expect(screen.queryByText('cloudSettings.offline')).toBeNull();
+});
+it.each([['tab=instance'], ['tab=cloud-instances'], ['section=maintenance']])(
+  'sends the old overview link %s to the device card',
+  async (query) => {
+    const client = createTrialCloudSettingsClient();
+    Object.assign(window, { electronAPI: { cloudSettings: {} } });
+    vi.mocked(createCloudSettingsClient).mockReturnValue(client);
+    const connect = vi.spyOn(client, 'connect');
+    const Where = () => <p>{useLocation().search}</p>;
+    render(
+      <MemoryRouter initialEntries={[`/cloud-settings?deviceId=${state.deviceId}&${query}`]}>
+        <Routes>
+          <Route path="/cloud-settings" element={<CloudSettingsView />} />
+          <Route path="/settings" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(new RegExp(`device=${state.deviceId}`))).toBeTruthy();
+    expect(connect).not.toHaveBeenCalled();
+  },
+);
+it('opens an old link to a hidden category on the closest shown one', async () => {
+  const client = createTrialCloudSettingsClient();
+  Object.assign(window, { electronAPI: { cloudSettings: {} } });
+  vi.mocked(createCloudSettingsClient).mockReturnValue(client);
+  render(
+    <MemoryRouter initialEntries={[`/cloud-settings?deviceId=${state.deviceId}&tab=storage`]}>
+      <CloudSettingsView />
+    </MemoryRouter>,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole('tab', { name: 'cloudSettings.moreSettings' }).getAttribute('aria-selected'),
+    ).toBe('true'),
+  );
 });
 it('does not connect or wake an offline instance', async () => {
   state.online = false;

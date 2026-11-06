@@ -7,10 +7,9 @@ import {
   useOutletContext,
 } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Cloud } from 'lucide-react';
+import { Cloud, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
-import { TAB_IDS } from '@/lib/tabLabels';
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar';
 import { SettingsSidebarNav } from '@/components/settings/SettingsSidebarNav';
 import { resolveSettingsSearchEntry } from '@/components/settings/settingsSearchCatalog';
@@ -23,7 +22,6 @@ import {
 } from '@/contexts/dataOwnerGeneration';
 import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDeviceList';
 import {
-  CLOUD_SETTINGS_GROUPS,
   type CloudSettingsDomain,
   type CloudSettingsState,
   type CloudSettingsTab,
@@ -42,7 +40,20 @@ import type { CloudBotNotificationPreferences } from './CloudBotNotificationSett
 import { cloudSearchEntryAllowed } from './search';
 import type { SettingsSearchEntry } from '@/components/settings/settingsSearchTypes';
 import { CloudDesktopFallback } from './CloudDesktopFallback';
-const groups = TAB_IDS.filter((tab): tab is CloudSettingsTab => tab in CLOUD_SETTINGS_GROUPS);
+import {
+  CLOUD_INSTANCES_SETTINGS_PATH,
+  cloudInstanceDevicePath,
+  remoteControlReturnPath,
+} from './cloudInstancesLink';
+import {
+  CLOUD_SETTINGS_VISIBILITY,
+  cloudLinkOpensDeviceCard,
+  cloudSearchEntryTab,
+  cloudTabDomains,
+  cloudTabFromLink,
+  type CloudSettingsPageTab,
+  type CloudSettingsVisibility,
+} from './cloudSettingsVisibility';
 const card =
   'rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
 export function CloudSettingsPanel({
@@ -53,6 +64,9 @@ export function CloudSettingsPanel({
   trial = false,
   focusMaintenance = false,
   version,
+  initialTab,
+  visibility = CLOUD_SETTINGS_VISIBILITY,
+  onOpenDeviceCard,
 }: {
   name: string;
   client: CloudSettingsClient;
@@ -62,13 +76,19 @@ export function CloudSettingsPanel({
   focusMaintenance?: boolean;
   /** Runtime version CIS reports for the instance; shown in About like the local app version. */
   version?: string;
+  initialTab?: CloudSettingsPageTab;
+  visibility?: CloudSettingsVisibility;
+  /** Status and waking live on the device card; shown when the page cannot reach the instance. */
+  onOpenDeviceCard?(): void;
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
-  const [tab, setTab] = useState<CloudSettingsTab | 'instance'>(
-    client.instance ? 'instance' : 'general',
+  const groups = visibility.tabs;
+  const showInstance = visibility.instance && !!client.instance;
+  const [tab, setTab] = useState<CloudSettingsPageTab>(
+    initialTab ?? (showInstance ? 'instance' : (groups[0] ?? 'more')),
   );
-  const activeDomains = tab === 'instance' ? [] : CLOUD_SETTINGS_GROUPS[tab];
+  const activeDomains = cloudTabDomains(visibility, tab);
   const outlet = useOutletContext<{ sidebarWidth?: number } | null>();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [searchNavigation, setSearchNavigation] = useState<{
@@ -166,7 +186,7 @@ export function CloudSettingsPanel({
     document.addEventListener('visibilitychange', visibility);
     return () => document.removeEventListener('visibilitychange', visibility);
   }, []);
-  const leave = async () => {
+  const leave = async (destination: () => void = onBack) => {
     if (pending.current) return;
     if (
       dirty.current.size &&
@@ -179,7 +199,7 @@ export function CloudSettingsPanel({
     )
       return;
     client.close();
-    onBack();
+    destination();
   };
   const reload = async () => {
     if (pending.current || loading || !online) return;
@@ -254,17 +274,31 @@ export function CloudSettingsPanel({
     },
     refresh: () => setEpoch((value) => value + 1),
   };
+  // Until the instance has answered every category stays listed, so the default one is not a
+  // jump; an answer that rules the open category out moves to the first one it supports.
+  const capabilitiesKnown = !!deviceId;
   const tabs = groups.filter((group) =>
-    group === 'providers'
-      ? providerAuthorization
-      : group === 'im-bot'
-        ? botAuthorization
-        : group === 'ghosts'
-          ? true
-          : !domains.length || CLOUD_SETTINGS_GROUPS[group].some((d) => domains.includes(d)),
+    !capabilitiesKnown
+      ? true
+      : group === 'providers'
+        ? providerAuthorization
+        : group === 'im-bot'
+          ? botAuthorization
+          : group === 'ghosts'
+            ? true
+            : !domains.length ||
+              cloudTabDomains(visibility, group).some((d) => domains.includes(d)),
   );
+  const tabAvailable =
+    tab === 'instance' || tab === 'more' || !capabilitiesKnown || tabs.includes(tab);
+  useEffect(() => {
+    if (!tabAvailable) setTab(tabs[0] ?? 'more');
+  }, [tabAvailable]);
+  const visibleDomains = new Set(groups.flatMap((group) => cloudTabDomains(visibility, group)));
   const allowSearchEntry = (entry: SettingsSearchEntry) =>
-    entry.tab === 'providers'
+    cloudSearchEntryTab(visibility, entry) !== null &&
+    (visibility.memoryAgentRows || !entry.id.startsWith('settings.memory.agents.')) &&
+    (entry.tab === 'providers'
       ? providerAuthorization && entry.id === 'providers'
       : entry.tab === 'im-bot'
         ? botAuthorization && entry.id === 'im-bot'
@@ -272,9 +306,18 @@ export function CloudSettingsPanel({
           ? entry.id === 'ghosts'
           : cloudSearchEntryAllowed(
               entry,
-              domains.filter((domain) => !states[domain] || states[domain]?.status === 'ready'),
+              domains.filter(
+                (domain) =>
+                  visibleDomains.has(domain) &&
+                  (!states[domain] || states[domain]?.status === 'ready'),
+              ),
               trial,
-            );
+            ));
+  // A category's panel reads only what the list gives it.
+  const statesOf = (group: CloudSettingsTab) =>
+    Object.fromEntries(
+      cloudTabDomains(visibility, group).map((domain) => [domain, states[domain]]),
+    ) as typeof states;
   useSettingsSectionTarget(
     searchNavigation.entry?.targetId ?? null,
     scrollRef,
@@ -297,9 +340,11 @@ export function CloudSettingsPanel({
           >
             <SettingsSidebarNav
               tabIds={tabs}
-              activeTab={tab === 'instance' ? null : tab}
+              // A moved setting is found under its original category, then opens where it is.
+              searchTabIds={visibility.tabs.includes('general') ? tabs : [...tabs, 'general']}
+              activeTab={tab === 'instance' || tab === 'more' ? null : tab}
               leadingTab={
-                client.instance
+                showInstance
                   ? {
                       id: 'instance',
                       label: t('cloudSettings.instance.title'),
@@ -309,6 +354,23 @@ export function CloudSettingsPanel({
                         if (!pending.current) {
                           setTab('instance');
                           setSearchNavigation({ entry: null, activation: 0 });
+                        }
+                      },
+                    }
+                  : undefined
+              }
+              trailingTab={
+                visibility.more
+                  ? {
+                      id: 'more',
+                      label: t('cloudSettings.moreSettings'),
+                      icon: MoreHorizontal,
+                      selected: tab === 'more',
+                      onSelect: () => {
+                        if (!pending.current) {
+                          setTab('more');
+                          setSearchNavigation({ entry: null, activation: 0 });
+                          setResult(undefined);
                         }
                       },
                     }
@@ -324,9 +386,12 @@ export function CloudSettingsPanel({
               }}
               onSelectSearchResult={({ tab: next, sectionId }) => {
                 if (!pending.current) {
-                  setTab(next as CloudSettingsTab);
+                  const entry = resolveSettingsSearchEntry(next, sectionId);
+                  setTab(
+                    (entry && cloudSearchEntryTab(visibility, entry)) ?? (next as CloudSettingsTab),
+                  );
                   setSearchNavigation((previous) => ({
-                    entry: resolveSettingsSearchEntry(next, sectionId),
+                    entry,
                     activation: previous.activation + 1,
                   }));
                 }
@@ -385,6 +450,23 @@ export function CloudSettingsPanel({
               <div
                 className={`mx-auto w-full min-w-0 max-w-[920px] px-1 animate-fade-in ${tab === 'providers' ? 'flex h-full min-h-0 flex-col' : 'pb-32'}`}
               >
+                {!online && onOpenDeviceCard && (
+                  <div
+                    role="status"
+                    className={`${card} mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3`}
+                  >
+                    <p className="min-w-0 flex-1 text-13 leading-[1.5] text-[var(--settings-section-desc)]">
+                      {t('cloudSettings.targetUnavailable')}
+                    </p>
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      onClick={() => void leave(onOpenDeviceCard)}
+                    >
+                      {t('settings.tabs.remoteControl')}
+                    </Button>
+                  </div>
+                )}
                 {failure && tab !== 'instance' && (
                   <div role="alert" className={card}>
                     {t(`cloudSettings.${failure}`)}
@@ -410,15 +492,19 @@ export function CloudSettingsPanel({
                 >
                   {result ? t(result) : ''}
                 </span>
-                {activeDomains.length > 0 && loading && !activeDomains.some((d) => states[d]) && (
-                  <p
-                    role="status"
-                    className="py-[18px] text-13 text-[var(--settings-section-desc)]"
-                  >
-                    {t('cloudSettings.loading')}
-                  </p>
-                )}
+                {loading &&
+                  (activeDomains.length > 0
+                    ? !activeDomains.some((d) => states[d])
+                    : !capabilitiesKnown && tab !== 'instance' && tab !== 'more') && (
+                    <p
+                      role="status"
+                      className="py-[18px] text-13 text-[var(--settings-section-desc)]"
+                    >
+                      {t('cloudSettings.loading')}
+                    </p>
+                  )}
                 {activeDomains.length > 0 &&
+                  online &&
                   !loading &&
                   !failure &&
                   !activeDomains.some((d) => states[d]?.status === 'ready') && (
@@ -426,7 +512,7 @@ export function CloudSettingsPanel({
                       {t('cloudSettings.noFields')}
                     </p>
                   )}
-                {client.instance && (
+                {showInstance && (
                   <div
                     hidden={tab !== 'instance'}
                     role="tabpanel"
@@ -519,6 +605,7 @@ export function CloudSettingsPanel({
                           trial={trial}
                           refresh={epoch}
                           deviceId={deviceId}
+                          management={visibility.providerManagement}
                         />
                       )
                     ) : (
@@ -530,7 +617,8 @@ export function CloudSettingsPanel({
                           tab={group}
                           deviceId={deviceId}
                           name={name}
-                          states={states}
+                          states={statesOf(group)}
+                          memoryAgentRows={visibility.memoryAgentRows}
                           disabled={!online || loading || writing || !!failure}
                           cpuCount={cpuCount}
                           appVersion={version}
@@ -552,6 +640,26 @@ export function CloudSettingsPanel({
                     )}
                   </div>
                 ))}
+                {visibility.more && (
+                  <div
+                    hidden={tab !== 'more'}
+                    role="tabpanel"
+                    id="settings-panel-more"
+                    aria-labelledby="settings-tab-more"
+                  >
+                    <h2 className="pb-[14px] text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
+                      {t('cloudSettings.moreSettings')}
+                    </h2>
+                    <div className={card}>
+                      <CloudDesktopFallback
+                        deviceId={deviceId}
+                        name={name}
+                        description={t('cloudSettings.moreSettingsFallback')}
+                        disabled={!online || !deviceId}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -643,7 +751,10 @@ function AuthorizedCloudSettingsView() {
         ? returnTo
         : '/cc-agent',
     );
-  if (selected && /^cloud-device-[a-f0-9]{24}$/.test(selected) && client)
+  if (selected && /^cloud-device-[a-f0-9]{24}$/.test(selected) && client) {
+    const linkedTab = params.get('tab');
+    if (cloudLinkOpensDeviceCard(CLOUD_SETTINGS_VISIBILITY, linkedTab, params.get('section')))
+      return <Navigate to={cloudInstanceDevicePath(selected)} replace />;
     return (
       <CloudSettingsPanel
         key={scope}
@@ -659,7 +770,12 @@ function AuthorizedCloudSettingsView() {
         onBack={back}
         focusMaintenance={params.get('section') === 'maintenance'}
         version={instance?.version ?? undefined}
+        initialTab={cloudTabFromLink(CLOUD_SETTINGS_VISIBILITY, linkedTab)}
+        onOpenDeviceCard={
+          client.instance ? () => navigate(remoteControlReturnPath(false)) : undefined
+        }
       />
     );
-  return <Navigate to="/settings?tab=cloud-instances" replace />;
+  }
+  return <Navigate to={CLOUD_INSTANCES_SETTINGS_PATH} replace />;
 }

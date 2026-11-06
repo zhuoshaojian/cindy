@@ -44,6 +44,19 @@ export default {
       'export function getVoiceInputWorkletUrl(){return "http://cindy-ui.test/unused-worklet.js";}',
   },
   cases: {
+    shown: {
+      about: 'The four shown categories, against the instance catalog',
+      data: { shown: true },
+    },
+    'shown-narrow': {
+      about: 'The shown categories at a narrow desktop window',
+      data: { shown: true },
+      viewport: { width: 760, height: 850 },
+    },
+    offline: {
+      about: 'An unreachable instance points at its device card',
+      data: { shown: true, offline: true },
+    },
     'im-read-failure': {
       about:
         'Native new-conversation section remains visible on failed cloud reads and recovers after retry',
@@ -82,9 +95,61 @@ export default {
     },
   },
   async ready(page) {
-    await page.locator('#settings-search-target-general-language [role="combobox"]').waitFor();
+    await page
+      .locator('#settings-search-target-general-language [role="combobox"], #settings-tab-more')
+      .first()
+      .waitFor();
   },
   async check(page, ui) {
+    if (ui.data.offline) {
+      await page
+        .getByRole('button', { name: await ui.t('settings.tabs.remoteControl'), exact: true })
+        .waitFor();
+      await ui.capture('providers');
+      await page
+        .getByRole('tab', { name: await ui.t('cloudSettings.moreSettings'), exact: true })
+        .click();
+      await ui.capture('more');
+      return;
+    }
+    if (ui.data.shown) {
+      assert.deepEqual(
+        await page.getByRole('tab').allInnerTexts(),
+        await Promise.all(
+          [
+            'settings.tabs.providers',
+            'settings.tabs.imBot',
+            'settings.tabs.personalization',
+            'cloudSettings.moreSettings',
+          ].map((key) => ui.t(key)),
+        ),
+      );
+      // Built-in rows the add flow reaches, sharing and model visibility are left out.
+      await page.getByText('Cloud model', { exact: true }).waitFor();
+      await page.getByText('Shared Claude', { exact: true }).waitFor();
+      assert.equal(await page.locator('#settings-panel-providers [role="switch"]').count(), 0);
+      assert.equal(await page.getByTestId('provider-share-paste-button').count(), 0);
+      assert.equal(await page.getByTestId('provider-remote-access').count(), 0);
+      await ui.capture('providers');
+      await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
+      await page.getByText(await ui.t('settings.feishuBot.title'), { exact: true }).waitFor();
+      await ui.capture('im-bot');
+      await page
+        .getByRole('tab', { name: await ui.t('settings.tabs.personalization'), exact: true })
+        .click();
+      await page.locator('#settings-bots').waitFor();
+      await ui.capture('personalization');
+      await page.locator('#settings-bots').scrollIntoViewIfNeeded();
+      await ui.capture('bot-model-chain');
+      await page
+        .getByRole('tab', { name: await ui.t('cloudSettings.moreSettings'), exact: true })
+        .click();
+      await page
+        .getByRole('button', { name: await ui.t('cloudSettings.openInCloudDesktop'), exact: true })
+        .waitFor();
+      await ui.capture('more');
+      return;
+    }
     if (ui.data.pages) {
       // Bot model chain and Subagent pickers read the target catalog over DeviceLink.
       for (const [tab, anchor] of [

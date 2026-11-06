@@ -2,6 +2,11 @@ import { useMemo } from 'react';
 import { mountPage, forbid } from '../../ui-page/harness';
 import { CloudSettingsPanel } from '../../../src/renderer/features/cloud-settings/CloudSettingsView';
 import { createTrialCloudSettingsClient } from '../../../src/renderer/features/cloud-settings/trial';
+import {
+  CLOUD_SETTINGS_ALL_SECTIONS,
+  CLOUD_SETTINGS_VISIBILITY,
+} from '../../../src/renderer/features/cloud-settings/cloudSettingsVisibility';
+import { CLOUD_PROVIDER_SETTINGS_CHANNEL } from '../../../src/shared/cloudProviderSettings';
 import { BUNDLED_CATALOG } from '@cindy/model-providers';
 
 const targetModel = {
@@ -20,6 +25,48 @@ const targetProvider = {
   models: { 'claude-code': [targetModel] },
 };
 
+// The instance's own catalog for the shown page: one connected provider, the unconnected
+// built-ins it leaves out of the rail, and one received share.
+const catalogProviders = [
+  targetProvider,
+  ...BUNDLED_CATALOG.providers
+    .filter((p) => p.id === 'openai' || p.id === 'anthropic')
+    .map((p) => ({ ...p, connected: false })),
+];
+const providerSettings = (request: { op: string; command?: { action: string } }) => {
+  if (request.op === 'list')
+    return {
+      version: 1,
+      ownerGeneration: 1,
+      providers: catalogProviders,
+      providerOrder: [],
+      visibility: { status: 'ready', revision: 'r1', overrides: {} },
+      supportedOps: ['list', 'share', 'cli-scan'],
+      efforts: {},
+    };
+  if (request.op === 'share' && request.command?.action === 'received')
+    return {
+      ok: true,
+      ownerGeneration: 1,
+      catalogChanged: false,
+      value: [
+        {
+          shareId: 'share-1',
+          memberId: 'member-1',
+          providerId: 'anthropic',
+          providerLabel: 'Shared Claude',
+          hostDeviceId: 'host',
+          deviceName: 'Host',
+          status: 'active',
+          hostOnline: true,
+          hostCapable: true,
+          owner: { displayName: 'Ada', avatarUrl: null, region: 'global' },
+        },
+      ],
+    };
+  return forbid(`cloudProviderSettings.${request.op}`)();
+};
+
 // Fixture-only IDs: the isolated HTTP origin has no secure-context randomUUID.
 if (!crypto.randomUUID) {
   let sequence = 0;
@@ -30,10 +77,14 @@ function Fixture({
   unavailable,
   bots,
   imReadFailure,
+  shown,
+  offline,
 }: {
   unavailable: boolean;
   bots: boolean;
   imReadFailure: boolean;
+  shown: boolean;
+  offline: boolean;
 }) {
   const client = useMemo(() => {
     const client = createTrialCloudSettingsClient();
@@ -41,8 +92,8 @@ function Fixture({
     const connect = client.connect;
     client.connect = async () => ({
       ...(await connect()),
-      providerAuthorization: undefined,
-      botAuthorization: bots ? 1 : undefined,
+      providerAuthorization: shown ? 1 : undefined,
+      botAuthorization: bots || shown ? 1 : undefined,
       pluginAuthorization: undefined,
       mcpAuthorization: undefined,
     });
@@ -82,8 +133,18 @@ function Fixture({
         );
     }
     return client;
-  }, [unavailable, bots, imReadFailure]);
-  return <CloudSettingsPanel name="Cloud example" client={client} online trial onBack={() => {}} />;
+  }, [unavailable, bots, imReadFailure, shown]);
+  return (
+    <CloudSettingsPanel
+      name="Cloud example"
+      client={client}
+      online={!offline}
+      trial={!shown}
+      onBack={() => {}}
+      visibility={shown ? CLOUD_SETTINGS_VISIBILITY : CLOUD_SETTINGS_ALL_SECTIONS}
+      onOpenDeviceCard={offline ? () => {} : undefined}
+    />
+  );
 }
 
 mountPage({
@@ -100,8 +161,12 @@ mountPage({
       onPresenceChanged: () => () => undefined,
       onStatusChanged: () => () => undefined,
       onControlTargetChanged: () => () => undefined,
-      invoke: async (deviceId: string, channel: string) => {
+      invoke: async (deviceId: string, channel: string, [request]: [never]) => {
         if (deviceId !== 'cloud-settings-trial') throw Error('Wrong fixture target');
+        if (channel === CLOUD_PROVIDER_SETTINGS_CHANNEL) return providerSettings(request);
+        // A runtime without these private channels; the page keeps its settings-domain values.
+        if (channel.startsWith('cloud:') || channel === 'maker:model-catalog:read')
+          throw Error('[DEVICE_LINK_CHANNEL_NOT_ALLOWED] not allowed');
         if (channel === 'maker:provider:list') return { providers: [targetProvider] };
         if (channel === 'maker:get-capabilities')
           return {
@@ -122,6 +187,8 @@ mountPage({
       unavailable={ctx.data.unavailable === true}
       bots={ctx.data.bots === true}
       imReadFailure={ctx.data.imReadFailure === true}
+      shown={ctx.data.shown === true}
+      offline={ctx.data.offline === true}
     />
   ),
 });

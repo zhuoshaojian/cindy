@@ -69,6 +69,8 @@ type Props = {
   /** Instance runtime version from CIS; About shows it like the local app version. */
   appVersion?: string;
   trial: boolean;
+  /** The Claude Code, Codex and Pi rows under the Cindy memory switch. */
+  memoryAgentRows?: boolean;
   save(
     state: CloudSettingsState,
     set: Record<string, unknown>,
@@ -209,7 +211,8 @@ function Storage({
 }
 
 export function NativeCloudSections(props: Props) {
-  const { tab, states, save, disabled, changed, trial, deviceId, name, appVersion } = props;
+  const { tab, states, save, disabled, changed, trial, deviceId, name, appVersion, memoryAgentRows } =
+    props;
   const { t } = useTranslation();
   // The three-mode Git control requires the native mode wire field. The legacy
   // boolean cloud field cannot distinguish existing repositories from all projects.
@@ -397,6 +400,17 @@ export function NativeCloudSections(props: Props) {
               handleToggle={(kind, next) =>
                 attempt('memory', { [kind === 'claude-code' ? 'claudeCode' : kind]: next })
               }
+              agentRows={memoryAgentRows}
+            />,
+          )}
+        {ready('botModelChain') &&
+          section(
+            'settings-bots',
+            <CloudBotsSettings
+              state={s('botModelChain')}
+              deviceId={deviceId}
+              disabled={disabled}
+              attempt={confirmSave}
             />,
           )}
         {ready('subagentModel') &&

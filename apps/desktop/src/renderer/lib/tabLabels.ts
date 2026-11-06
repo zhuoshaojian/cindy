@@ -70,6 +70,16 @@ export const TAB_IDS = [
 
 export type VisibleSettingsTab = (typeof TAB_IDS)[number];
 
+/**
+ * 已并入其它分区、但 id 仍留在 TAB_IDS 的 tab → 现在的落点。TAB_IDS 与
+ * settingsReadCatalog 的 SETTINGS_READ_TABS 必须一致(后者供 Host 投影与 CIS 排版),
+ * 所以这里只在可见层隐藏:不进菜单、不进搜索,旧深链改写到落点。
+ * 「云实例」2026-11-05 并入「远程连接」的「云实例」分组。
+ */
+export const MERGED_SETTINGS_TABS: Partial<Record<VisibleSettingsTab, VisibleSettingsTab>> = {
+  'cloud-instances': 'remote-control',
+};
+
 export const TAB_LABEL_KEY: Record<SettingsTab, string> = {
   general: 'settings.tabs.general',
   appearance: 'settings.tabs.appearance',

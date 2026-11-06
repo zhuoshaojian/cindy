@@ -8,9 +8,20 @@ import { cloudSearchEntryAllowed } from '../search';
 import type { CloudSettingsClient } from '../client';
 import { CLOUD_SETTINGS_DOMAINS } from '../../../../shared/cloudSettings';
 import { SETTINGS_DISPLAY_LOCALES } from '../../../../shared/settingsReadCatalog';
+import {
+  CLOUD_SETTINGS_ALL_SECTIONS,
+  CLOUD_SETTINGS_VISIBILITY,
+  cloudLinkOpensDeviceCard,
+  cloudTabFromLink,
+  type CloudSettingsVisibility,
+} from '../cloudSettingsVisibility';
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
-  useTranslation: () => ({ t: (key: string) => key }),
+  // Search reads its text with an empty default and skips anything that is still a key.
+  useTranslation: () => ({
+    t: (key: string, options?: { defaultValue?: string }) =>
+      options?.defaultValue === '' ? `text ${key}` : key,
+  }),
 }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }));
@@ -36,7 +47,10 @@ vi.stubGlobal(
   },
 );
 afterEach(cleanup);
-function setup(configure?: (client: CloudSettingsClient) => void) {
+function setup(
+  configure?: (client: CloudSettingsClient) => void,
+  visibility: CloudSettingsVisibility = CLOUD_SETTINGS_ALL_SECTIONS,
+) {
   Object.assign(window, {
     electronAPI: new Proxy(
       {},
@@ -50,7 +64,16 @@ function setup(configure?: (client: CloudSettingsClient) => void) {
   const client = createTrialCloudSettingsClient();
   configure?.(client);
   const save = vi.spyOn(client, 'save');
-  render(<CloudSettingsPanel name="Cloud trial" client={client} online trial onBack={vi.fn()} />);
+  render(
+    <CloudSettingsPanel
+      name="Cloud trial"
+      client={client}
+      online
+      trial
+      onBack={vi.fn()}
+      visibility={visibility}
+    />,
+  );
   fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.personalization' }));
   return { client, save };
 }
@@ -300,6 +323,7 @@ describe('shared native cloud settings', () => {
         trial
         version="0.1.120-cloud.1-cn-amd64"
         onBack={vi.fn()}
+        visibility={CLOUD_SETTINGS_ALL_SECTIONS}
       />,
     );
     fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.about' }));
@@ -386,7 +410,10 @@ describe('shared native cloud settings', () => {
       'settings.appearance.font.terminalFamily.label',
       'settings.about.storage.cleanupLabel',
     ])
-      expect(allowed.some((e) => e.id === denied), denied).toBe(false);
+      expect(
+        allowed.some((e) => e.id === denied),
+        denied,
+      ).toBe(false);
   });
   it('does not write any settings just by opening every supported category', async () => {
     const { save } = setup();
@@ -396,5 +423,185 @@ describe('shared native cloud settings', () => {
       await waitFor(() => expect(screen.queryByText('cloudSettings.loading')).toBeNull());
     }
     expect(save).not.toHaveBeenCalled();
+  });
+});
+// 2026-11-06 plan B preview: the page shows only what directly affects use.
+describe('the shown cloud settings', () => {
+  const tabNames = () => screen.getAllByRole('tab').map((tab) => tab.textContent);
+  const readDomains = (client: CloudSettingsClient) => {
+    const read = vi.spyOn(client, 'read');
+    return () => read.mock.calls.flatMap(([domains]) => domains);
+  };
+  it('lists four categories in order and opens model providers by default', async () => {
+    Object.assign(window, { electronAPI: {} });
+    render(
+      <CloudSettingsPanel
+        name="Cloud trial"
+        client={createTrialCloudSettingsClient()}
+        online
+        trial
+        onBack={vi.fn()}
+      />,
+    );
+    expect(tabNames()).toEqual([
+      'settings.tabs.providers',
+      'settings.tabs.imBot',
+      'settings.tabs.personalization',
+      'cloudSettings.moreSettings',
+    ]);
+    expect(
+      screen.getByRole('tab', { name: 'settings.tabs.providers' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    await waitFor(() => expect(screen.queryByText('cloudSettings.loading')).toBeNull());
+  });
+  it('moves off model providers when the instance does not offer them', async () => {
+    setup((client) => {
+      const connect = client.connect;
+      client.connect = async () => ({ ...(await connect()), providerAuthorization: undefined });
+    }, CLOUD_SETTINGS_VISIBILITY);
+    await screen.findByText('settings.memory.title');
+    expect(screen.queryByRole('tab', { name: 'settings.tabs.providers' })).toBeNull();
+    expect(
+      screen
+        .getByRole('tab', { name: 'settings.tabs.personalization' })
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+  it('shows the prompt, memory and bot model chain in personalization and reads nothing else', async () => {
+    let domains = () => [] as string[];
+    const { save } = setup((client) => {
+      domains = readDomains(client);
+    }, CLOUD_SETTINGS_VISIBILITY);
+    await screen.findByText('settings.memory.title');
+    expect(
+      screen.getByRole('textbox', { name: 'settings.personalization.ariaLabel' }),
+    ).toBeTruthy();
+    expect(document.querySelector('#settings-bots')).toBeTruthy();
+    for (const hidden of [
+      'settings-search-target-personalization-subagents',
+      'settings-search-target-personalization-auxiliary-models',
+      'settings-search-target-personalization-vision-bridge',
+      'settings-contacts',
+      'settings-search-target-personalization-terminal-shell',
+      'settings-search-target-personalization-tips',
+      'settings-agent-resource',
+    ])
+      expect(document.getElementById(hidden), hidden).toBeNull();
+    expect(new Set(domains())).toEqual(new Set(['personalization', 'memory', 'botModelChain']));
+    expect(save).not.toHaveBeenCalled();
+  });
+  it('hides the agent memory rows without touching their saved values', async () => {
+    const { save } = setup(undefined, { ...CLOUD_SETTINGS_VISIBILITY, memoryAgentRows: false });
+    await screen.findByText('settings.memory.title');
+    const memory = document.querySelector<HTMLElement>(
+      '#settings-search-target-personalization-memory',
+    )!;
+    const [maker, ...agents] = within(memory).getAllByRole('switch');
+    expect(agents).toHaveLength(0);
+    await ready(maker);
+    fireEvent.click(maker);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][1]).toEqual({ maker: false });
+    expect(save.mock.calls[0][2]).toBeUndefined();
+  });
+  it('sends everything else to the cloud desktop from More settings', async () => {
+    const openRemoteDesktop = vi.fn(async () => undefined);
+    Object.assign(window, { electronAPI: { openRemoteDesktop } });
+    render(
+      <CloudSettingsPanel
+        name="Cloud trial"
+        client={createTrialCloudSettingsClient()}
+        online
+        trial
+        onBack={vi.fn()}
+        initialTab="more"
+      />,
+    );
+    const open = await screen.findByRole('button', { name: 'cloudSettings.openInCloudDesktop' });
+    await ready(open);
+    expect(screen.getByText('cloudSettings.moreSettingsFallback')).toBeTruthy();
+    fireEvent.click(open);
+    expect(openRemoteDesktop).toHaveBeenCalledWith({
+      deviceId: 'cloud-settings-trial',
+      name: 'Cloud trial',
+    });
+  });
+  it('points an unreachable instance at its device card instead of an empty page', async () => {
+    const onOpenDeviceCard = vi.fn();
+    Object.assign(window, { electronAPI: {} });
+    const client = createTrialCloudSettingsClient();
+    const connect = vi.spyOn(client, 'connect');
+    render(
+      <CloudSettingsPanel
+        name="Cloud trial"
+        client={client}
+        online={false}
+        onBack={vi.fn()}
+        onOpenDeviceCard={onOpenDeviceCard}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'settings.tabs.remoteControl' }));
+    await waitFor(() => expect(onOpenDeviceCard).toHaveBeenCalledOnce());
+    expect(screen.getByText('cloudSettings.targetUnavailable')).toBeTruthy();
+    expect(connect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('tab', { name: 'cloudSettings.moreSettings' }));
+    expect(
+      screen.getByRole('button', { name: 'cloudSettings.openInCloudDesktop' }).matches(':disabled'),
+    ).toBe(true);
+  });
+  it('lands old links on the closest shown category', () => {
+    const land = (tab: string | null) => cloudTabFromLink(CLOUD_SETTINGS_VISIBILITY, tab);
+    expect(land(null)).toBeUndefined();
+    expect(land('providers')).toBe('providers');
+    expect(land('im-bot')).toBe('im-bot');
+    expect(land('personalization')).toBe('personalization');
+    expect(land('general')).toBe('personalization');
+    for (const tab of ['appearance', 'builtin-tools', 'computer-use', 'ghosts', 'storage', 'about'])
+      expect(land(tab), tab).toBe('more');
+    expect(land('not-a-category')).toBeUndefined();
+    const toCard = (tab: string | null, section: string | null = null) =>
+      cloudLinkOpensDeviceCard(CLOUD_SETTINGS_VISIBILITY, tab, section);
+    expect(toCard('instance')).toBe(true);
+    expect(toCard('cloud-instances')).toBe(true);
+    expect(toCard(null, 'maintenance')).toBe(true);
+    expect(toCard('general')).toBe(false);
+  });
+  it('searches only what is shown and opens the moved bot model chain', async () => {
+    setup(undefined, CLOUD_SETTINGS_VISIBILITY);
+    // The section target scrolls to and marks the setting once its category is open.
+    Object.assign(window, { matchMedia: () => ({ matches: true }) });
+    HTMLElement.prototype.scrollTo = vi.fn();
+    await screen.findByText('settings.memory.title');
+    fireEvent.click(screen.getByRole('tab', { name: 'cloudSettings.moreSettings' }));
+    const search = screen.getByRole('combobox', { name: 'settings.search.ariaLabel' });
+    for (const hidden of [
+      'settings.sections.language',
+      'settings.sections.collaboration',
+      'settings.about.analyticsLabel',
+      'settings.computerUse.browser.title',
+    ]) {
+      expect(
+        SETTINGS_SEARCH_ENTRIES.some((entry) => entry.titleKey === hidden),
+        hidden,
+      ).toBe(true);
+      fireEvent.change(search, { target: { value: `text ${hidden}` } });
+      expect(screen.queryAllByRole('option'), hidden).toHaveLength(0);
+    }
+    fireEvent.change(search, { target: { value: 'text settings.sections.bots' } });
+    const results = screen.getAllByRole('option');
+    expect(results).toHaveLength(1);
+    fireEvent.click(results[0]);
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole('tab', { name: 'settings.tabs.personalization' })
+          .getAttribute('aria-selected'),
+      ).toBe('true'),
+    );
+    await waitFor(() =>
+      expect(
+        document.querySelector('#settings-bots.settings-search-target-highlight'),
+      ).toBeTruthy(),
+    );
   });
 });

@@ -179,6 +179,25 @@ function isManagedLocalProvider(id: string): boolean {
   return id === MANAGED_OLLAMA_PROVIDER_ID || id === MANAGED_LLAMACPP_PROVIDER_ID;
 }
 
+/** Native sign-ins the add flow always offers, so an unconnected one needs no row of its own. */
+const ADD_FLOW_BUILTINS = ['openai', 'anthropic', 'xai'];
+
+/**
+ * The rail without unconnected built-ins that "Add provider" can still reach. The others
+ * (xd, a kept disconnected connection) are not offered there, so they keep their row.
+ */
+export function cloudConnectedRail(rail: readonly ProviderView[]): ProviderView[] {
+  return rail.filter(
+    (p) =>
+      !(
+        p.source === 'builtin' &&
+        ADD_FLOW_BUILTINS.includes(p.id) &&
+        !p.connected &&
+        p.openAiAccount?.reconnectRequired !== true
+      ),
+  );
+}
+
 /** The local rule for built-in connections that can be removed from the list. */
 function supportsConnectionManagement(p: ProviderView): boolean {
   return (
@@ -221,7 +240,14 @@ function CloudSubscriptionTag({
  * keys and new connections stay on the CIS management tickets. An older runtime, or a
  * viewer who does not own the instance, keeps the ticket-only list.
  */
-export function CloudProvidersSettings(props: CloudAuthorizationProps & { deviceId: string }) {
+export function CloudProvidersSettings({
+  management = true,
+  ...props
+}: CloudAuthorizationProps & {
+  deviceId: string;
+  /** Sharing, joining by link, CLI suggestions and model visibility, as on the local page. */
+  management?: boolean;
+}) {
   const catalog = useCloudProviderCatalog({
     deviceId: props.deviceId,
     online: props.online,
@@ -234,15 +260,17 @@ export function CloudProvidersSettings(props: CloudAuthorizationProps & { device
         <CloudProviderAuthorization {...props} />
       </div>
     );
-  return <CloudProviderCatalogPage {...props} catalog={catalog} />;
+  return <CloudProviderCatalogPage {...props} catalog={catalog} management={management} />;
 }
 
 function CloudProviderCatalogPage({
   catalog,
+  management,
   ...props
 }: CloudAuthorizationProps & {
   deviceId: string;
   catalog: ReturnType<typeof useCloudProviderCatalog>;
+  management: boolean;
 }) {
   const { name, online, deviceId } = props;
   const auth = useCloudAuthorization(props, 'providers', { all: true });
@@ -295,7 +323,7 @@ function CloudProviderCatalogPage({
   );
   const selectedShare = shares.received.find((share) => share.shareId === selectedShareId) ?? null;
   const [detections, setDetections] = useState<LocalCliDetection[]>([]);
-  const scanSupported = catalog.supportedOps.includes('cli-scan');
+  const scanSupported = management && catalog.supportedOps.includes('cli-scan');
   // The instance's own CLIs, scanned once like the local page; suggestions are optional.
   useEffect(() => {
     if (!scanSupported) return;
@@ -311,10 +339,13 @@ function CloudProviderCatalogPage({
       cancelled = true;
     };
   }, [scanSupported, deviceId]);
-  const rail = useMemo(
-    () => applyProviderOrder(cloudRailProviders(catalog.providers), catalog.providerOrder),
-    [catalog.providers, catalog.providerOrder],
-  );
+  const rail = useMemo(() => {
+    const listed = cloudRailProviders(catalog.providers);
+    return applyProviderOrder(
+      management ? listed : cloudConnectedRail(listed),
+      catalog.providerOrder,
+    );
+  }, [catalog.providers, catalog.providerOrder, management]);
   const list = pendingOrder ? applyProviderOrder(rail, pendingOrder) : rail;
   useEffect(() => setPendingOrder(null), [catalog.providerOrder]);
   const selected = list.find((p) => p.id === selectedId) ?? list[0] ?? null;
@@ -1049,7 +1080,7 @@ function CloudProviderCatalogPage({
               </p>
             </div>
             {/* Joining by link is an account action, as on the local page. */}
-            <ProviderSharePasteButton />
+            {management && <ProviderSharePasteButton />}
           </div>
           {auth.failure && (
             <p role="alert" className="text-13 text-[var(--text-secondary)]">
@@ -1198,7 +1229,8 @@ function CloudProviderCatalogPage({
                           </Button>
                         </div>
                       )}
-                      {!selected.suspended &&
+                      {management &&
+                        !selected.suspended &&
                         selected.connected &&
                         selected.agents.length > 0 &&
                         selected.remoteInvocationEnabled !== undefined && (
@@ -1240,6 +1272,7 @@ function CloudProviderCatalogPage({
                             />
                             <UnifiedModelList
                               provider={selected}
+                              visibilityControls={management}
                               emptyMessage={
                                 selected.source === 'user' && selected.modelDiscoveryFailure
                                   ? t(

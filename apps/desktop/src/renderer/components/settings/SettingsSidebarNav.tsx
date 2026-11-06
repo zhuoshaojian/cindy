@@ -86,18 +86,24 @@ const TAB_ICON: Record<VisibleSettingsTab, SettingsNavIcon> = {
   storage: Database,
 };
 
+/** A category of the page that is not a settings tab. */
+interface SettingsNavExtraTab {
+  id: string;
+  label: string;
+  icon: SettingsNavIcon;
+  selected: boolean;
+  onSelect(): void;
+}
+
 interface SettingsSidebarNavProps {
   tabIds: readonly VisibleSettingsTab[];
+  /** Categories search looks in; the listed tabs when not given. */
+  searchTabIds?: readonly VisibleSettingsTab[];
   searchContext?: SettingsSearchContext;
   allowSearchEntry?: (entry: SettingsSearchEntry) => boolean;
   activeTab: SettingsTab | null;
-  leadingTab?: {
-    id: string;
-    label: string;
-    icon: SettingsNavIcon;
-    selected: boolean;
-    onSelect(): void;
-  };
+  leadingTab?: SettingsNavExtraTab;
+  trailingTab?: SettingsNavExtraTab;
   onSelectTab: (tab: SettingsTab) => void;
   onSelectSearchResult?: (result: { tab: SettingsTab; sectionId: string }) => void;
 }
@@ -105,12 +111,14 @@ interface SettingsSidebarNavProps {
 /** Settings left nav. Every item is an in-panel tab with a matching lucide mark. */
 export function SettingsSidebarNav({
   tabIds,
+  searchTabIds,
   searchContext,
   allowSearchEntry,
   activeTab,
   onSelectTab,
   onSelectSearchResult,
   leadingTab,
+  trailingTab,
 }: SettingsSidebarNavProps) {
   const { t } = useTranslation();
   const items = [
@@ -122,13 +130,14 @@ export function SettingsSidebarNav({
       selected: activeTab === tabId,
       onSelect: () => onSelectTab(tabId),
     })),
+    ...(trailingTab ? [trailingTab] : []),
   ];
 
   return (
     <>
       <SettingsSearchBox
         allowSearchEntry={allowSearchEntry}
-        visibleTabIds={tabIds}
+        visibleTabIds={searchTabIds ?? tabIds}
         searchContext={searchContext}
         onSelect={onSelectSearchResult}
       />

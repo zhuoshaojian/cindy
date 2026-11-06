@@ -5,6 +5,7 @@ import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
 import { CloudInstanceSection } from '../CloudInstanceSection';
 import { CloudSettingsPanel } from '../CloudSettingsView';
+import { CLOUD_SETTINGS_ALL_SECTIONS } from '../cloudSettingsVisibility';
 import { createTrialCloudSettingsClient } from '../trial';
 import type {
   CloudInstanceView,
@@ -126,7 +127,13 @@ async function setup({
   const tree = (active = true) => (
     <I18nextProvider i18n={i18n}>
       {panel ? (
-        <CloudSettingsPanel client={client} name="Cloud A" online={false} onBack={vi.fn()} />
+        <CloudSettingsPanel
+          client={client}
+          name="Cloud A"
+          online={false}
+          onBack={vi.fn()}
+          visibility={CLOUD_SETTINGS_ALL_SECTIONS}
+        />
       ) : (
         <CloudInstanceSection
           client={client}

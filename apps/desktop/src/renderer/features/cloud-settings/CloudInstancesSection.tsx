@@ -7,9 +7,10 @@ import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDev
 import { toast } from '@/lib/toast';
 import { CloudInstancesPage } from './CloudInstancesPage';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
+import { CLOUD_INSTANCES_SETTINGS_PATH } from './cloudInstancesLink';
 
-/** Account-level discovery belongs inside local Settings; instance configuration
- * keeps its own explicit target and returns to this category. */
+/** Account-level discovery belongs inside Settings → Remote connections; instance
+ * configuration keeps its own explicit target and returns to that group. */
 export function CloudInstancesSection() {
   const navigate = useNavigate();
   const { mode, dataOwnerId } = useAuth();
@@ -57,7 +58,7 @@ export function CloudInstancesSection() {
         navigate(
           `/cloud-settings?${new URLSearchParams({ deviceId, ...(section ? { section } : {}) })}`,
           {
-            state: { returnTo: '/settings?tab=cloud-instances' },
+            state: { returnTo: CLOUD_INSTANCES_SETTINGS_PATH },
           },
         )
       }

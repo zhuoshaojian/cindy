@@ -8,7 +8,11 @@ import { visibilityPreferenceKey } from '../../../../shared/modelPresentationPre
 import type { ManagementItem } from '../../../../shared/settingsManagement';
 import type { CloudSettingsClient } from '../client';
 import { cloudAddChoices } from '../CloudAddProviderDialog';
-import { CloudProvidersSettings, cloudRailProviders } from '../CloudProvidersSettings';
+import {
+  cloudConnectedRail,
+  CloudProvidersSettings,
+  cloudRailProviders,
+} from '../CloudProvidersSettings';
 
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
@@ -191,6 +195,7 @@ function setup(
     withoutShare?: boolean;
     extraItems?: ManagementItem[];
     extraProviders?: ProviderView[];
+    management?: boolean;
   } = {},
 ) {
   let visibility = {
@@ -308,6 +313,7 @@ function setup(
       active
       name="Cloud one"
       deviceId="cloud-device-000000000000000000000001"
+      management={options.management}
     />,
   );
   return { invoke, manage };
@@ -550,6 +556,36 @@ describe('instance CLI suggestions', () => {
   });
 });
 
+// 2026-11-06 plan B preview. Local-page parity is covered by the tests above, which use the default.
+describe('without provider management', () => {
+  it('shows the management controls by default', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: /OpenAI/ }));
+    expect(await screen.findByTestId('provider-remote-access')).toBeTruthy();
+    expect(screen.getByText('settings.providers.models.manage.menu')).toBeTruthy();
+    expect(screen.getByText('providerShare.received.enterLink')).toBeTruthy();
+    expect(await screen.findByText('settings.providers.detect.groupLabel')).toBeTruthy();
+  });
+  it('keeps models, sign-ins and shares but leaves out sharing, suggestions and visibility', async () => {
+    const { invoke } = setup({ management: false });
+    expect(await screen.findByText('settings.providers.models.modelCount:2')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /OpenAI/ }));
+    expect(await screen.findByText('gpt-a')).toBeTruthy();
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.queryByTestId('provider-remote-access')).toBeNull();
+    for (const hidden of [
+      'settings.providers.models.manage.menu',
+      'settings.providers.models.manage.hint',
+      'settings.providers.detect.groupLabel',
+      'providerShare.received.enterLink',
+    ])
+      expect(screen.queryByText(hidden), hidden).toBeNull();
+    expect(await screen.findByRole('button', { name: /Shared Claude/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'settings.providers.addProvider' })).toBeTruthy();
+    expect(invoke.mock.calls.some((call) => call[2][0].op === 'cli-scan')).toBe(false);
+  });
+});
+
 describe('shares on the instance', () => {
   it('lists the instance received shares and writes trust on the instance', async () => {
     const { invoke } = setup();
@@ -606,6 +642,19 @@ describe('shares on an older runtime', () => {
 describe('cloud provider helpers', () => {
   it('uses the local rail rule', () => {
     expect(cloudRailProviders(providers).map((p) => p.id)).toEqual(['openai', 'web-1']);
+  });
+  it('drops only the unconnected built-ins the add flow can still reach', () => {
+    const builtin = (id: string, extra: object) =>
+      ({ id, source: 'builtin', connected: false, ...extra }) as unknown as ProviderView;
+    const rail = [
+      builtin('openai', { imageModels: [{}] }),
+      builtin('anthropic', { removed: false }),
+      builtin('xai', { connected: true }),
+      builtin('openai', { openAiAccount: { reconnectRequired: true } }),
+      builtin('xd', {}),
+      builtin('gemini', { removed: false }),
+    ];
+    expect(cloudConnectedRail(rail)).toEqual(rail.slice(2));
   });
   it('offers a built-in sign-in only when that provider is not in the rail', () => {
     expect(cloudAddChoices(items).some((c) => c.key === 'provider:anthropic')).toBe(false);

@@ -13,6 +13,7 @@ export function CloudDesktopFallback({
   name,
   label,
   description,
+  disabled = false,
 }: {
   deviceId: string;
   /** The instance's display name. */
@@ -20,6 +21,7 @@ export function CloudDesktopFallback({
   label?: string;
   /** What to change there; defaults to a generic note. */
   description?: ReactNode;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [opening, setOpening] = useState(false);
@@ -43,7 +45,7 @@ export function CloudDesktopFallback({
           variant="secondary"
           size="md"
           loading={opening}
-          disabled={opening}
+          disabled={opening || disabled}
           onClick={() => {
             setOpening(true);
             void window.electronAPI

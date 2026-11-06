@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Moon, Play, RefreshCw, Plus, Trash2, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,6 +21,10 @@ import {
   type CloudMaintenanceCalendar,
 } from '../../../shared/cloudInstanceControl';
 import type { CloudSettingsClient } from './client';
+import {
+  SETTINGS_ROW_HINT_CLASS,
+  SETTINGS_ROW_LABEL_CLASS,
+} from '@/components/settings/settingsRowClasses';
 import { CloudTimezoneSelect } from './CloudTimezoneSelect';
 import {
   stableInstanceState as stableState,
@@ -26,12 +38,23 @@ const card =
   'flex flex-col gap-4 rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
 const label = 'text-13 font-medium text-[var(--settings-section-sublabel)]';
 const description = 'text-12 leading-[1.5] text-[var(--settings-section-desc)]';
+// Inside a My devices card: standard settings rows, in an inset block like "Allow remote desktop".
+const embeddedLabel = SETTINGS_ROW_LABEL_CLASS;
+const embeddedDescription = SETTINGS_ROW_HINT_CLASS;
+const embeddedBox =
+  'flex flex-col divide-y divide-[var(--border-default)] rounded-lg bg-[var(--settings-input-bg)] px-3 [&>*]:py-3';
+const Embedded = createContext(false);
 function Row({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
+  const embedded = useContext(Embedded);
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0 flex-1">
-        <p className={label}>{title}</p>
-        {detail && <p className={`${description} mt-1`}>{detail}</p>}
+        <p className={embedded ? embeddedLabel : label}>{title}</p>
+        {detail && (
+          <p className={`${embedded ? embeddedDescription : description} ${embedded ? 'mt-0.5' : 'mt-1'}`}>
+            {detail}
+          </p>
+        )}
       </div>
       <div className="flex max-w-full shrink-0 items-center gap-2">{children}</div>
     </div>
@@ -42,6 +65,16 @@ type Draft = {
   mode: 'inherit' | 'custom';
   calendar: CloudMaintenanceCalendar;
   base: CloudMaintenanceView;
+};
+/**
+ * The state a Remote connections device card already holds: the card's list polling keeps it
+ * current, so an embedded section does not poll on its own.
+ */
+export type CloudInstanceFeed = {
+  view: CloudInstanceView;
+  /** Re-reads the instance now; rejects when the read fails. */
+  reload(): Promise<void>;
+  onPolicySaved(policy: CloudMaintenanceView): void;
 };
 const fromPolicy = (base: CloudMaintenanceView): Draft => ({
   base,
@@ -57,12 +90,20 @@ export function CloudInstanceSection({
   active,
   changed,
   focusMaintenance = false,
+  embedded = false,
+  feed,
 }: {
   client: CloudSettingsClient;
   name: string;
   active: boolean;
   changed(domain: string, dirty: boolean): void;
   focusMaintenance?: boolean;
+  /**
+   * Inside a Remote connections device card, which already shows the name, the lifecycle
+   * state and sleep/wake: render only versions, upgrade and maintenance.
+   */
+  embedded?: boolean;
+  feed?: CloudInstanceFeed;
 }) {
   const { t, i18n } = useTranslation();
   const { confirm } = useConfirmDialog();
@@ -84,6 +125,9 @@ export function CloudInstanceSection({
     dirty = useRef(false),
     uncertain = useRef(false);
   const blocked = useRef(false);
+  const fed = !!feed;
+  const feedRef = useRef(feed);
+  feedRef.current = feed;
   const tr = (key: string) => t(`cloudSettings.instance.${key}`);
   const mark = useCallback(
     (value: boolean) => {
@@ -100,16 +144,20 @@ export function CloudInstanceSection({
   }, []);
   const refresh = useCallback(
     async (explicit = false) => {
-      if (inFlight.current || !client.instance) return;
+      if (inFlight.current || (!feedRef.current && !client.instance)) return;
       if (!explicit && uncertain.current) return;
       inFlight.current = true;
       if (explicit) setBusy(true);
       try {
-        const next = await client.instance();
+        if (feedRef.current) await feedRef.current.reload();
+        else {
+          const next = await client.instance!();
+          if (!alive.current) return;
+          setView(next);
+          if (!dirty.current) setDraft(next.maintenance ? fromPolicy(next.maintenance) : undefined);
+        }
         if (!alive.current) return;
-        setView(next);
         blocked.current = false;
-        if (!dirty.current) setDraft(next.maintenance ? fromPolicy(next.maintenance) : undefined);
         if (explicit) {
           uncertain.current = false;
           setError(undefined);
@@ -126,9 +174,18 @@ export function CloudInstanceSection({
     },
     [client],
   );
+  // Fed from the card: take what its list and policy reads last returned.
+  const fedView = feed?.view;
+  useEffect(() => {
+    if (!fedView) return;
+    setView(fedView);
+    if (!dirty.current)
+      setDraft(fedView.maintenance ? fromPolicy(fedView.maintenance) : undefined);
+  }, [fedView]);
   useEffect(() => {
     if (!active) return;
     void refresh(true);
+    if (fed) return;
     const poll = () => {
       if (document.visibilityState !== 'hidden') void refresh();
     };
@@ -138,7 +195,7 @@ export function CloudInstanceSection({
       clearInterval(timer);
       document.removeEventListener('visibilitychange', poll);
     };
-  }, [active, client, refresh, view ? stableState(view) : true]);
+  }, [active, client, fed, refresh, !fed && view ? stableState(view) : true]);
   const update = (patch: Partial<Draft>) => {
     setDraft((before) => before && { ...before, ...patch });
     mark(true);
@@ -255,6 +312,7 @@ export function CloudInstanceSection({
       mark(false);
       setDraft(fromPolicy(saved));
       setView((before) => before && { ...before, maintenance: saved });
+      feedRef.current?.onPolicySaved(saved);
       setMessage('saved');
     } catch (cause) {
       if (alive.current) {
@@ -285,6 +343,25 @@ export function CloudInstanceSection({
     ),
   }));
   const policy = view?.maintenance;
+  // One line instead of a weekday list and a next-window sentence, inside a device card.
+  const scheduleSummary = policy
+    ? policy.effective.source === 'inherit'
+      ? [
+          ...policy.effective.calendar.windows.map((rule) =>
+            rule.weekdays.length === 7
+              ? t('cloudSettings.instance.windowDaily', {
+                  start: rule.startLocal,
+                  end: rule.endLocal,
+                })
+              : `${weekdays
+                  .filter((d) => rule.weekdays.includes(d.day))
+                  .map((d) => d.text)
+                  .join(' · ')} ${rule.startLocal}–${rule.endLocal}`,
+          ),
+          policy.effective.calendar.timezone,
+        ].join(' · ')
+      : tr('inheritOnSave')
+    : undefined;
   const disabled =
     busy ||
     !!view?.upgradeOperation?.active ||
@@ -298,322 +375,362 @@ export function CloudInstanceSection({
         'upgradeUnconfirmed',
       ].includes(error));
   const status = view ? instanceStatus(view) : 'starting';
+  const upgradeOffered =
+    !!view?.manualUpgrade && (view.updateAvailable || !!view.upgradeOperation?.active);
+  const upgradeDetail = tr(dirty.current ? 'upgradeSaveFirst' : 'upgradeDescription');
+  const upgradeButton = view && (
+    <Button
+      variant="primary"
+      size={embedded ? 'sm' : undefined}
+      disabled={disabled || dirty.current || !canRequestUpgrade(view) || !client.upgrade}
+      onClick={() => void upgrade()}
+    >
+      {tr(view.upgradeOperation?.active ? 'state.upgrading' : 'upgradeNow')}
+    </Button>
+  );
+  const desc = embedded ? embeddedDescription : description;
+  const value = 'text-13';
+  const box = embedded ? embeddedBox : card;
+  const displayVersion = (version: string) =>
+    embedded ? version.replace(/(-(cn|global))?-(amd64|arm64)$/, '') : version;
   return (
-    <div className="flex flex-col gap-6" data-testid="cloud-instance-overview">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-16 font-medium text-[var(--settings-section-title)]">{tr('title')}</h2>
-        <Button
-          variant="secondary"
-          tone="quiet"
-          compact
-          disabled={busy}
-          onClick={() => void reload()}
-        >
-          <RefreshCw size={14} />
-          {tr('refresh')}
-        </Button>
-      </div>
-      {error && (
-        <p role="alert" className={description}>
-          {tr(error)}
-        </p>
-      )}
-      {message && (
-        <p role="status" className={description}>
-          {tr(message)}
-        </p>
-      )}
-      {!view ? (
-        <p className={description} role="status">
-          {t(error ? 'cloudSettings.targetUnavailable' : 'cloudSettings.loading')}
-        </p>
-      ) : (
-        <>
-          <div className={card}>
-            <Row title={view.name || name} detail={tr(`state.${status}`)}>
-              <Button
-                variant="secondary"
-                disabled={disabled || !stableState(view)}
-                onClick={() => void power()}
-              >
-                {view.desiredState === 'stopped' ? <Play size={14} /> : <Moon size={14} />}
-                {tr(view.desiredState === 'stopped' ? 'wake' : 'sleep')}
-              </Button>
-            </Row>
-            <Row title={tr('currentVersion')} detail={tr('versionSource')}>
-              <span className="break-all text-13 text-[var(--settings-section-title)]">
-                {view.version ?? (view.imageId ? `#${view.imageId.slice(0, 12)}` : tr('unknown'))}
-              </span>
-            </Row>
-            <Row title={tr('availableVersion')}>
-              <span className="break-all text-13 text-[var(--settings-section-desc)]">
-                {view.updateAvailable
-                  ? view.latestVersion && view.latestVersion !== view.version
-                    ? view.latestVersion
-                    : tr('revisionAvailable')
-                  : tr(view.manualUpgrade || view.latestVersion ? 'noUpdate' : 'unknown')}
-              </span>
-            </Row>
-            {view.upgradeOperation && upgradeNoticeVisible(view.upgradeOperation) && (
-              <p role="status" className={description}>
-                {tr(upgradeProgressKey(view.upgradeOperation.phase))}
-              </p>
+    <Embedded.Provider value={embedded}>
+      <div
+        className={embedded ? 'flex flex-col gap-2' : 'flex flex-col gap-6'}
+        data-testid="cloud-instance-overview"
+      >
+        {(!embedded || error) && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {!embedded && (
+              <h2 className="text-16 font-medium text-[var(--settings-section-title)]">
+                {tr('title')}
+              </h2>
             )}
-            {/* Without an update the available-version row already says so; no inert button. */}
-            {view.manualUpgrade && (view.updateAvailable || view.upgradeOperation?.active) && (
-              <Row
-                title={tr('upgradeNow')}
-                detail={tr(dirty.current ? 'upgradeSaveFirst' : 'upgradeDescription')}
-              >
-                <Button
-                  variant="primary"
-                  disabled={
-                    disabled || dirty.current || !canRequestUpgrade(view) || !client.upgrade
-                  }
-                  onClick={() => void upgrade()}
-                >
-                  {tr(view.upgradeOperation?.active ? 'state.upgrading' : 'upgradeNow')}
-                </Button>
-              </Row>
-            )}
+            <Button
+              variant="secondary"
+              tone="quiet"
+              compact
+              disabled={busy}
+              onClick={() => void reload()}
+            >
+              <RefreshCw size={14} />
+              {tr('refresh')}
+            </Button>
           </div>
-          <section
-            ref={maintenanceTarget}
-            id="cloud-instance-maintenance"
-            className="flex flex-col gap-[14px]"
-          >
-            <h2 className="text-16 font-medium text-[var(--settings-section-title)]">
-              {tr('updates')}
-            </h2>
-            {!policy || !draft ? (
-              <p className={description}>{tr('unavailable')}</p>
-            ) : (
-              <div className={card}>
-                <Row title={tr('autoUpdate')} detail={tr('autoDescription')}>
-                  <Switch
-                    aria-label={tr('autoUpdate')}
-                    checked={draft.autoUpdate}
-                    disabled={disabled || policy.raw.scheduledTaskPolicy !== 'protect'}
-                    onCheckedChange={(autoUpdate) => update({ autoUpdate })}
-                  />
+        )}
+        {error && (
+          <p role="alert" className={desc}>
+            {tr(error)}
+          </p>
+        )}
+        {message && (
+          <p role="status" className={desc}>
+            {tr(message)}
+          </p>
+        )}
+        {!view ? (
+          <p className={desc} role="status">
+            {t(error ? 'cloudSettings.targetUnavailable' : 'cloudSettings.loading')}
+          </p>
+        ) : (
+          <>
+            <div className={box}>
+              {!embedded && (
+                <Row title={view.name || name} detail={tr(`state.${status}`)}>
+                  <Button
+                    variant="secondary"
+                    disabled={disabled || !stableState(view)}
+                    onClick={() => void power()}
+                  >
+                    {view.desiredState === 'stopped' ? <Play size={14} /> : <Moon size={14} />}
+                    {tr(view.desiredState === 'stopped' ? 'wake' : 'sleep')}
+                  </Button>
                 </Row>
-                <Row title={tr('schedule')}>
-                  <Select
-                    label={tr('schedule')}
-                    className="w-48"
-                    value={draft.mode}
-                    disabled={disabled}
-                    options={[
-                      { value: 'inherit', label: tr('inherit') },
-                      { value: 'custom', label: tr('custom') },
-                    ]}
-                    onValueChange={(mode) => update({ mode: mode as 'inherit' | 'custom' })}
-                  />
+              )}
+              <Row title={tr('currentVersion')} detail={embedded ? undefined : tr('versionSource')}>
+                <span className={`break-all ${value} text-[var(--settings-section-title)]`}>
+                  {view.version
+                    ? displayVersion(view.version)
+                    : view.imageId
+                      ? `#${view.imageId.slice(0, 12)}`
+                      : tr('unknown')}
+                </span>
+              </Row>
+              <Row
+                title={tr('availableVersion')}
+                detail={embedded && upgradeOffered ? upgradeDetail : undefined}
+              >
+                <span className={`break-all ${value} text-[var(--settings-section-desc)]`}>
+                  {view.updateAvailable
+                    ? view.latestVersion && view.latestVersion !== view.version
+                      ? displayVersion(view.latestVersion)
+                      : tr('revisionAvailable')
+                    : tr(view.manualUpgrade || view.latestVersion ? 'noUpdate' : 'unknown')}
+                </span>
+                {embedded && upgradeOffered && upgradeButton}
+              </Row>
+              {view.upgradeOperation && upgradeNoticeVisible(view.upgradeOperation) && (
+                <p role="status" className={desc}>
+                  {tr(upgradeProgressKey(view.upgradeOperation.phase))}
+                </p>
+              )}
+              {/* Without an update the available-version row already says so; no inert button. */}
+              {!embedded && upgradeOffered && (
+                <Row title={tr('upgradeNow')} detail={upgradeDetail}>
+                  {upgradeButton}
                 </Row>
-                {draft.mode === 'inherit' ? (
-                  <div className={description}>
-                    <p>
-                      {policy.effective.source === 'inherit'
-                        ? policy.effective.calendar.timezone
-                        : tr('inheritOnSave')}
-                    </p>
-                    {policy.effective.source === 'inherit' &&
-                      policy.effective.calendar.windows.map((rule) => (
-                        <p key={rule.id}>
-                          {weekdays
-                            .filter((d) => rule.weekdays.includes(d.day))
-                            .map((d) => d.text)
-                            .join(' · ')}{' '}
-                          {rule.startLocal}–{rule.endLocal}
-                        </p>
-                      ))}
-                  </div>
-                ) : (
-                  <details open className="flex flex-col gap-3">
-                    <summary className={`${label} cursor-pointer`}>{tr('editSchedule')}</summary>
-                    <div className="mt-3 flex flex-col gap-4">
-                      <div className={`${description} flex max-w-full flex-col gap-2 sm:w-[360px]`}>
-                        {tr('timezone')}
-                        <CloudTimezoneSelect
-                          value={draft.calendar.timezone}
-                          disabled={disabled}
-                          onChange={(timezone) =>
-                            update({ calendar: { ...draft.calendar, timezone } })
-                          }
-                        />
-                      </div>
-                      {draft.calendar.windows.map((rule, index) => {
-                        const updateRule = (patch: Partial<typeof rule>) =>
-                          update({
-                            calendar: {
-                              ...draft.calendar,
-                              windows: draft.calendar.windows.map((item, n) =>
-                                n === index ? { ...item, ...patch } : item,
-                              ),
-                            },
-                          });
-                        return (
-                          <fieldset
-                            key={rule.id}
-                            disabled={disabled}
-                            className="flex min-w-0 flex-col gap-3 border-0 p-0"
-                          >
-                            <legend className={`${description} mb-2`}>
-                              {t('cloudSettings.instance.window', { number: index + 1 })}
-                            </legend>
-                            <div className="flex flex-wrap gap-2">
-                              {weekdays.map((day) => (
-                                <Button
-                                  key={day.day}
-                                  variant={
-                                    rule.weekdays.includes(day.day) ? 'primary' : 'secondary'
-                                  }
-                                  compact
-                                  aria-pressed={rule.weekdays.includes(day.day)}
-                                  disabled={disabled}
-                                  onClick={() =>
-                                    updateRule({
-                                      weekdays: rule.weekdays.includes(day.day)
-                                        ? rule.weekdays.filter((d) => d !== day.day)
-                                        : [...rule.weekdays, day.day].sort(),
-                                    })
-                                  }
-                                >
-                                  {rule.weekdays.includes(day.day) && (
-                                    <Check size={12} aria-hidden />
-                                  )}
-                                  {day.text}
-                                </Button>
-                              ))}
-                            </div>
-                            <div className="flex flex-wrap items-end gap-3">
-                              <label className={`${description} flex flex-col gap-1`}>
-                                {tr('start')}
-                                <Input
-                                  type="time"
-                                  value={rule.startLocal}
-                                  onChange={(startLocal) => updateRule({ startLocal })}
-                                />
-                              </label>
-                              <label className={`${description} flex flex-col gap-1`}>
-                                {tr('end')}
-                                <Input
-                                  type="time"
-                                  value={rule.endLocal}
-                                  onChange={(endLocal) => updateRule({ endLocal })}
-                                />
-                              </label>
-                              {draft.calendar.windows.length > 1 && (
-                                <Button
-                                  variant="secondary"
-                                  tone="quiet"
-                                  compact
-                                  aria-label={t('cloudSettings.instance.removeWindow', {
-                                    number: index + 1,
-                                  })}
-                                  onClick={() =>
-                                    update({
-                                      calendar: {
-                                        ...draft.calendar,
-                                        windows: draft.calendar.windows.filter(
-                                          (_, n) => n !== index,
-                                        ),
-                                      },
-                                    })
-                                  }
-                                >
-                                  <Trash2 size={14} />
-                                </Button>
-                              )}
-                            </div>
-                          </fieldset>
-                        );
-                      })}
-                      {draft.calendar.windows.length < 7 && (
-                        <div>
-                          <Button
-                            variant="secondary"
-                            tone="quiet"
-                            compact
-                            disabled={disabled}
-                            onClick={() =>
-                              update({
-                                calendar: {
-                                  ...draft.calendar,
-                                  windows: [
-                                    ...draft.calendar.windows,
-                                    {
-                                      id: crypto.randomUUID(),
-                                      weekdays: [],
-                                      startLocal: '03:00',
-                                      endLocal: '05:00',
-                                    },
-                                  ],
-                                },
-                              })
-                            }
-                          >
-                            <Plus size={14} />
-                            {tr('addWindow')}
-                          </Button>
-                        </div>
-                      )}
-                      <p className={description}>{tr('calendarHelp')}</p>
+              )}
+            </div>
+            <section
+              ref={maintenanceTarget}
+              id="cloud-instance-maintenance"
+              className={embedded ? 'contents' : 'flex flex-col gap-[14px]'}
+            >
+              {!embedded && (
+                <h2 className="text-16 font-medium text-[var(--settings-section-title)]">
+                  {tr('updates')}
+                </h2>
+              )}
+              {!policy || !draft ? (
+                <p className={desc}>
+                  {fed && busy ? t('cloudSettings.loading') : tr('unavailable')}
+                </p>
+              ) : (
+                <div className={box}>
+                  <Row title={tr('autoUpdate')} detail={embedded ? undefined : tr('autoDescription')}>
+                    <Switch
+                      aria-label={tr('autoUpdate')}
+                      checked={draft.autoUpdate}
+                      disabled={disabled || policy.raw.scheduledTaskPolicy !== 'protect'}
+                      onCheckedChange={(autoUpdate) => update({ autoUpdate })}
+                    />
+                  </Row>
+                  <Row
+                    title={tr('schedule')}
+                    detail={embedded && draft.mode === 'inherit' ? scheduleSummary : undefined}
+                  >
+                    <Select
+                      label={tr('schedule')}
+                      className={embedded ? 'w-36' : 'w-48'}
+                      value={draft.mode}
+                      disabled={disabled}
+                      options={[
+                        { value: 'inherit', label: tr('inherit') },
+                        { value: 'custom', label: tr('custom') },
+                      ]}
+                      onValueChange={(mode) => update({ mode: mode as 'inherit' | 'custom' })}
+                    />
+                  </Row>
+                  {draft.mode === 'inherit' ? (
+                    !embedded && (
+                    <div className={desc}>
+                      <p>
+                        {policy.effective.source === 'inherit'
+                          ? policy.effective.calendar.timezone
+                          : tr('inheritOnSave')}
+                      </p>
+                      {policy.effective.source === 'inherit' &&
+                        policy.effective.calendar.windows.map((rule) => (
+                          <p key={rule.id}>
+                            {weekdays
+                              .filter((d) => rule.weekdays.includes(d.day))
+                              .map((d) => d.text)
+                              .join(' · ')}{' '}
+                            {rule.startLocal}–{rule.endLocal}
+                          </p>
+                        ))}
                     </div>
-                  </details>
-                )}
-                {policy.executionMode === 'preview-only' && (
-                  <p className={description}>{tr('notEnrolled')}</p>
-                )}
-                {policy.raw.pausedUntilMs && policy.raw.pausedUntilMs > policy.serverTimeMs ? (
-                  <p className={description}>
-                    {t('cloudSettings.instance.paused', {
-                      time: date(policy.raw.pausedUntilMs, policy.effective.calendar.timezone),
-                    })}
-                  </p>
-                ) : null}
-                {policy.autoUpdate &&
-                  policy.executionMode === 'scheduled' &&
-                  policy.nextEligibleAtMs && (
-                    <p className={description}>
-                      {t('cloudSettings.instance.nextWindow', {
-                        time: date(policy.nextEligibleAtMs, policy.effective.calendar.timezone),
-                        timezone: policy.effective.calendar.timezone,
+                    )
+                  ) : (
+                    <details open className="flex flex-col gap-3">
+                      <summary className={`${label} cursor-pointer`}>{tr('editSchedule')}</summary>
+                      <div className="mt-3 flex flex-col gap-4">
+                        <div className={`${desc} flex max-w-full flex-col gap-2 sm:w-[360px]`}>
+                          {tr('timezone')}
+                          <CloudTimezoneSelect
+                            value={draft.calendar.timezone}
+                            disabled={disabled}
+                            onChange={(timezone) =>
+                              update({ calendar: { ...draft.calendar, timezone } })
+                            }
+                          />
+                        </div>
+                        {draft.calendar.windows.map((rule, index) => {
+                          const updateRule = (patch: Partial<typeof rule>) =>
+                            update({
+                              calendar: {
+                                ...draft.calendar,
+                                windows: draft.calendar.windows.map((item, n) =>
+                                  n === index ? { ...item, ...patch } : item,
+                                ),
+                              },
+                            });
+                          return (
+                            <fieldset
+                              key={rule.id}
+                              disabled={disabled}
+                              className="flex min-w-0 flex-col gap-3 border-0 p-0"
+                            >
+                              <legend className={`${desc} mb-2`}>
+                                {t('cloudSettings.instance.window', { number: index + 1 })}
+                              </legend>
+                              <div className="flex flex-wrap gap-2">
+                                {weekdays.map((day) => (
+                                  <Button
+                                    key={day.day}
+                                    variant={
+                                      rule.weekdays.includes(day.day) ? 'primary' : 'secondary'
+                                    }
+                                    compact
+                                    aria-pressed={rule.weekdays.includes(day.day)}
+                                    disabled={disabled}
+                                    onClick={() =>
+                                      updateRule({
+                                        weekdays: rule.weekdays.includes(day.day)
+                                          ? rule.weekdays.filter((d) => d !== day.day)
+                                          : [...rule.weekdays, day.day].sort(),
+                                      })
+                                    }
+                                  >
+                                    {rule.weekdays.includes(day.day) && (
+                                      <Check size={12} aria-hidden />
+                                    )}
+                                    {day.text}
+                                  </Button>
+                                ))}
+                              </div>
+                              <div className="flex flex-wrap items-end gap-3">
+                                <label className={`${desc} flex flex-col gap-1`}>
+                                  {tr('start')}
+                                  <Input
+                                    type="time"
+                                    value={rule.startLocal}
+                                    onChange={(startLocal) => updateRule({ startLocal })}
+                                  />
+                                </label>
+                                <label className={`${desc} flex flex-col gap-1`}>
+                                  {tr('end')}
+                                  <Input
+                                    type="time"
+                                    value={rule.endLocal}
+                                    onChange={(endLocal) => updateRule({ endLocal })}
+                                  />
+                                </label>
+                                {draft.calendar.windows.length > 1 && (
+                                  <Button
+                                    variant="secondary"
+                                    tone="quiet"
+                                    compact
+                                    aria-label={t('cloudSettings.instance.removeWindow', {
+                                      number: index + 1,
+                                    })}
+                                    onClick={() =>
+                                      update({
+                                        calendar: {
+                                          ...draft.calendar,
+                                          windows: draft.calendar.windows.filter(
+                                            (_, n) => n !== index,
+                                          ),
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <Trash2 size={14} />
+                                  </Button>
+                                )}
+                              </div>
+                            </fieldset>
+                          );
+                        })}
+                        {draft.calendar.windows.length < 7 && (
+                          <div>
+                            <Button
+                              variant="secondary"
+                              tone="quiet"
+                              compact
+                              disabled={disabled}
+                              onClick={() =>
+                                update({
+                                  calendar: {
+                                    ...draft.calendar,
+                                    windows: [
+                                      ...draft.calendar.windows,
+                                      {
+                                        id: crypto.randomUUID(),
+                                        weekdays: [],
+                                        startLocal: '03:00',
+                                        endLocal: '05:00',
+                                      },
+                                    ],
+                                  },
+                                })
+                              }
+                            >
+                              <Plus size={14} />
+                              {tr('addWindow')}
+                            </Button>
+                          </div>
+                        )}
+                        <p className={desc}>{tr('calendarHelp')}</p>
+                      </div>
+                    </details>
+                  )}
+                  {policy.executionMode === 'preview-only' && (
+                    <p className={desc}>{tr('notEnrolled')}</p>
+                  )}
+                  {policy.raw.pausedUntilMs && policy.raw.pausedUntilMs > policy.serverTimeMs ? (
+                    <p className={desc}>
+                      {t('cloudSettings.instance.paused', {
+                        time: date(policy.raw.pausedUntilMs, policy.effective.calendar.timezone),
                       })}
                     </p>
+                  ) : null}
+                  {!embedded &&
+                    policy.autoUpdate &&
+                    policy.executionMode === 'scheduled' &&
+                    policy.nextEligibleAtMs && (
+                      <p className={desc}>
+                        {t('cloudSettings.instance.nextWindow', {
+                          time: date(policy.nextEligibleAtMs, policy.effective.calendar.timezone),
+                          timezone: policy.effective.calendar.timezone,
+                        })}
+                      </p>
+                    )}
+                  {policy.raw.scheduledTaskPolicy !== 'protect' && (
+                    <p className={desc}>{tr('unsupportedPolicy')}</p>
                   )}
-                {policy.raw.scheduledTaskPolicy !== 'protect' && (
-                  <p className={description}>{tr('unsupportedPolicy')}</p>
-                )}
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Button
-                    variant="secondary"
-                    tone="quiet"
-                    compact
-                    disabled={!dirty.current || busy}
-                    onClick={() => {
-                      setDraft(fromPolicy(policy));
-                      mark(false);
-                      if (!uncertain.current) setError(undefined);
-                    }}
-                  >
-                    {tr('discard')}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={
-                      !dirty.current || disabled || policy.raw.scheduledTaskPolicy !== 'protect'
-                    }
-                    onClick={() => void save()}
-                  >
-                    {tr('save')}
-                  </Button>
+                  {(!embedded || dirty.current) && (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      tone="quiet"
+                      compact
+                      disabled={!dirty.current || busy}
+                      onClick={() => {
+                        setDraft(fromPolicy(policy));
+                        mark(false);
+                        if (!uncertain.current) setError(undefined);
+                      }}
+                    >
+                      {tr('discard')}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={
+                        !dirty.current || disabled || policy.raw.scheduledTaskPolicy !== 'protect'
+                      }
+                      onClick={() => void save()}
+                    >
+                      {tr('save')}
+                    </Button>
+                  </div>
+                  )}
                 </div>
-              </div>
-            )}
-          </section>
-        </>
-      )}
-    </div>
+              )}
+            </section>
+          </>
+        )}
+      </div>
+    </Embedded.Provider>
   );
 }

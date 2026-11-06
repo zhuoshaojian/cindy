@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { TAB_IDS, isSettingsTab } from '@/lib/tabLabels';
+import { MERGED_SETTINGS_TABS, TAB_IDS, isSettingsTab } from '@/lib/tabLabels';
 import type { SettingsTab } from '@/lib/tabLabels';
 import { SettingsSidebar } from './SettingsSidebar';
 import { SettingsSidebarNav } from './SettingsSidebarNav';
@@ -70,7 +70,7 @@ import { canAccessBillingSettings } from './billingVisibility';
 import { canAccessUsageSettings } from './usageVisibility';
 import { UsageHistorySection } from './usage/UsageHistorySection';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
-import { CloudInstancesSection } from '@/features/cloud-settings/CloudInstancesSection';
+import { REMOTE_CLOUD_INSTANCES_SECTION } from '@/features/cloud-settings/cloudInstancesLink';
 import { useCloudInstanceAccess } from '@/features/cloud-settings/CloudInstanceAccess';
 
 const DEFAULT_SETTINGS_MENU_WIDTH = 260;
@@ -117,12 +117,14 @@ export function SettingsView() {
     if (raw === 'tina') return 'im-bot';
     if (raw === 'billing' && !canAccessBilling) return 'general';
     if (raw === 'usage' && !canAccessUsage) return 'general';
-    if (raw === 'cloud-instances' && !canAccessCloudInstances) return 'general';
+    // legacy 深链:独立「云实例」分类已并入「远程连接」的「云实例」分组(2026-11-05),
+    // URL 由下方 effect 改写;这里先落到远程连接,避免闪一帧通用页。
+    if (raw === 'cloud-instances') return 'remote-control';
     if (raw === 'agent-island' && !isMac) return 'general';
     // legacy 深链:外观设置原在「通用」、回复动效原在「个性化」,旧 section 深链落到「外观」。
     if (isLegacyAppearanceDeepLink(raw, rawSection)) return 'appearance';
     return isSettingsTab(raw) ? raw : 'general';
-  }, [canAccessBilling, canAccessUsage, canAccessCloudInstances, isMac, rawSection, rawTab]);
+  }, [canAccessBilling, canAccessUsage, isMac, rawSection, rawTab]);
   const piExtensionsPanelOpen =
     activeTab === 'general' &&
     (rawTab === 'pi-extensions' || searchParams.get('openPanel') === 'pi-extensions');
@@ -136,6 +138,14 @@ export function SettingsView() {
     next.delete('intent');
     setSearchParams(next, { replace: true });
   }, [canAccessBilling, rawTab, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (rawTab !== 'cloud-instances') return;
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'remote-control');
+    next.set('section', REMOTE_CLOUD_INSTANCES_SECTION);
+    setSearchParams(next, { replace: true });
+  }, [rawTab, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (rawTab !== 'cindy-make') return;
@@ -244,9 +254,9 @@ export function SettingsView() {
           (isMac || tabId !== 'agent-island') &&
           (canAccessBilling || tabId !== 'billing') &&
           (canAccessUsage || tabId !== 'usage') &&
-          (canAccessCloudInstances || tabId !== 'cloud-instances'),
+          !MERGED_SETTINGS_TABS[tabId],
       ),
-    [canAccessBilling, canAccessUsage, canAccessCloudInstances, isMac],
+    [canAccessBilling, canAccessUsage, isMac],
   );
   const searchContext = useMemo<SettingsSearchContext>(() => ({
     region: CURRENT_CINDY_REGION,
@@ -468,16 +478,6 @@ export function SettingsView() {
                     </section>
                   </>
                 )}
-              </div>
-            )}
-
-            {activeTab === 'cloud-instances' && (
-              <div
-                role="tabpanel"
-                id="settings-panel-cloud-instances"
-                aria-labelledby="settings-tab-cloud-instances"
-              >
-                <CloudInstancesSection />
               </div>
             )}
 
