@@ -108,3 +108,20 @@ The Dev client `0.1.128-dev.cloud.20261107.1` was used against the real instance
 
 Open issue: a CIS exec timeout while a new version starts sends the instance to
 recovery-hold instead of retrying the check.
+
+## Fleet rollout
+
+On 2026-11-07, after the 09:00 check found all ten running instances on
+0.1.126-cloud.4, the owner asked to admit `0.1.128-cloud.1`.
+
+The fleet policy does three things:
+
+- It approves `0.1.128-cloud.1` for every organization instance.
+- It moves the default for new instances to `0.1.128-cloud.1`.
+- It adds the image to native maintenance admission.
+
+Each instance's automatic update setting, maintenance window, scheduled task
+policy and backup policy are unchanged. After deployment, new claims select
+`0.1.128-cloud.1`. The ten running instances on cloud.4 report the update and
+upgrade in their next window (03:00–05:00). The owner's instance is unchanged, and
+the two stopped instances are not upgraded by maintenance.
