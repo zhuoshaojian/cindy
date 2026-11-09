@@ -8728,6 +8728,10 @@
     "preparingSubtitle": "將為君載當前區域可用之登入方式",
     "unavailable": "暫不能登入",
     "retry": "再試",
+    "ownershipMismatch": {
+      "title": "名籍不符",
+      "switchAccount": "易他名籍登入"
+    },
     "browserWaiting": "請於瀏覽器中完成驗證",
     "browserCallback": {
       "successTitle": "登門已成",

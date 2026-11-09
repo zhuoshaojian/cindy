@@ -8728,6 +8728,10 @@
     "preparingSubtitle": "이 지역에서 사용 가능한 방법을 불러오고 있습니다",
     "unavailable": "일시적으로 로그인할 수 없습니다",
     "retry": "다시 시도",
+    "ownershipMismatch": {
+      "title": "계정이 일치하지 않습니다",
+      "switchAccount": "다른 계정으로 로그인"
+    },
     "browserWaiting": "브라우저에서 인증을 완료하세요",
     "browserCallback": {
       "successTitle": "로그인 완료",

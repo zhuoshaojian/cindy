@@ -8728,6 +8728,10 @@
     "preparingSubtitle": "将为你加载当前区域可用的登录方式",
     "unavailable": "暂时无法登录",
     "retry": "重试",
+    "ownershipMismatch": {
+      "title": "账号不匹配",
+      "switchAccount": "换个账号登录"
+    },
     "browserWaiting": "请在浏览器中完成验证",
     "browserCallback": {
       "successTitle": "登录成功",

@@ -8771,6 +8771,10 @@
     "preparingSubtitle": "Verfügbare Methoden für diese Region werden geladen",
     "unavailable": "Anmeldung derzeit nicht möglich",
     "retry": "Erneut versuchen",
+    "ownershipMismatch": {
+      "title": "Konto passt nicht",
+      "switchAccount": "Anderes Konto verwenden"
+    },
     "browserWaiting": "Bestätigung im Browser abschließen",
     "browserCallback": {
       "successTitle": "Angemeldet",

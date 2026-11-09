@@ -8838,6 +8838,10 @@
     "preparingSubtitle": "A carregar os métodos disponíveis para esta região",
     "unavailable": "Início de sessão indisponível agora",
     "retry": "Tentar novamente",
+    "ownershipMismatch": {
+      "title": "A conta não corresponde",
+      "switchAccount": "Utilizar outra conta"
+    },
     "browserWaiting": "Concluir a verificação no navegador",
     "browserCallback": {
       "successTitle": "Sessão iniciada",
