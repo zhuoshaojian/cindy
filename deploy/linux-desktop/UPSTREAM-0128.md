@@ -243,3 +243,26 @@ In a browser signed in to CIS as the owner, against the live CIS and instance:
 Not covered: OAuth sign-ins from the web (the callback is pasted by hand, as on the old
 page), and plugin credential forms, which stay native-only by design. The fleet stays
 on cloud.2 until the owner says to admit cloud.3.
+
+### cloud.3 fleet rollout
+
+On 2026-11-09 the owner said to admit cloud.3 and chose active upgrades now. The fleet
+policy approves `0.1.128-cloud.3` for every organization instance and makes it the
+default for new claims. Each instance's automatic update setting, maintenance window,
+scheduled task policy and backup policy are unchanged.
+
+The ten other running instances were upgraded one at a time, each with its own
+encrypted backup. Two notes:
+
+- `23a66573` was released and healthy on cloud.3, but CIS stopped it in a
+  recovery-hold during the five-minute post-release observation
+  (`MAINTENANCE_RUNTIME_UNVERIFIED`). A read-only check found the same boot, an
+  advancing heartbeat and no unknown work. With the owner's consent it was finished
+  the same way as `6b395d7a` on 2026-11-06: operation completed and lock cleared,
+  without a restart.
+- `4e017bac` had running work and was skipped; it upgraded on the retry at the end.
+
+Afterwards all eleven running instances are on `0.1.128-cloud.3`, Ready with no
+restarts and no maintenance hold. The two stopped instances were not started or
+upgraded. The CIS web page now sends every owner to the client's cloud pages
+(`settingsWeb.webAppAllInstances`).
