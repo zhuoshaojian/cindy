@@ -65,6 +65,21 @@ export function installWebElectronApi(): Record<string, unknown> {
       else void document.documentElement.requestFullscreen().catch(() => {});
     },
     windowMinimize: noop,
+    // Authorization and help pages open in a new tab; a blocked pop-up reports failure so the
+    // page offers its retry button, which is a user gesture.
+    openExternal: async (url: string) => {
+      let target: URL;
+      try {
+        target = new URL(url);
+      } catch {
+        return { success: false };
+      }
+      if (target.protocol !== 'https:') return { success: false };
+      const opened = window.open(target.href, '_blank');
+      if (!opened) return { success: false };
+      opened.opener = null;
+      return { success: true };
+    },
     windowClose: () => window.close(),
     onFullscreenChange: (cb: (value: boolean) => void) => {
       const listener = () => cb(Boolean(document.fullscreenElement));

@@ -23,6 +23,7 @@ import { cloudInstanceName } from '@/features/cloud-settings/instanceName';
 import { themeService } from '../themes/theme-service';
 import type { CloudInstanceView } from '../../shared/cloudInstanceControl';
 import type { CisSession, WebCloudApi } from './webApi';
+import { openDesktopTab } from './desktopTab';
 
 const unavailable = () => Promise.reject(new Error('UNSUPPORTED_IN_WEB'));
 
@@ -127,10 +128,11 @@ function Instances({ api }: { api: WebCloudApi }) {
       api={pageApi}
       canOpenDesktop={(instance) => api.online(instance) && desktopReady.has(instance.instanceId)}
       onOpenDesktop={(instance) => {
-        const params = new URLSearchParams({ deviceId: instance.deviceId, name: cloudInstanceName(t, instance) });
-        // The remote desktop is a full tab of its own, like the native viewer window.
-        if (!window.open(`${location.pathname}#/desktop?${params}`, '_blank'))
+        try {
+          openDesktopTab(instance.deviceId, cloudInstanceName(t, instance));
+        } catch {
           toast.error(t('remoteDesktop.connectionError'));
+        }
       }}
       onOpen={(deviceId, section) =>
         navigate(`/settings?${new URLSearchParams({ deviceId, ...(section ? { section } : {}) })}`)
