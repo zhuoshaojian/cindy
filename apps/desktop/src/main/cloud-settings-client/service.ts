@@ -196,7 +196,9 @@ export function createCloudSettingsService(deps: {
           return view.result;
         }
         if (view.status === 'unknown' || now() >= deadline) break;
-        await pause(s.controller.signal);
+        // CIS holds a `?wait=1` read until the Host answers (up to 1.5 s), so the first
+        // one goes out at once; a fixed pause there delayed every call by 250 ms.
+        if (!s.remote.resultWait || attempt > 0) await pause(s.controller.signal);
         raw = await request(
           s,
           `/requests/${requestId}${s.remote.resultWait ? '?wait=1' : ''}`,
