@@ -3121,8 +3121,13 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
   }
   const heartbeat = setInterval(() => { for (const run of running.values()) void checkLease(run); }, 15000);
   timer.unref(); heartbeat.unref();
+  // Without a chat endpoint every retried read fails the same way; record it once.
+  let endpointMissingLogged = false;
   const safe = <T>(fn: () => Promise<T>): Promise<T | BotGroupFailure> => fn().catch(error => {
-    deps.log?.warn('Chat group action failed', chatErrorDiagnostic(error));
+    const diagnostic = chatErrorDiagnostic(error);
+    const endpointMissing = !config.baseUrl && diagnostic.code === 'CHAT_ENDPOINT_UNAVAILABLE';
+    if (!endpointMissing || !endpointMissingLogged) deps.log?.warn('Chat group action failed', diagnostic);
+    if (endpointMissing) endpointMissingLogged = true;
     return chatGroupFailure(error instanceof z.ZodError ? new Error('INVALID_PARAMS') : error);
   });
   /** A message that names nobody needs no member read: its mention list is empty either way. */
