@@ -146,6 +146,19 @@ it('rejects a foreign opener/sender and an owner change during authorization', a
     'SCOPE_CHANGED',
   );
 });
+it('invalidates the window’s logins on every reset, so a superseded end is a no-op', async () => {
+  await f.manager.open(f.opener, 'cloud-a');
+  f.ready();
+  const generation = f.manager.state().generation;
+  expect(f.manager.isSuperseded(f.sender(), generation)).toBe(false);
+  f.invalidate.mockClear();
+  f.manager.reset(); // owner switch or close: React cleanup sends end() afterwards
+  expect(f.invalidate).toHaveBeenCalledWith(f.sender().id);
+  expect(f.manager.isSuperseded(f.sender(), generation)).toBe(true);
+  expect(() => f.manager.isSuperseded(f.opener, generation)).toThrow('SCOPE_CHANGED');
+  expect(() => f.manager.assertCurrent(f.sender(), generation + 99)).toThrow('SCOPE_CHANGED');
+  expect(f.manager.isSuperseded(f.sender(), generation + 99)).toBe(false);
+});
 it('preserves the target but cancels the old handle on crash, with bounded recovery', async () => {
   await f.manager.open(f.opener, 'cloud-a');
   f.ready();
