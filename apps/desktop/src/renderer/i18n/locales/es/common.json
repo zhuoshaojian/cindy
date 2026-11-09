@@ -9210,6 +9210,10 @@
     "preparingSubtitle": "Cargando los métodos disponibles para esta región",
     "unavailable": "Inicio de sesión no disponible ahora",
     "retry": "Reintentar",
+    "ownershipMismatch": {
+      "title": "La cuenta no coincide",
+      "switchAccount": "Usar otra cuenta"
+    },
     "browserWaiting": "Continúa en tu navegador",
     "browserCallback": {
       "successTitle": "Sesión iniciada",

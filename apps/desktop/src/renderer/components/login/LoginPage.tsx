@@ -1310,6 +1310,11 @@ export function LoginPageView({ intent = 'sign-in', onClose, login, targetLabel,
       // A rate limit can cover a still-valid form. Dismiss only the notice:
       // resetting main's flow would discard its ticket and require another code.
       const resumeForm = rateLimited && loginState !== null && !canLeaveProviderLoad;
+      // Not a transient failure: the cloud instance needs its claiming account.
+      const ownershipMismatch =
+        !credentialStoreFailed &&
+        !rateLimited &&
+        (loginState?.step === 'error' ? loginState.code : errorCode) === 'LOGIN_OWNERSHIP_MISMATCH';
       const returnFromError = () => {
         if (localModePendingRef.current) return;
         if (isAddAccount && onClose) {
@@ -1334,10 +1339,16 @@ export function LoginPageView({ intent = 'sign-in', onClose, login, targetLabel,
             />
             <LoginTitleBlock
               title={t(
-                credentialStoreFailed ? 'credentialStore.dialog.title' : 'login.unavailable',
+                credentialStoreFailed
+                  ? 'credentialStore.dialog.title'
+                  : ownershipMismatch
+                    ? 'login.ownershipMismatch.title'
+                    : 'login.unavailable',
               )}
               subtitle={
-                rateLimited
+                ownershipMismatch
+                  ? t('login.errors.LOGIN_OWNERSHIP_MISMATCH')
+                  : rateLimited
                   ? typeof retryAt === 'number' &&
                     Number.isFinite(retryAt) &&
                     Math.abs(retryAt) <= 8.64e15
@@ -1370,23 +1381,27 @@ export function LoginPageView({ intent = 'sign-in', onClose, login, targetLabel,
                 : t(
                     credentialStoreFailed || rateLimited
                       ? 'credentialStore.banner.viewHelp'
-                      : 'login.retry',
+                      : ownershipMismatch
+                        ? 'login.ownershipMismatch.switchAccount'
+                        : 'login.retry',
                   )}
             </LoginPrimaryButton>
-            <LoginErrorText>
-              {t(
-                `login.errors.${
-                  credentialStoreFailed
-                    ? 'CREDENTIAL_STORE_UNAVAILABLE'
-                    : loginState?.step === 'error'
-                      ? loginState.code
-                      : errorCode
-                }`,
-                {
-                  defaultValue: t('login.errors.fallback'),
-                },
-              )}
-            </LoginErrorText>
+            {!ownershipMismatch && (
+              <LoginErrorText>
+                {t(
+                  `login.errors.${
+                    credentialStoreFailed
+                      ? 'CREDENTIAL_STORE_UNAVAILABLE'
+                      : loginState?.step === 'error'
+                        ? loginState.code
+                        : errorCode
+                  }`,
+                  {
+                    defaultValue: t('login.errors.fallback'),
+                  },
+                )}
+              </LoginErrorText>
+            )}
           </LoginPanel>
         ),
       };

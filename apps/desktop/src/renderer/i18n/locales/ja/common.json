@@ -9095,6 +9095,10 @@
     "preparingSubtitle": "この地域で利用可能な方法を読み込んでいます",
     "unavailable": "現在ログインできません",
     "retry": "再試行",
+    "ownershipMismatch": {
+      "title": "アカウントが一致しません",
+      "switchAccount": "別のアカウントでログイン"
+    },
     "browserWaiting": "ブラウザで認証を完了してください",
     "browserCallback": {
       "successTitle": "ログイン完了",

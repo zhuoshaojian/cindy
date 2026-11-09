@@ -9138,6 +9138,10 @@
     "preparingSubtitle": "Loading the methods available for this region",
     "unavailable": "Sign-in is temporarily unavailable",
     "retry": "Retry",
+    "ownershipMismatch": {
+      "title": "Account doesn't match",
+      "switchAccount": "Use another account"
+    },
     "browserWaiting": "Complete verification in your browser",
     "browserCallback": {
       "successTitle": "Signed in",
