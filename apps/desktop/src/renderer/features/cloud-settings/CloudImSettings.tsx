@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ModelSelector, type RemoteAgentSelectorOptions } from '@/components/new-chat/ModelSelector';
+import {
+  ModelSelector,
+  type RemoteAgentSelectorOptions,
+} from '@/components/new-chat/ModelSelector';
 import {
   ImDefaultSettingsSectionFrame,
   ImDefaultSettingsSectionView,
@@ -358,26 +361,61 @@ export function cloudImSettingsSummary(
 /**
  * The instance's display of each personal channel's defaults over its IM channel. Older
  * runtimes return nothing and the cards keep the stored snapshot.
+ *
+ * Each read resolves the model catalog on the instance (about half a second, one call at a
+ * time), so a channel is read once per visit and again only when its own settings revision
+ * changes, not on every settings change of the page.
  */
-export function useCloudImDisplays(deviceId: string, enabled: boolean, revision: unknown) {
+export function useCloudImDisplays(
+  deviceId: string,
+  enabled: boolean,
+  states: Partial<Record<CloudSettingsDomain, CloudSettingsState>>,
+) {
   const [displays, setDisplays] = useState<Partial<Record<string, ImDefaultSettingsState>>>({});
+  const visit = useRef<{
+    key: string;
+    live: boolean;
+    read: Map<string, { revision: unknown }>;
+  } | null>(null);
   useEffect(() => {
     setDisplays({});
   }, [deviceId]);
+  useEffect(
+    () => () => {
+      if (visit.current) visit.current.live = false;
+    },
+    [],
+  );
+  const revisions = JSON.stringify(
+    Object.values(channels).map((domain) => states[domain]?.revision ?? null),
+  );
   useEffect(() => {
+    const key = `${deviceId}\n${enabled}`;
+    if (visit.current?.key !== key) {
+      if (visit.current) visit.current.live = false;
+      visit.current = { key, live: true, read: new Map() };
+    }
     if (!enabled || !deviceId) return;
-    let current = true;
+    const current = visit.current;
+    const latest = JSON.parse(revisions) as unknown[];
     const call = createCloudImCaller(deviceId);
-    for (const channel of Object.keys(channels))
+    Object.keys(channels).forEach((channel, index) => {
+      const revision = latest[index];
+      if (current.read.has(channel) && current.read.get(channel)!.revision === revision) return;
+      const read = { revision };
+      current.read.set(channel, read);
       void call<ImDefaultSettingsState>('maker:im-default-settings:get', channel)
         .then((state) => {
-          if (current && state && typeof state === 'object')
+          if (
+            current.live &&
+            current.read.get(channel) === read &&
+            state &&
+            typeof state === 'object'
+          )
             setDisplays((old) => ({ ...old, [channel]: state }));
         })
         .catch(() => {});
-    return () => {
-      current = false;
-    };
-  }, [deviceId, enabled, revision]);
+    });
+  }, [deviceId, enabled, revisions]);
   return displays;
 }
