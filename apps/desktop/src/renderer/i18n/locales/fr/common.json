@@ -8949,6 +8949,10 @@
     "preparingSubtitle": "Chargement des méthodes disponibles pour cette région",
     "unavailable": "Connexion indisponible pour l'instant",
     "retry": "Réessayer",
+    "ownershipMismatch": {
+      "title": "Le compte ne correspond pas",
+      "switchAccount": "Utiliser un autre compte"
+    },
     "browserWaiting": "Terminez dans votre navigateur",
     "browserCallback": {
       "successTitle": "Connecté",

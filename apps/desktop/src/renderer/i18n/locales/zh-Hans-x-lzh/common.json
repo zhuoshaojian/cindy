@@ -8836,6 +8836,10 @@
     "preparingSubtitle": "将为君载当前区域可用之登录方式",
     "unavailable": "暂不能登录",
     "retry": "再试",
+    "ownershipMismatch": {
+      "title": "名籍不符",
+      "switchAccount": "易他名籍登录"
+    },
     "browserWaiting": "请于浏览器中完成验证",
     "browserCallback": {
       "successTitle": "登门已成",

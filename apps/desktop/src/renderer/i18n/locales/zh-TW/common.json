@@ -8836,6 +8836,10 @@
     "preparingSubtitle": "將為你載入當前區域可用的登入方式",
     "unavailable": "暫時無法登入",
     "retry": "重試",
+    "ownershipMismatch": {
+      "title": "帳號不符",
+      "switchAccount": "改用其他帳號登入"
+    },
     "browserWaiting": "請在瀏覽器中完成驗證",
     "browserCallback": {
       "successTitle": "登入成功",
