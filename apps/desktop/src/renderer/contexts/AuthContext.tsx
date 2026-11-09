@@ -133,6 +133,8 @@ export interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+/** For hosts without Main (the CIS web build): supply an already-verified identity. */
+export const StaticAuthContextProvider = AuthContext.Provider;
 
 const log = createLogger('AuthContext');
 
