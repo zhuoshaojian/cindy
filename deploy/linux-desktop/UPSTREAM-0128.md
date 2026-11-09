@@ -14,7 +14,7 @@ linear, with no merge commits, in the same order as the
 
 The 0.1.126-cloud.4 history from before the rebase is kept as
 `backup/cloud-settings-native-client-0126`. The source freeze names it as
-`cloudParent`. Release identity: `0.1.128-cloud.1`.
+`cloudParent`. Release identity: `0.1.128-cloud.2`.
 
 ## Compatibility decisions
 
@@ -125,3 +125,23 @@ policy and backup policy are unchanged. After deployment, new claims select
 `0.1.128-cloud.1`. The ten running instances on cloud.4 report the update and
 upgrade in their next window (03:00–05:00). The owner's instance is unchanged, and
 the two stopped instances are not upgraded by maintenance.
+
+## cloud.2: quieter logs and clearer login errors
+
+Cloud.2 (`a41bfacd73`, three cloud-only commits) fixes leftovers from the cloud.1
+rollout. The CIS side of that rollout's open issue is fixed separately: CIS
+`198603ca` samples a timed-out runtime read again within the step deadline instead
+of holding the instance.
+
+- **Instance logs.** The instance's endpoint manifest leaves `heartbeatUrl` empty and
+  has no chat endpoint. The heartbeat failed every minute on the relative
+  `/heartbeat` URL, and each retried group read logged `CHAT_ENDPOINT_UNAVAILABLE`
+  about twice a minute (1,439 and 2,878 lines on 2026-11-08 on the owner's
+  instance). The heartbeat no longer starts for an empty endpoint, and the missing
+  chat endpoint is logged once per chat service.
+- **Wrong account.** Signing in to an instance with an account other than its owner
+  showed 「暂时无法登录」 and 「登录失败，请稍后重试」 above the real reason. The panel
+  now names the mismatch, shows the reason once, and offers another account.
+- **Login window end.** The end request that a reset or closed login window sends
+  while unmounting is now a no-op instead of a logged `SCOPE_CHANGED` IPC error. The
+  reset has already cancelled that window's login attempts.
