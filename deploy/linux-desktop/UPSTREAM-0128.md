@@ -170,3 +170,27 @@ After the upgrade:
 
 The wrong-account panel and the quiet login window end are covered by tests only:
 the owner's instance is signed in, so its login window does not open.
+
+### cloud.2 fleet rollout
+
+On 2026-11-09 the owner said to admit cloud.2 and upgrade the whole fleet, and chose
+active upgrades now over the next maintenance windows. The fleet policy approves
+`0.1.128-cloud.2` for every organization instance, makes it the default for new
+claims and adds it to native maintenance admission. Each instance's automatic update
+setting, maintenance window, scheduled task policy and backup policy are unchanged.
+
+The ten other running instances were then upgraded one at a time between 12:20 and
+13:54, each with its own encrypted backup. None had running work, so none was skipped,
+and none went into a recovery-hold.
+
+The ninth instance's first attempt was refused by CIS with
+`MAINTENANCE_RUNTIME_UNVERIFIED` about a second after it started. No operation was
+claimed and nothing on the instance changed: it stayed on cloud.1, ready, with no hold
+or paused release. The likely cause is that its record changed between the operator's
+read and the claim. A retry three minutes later completed.
+
+Afterwards all eleven running instances are on `0.1.128-cloud.2`. Every Pod is Ready
+with no restarts, and no maintenance operation is active. Only the image changed on each
+record; the two instances with an applied resource change also had their binding hash
+recomputed for the new image, with the same tier. The two stopped instances were not
+started or upgraded.
