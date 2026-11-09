@@ -22,6 +22,9 @@ async function start() {
   const api = createWebCloudApi(session, signIn);
   parts.cloudSettings = api.cloudSettings;
   parts.deviceLink = api.deviceLink;
+  // Pages that point to the instance's own settings open its remote desktop the same way.
+  const { openDesktopTab } = await import('./desktopTab');
+  parts.openRemoteDesktop = async ({ deviceId, name }: { deviceId: string; name: string }) => openDesktopTab(deviceId, name);
   const desktop = /^#\/desktop(?:\?|$)/u.test(location.hash);
   if (desktop) {
     const params = new URLSearchParams(location.hash.slice(location.hash.indexOf('?') + 1));
