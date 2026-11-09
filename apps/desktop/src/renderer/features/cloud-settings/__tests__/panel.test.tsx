@@ -102,6 +102,20 @@ describe('shared native cloud settings', () => {
         .getAttribute('aria-checked'),
     ).toBe('true');
   });
+  it('confirms a write without rereading the category, and still rereads on a category switch', async () => {
+    let read: MockInstance<CloudSettingsClient['read']>;
+    const { save } = setup((client) => {
+      read = vi.spyOn(client, 'read');
+    });
+    const input = await general();
+    const before = read!.mock.calls.length;
+    fireEvent.click(screen.getByRole('radio', { name: 'settings.agentResource.presets.balanced' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    await ready(input);
+    expect(read!.mock.calls.length).toBe(before);
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.personalization' }));
+    await waitFor(() => expect(read!.mock.calls.length).toBe(before + 1));
+  });
   it('retains the native prompt editor draft across categories without a write', async () => {
     const { save } = setup();
     const input = await screen.findByRole('textbox', {
