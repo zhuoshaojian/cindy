@@ -194,6 +194,8 @@ export function registerCloudSettingsClientIpc(windowDeps?: {
       CLOUD_LOGIN_WINDOW.end,
       epoch.extend(cloudLoginHandleSchema.shape).strict(),
       (e, input) => {
+        // The unmount cleanup of a reset/closed window arrives after its sessions were invalidated.
+        if (manager.isSuperseded(e.sender, input.generation)) return;
         manager.assertCurrent(e.sender, input.generation);
         return service.instanceLoginClose(windowCaller(e, input.generation), input.handle);
       },
