@@ -215,3 +215,31 @@ their calls; this release adds the instance side.
 
 The browser pages are built from the same commit (`deploy/cloud-web/pack.py`); CIS pins
 the archive by checksum. Native clients are unaffected.
+
+### cloud.3 owner acceptance
+
+On 2026-11-09 CIS was deployed first (`1ecd23b6`): it hosts the web pages at
+`/instance-login/app/` and relays the new Host calls, both off by default. Only the
+owner's instance is on the web page list (`settingsWeb.webAppInstanceIds`).
+
+The owner's instance first waited for its disk expansion (20 → 30 GiB), which another
+change completed. It was then upgraded alone through the standard maintenance flow.
+The upgrade made an encrypted backup of 4,021 files and released maintenance without a
+recovery-hold. The new Pod is Ready with no restarts, uses the cached image and reports
+`0.1.128-cloud.3`. Databases and schedules are preserved, and the other instance records
+are unchanged. Its automatic update setting and maintenance window are unchanged, and
+new claims still select cloud.2.
+
+In a browser signed in to CIS as the owner, against the live CIS and instance:
+
+- The sign-in page sends the owner to the client's cloud pages. The instance list and
+  every settings category load, including the companion model (model catalog and
+  provider list) and storage usage (29.36 GB disk). Both now go through the relay.
+- Remote desktop opens in its own tab and connects with video through the server relay
+  (1280×800), with control. Disconnecting stops the session and closes the tab.
+- "Open in cloud desktop" in settings opens the same tab (fixed in `84fd0cb2e1`, CIS pin
+  `3f7e84a0`).
+
+Not covered: OAuth sign-ins from the web (the callback is pasted by hand, as on the old
+page), and plugin credential forms, which stay native-only by design. The fleet stays
+on cloud.2 until the owner says to admit cloud.3.
