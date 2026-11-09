@@ -114,10 +114,17 @@ export function CloudSettingsPanel({
       client.cancelAuthorizations?.();
     };
   }, [client]);
+  // What the shown values were last read for. A finished save reads its own domain
+  // back, so a save alone does not reread the whole category (seconds on IM and model
+  // categories); a load it interrupted, a new tab or an explicit refresh still does.
+  const loadedFor = useRef<readonly unknown[] | null>(null);
   useEffect(() => {
+    if (!online || writing || failure === 'saveUnconfirmed') return;
+    const key = [client, online, tab, epoch];
+    if (fresh.current && loadedFor.current?.every((value, index) => value === key[index])) return;
     let current = true;
     fresh.current = false;
-    if (!online || writing || failure === 'saveUnconfirmed') return;
+    loadedFor.current = null;
     setLoading(true);
     setFailure(undefined);
     void client
@@ -127,6 +134,7 @@ export function CloudSettingsPanel({
         const values = wanted.length ? await client.read(wanted) : [];
         if (!current) return;
         fresh.current = true;
+        loadedFor.current = key;
         setDomains(cap.domains);
         setCpuCount(cap.cpuCount);
         setDeviceId(cap.deviceId);
@@ -218,6 +226,8 @@ export function CloudSettingsPanel({
       const saved = await client.save(state, set, clear);
       if (!alive.current) throw new Error('CLOUD_SETTINGS_SCOPE_CHANGED');
       setStates((before) => ({ ...before, [state.domain]: saved.state }));
+      // The saved domain was just read back; the others are as current as before the save.
+      fresh.current = true;
       dirty.current.delete(state.domain);
       setResult(
         saved.application === 'failed'
@@ -532,7 +542,8 @@ export function CloudSettingsPanel({
                           deviceId={deviceId}
                           name={name}
                           states={states}
-                          disabled={!online || loading || writing || !!failure}
+                          // Hidden categories do not read (e.g. the instance prompt) on every save.
+                          disabled={!online || loading || writing || !!failure || tab !== group}
                           cpuCount={cpuCount}
                           appVersion={version}
                           trial={trial}
