@@ -86,12 +86,18 @@ export function CloudSettingsPanel({
     {},
   );
   const [domains, setDomains] = useState<CloudSettingsDomain[]>([]);
-  // Re-read after every snapshot so the automatic route follows saved changes.
-  const imDisplays = useCloudImDisplays(deviceId, online && !trial && tab === 'im-bot', states);
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: 0 });
   }, [tab]);
   const [loading, setLoading] = useState(false);
+  // Read after the category has loaded, so the settings come first in the instance's queue,
+  // and again for a channel whose saved settings change, so the automatic route follows them.
+  const [loadedTab, setLoadedTab] = useState<string>();
+  const imDisplays = useCloudImDisplays(
+    deviceId,
+    online && !trial && tab === 'im-bot' && loadedTab === tab && !loading,
+    states,
+  );
   const [failure, setFailure] = useState<string>();
   const [result, setResult] = useState<string>();
   const [epoch, setEpoch] = useState(0);
@@ -135,6 +141,7 @@ export function CloudSettingsPanel({
         if (!current) return;
         fresh.current = true;
         loadedFor.current = key;
+        setLoadedTab(tab);
         setDomains(cap.domains);
         setCpuCount(cap.cpuCount);
         setDeviceId(cap.deviceId);
