@@ -10,10 +10,14 @@ import type { CloudSettingsRendererApi } from '../../../shared/cloudSettingsClie
 import type { SettingsWebCommand, SettingsWebResult } from '../../../shared/settingsWeb';
 
 /** In-memory CIS candidate envelope + existing management engine; no live service. */
-export function fixture(desktop?: {
-  domain: 'desktopGeneral' | 'desktopChat';
-  defaults: NonNullable<CloudSettingsState['defaults']>;
-}) {
+export function fixture(
+  desktop?: {
+    domain: 'desktopGeneral' | 'desktopChat';
+    defaults: NonNullable<CloudSettingsState['defaults']>;
+  },
+  // The Host answers after the POST (as on CIS), and whether CIS holds `?wait=1` reads.
+  queue?: { resultWait: boolean },
+) {
   let desktopValue = { ...desktop?.defaults };
   let desktopKeys: string[] = [];
   let identity: CloudClientIdentity | null = {
@@ -90,7 +94,7 @@ export function fixture(desktop?: {
           domains: [desktop?.domain ?? 'memory', 'personalization', 'gitSafety', 'shortcuts'],
           readBatch: true,
           managementV1: true,
-          resultWait: true,
+          ...(queue?.resultWait === false ? {} : { resultWait: true }),
           resourceCpuCores: 4,
         };
       }
@@ -167,10 +171,17 @@ export function fixture(desktop?: {
         lose = false;
         throw new CloudClientError('CLOUD_SETTINGS_UNAVAILABLE');
       }
-      return { requestId: input.requestId, status: 'complete', result };
+      return queue
+        ? { requestId: input.requestId, status: 'queued' }
+        : { requestId: input.requestId, status: 'complete', result };
     },
   );
-  const service = createCloudSettingsService({ identity: () => identity, http: { request } });
+  const pause = vi.fn(async () => {});
+  const service = createCloudSettingsService({
+    identity: () => identity,
+    http: { request },
+    ...(queue ? { pause } : {}),
+  });
   const handlers = cloudSettingsClientHandlers(service);
   const caller = (id = 1): CloudClientCaller => ({ id, assertCurrent() {} });
   const bridge = (id = 1): CloudSettingsRendererApi =>
@@ -185,6 +196,7 @@ export function fixture(desktop?: {
     bridge,
     caller,
     request,
+    pause,
     history,
     engine,
     run,
