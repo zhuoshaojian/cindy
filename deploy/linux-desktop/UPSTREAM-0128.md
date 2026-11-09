@@ -14,7 +14,7 @@ linear, with no merge commits, in the same order as the
 
 The 0.1.126-cloud.4 history from before the rebase is kept as
 `backup/cloud-settings-native-client-0126`. The source freeze names it as
-`cloudParent`. Release identity: `0.1.128-cloud.2`.
+`cloudParent`. Release identity: `0.1.128-cloud.3`.
 
 ## Compatibility decisions
 
@@ -194,3 +194,24 @@ with no restarts, and no maintenance operation is active. Only the image changed
 record; the two instances with an applied resource change also had their binding hash
 recomputed for the new image, with the same tier. The two stopped instances were not
 started or upgraded.
+
+## cloud.3: the cloud pages on the CIS web page
+
+Cloud.3 (`adf5e90de4`, three cloud-only commits) lets the instance owner's signed-in
+browser use the client's own cloud pages: the instance list, the whole instance
+settings panel, and remote desktop in a browser tab. CIS serves the pages and relays
+their calls; this release adds the instance side.
+
+- **Host calls from the browser.** The DeviceLink calls those pages make (four private
+  cloud settings channels, three read channels, remote desktop signaling and the ICE
+  configuration) now also arrive through the CIS settings relay. The instance answers
+  them with the same handlers and checks it uses for DeviceLink, and treats each
+  browser session as one controller.
+- **Declaration.** The instance declares these calls when it registers with CIS. An
+  older CIS rejects the new fields; the instance then registers without them, as
+  before, and the browser pages show those parts as unavailable.
+- **Signaling latency.** After a held poll the instance polls again at once instead of
+  waiting two seconds, so desktop signaling is not delayed.
+
+The browser pages are built from the same commit (`deploy/cloud-web/pack.py`); CIS pins
+the archive by checksum. Native clients are unaffected.
