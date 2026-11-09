@@ -822,6 +822,10 @@ export function setCloudPrivateInvokeHandler(handler: CloudPrivateInvokeHandler 
   if (handler) cloudPrivateInvokeHandlers.set(handler.channel, handler);
   else cloudPrivateInvokeHandlers.clear();
 }
+/** The same handler for the owner's browser, which CIS relays instead of DeviceLink. */
+export function getCloudPrivateInvokeHandler(channel: string): CloudPrivateInvokeHandler | undefined {
+  return cloudPrivateInvokeHandlers.get(channel);
+}
 
 /** 组摘要只给同账号电脑：分享受邀者与共享任务访客是其他账号，看不到组内电脑。 */
 function isSameAccountController(src: string): boolean {

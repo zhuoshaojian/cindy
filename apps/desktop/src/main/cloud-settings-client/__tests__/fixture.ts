@@ -152,7 +152,7 @@ export function fixture(desktop?: {
           };
           receipts.set(change.operationId, result);
         }
-      } else
+      } else if (command.kind === 'manage')
         result = {
           ok: true,
           management: await engine.execute(
@@ -160,6 +160,8 @@ export function fixture(desktop?: {
             command.command,
           ),
         };
+      // Browser-only Host calls never come from the native client.
+      else result = { ok: false, code: 'SETTINGS_UNSUPPORTED' };
       results.set(input.requestId, result);
       if (lose && ['update', 'manage'].includes(command.kind)) {
         lose = false;

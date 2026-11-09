@@ -10,6 +10,8 @@ export interface SettingsWebTransportOptions {
   execute(request: SettingsWebEnvelope, assertCurrent: () => void): Promise<SettingsWebResult>;
   now?: () => number;
   managementV1?: boolean;
+  /** Cloud fork: owner-only calls from the browser build of the client's cloud pages. */
+  hostCalls?: { channels: string[]; desktopV1: true };
 }
 const envelope = z.object({ requestId: z.string().uuid(), runtimeId: z.string().uuid(), sessionKey: z.string().regex(/^[a-f0-9]{64}$/u), expiresAtMs: z.number().safe().int(), command: settingsWebCommandSchema }).strict();
 class TransportError extends Error { constructor(readonly status: number) { super('SETTINGS_WEB_TRANSPORT_UNAVAILABLE'); } }
@@ -64,23 +66,25 @@ export function createSettingsWebTransport(options: SettingsWebTransportOptions)
       const nextScope = JSON.stringify([context.scopeKey, context.baseUrl]);
       if (scope !== nextScope) { scope = nextScope; runtimeId = randomUUID(); connected = false; }
       if (!connected) {
-        try { await post(context, 'connect', { runtimeId, domains: HOST_SETTINGS_DOMAINS, readBatch: true, ...(options.managementV1 ? { managementV1: true } : {}) }); }
-        catch (error) {
-          // Old CIS uses a strict connect schema. Register without the optional
-          // feature only on schema rejection; auth/network failures never downgrade.
-          if (!(error instanceof TransportError) || error.status !== 400) throw error;
-          if (options.managementV1) {
-            try { await post(context, 'connect', { runtimeId, domains: HOST_SETTINGS_DOMAINS, readBatch: true }); }
-            catch (fallbackError) {
-              if (!(fallbackError instanceof TransportError) || fallbackError.status !== 400) throw fallbackError;
-              await post(context, 'connect', { runtimeId, domains: HOST_SETTINGS_DOMAINS });
-            }
-          } else await post(context, 'connect', { runtimeId, domains: HOST_SETTINGS_DOMAINS });
+        // Old CIS uses a strict connect schema. Drop optional features, newest first, only
+        // on schema rejection; auth/network failures never downgrade.
+        const base = { runtimeId, domains: HOST_SETTINGS_DOMAINS };
+        const bodies = [
+          ...(options.hostCalls ? [{ ...base, readBatch: true, ...(options.managementV1 ? { managementV1: true } : {}), ...options.hostCalls }] : []),
+          ...(options.managementV1 ? [{ ...base, readBatch: true, managementV1: true }] : []),
+          { ...base, readBatch: true },
+          base,
+        ];
+        for (const [index, body] of bodies.entries()) {
+          try { await post(context, 'connect', body); break; }
+          catch (error) { if (index === bodies.length - 1 || !(error instanceof TransportError) || error.status !== 400) throw error; }
         }
         connected = true;
       }
+      const polledAt = now();
       const response = z.object({ request: envelope.nullable() }).strict().parse(await post(context, 'poll', { runtimeId }));
-      if (!response.request) return 2_000;
+      // After a held (long) poll, ask again at once so a browser's next call is not delayed.
+      if (!response.request) return now() - polledAt >= 4_000 ? 50 : 2_000;
       const request = response.request;
       const assertCurrent = () => {
         if (!current(context) || request.runtimeId !== runtimeId || request.expiresAtMs <= now() || request.expiresAtMs > now() + 35_000) throw new Error('SETTINGS_WEB_REQUEST_EXPIRED');
