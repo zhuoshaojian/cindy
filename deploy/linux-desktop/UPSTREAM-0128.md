@@ -145,3 +145,28 @@ of holding the instance.
 - **Login window end.** The end request that a reset or closed login window sends
   while unmounting is now a no-op instead of a logged `SCOPE_CHANGED` IPC error. The
   reset has already cancelled that window's login attempts.
+
+### cloud.2 owner acceptance
+
+On 2026-11-09 the image was built by run 42553549569 from `75e077bda1`
+(`0.1.128-cloud.2-cn-amd64@sha256:297b5e8c…`). It passed the native smoke and matched
+the ACS image cache. Only the owner's instance was approved; defaults, placements and
+the other instances' approvals were unchanged.
+
+The owner's instance had no running work. Its upgrade from cloud.1 took about eight
+minutes: prepare, seal, an encrypted backup of 4,012 files, the switch, the candidate
+check and release. It completed without a recovery-hold. No runtime read timed out
+during this upgrade, so CIS `198603ca`'s retry did not run here; its tests cover it.
+
+After the upgrade:
+
+- The new Pod is Ready with no restarts, uses the cached image, and reports
+  `0.1.128-cloud.2`. Databases and schedules are preserved. The other twelve instance
+  records are unchanged.
+- In the first eight minutes the instance logged no heartbeat line (eight failures
+  were expected before), and the missing chat endpoint once (about sixteen before).
+- The Dev client `0.1.128-dev.cloud.20261109.1` shows the instance on
+  `0.1.128-cloud.2` and opens its settings without errors.
+
+The wrong-account panel and the quiet login window end are covered by tests only:
+the owner's instance is signed in, so its login window does not open.
