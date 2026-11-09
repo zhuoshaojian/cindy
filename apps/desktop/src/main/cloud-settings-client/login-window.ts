@@ -101,6 +101,12 @@ export class CloudLoginWindow {
       throw new CloudClientError('CLOUD_SETTINGS_SCOPE_CHANGED');
     return this.binding.target;
   }
+  /** Every generation bump invalidates this window's login sessions, so a
+   * superseded generation has nothing left to end. */
+  isSuperseded(sender: WebContents, generation: number): boolean {
+    this.assertSender(sender);
+    return generation < this.generation;
+  }
   close(sender: WebContents, generation: number): void {
     this.assertSender(sender);
     if (generation !== this.generation) return;
