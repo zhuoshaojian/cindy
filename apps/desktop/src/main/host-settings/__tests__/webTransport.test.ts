@@ -7,7 +7,7 @@ import { normalizeHostSettingsChange } from '../../../shared/hostSettings.js';
 const context = (): SettingsWebContext => ({ scopeKey: 'example-owner:1:example-device', baseUrl: 'https://cloud.example.invalid/prefix', accessToken: 'invalid-fixture-token' });
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 const command = () => ({ kind: 'update' as const, change: { domain: 'databaseWarning' as const, expectedRevision: 'read-before', operationId: randomUUID(), set: { thresholdGiB: 5 } } });
-function fixture(options: { expires?: number; wrongRuntime?: boolean; failAck?: boolean } = {}) {
+function fixture(options: { expires?: number; wrongRuntime?: boolean; failAck?: boolean; hostCalls?: boolean; clock?: () => number } = {}) {
   let state: SettingsWebContext | null = context(); let registered = ''; let polls = 0; let ack = 0;
   const now = Date.now(), requestId = randomUUID(), input = command();
   const execute = vi.fn(async (_input: unknown, assertCurrent: () => void) => { assertCurrent(); return { ok: true as const, receipt: { status: 'saved' as const, saved: true, application: 'applied' as const, operationId: input.change.operationId, domain: 'databaseWarning' as const, revision: 'read-after' } }; });
@@ -17,7 +17,8 @@ function fixture(options: { expires?: number; wrongRuntime?: boolean; failAck?: 
     if (String(url).endsWith('/result')) { ack += 1; if (options.failAck && ack === 1) throw new Error('lost acknowledgement'); return reply({ ok: true }); }
     throw new Error('unexpected URL');
   });
-  const transport = createSettingsWebTransport({ getContext: () => state, fetch, execute, now: () => now });
+  const transport = createSettingsWebTransport({ getContext: () => state, fetch, execute, now: options.clock ?? (() => now),
+    ...(options.hostCalls ? { managementV1: true, hostCalls: { channels: ['cloud:storage-usage:v1'], desktopV1: true as const } } : {}) });
   return { transport, fetch, execute, now, changeContext(value: SettingsWebContext | null) { state = value; } };
 }
 describe('web settings Host transport', () => {
@@ -32,6 +33,25 @@ describe('web settings Host transport', () => {
     expect(connects).toHaveLength(2);
     expect(JSON.parse(String(connects[1]![1]?.body))).not.toHaveProperty('readBatch');
     expect(f.execute).toHaveBeenCalledTimes(1); f.transport.stop();
+  });
+  it('declares browser Host calls first and drops only them when an older CIS rejects the fields', async () => {
+    const f = fixture({ hostCalls: true });
+    f.fetch.mockImplementationOnce(async () => reply({ error: { code: 'INVALID_PARAMS' } }, 400));
+    await f.transport.runOnce();
+    const bodies = f.fetch.mock.calls.filter(([url]) => String(url).endsWith('/connect')).map(([, init]) => JSON.parse(String(init?.body)));
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toMatchObject({ readBatch: true, managementV1: true, channels: ['cloud:storage-usage:v1'], desktopV1: true });
+    expect(bodies[1]).toMatchObject({ readBatch: true, managementV1: true });
+    expect(bodies[1]).not.toHaveProperty('channels'); expect(bodies[1]).not.toHaveProperty('desktopV1');
+    expect(f.execute).toHaveBeenCalledTimes(1); f.transport.stop();
+  });
+  it('polls again at once after a held poll, but backs off after an immediate empty reply', async () => {
+    let clock = Date.now();
+    const f = fixture({ clock: () => clock });
+    await f.transport.runOnce();
+    f.fetch.mockImplementationOnce(async () => { clock += 6_000; return reply({ request: null }); });
+    expect(await f.transport.runOnce()).toBe(50);
+    expect(await f.transport.runOnce()).toBe(2_000); f.transport.stop();
   });
   it('does not downgrade capability registration on authentication failure', async () => {
     const f = fixture(); f.fetch.mockResolvedValueOnce(reply({},401));

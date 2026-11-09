@@ -44,17 +44,45 @@ const additionalUpdate = z.object({ ...updateBase, domain: additionalDomain, wor
     if ((value.domain === 'workspaceTools') !== (value.workspaceId !== undefined)) ctx.addIssue({ code: 'custom', message: 'invalid workspace scope' }); });
 export const settingsWebUpdateSchema = z.union([nativeSettingsWebUpdateSchema, additionalUpdate]);
 const batchDomains = z.array(settingsWebDomainSchema).min(1).max(64).refine(domains => new Set(domains).size === domains.length);
+/**
+ * Owner-only Host calls the browser build of the client's cloud pages makes in place of
+ * its DeviceLink invokes. A closed list: CIS relays only these names, and only to a Host
+ * that declared them. The Host applies the same handlers and owner checks as DeviceLink.
+ */
+export const SETTINGS_WEB_CHANNELS = [
+  'cloud:provider-settings:v1',
+  'cloud:personalization:v1',
+  'cloud:im-settings:v1',
+  'cloud:storage-usage:v1',
+  'maker:get-capabilities',
+  'maker:model-catalog:read',
+  'maker:provider:list',
+] as const;
+/** The largest Host channel reply (the provider catalog) plus envelope headroom. */
+export const SETTINGS_WEB_LARGE_RESULT_MAX_BYTES = 2 * 1024 * 1024 + 64 * 1024;
+const channelName = z.enum(SETTINGS_WEB_CHANNELS);
+const iceUrl = z.string().max(512).regex(/^(stun|turn|turns):[^\s]+$/u);
+const iceServer = z.object({ urls: z.union([iceUrl, z.array(iceUrl).min(1).max(8)]),
+  username: z.string().max(512).optional(), credential: z.string().max(512).optional() }).strict();
 export const settingsWebCommandSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('manage'), command: managementCommandSchema }).strict(),
   z.object({ kind: z.literal('readBatch'), domains: batchDomains }).strict(),
   z.object({ kind: z.literal('read'), domain: settingsWebDomainSchema, workspaceId: workspaceId.optional() }).strict(),
   z.object({ kind: z.literal('update'), change: settingsWebUpdateSchema }).strict(),
   z.object({ kind: z.literal('receipt'), operationId: id }).strict(),
+  // Opaque to CIS: the Host parses arguments and requests with its own schemas.
+  z.object({ kind: z.literal('channel'), channel: channelName, args: z.array(z.unknown()).max(8) }).strict(),
+  z.object({ kind: z.literal('desktop'), request: z.record(z.string(), z.unknown()) }).strict(),
+  z.object({ kind: z.literal('desktopIce') }).strict(),
 ]).refine(value => value.kind !== 'read' || value.workspaceId === undefined || value.domain === 'workspaceTools', 'invalid workspace scope');
 export type SettingsWebCommand = z.infer<typeof settingsWebCommandSchema>;
+/** Commands only a signed-in browser may send; the native client already has DeviceLink. */
+export const BROWSER_ONLY_SETTINGS_WEB_KINDS: ReadonlySet<SettingsWebCommand['kind']> = new Set(['channel', 'desktop', 'desktopIce']);
 export const settingsWebSubmitSchema = z.object({ requestId: id, runtimeId: id, command: settingsWebCommandSchema }).strict();
 export const settingsWebPollSchema = z.object({ runtimeId: id }).strict();
-export const settingsWebConnectSchema = z.object({ runtimeId: id, domains: batchDomains, readBatch: z.literal(true).optional(), managementV1: z.literal(true).optional() }).strict();
+export const settingsWebConnectSchema = z.object({ runtimeId: id, domains: batchDomains, readBatch: z.literal(true).optional(), managementV1: z.literal(true).optional(),
+  channels: z.array(channelName).min(1).max(SETTINGS_WEB_CHANNELS.length).refine(names => new Set(names).size === names.length).optional(),
+  desktopV1: z.literal(true).optional() }).strict();
 const modelOption = z.object({ harness: newTask.shape.harness, providerId: routeId, providerName: z.string().min(1).max(256), modelId: routeId, modelName: z.string().min(1).max(256), efforts: z.array(effort).max(7), supportsFast: z.boolean(), supportsThinkingToggle: z.boolean() }).strict();
 const readyBase = { status: z.literal('ready'), revision, operationId: id, customizedKeys: z.array(z.string().max(32)).max(8), isCustomized: z.boolean() };
 const promptState = z.object({ isCustomized: z.boolean() }).strict();
@@ -105,12 +133,17 @@ export const settingsWebBatchResultSchema = z.object({
     ctx.addIssue({ code: 'custom', message: 'invalid settings batch' });
   }
 });
+const largeResult = (value: object) => 'channel' in value || 'desktop' in value;
 export const settingsWebResultSchema = z.union([
   z.object({ ok: z.literal(true), management: managementResultSchema }).strict(),
   settingsWebReadResultSchema,
   settingsWebBatchResultSchema,
   z.object({ ok: z.literal(true), receipt }).strict(),
-]).refine(value => new TextEncoder().encode(JSON.stringify(value)).byteLength <= SETTINGS_WEB_MAX_BYTES - 512, 'settings response exceeds its budget');
+  z.object({ ok: z.literal(true), channel: z.unknown().refine(value => value !== undefined) }).strict(),
+  z.object({ ok: z.literal(true), desktop: z.unknown().refine(value => value !== undefined) }).strict(),
+  z.object({ ok: z.literal(true), ice: z.array(iceServer).max(16) }).strict(),
+]).refine(value => new TextEncoder().encode(JSON.stringify(value)).byteLength
+  <= (largeResult(value) ? SETTINGS_WEB_LARGE_RESULT_MAX_BYTES : SETTINGS_WEB_MAX_BYTES) - 512, 'settings response exceeds its budget');
 export type SettingsWebResult = z.infer<typeof settingsWebResultSchema>;
 export const settingsWebCompleteSchema = z.object({ runtimeId: id, result: settingsWebResultSchema }).strict();
 export type SettingsWebEnvelope = { requestId: string; runtimeId: string; sessionKey: string; expiresAtMs: number; command: SettingsWebCommand };
