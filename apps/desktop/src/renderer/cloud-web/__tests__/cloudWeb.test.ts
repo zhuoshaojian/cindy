@@ -126,3 +126,18 @@ describe('web bridge', () => {
     await expect(viewer.credential!(generation, 'unlock')).rejects.toThrow('CREDENTIAL_UNAVAILABLE');
   });
 });
+
+describe('web bridge links', () => {
+  it('opens only https pages in a new tab and reports a blocked pop-up', async () => {
+    installWebElectronApi();
+    const api = window.electronAPI as unknown as { openExternal(url: string): Promise<{ success: boolean }> };
+    const tab = { opener: {} as unknown };
+    const open = vi.spyOn(window, 'open').mockReturnValueOnce(tab as Window).mockReturnValueOnce(null);
+    await expect(api.openExternal('https://auth.example.invalid/authorize?state=x')).resolves.toEqual({ success: true });
+    expect(tab.opener).toBeNull();
+    await expect(api.openExternal('https://auth.example.invalid/again')).resolves.toEqual({ success: false });
+    await expect(api.openExternal('javascript:alert(1)')).resolves.toEqual({ success: false });
+    await expect(api.openExternal('http://insecure.example.invalid')).resolves.toEqual({ success: false });
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+});
