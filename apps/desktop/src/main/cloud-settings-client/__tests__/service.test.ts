@@ -181,3 +181,23 @@ it('deduplicates cancel/close cleanup without cancelling another window operatio
   ).toHaveLength(1);
   expect(f.request.mock.calls.filter((c) => c[2] === 'DELETE')).toHaveLength(1);
 });
+it.each([
+  [true, 0, '?wait=1'],
+  [false, 1, ''],
+])(
+  'reads a queued result at once only where CIS holds the read (resultWait %s)',
+  async (resultWait, pauses, query) => {
+    const f = fixture(undefined, { resultWait });
+    cleanups.push(f.stop);
+    const bridge = f.bridge(),
+      { handle } = await bridge.open({ deviceId: 'cloud-a' });
+    const [read] = await bridge.read({ handle, domains: ['memory'] });
+    expect(read.ok && 'settings' in read && read.settings.domain).toBe('memory');
+    expect(f.pause).toHaveBeenCalledTimes(pauses);
+    const polls = f.request.mock.calls
+      .map(([, path, method]) => `${method} ${path}`)
+      .filter((call) => call.startsWith('GET') && call.includes('/requests/'));
+    expect(polls).toHaveLength(1);
+    expect(polls[0].endsWith(query)).toBe(true);
+  },
+);
