@@ -43,7 +43,11 @@ export function createCloudImCaller(deviceId: string) {
 const POLL_MS = 2500;
 
 /** The cards' target plus the raw caller for instance-only rows (WeChat directory, bot status). */
-export type CloudImTarget = SettingsTarget & { call: ReturnType<typeof createCloudImCaller> };
+export type CloudImTarget = SettingsTarget & {
+  call: ReturnType<typeof createCloudImCaller>;
+  /** Whether the IM page is shown: a hidden page stops polling and refreshes on its return. */
+  setActive(active: boolean): void;
+};
 
 /**
  * The local IM cards' API for a cloud instance. Settings run the instance's own handlers; only
@@ -67,6 +71,7 @@ export function createCloudImTarget(
   const statusListeners = new Set<(view: SlackHookView) => void>();
   let timer: ReturnType<typeof setInterval> | null = null;
   let last = '';
+  let active = true;
   const poll = () => {
     if (document.visibilityState === 'hidden') return;
     void get()
@@ -78,17 +83,31 @@ export function createCloudImTarget(
       })
       .catch(() => {});
   };
+  // Each poll is a call in the instance's one-at-a-time queue: poll only while a card on a
+  // shown IM page listens.
+  const sync = () => {
+    const wanted = active && statusListeners.size > 0;
+    if (wanted) timer ??= setInterval(poll, POLL_MS);
+    else if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  };
   const onStatusChanged: HookControl['onStatusChanged'] = (listener) => {
     statusListeners.add(listener);
-    timer ??= setInterval(poll, POLL_MS);
+    sync();
     return () => {
       statusListeners.delete(listener);
-      if (!statusListeners.size && timer) {
-        clearInterval(timer);
-        timer = null;
-        last = '';
-      }
+      if (!statusListeners.size) last = '';
+      sync();
     };
+  };
+  const setActive = (next: boolean) => {
+    if (active === next) return;
+    active = next;
+    sync();
+    // Back on the page: show changes made meanwhile without waiting for the next tick.
+    if (active && statusListeners.size) poll();
   };
   const quiet = () => () => {};
   const hookControl: HookControl = {
@@ -160,6 +179,7 @@ export function createCloudImTarget(
   return {
     deviceId,
     call,
+    setActive,
     api: {
       hookControl,
       telegramBot: {
