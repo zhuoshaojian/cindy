@@ -40,6 +40,8 @@ for name in ['apply-appearance.py', 'apply-dock.py', 'apply-dock-apps.py']:
     install(desktop / name, 'usr/local/share/cindy/appearance/' + name)
 for name in ['com.cindy.cloud-terminal.desktop', 'com.cindy.cloud-chrome.desktop']:
     install(desktop / name, 'usr/share/applications/' + name)
+install(desktop / 'cindy-cloud-chrome.helper.desktop', 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop')
+install(desktop / 'helpers.rc', 'etc/xdg/xfce4/helpers.rc')
 install(recipe / 'runtime-support/chromium-compat', 'usr/bin/chromium', 0o755)
 (layer / 'usr/local/lib/cindy/profile-image.json').write_text('{"version":1,"realm":"cn"}\n')
 for name, target in {'claude': '/opt/cindy/resources/cloud-runtimes/claude/claude',
