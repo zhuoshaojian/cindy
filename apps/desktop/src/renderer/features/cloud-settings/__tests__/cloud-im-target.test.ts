@@ -143,4 +143,24 @@ describe('cloud IM target', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(invoke).not.toHaveBeenCalled();
   });
+
+  it('stops polling while the IM page is hidden and refreshes once it returns', async () => {
+    vi.useFakeTimers();
+    const { target: t } = target();
+    const listener = vi.fn();
+    t.api.hookControl.onStatusChanged(listener);
+    await vi.advanceTimersByTimeAsync(2600);
+    expect(listener).toHaveBeenCalledTimes(1);
+    t.setActive(false);
+    invoke.mockClear();
+    replies[0]!.result = { hook: { enabled: false } };
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(invoke).not.toHaveBeenCalled();
+    t.setActive(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenLastCalledWith({ enabled: false });
+    await vi.advanceTimersByTimeAsync(2600);
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
 });

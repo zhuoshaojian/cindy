@@ -75,6 +75,7 @@ export function useCloudImTarget({
       pickDirectory: () => new Promise((resolve) => setPicker(() => resolve)),
     });
   }, [deviceId]);
+  useEffect(() => target.setActive(enabled), [target, enabled]);
   const [support, setSupport] = useState<CloudImSupport>('probing');
   useEffect(() => {
     setSupport('probing');
