@@ -77,3 +77,48 @@ These ran on a macOS checkout and are not real-account acceptance:
 - Settings search coverage and i18n key checks pass.
 - Recipe checks: node 123 passed, 18 skipped; all Python suites pass.
 - `stage-cloud-overlays.mjs` applies all 30 overlays to the frozen source.
+
+## Owner acceptance
+
+Only the owner's instance was approved for and upgraded to `0.1.130-cloud.1`. Other
+instances and the defaults for new instances are unchanged. The same upgrade also
+moved the owner's endpoint list to the official CN list. CIS now rebases an
+opted-in profile's list on the pinned official v0.1.130 CN list and keeps only
+`cloudInstanceApiBaseUrl` and `region`. Only the owner's profile is opted in. The
+change touched 13 fields, among them `chatApiBaseUrl`, `shareBaseUrl`,
+`feishuHookWsUrl`, `webhookApiBaseUrl` and `review`.
+
+The upgrade stopped twice before it completed. Both stops came from the
+operator script that runs the upgrade, not from CIS or the image:
+
+- The script's mutation allowlist lacked the fenced endpoint patch. The upgrade
+  stopped in recovery-hold with the instance down. With the owner's consent it was
+  rolled back to `0.1.128-cloud.5`. The template matched the source image and
+  maintenance was released.
+- The rerun stopped in recovery-hold with the candidate running. The script's
+  candidate data check did not list two new empty schedule columns,
+  `schedules.webhook_trigger` and `schedule_runs.trigger_source`. The owner chose to
+  complete it: CIS's check ran again, then the instance was marked verified,
+  released and finished without a restart.
+
+The final check found:
+
+- Main and init images updated, a cache hit, a ready pod with no restarts, and
+  maintenance released.
+- 4053 backup files.
+- Databases, sessions, messages and schedules matching the sealed snapshot.
+- The mounted endpoint list matching the approved official list.
+- The 18 peer records and the defaults for new instances unchanged.
+
+`CHAT_ENDPOINT_UNAVAILABLE` was logged once at each start on the old list and not
+at all since the start on the official one. From the instance, the chat server's
+`/v1/me` answers an unauthenticated probe with `401 AUTH_REQUIRED`.
+
+## cloud.2: the cloud login window loads again
+
+Upstream v0.1.130 subscribes every window's renderer to local theme changes. The
+cloud login window preload exposed only `listSync`, so its entry failed with
+`localThemes.onChanged is not a function`. The window stayed blank in the Dev client,
+and the instance logged the same error when it prewarmed the window. The preload
+now exposes `onChanged` like the other window preloads. A test checks every preload
+that exposes local themes.
