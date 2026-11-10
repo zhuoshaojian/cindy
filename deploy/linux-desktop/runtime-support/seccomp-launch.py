@@ -61,9 +61,12 @@ def install_filter(profile):
                 result = library.seccomp_rule_add_array(context, 0x7FFF0000, number, len(array), array)
                 if result not in (0, -17):
                     raise ValueError()
-        clone3 = library.seccomp_syscall_resolve_name(b"clone3")
-        if clone3 == -1 or library.seccomp_rule_add_array(context, 0x00050026, clone3, 0, None) != 0:
-            raise ValueError()
+        # ENOSYS (not EPERM) makes libc fall back to the allowed older calls. Under
+        # EPERM, glibc access checks with AT_EACCESS fail, so `test -x` is false.
+        for name in (b"clone3", b"faccessat2"):
+            number = library.seccomp_syscall_resolve_name(name)
+            if number == -1 or library.seccomp_rule_add_array(context, 0x00050026, number, 0, None) != 0:
+                raise ValueError()
         if library.seccomp_load(context) != 0:
             raise ValueError()
     finally:

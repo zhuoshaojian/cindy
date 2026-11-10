@@ -48,7 +48,8 @@ class SmokeLifecycleTest(unittest.TestCase):
             elif args[0] == 'exec':
                 if not check_passes:
                     return subprocess.CompletedProcess(args, 1, '', 'synthetic failed permission check')
-                value = {'dockPreferencesHidden': True, 'desktopReady': True, 'sandboxedRenderers': True, 'legacyHome': True, 'applicationVersion': app_version}
+                value = {'dockPreferencesHidden': True, 'desktopReady': True, 'sandboxedRenderers': True, 'legacyHome': True,
+                         'shellAccessChecks': True, 'applicationVersion': app_version}
             elif args[0] == 'stop':
                 stopped = True
             elif args[0] == 'logs':
@@ -75,7 +76,7 @@ class SmokeLifecycleTest(unittest.TestCase):
         proof, error, calls = self.exercise()
         self.assertIsNone(error)
         for key in ['dockPreferencesHidden', 'passed', 'desktopReady', 'sandboxedRenderers', 'legacyHome',
-                    'networkIsolated', 'readOnlyRoot', 'shutdown']:
+                    'shellAccessChecks', 'networkIsolated', 'readOnlyRoot', 'shutdown']:
             self.assertIs(proof[key], True)
         self.assertEqual(sum(c[0] == 'stop' for c in calls), 1)
 

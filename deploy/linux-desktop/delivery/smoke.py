@@ -73,6 +73,9 @@ for window in re.findall(r'0x[0-9a-fA-F]+',windows):
   assert '_NET_WM_WINDOW_TYPE_DOCK' in properties, 'DOCK_PREFERENCES_WINDOW_OPENED'
 for n in ['com.cindy.cloud-terminal.desktop','com.cindy.cloud-chrome.desktop']:
  assert (pathlib.Path('/usr/share/applications')/n).is_file()
+# Under the shipped filter, shell permission tests must still see real modes;
+# sensible-browser relies on `test -x`.
+subprocess.run(['/usr/local/bin/cindy-seccomp','/bin/sh','-c','test -x /usr/bin/x-www-browser && test -w /tmp && ! test -x /etc/passwd'],check=True,timeout=10)
 with open('/opt/cindy/resources/app.asar','rb') as archive:
  prefix=archive.read(16)
  header_size=struct.unpack_from('<I',prefix,4)[0];json_size=struct.unpack_from('<I',prefix,12)[0]
@@ -81,7 +84,7 @@ with open('/opt/cindy/resources/app.asar','rb') as archive:
  assert not package.get('unpacked') and 0<package['size']<1024*1024
  archive.seek(8+header_size+int(package['offset']))
  version=json.loads(archive.read(package['size']))['version']
-print(json.dumps({'dockPreferencesHidden':True,'desktopReady':True,'sandboxedRenderers':True,'legacyHome':True,'applicationVersion':version}))
+print(json.dumps({'dockPreferencesHidden':True,'desktopReady':True,'sandboxedRenderers':True,'legacyHome':True,'shellAccessChecks':True,'applicationVersion':version}))
 '''
 
 
