@@ -155,6 +155,11 @@ function Settings({ api }: { api: WebCloudApi }) {
   const [instance, setInstance] = useState<CloudInstanceView | undefined>(() =>
     api.instances().find((item) => item.deviceId === deviceId),
   );
+  // Model sources this instance lists (shared providers) are read through it.
+  useEffect(() => {
+    api.view(valid ? deviceId : null);
+    return () => api.view(null);
+  }, [api, deviceId, valid]);
   // As in the native window: availability comes from CIS, refreshed while the page is open.
   const refresh = useCallback(async () => {
     if (!client?.instance || document.visibilityState === 'hidden') return;

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCisClientHttp, createCisFetch, CisSignedOutError } from '../cisHttp';
 import { createHostRelay, HostCallError } from '../hostRelay';
 import { installWebElectronApi } from '../electronApi';
+import { routeDeviceLinkCall } from '../webApi';
 import { createWebRemoteDesktopViewer } from '../remoteDesktopViewer';
 
 const instanceId = 'cloud-instance-0123456789abcdef';
@@ -140,6 +141,28 @@ describe('web bridge', () => {
     await expect(viewer.request(generation, { op: 'capabilities' })).resolves.toEqual({ version: 1 });
     expect(calls).toEqual([{ kind: 'desktop', request: { op: 'capabilities' } }]);
     await expect(viewer.credential!(generation, 'unlock')).rejects.toThrow('CREDENTIAL_UNAVAILABLE');
+  });
+});
+
+describe('DeviceLink calls from the cloud pages', () => {
+  it('reads catalogs of sources behind the instance through that instance', () => {
+    const options = { capabilities: ['provider-logo-kinds-v2'] };
+    expect(routeDeviceLinkCall('share:abc', 'maker:provider:list', [options], deviceId)).toEqual({
+      deviceId,
+      channel: 'maker:model-catalog:read',
+      args: [{ op: 'read', agentDeviceId: 'share:abc', channel: 'maker:provider:list', args: [options] }],
+    });
+    // Also catalog reads the browser could never send directly, for the owner's other computers.
+    expect(routeDeviceLinkCall('mac-device-1', 'maker:agent:status', ['codex'], deviceId).args).toEqual([
+      { op: 'read', agentDeviceId: 'mac-device-1', channel: 'maker:agent:status', args: ['codex'] },
+    ]);
+  });
+
+  it('keeps instance calls direct and refuses what no instance can answer', () => {
+    expect(routeDeviceLinkCall(deviceId, 'maker:provider:list', [], deviceId)).toEqual({ deviceId, channel: 'maker:provider:list', args: [] });
+    expect(() => routeDeviceLinkCall('share:abc', 'maker:provider:list', [], null)).toThrow('DEVICE_LINK_DEVICE_OFFLINE');
+    expect(() => routeDeviceLinkCall('share:abc', 'maker:usage:account', [], deviceId)).toThrow('DEVICE_LINK_CHANNEL_NOT_ALLOWED');
+    expect(() => routeDeviceLinkCall(deviceId, 'maker:usage:account', [], deviceId)).toThrow('DEVICE_LINK_CHANNEL_NOT_ALLOWED');
   });
 });
 
