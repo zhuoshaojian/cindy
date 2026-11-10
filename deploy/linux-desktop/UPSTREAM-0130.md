@@ -143,3 +143,39 @@ instance's Cindy and asked to call `get_teammate_home`. It returned `ok` with mo
 `local` and the instance itself as home, instead of the earlier `NOT_ENABLED`. The
 temporary teammate was then deleted; its archived task remains in history. The
 Dev client `0.1.130-dev.cloud.20261110.2` shows the cloud login window again.
+
+## Fleet rollout
+
+On 2026-11-10, after the owner acceptance, the owner asked to push cloud.2 to the
+other instances and to move their endpoint lists to the official CN list too. Running
+work should skip an instance; scheduled runs that have not started should not.
+
+The fleet policy:
+
+- Approves cloud.2 for every organization instance and adds it to native admission.
+- Moves the default image for new claims to cloud.2.
+- Opts the nine running verified profiles into the official list.
+
+Each instance's automatic update setting and maintenance window are unchanged.
+CIS's default endpoint file, which new claims copy, now holds the official list with
+the CIS address and region kept. New claims therefore start on cloud.2 with the same
+list as upgraded instances.
+
+The instances were upgraded one at a time, each with its own backup:
+
+- Verified profiles changed their list in the same fenced transaction as the
+  image.
+- Native instances have no such step. Once a native upgrade completed and the
+  instance was idle, its record was rebased the way the console edits endpoints, and
+  CIS restarted it once.
+
+Ten instances passed: seven verified and three native. Two were skipped:
+
+- `liufangxing1` (`…49e6c469`) runs scheduled tasks every few minutes. The first
+  attempt sampled it idle, but a run started before CIS sealed it and CIS refused
+  before changing anything. Later attempts found no gap of 90 seconds.
+- `…94121710` on 0.1.119-cloud.5 reports one unknown work item that never clears, so
+  CIS will not seal it.
+
+Both keep cloud.3 or 0.1.119 and the old list. Their maintenance window applies the
+same rules. The stopped instance `…250573f0` (manual updates) is untouched.
