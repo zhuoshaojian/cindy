@@ -279,7 +279,8 @@ export function ModelPriceOverrideDialog({ provider, row, open, onOpenChange, pr
             if (!dirty) setAgent(next);
             else void save().then((saved) => { if (saved) setAgent(next); });
           }} options={row.avail.map(candidate => ({ value: candidate, label: AGENT_LABEL[candidate] }))} />}
-        {(view?.allowedCurrencies.length ?? 0) > 1 && <div className="mt-2 flex items-center justify-between gap-4 text-12 text-[var(--text-secondary)]">
+        {/* An older cloud instance reports no currency list. */}
+        {(view?.allowedCurrencies?.length ?? 0) > 1 && <div className="mt-2 flex items-center justify-between gap-4 text-12 text-[var(--text-secondary)]">
           {t('settings.providers.models.priceOverride.currency')}
           {/* Changes are ignored while a save is pending (the trigger keeps focus). */}
           <Select {...pricingSetting.controlProps} label={t('settings.providers.models.priceOverride.currency')}

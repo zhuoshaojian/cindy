@@ -7,6 +7,8 @@ import {
 } from '../../../shared/cloudImSettings';
 import type { SlackHookView } from '../../../shared/hookControlIpc';
 
+const FEISHU_ON_INSTANCE = '[UNSUPPORTED] Feishu is connected on the cloud instance';
+
 type HookControl = SettingsTargetApi['hookControl'];
 type HookReply = { hook: SlackHookView };
 
@@ -139,10 +141,14 @@ export function createCloudImTarget(
     revokeTeam: (teamId) => call('maker:hook-control:revoke-team', { teamId }),
     cancelPendingBind: async () =>
       (await deps.authorization.cancel('slack')) ? get() : call('maker:hook-control:cancel-pending-bind'),
+    // The frozen CIS IM contract has no Feishu channel yet; it is connected on the instance itself.
     providerBindStart: (provider) =>
-      after(() => deps.authorization.start({ kind: 'provider', provider })),
+      provider === 'feishu'
+        ? Promise.reject(new Error(FEISHU_ON_INSTANCE))
+        : after(() => deps.authorization.start({ kind: 'provider', provider })),
+    providerBindSelect: () => Promise.reject(new Error(FEISHU_ON_INSTANCE)),
     providerBindCancel: async (provider) =>
-      (await deps.authorization.cancel(provider))
+      provider !== 'feishu' && (await deps.authorization.cancel(provider))
         ? get()
         : call('maker:hook-control:provider-bind-cancel', { provider }),
     providerBindRevoke: (provider) => call('maker:hook-control:provider-bind-revoke', { provider }),

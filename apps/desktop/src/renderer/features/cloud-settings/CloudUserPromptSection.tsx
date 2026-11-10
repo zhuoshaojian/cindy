@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { PersonalizationPageTitle, UserPromptEditor } from '@/components/settings/UserPromptSection';
+import { PersonalizationPage, PersonalizationPageTitle, UserPromptEditor } from '@/components/settings/UserPromptSection';
 import { extractIpcError } from '@/utils/ipcError';
 import {
   CLOUD_PERSONALIZATION_CHANNEL,
@@ -98,6 +98,7 @@ export function CloudUserPromptSection({
     );
   const ready = state?.status === 'ready' ? state : null;
   return wrap(
+    <PersonalizationPage>
     <UserPromptEditor
       value={ready?.userPrompt ?? ''}
       ready={!!ready && !disabled}
@@ -115,6 +116,7 @@ export function CloudUserPromptSection({
       resetValue={(revision) =>
         write((current) => ({ op: 'reset', ownerGeneration: current.ownerGeneration, revision }), revision)
       }
-    />,
+    />
+    </PersonalizationPage>,
   );
 }

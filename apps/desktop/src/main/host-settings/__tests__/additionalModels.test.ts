@@ -18,6 +18,16 @@ vi.mock('../../appSessionState.js', () => ({
   dataOwnerStorageKey: (id: string) => `test-${id}`,
   ownerScopedUserDataPath: (...segments: string[]) => path.join(context.root, 'owners', `test-${context.owner}`, ...segments),
 }));
+// Native stores resolve the owner through the injected owner context that the real
+// appSessionState installs; it is mocked above, so keep the context on the same owner.
+vi.mock('../../ownerContext.js', () => ({
+  configureOwnerContext: () => {},
+  ownerScopedPath: (...segments: string[]) => path.join(context.root, 'owners', `test-${context.owner}`, ...segments),
+  activeDataOwnerId: () => context.owner,
+  hasCommittedOwner: () => true,
+  isOwnerBoundaryPending: () => context.pending,
+  ownerGeneration: () => context.generation,
+}));
 vi.mock('../../im/ownerScopedStorage.js', () => ({
   claimLegacyImPath: vi.fn(),
   ownerScopedImUserDataPath: (...segments: string[]) => path.join(context.root, 'owners', `test-${context.owner}`, ...segments),
@@ -56,6 +66,7 @@ import { readVisionBridgeSettings, isTargetModelsCustomized } from '../../vision
 import { nativePluginSettings } from '../additionalPlugins.js';
 import { configureAdditionalNativeOperations } from '../additionalRuntime.js';
 import { commitHostModelPrices, getHostModelPriceStore, readModelPriceOverrideView, inspectModelPriceOverrides } from '../../usage/modelPriceOverrideStore.js';
+import { configureUserDataDir } from '../../userDataPath.js';
 const confirm = vi.fn(async () => true);
 const caller = { id: 'model-test', assertCurrent() {}, confirm };
 const route = { providerId: 'fixture-provider', modelId: 'fixture-model' };
@@ -64,7 +75,7 @@ async function request(domain: HostSettingsDomain, values: Pick<HostSettingsUpda
   if (state.status !== 'ready' || !('operationId' in state)) throw new Error(`Not ready: ${domain}`);
   return { domain, expectedRevision: state.revision, operationId: state.operationId, ...values };
 }
-beforeEach(() => { configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, appearance() {}, databaseWarning() {}, async validateNewTaskDefaults() {} }); context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-models-')); context.owner = 'first'; context.generation++; context.pending = false; context.connected = true; context.modelsPerAgent = 1; vi.clearAllMocks(); confirm.mockResolvedValue(true); });
+beforeEach(() => { configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, appearance() {}, databaseWarning() {}, async validateNewTaskDefaults() {} }); context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-models-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; context.connected = true; context.modelsPerAgent = 1; vi.clearAllMocks(); confirm.mockResolvedValue(true); });
 afterEach(() => fs.rmSync(context.root, { recursive: true, force: true }));
 describe('model and IM settings native persistence', () => {
   // A saved remote-Agent route is not representable in this wire version. Reading

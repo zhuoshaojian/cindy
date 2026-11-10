@@ -26,11 +26,14 @@ describe('settings read catalog independent coverage anchors', () => {
     const represented = new Set([...Object.values(SETTINGS_READ_CATALOG).map(field => field.tab), ...SETTINGS_READ_EXTERNAL_CATALOG.map(item => item.tab)]);
     expect([...represented].sort()).toEqual([...TAB_IDS].sort());
     const actualSections = [...text('renderer/components/settings/SettingsView.tsx').matchAll(/<([A-Z][A-Za-z]*(?:Section|Cell|Card|Panel))\b/g)].map(match => match[1]);
+    // Upstream 0.1.130 wraps page content in the shared settings-rows layout primitives; they hold no setting.
+    const layoutPrimitives = ['SettingsSection', 'SettingsCard'];
+    for (const primitive of layoutPrimitives) expect(text('renderer/components/ui/settings-rows.tsx'), primitive).toMatch(new RegExp(`export function ${primitive}\\b`));
     const classified = new Set([...Object.values(SETTINGS_READ_CATALOG).flatMap(field => [field.control, ...field.controlAncestors]), ...Object.values(SETTINGS_READ_COLLECTION_CATALOG).map(item => item.control),
-      ...SETTINGS_READ_EXTERNAL_CATALOG.map(item => item.control), 'HelpAssistantPanel']);
+      ...SETTINGS_READ_EXTERNAL_CATALOG.map(item => item.control), 'HelpAssistantPanel', ...layoutPrimitives]);
     expect([...new Set(actualSections)].filter(control => !classified.has(control))).toEqual([]);
   });
-  it('has every IM global and seven-channel 12-leaf default, and every subagent card key', () => {
+  it('has every IM global and native-channel 12-leaf default, and every subagent card key', () => {
     expect(SETTINGS_READ_IM_CHANNELS).toEqual(['global', ...IM_DEFAULT_SETTINGS_CHANNELS]);
     for (const channel of ['global', ...IM_DEFAULT_SETTINGS_CHANNELS]) {
       const leaves = ['agentKind', 'permissionMode', 'groupPermissionMode', ...Object.keys(IM_DEFAULT_SETTINGS.agents).flatMap(agent => ['providerId', 'model', 'effort'].map(key => `agents.${agent}.${key}`))];

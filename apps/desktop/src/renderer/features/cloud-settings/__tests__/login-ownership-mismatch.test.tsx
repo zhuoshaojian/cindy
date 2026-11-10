@@ -15,7 +15,6 @@ vi.mock('@/components/sidebar/AccountSwitcherDialog', () => ({
   AccountSwitcherDialog: () => null,
 }));
 
-import { AppShellCoverProvider } from '@/contexts/AppShellCoverContext';
 import { LoginPageView } from '@/components/login/LoginPage';
 
 const dispatch = vi.fn<(action: DesktopLoginAction) => Promise<boolean>>(async () => true);
@@ -23,8 +22,8 @@ const onClose = vi.fn();
 
 function renderError(code: string) {
   render(
-    <AppShellCoverProvider>
-      <MemoryRouter>
+    // The cloud login window renders the login view without the app shell providers.
+    <MemoryRouter>
         <LoginPageView
           intent="cloud-instance"
           targetLabel="Cloud Test"
@@ -39,8 +38,7 @@ function renderError(code: string) {
             dispatchWithResult: async (action) => ({ success: await dispatch(action), code: null }),
           }}
         />
-      </MemoryRouter>
-    </AppShellCoverProvider>,
+    </MemoryRouter>,
   );
   return screen.getByTestId('login-panel-error');
 }

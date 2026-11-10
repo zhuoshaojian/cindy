@@ -23,7 +23,7 @@ describe('窗口创建期消费 profile 偏好', () => {
   it('云实例的 Host 正本覆盖旧 click 缓存，保留关闭行为，迟到旧写入不改变生效值', () => {
     fs.writeFileSync(file(), JSON.stringify({ swallowActivationClick: false, windowsCloseBehavior: 'tray', linuxCloseBehavior: 'quit' }));
     h.preference.mockReturnValue(true);
-    expect(readWindowBehaviorSettings()).toEqual({ swallowActivationClick: true, windowsCloseBehavior: 'tray', linuxCloseBehavior: 'quit' });
+    expect(readWindowBehaviorSettings()).toEqual({ swallowActivationClick: true, windowsCloseBehavior: 'tray', linuxCloseBehavior: 'quit', awayGuard: false, awayGuardDelaySeconds: null });
     writeSwallowActivationClick(false);
     expect(readWindowBehaviorSettings().swallowActivationClick).toBe(true);
     h.preference.mockReturnValue(false);
@@ -35,7 +35,7 @@ describe('窗口创建期消费 profile 偏好', () => {
   it('普通桌面或 Host 值未就绪时沿用本文件，不写默认', () => {
     fs.writeFileSync(file(), JSON.stringify({ swallowActivationClick: true, windowsCloseBehavior: 'tray' }));
     const before = fs.readFileSync(file());
-    expect(readWindowBehaviorSettings()).toEqual({ swallowActivationClick: true, windowsCloseBehavior: 'tray', linuxCloseBehavior: null });
+    expect(readWindowBehaviorSettings()).toEqual({ swallowActivationClick: true, windowsCloseBehavior: 'tray', linuxCloseBehavior: null, awayGuard: false, awayGuardDelaySeconds: null });
     expect(fs.readFileSync(file())).toEqual(before);
     expect(fs.readdirSync(h.root)).toEqual(['window-behavior-settings.json']);
   });

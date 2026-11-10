@@ -196,7 +196,12 @@ export function clampAppearanceWallpaperOverlay(
 const MAX_APPEARANCE_FONT_FAMILY_LENGTH = 256;
 
 /** 持久 override 与 Host 工具共用严格边界；旧 UI 的夹取与取整仍由 normalize 负责。 */
-export function isValidAppearanceSetting(key: string, value: unknown): value is string | number {
+export function isValidAppearanceSetting(key: string, value: unknown): value is string | number | null {
+  if (key === 'appIcon') return isAppIcon(value);
+  if (key === 'desktopVisibility') {
+    return value === null || (typeof value === 'number' && Number.isFinite(value)
+      && value >= APPEARANCE_LIMITS.wallpaperVisibility.min && value <= APPEARANCE_LIMITS.wallpaperVisibility.max);
+  }
   if (key === 'uiFamily' || key === 'codeFamily' || key === 'terminalFamily') {
     return typeof value === 'string' && value.length <= MAX_APPEARANCE_FONT_FAMILY_LENGTH
       && !/[\x00-\x1f]/.test(value);

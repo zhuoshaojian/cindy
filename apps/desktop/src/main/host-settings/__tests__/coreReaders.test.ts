@@ -19,13 +19,20 @@ vi.mock('electron', () => ({
 }));
 vi.mock('electron-store', () => ({ default: state.forbidden }));
 vi.mock('../../logger.js', () => ({ createLogger: () => state.log }));
-vi.mock('../../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => state.log } }));
+vi.mock('../../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => state.log }, createMakerLogger: () => state.log }));
 vi.mock('../../appSessionState.js', () => ({
   getActiveAppSession: state.forbidden,
   ownerScopedUserDataPath: state.forbidden,
   activeOwnerScopeKey: state.forbidden,
   isAppSessionBoundaryPending: state.forbidden,
   dataOwnerStorageKey: (owner: string) => `test-${owner}`,
+}));
+// Native stores now ask the injected owner context for the ambient owner; pure inspection
+// receives its owner root explicitly and must not consult it either.
+vi.mock('../../ownerContext.js', () => ({
+  configureOwnerContext: () => {},
+  ownerScopedPath: state.forbidden, activeDataOwnerId: state.forbidden, hasCommittedOwner: state.forbidden,
+  isOwnerBoundaryPending: state.forbidden, ownerGeneration: state.forbidden,
 }));
 vi.mock('../../ownerNamespaceMigration.js', () => ({
   hasExclusiveSharedLegacyUserDataAccess: state.forbidden,
@@ -63,6 +70,7 @@ import { SETTINGS_READ_CATALOG } from '../../../shared/settingsReadCatalog.js';
 import { supportsBetaUpdateChannel } from '../../../shared/updateChannelCapability.js';
 import { CORE_SETTINGS_FIELD_IDS, readCoreSettings, type CoreSettingsStores, type CoreSettingsReadContext } from '../readers/core.js';
 import type { SettingsFileInspection } from '../../maker-host/settings-inspection.js';
+import { configureUserDataDir } from '../../userDataPath.js';
 
 const stores: CoreSettingsStores = {
   collaboration: inspectCollaborationSettings, agentResource: inspectAgentResourceSettings,
@@ -161,6 +169,8 @@ let base: string;
 beforeAll(() => { base = fs.mkdtempSync(path.join(os.tmpdir(), 'core-settings-')); });
 beforeEach(() => {
   state.root = fs.mkdtempSync(path.join(base, 'profile-'));
+  // Profile-root stores (e.g. agent-resource) read the injected userData root, not Electron.
+  configureUserDataDir(state.root);
   state.owner = 'owner-a'; state.generation = 1; state.platform = 'darwin'; state.arch = 'arm64';
   state.legacyOtherOwner = false;
   vi.clearAllMocks();
