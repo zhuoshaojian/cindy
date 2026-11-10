@@ -14,7 +14,7 @@ linear, with no merge commits, in the same order as the
 
 The 0.1.126-cloud.4 history from before the rebase is kept as
 `backup/cloud-settings-native-client-0126`. The source freeze names it as
-`cloudParent`. Release identity: `0.1.128-cloud.3`.
+`cloudParent`. Release identity: `0.1.128-cloud.4`.
 
 ## Compatibility decisions
 
@@ -266,3 +266,28 @@ Afterwards all eleven running instances are on `0.1.128-cloud.3`, Ready with no
 restarts and no maintenance hold. The two stopped instances were not started or
 upgraded. The CIS web page now sends every owner to the client's cloud pages
 (`settingsWeb.webAppAllInstances`).
+
+## cloud.4: the rest of the instance settings on the CIS web page
+
+Cloud.4 (`22572449d1`) lets the CIS web page show what the native cloud settings page
+already shows for an instance. A side-by-side check of the two found these parts missing
+on the web; CIS accepts their calls since `ec71162b`.
+
+- **Account quota.** Cindy AI (XD) and Codex quota on the provider pages
+  (`maker:usage:account`, `maker:usage:codex-rate-limits`).
+- **Model favorites** in the model pickers (`maker:model-favorites:get` / `apply`).
+- **Remote and share page** of the instance's own providers: model scope, provider
+  group, share visibility, remote task limits and usage (`provider-group:remote`). From
+  the browser the instance takes only the owner's provider management requests; group
+  scheduling and continuity stay between the owner's computers. Join requests for a link
+  created on the web page are approved in that page's request list.
+- **Received share quota and usage.** The provider settings channel's guest share actions
+  add `insights` and its list advertises `shareActions`; the cloud page reads a received
+  share's quota and usage through the instance, the share member. Before cloud.4 the native
+  page keeps reading them on its own computer.
+
+The instance answers these with the handlers and DeviceLink context a same-account
+controller gets, as for the cloud.3 calls. Instances before cloud.4 do not declare them;
+the web page shows those parts as needing an update. Native clients are unaffected,
+except that on a cloud.4 instance the cloud page reads received share insights through it.
+
