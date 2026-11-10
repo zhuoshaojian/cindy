@@ -1132,7 +1132,7 @@ async function execute(command: ProviderShareCommand, assertCurrent: () => void 
 /** Guest actions the owner's cloud instance settings page runs on that instance. */
 export type ProviderShareGuestCommand = Extract<
   ProviderShareCommand,
-  { action: 'received' | 'get-credential-consent' | 'set-credential-consent' | 'leave' }
+  { action: 'received' | 'get-credential-consent' | 'set-credential-consent' | 'leave' | 'insights' }
 >;
 /**
  * Only for the instance owner's private cloud settings channel, which checks ownership first;

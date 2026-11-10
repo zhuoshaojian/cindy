@@ -287,6 +287,9 @@ export const cloudProviderSettingsRequestSchema = z.discriminatedUnion('op', [
           .object({ action: z.literal('set-credential-consent'), shareId: id, skip: z.boolean() })
           .strict(),
         z.object({ action: z.literal('leave'), memberId: id }).strict(),
+        z
+          .object({ action: z.literal('insights'), shareId: id, includeUsage: z.boolean() })
+          .strict(),
       ]),
     })
     .strict(),
@@ -310,7 +313,21 @@ export interface CloudProviderSettingsList {
   /** Remembered reasoning effort by memory slot (`agent:providerId`, `agent:*`) and model. */
   efforts?: Record<string, Record<string, string>>;
   supportedOps: CloudProviderSettingsOp[];
+  /** Guest share actions this instance runs; absent before cloud.4, which added `insights`. */
+  shareActions?: CloudProviderShareAction[];
 }
+
+export type CloudProviderShareAction = Extract<
+  CloudProviderSettingsRequest,
+  { op: 'share' }
+>['command']['action'];
+export const CLOUD_PROVIDER_SHARE_ACTIONS: readonly CloudProviderShareAction[] = [
+  'received',
+  'get-credential-consent',
+  'set-credential-consent',
+  'leave',
+  'insights',
+];
 
 export interface CloudProviderSettingsWriteReceipt {
   ok: true;

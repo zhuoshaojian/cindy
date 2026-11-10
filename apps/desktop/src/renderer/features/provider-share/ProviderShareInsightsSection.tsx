@@ -20,6 +20,7 @@ import type {
 import { quotaWindowLabel } from '@/components/status/usageCardModel';
 import { ProviderUsageSection } from './ProviderUsageSection';
 import { useShareTimeFormat } from './useShareTimeFormat';
+import { useProviderShareSource } from './providerShareSource';
 
 /** 可见页面每五秒复核权限；不持久化数据，身份变化、失败与隐藏都丢弃旧结果。 */
 export function ProviderShareInsightsSection({ share }: { share: ProviderShareReceived }) {
@@ -60,6 +61,10 @@ function InsightsView({ share }: { share: ProviderShareReceived }) {
   const valid = useRef(available);
   const expandedRef = useRef(false);
   const generation = useRef(0);
+  // On the cloud instance page the instance (the member) reads it; locally this computer.
+  const source = useProviderShareSource();
+  const command = useRef(source?.command ?? window.electronAPI.providerShare.command);
+  command.current = source?.command ?? window.electronAPI.providerShare.command;
   useEffect(() => {
     let alive = true;
     let reading = false;
@@ -81,7 +86,7 @@ function InsightsView({ share }: { share: ProviderShareReceived }) {
       reading = true;
       const current = ++generation.current;
       try {
-        const view = await window.electronAPI.providerShare.command({
+        const view = await command.current({
           action: 'insights',
           shareId: share.shareId,
           includeUsage: expanded && expandedRef.current,
