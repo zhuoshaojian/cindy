@@ -32,7 +32,9 @@ part of this source archive.
   lock and existing user settings are preserved; application menus and clock
   options remain available.
 - `seccomp.json` is the verified runtime allowlist including `close_range`, needed
-  by GLib process spawning. Do not replace the profile with Unconfined.
+  by GLib process spawning. Do not replace the profile with Unconfined. The launcher
+  answers `clone3` and `faccessat2` with ENOSYS so libc falls back to allowed calls;
+  under EPERM, glibc's `faccessat` fails and shell `test -x` / `-w` report false.
 - `../runtime-window-controls/` is the cloud-only source transform used to build
   the ASAR: native minimization stays available, main-window closing is blocked,
   and orderly shutdown remains allowed. Plank's stock close menu can still be
