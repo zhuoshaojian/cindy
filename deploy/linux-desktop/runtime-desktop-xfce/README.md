@@ -27,6 +27,9 @@ part of this source archive.
 - The Chrome launcher uses a separate personal browser profile and retains its
   sandbox and Secret Service password store. Terminal explicitly starts bash,
   because the container account has a noninteractive passwd shell.
+- `helpers.rc` and `cindy-cloud-chrome.helper.desktop` make that launcher Xfce's
+  preferred web browser, so links Cindy opens (plugin authorization, for example)
+  land in the Dock's Chrome. A user's own `~/.config/xfce4/helpers.rc` still wins.
 - [The cloud Plank patch](plank/README.md) hides the Preferences menu and disables
   its shared action, including CLI/D-Bus activation. The original default icon
   lock and existing user settings are preserved; application menus and clock

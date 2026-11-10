@@ -333,6 +333,10 @@ class RuntimeLayerTest(unittest.TestCase):
                          (HERE / 'runtime-support/seccomp-launch.py').read_bytes())
         self.assertEqual((self.layer / 'usr/bin/chromium').read_bytes(),
                          (HERE / 'runtime-support/chromium-compat').read_bytes())
+        self.assertEqual((self.layer / 'etc/xdg/xfce4/helpers.rc').read_bytes(),
+                         (HERE / 'runtime-desktop-xfce/helpers.rc').read_bytes())
+        self.assertIn(b'X-XFCE-Binaries=cindy-dock-chrome;',
+                      (self.layer / 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop').read_bytes())
         self.assertEqual((self.layer / 'usr/local/bin/codex').readlink(),
                          Path('/opt/cindy/resources/cloud-runtimes/codex/bin/codex'))
 
