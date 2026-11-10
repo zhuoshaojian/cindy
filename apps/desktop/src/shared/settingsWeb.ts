@@ -57,6 +57,12 @@ export const SETTINGS_WEB_CHANNELS = [
   'maker:get-capabilities',
   'maker:model-catalog:read',
   'maker:provider:list',
+  // cloud.4: account quota, model favorites and the owner's provider management.
+  'maker:usage:account',
+  'maker:usage:codex-rate-limits',
+  'maker:model-favorites:get',
+  'maker:model-favorites:apply',
+  'provider-group:remote',
 ] as const;
 /** The largest Host channel reply (the provider catalog) plus envelope headroom. */
 export const SETTINGS_WEB_LARGE_RESULT_MAX_BYTES = 2 * 1024 * 1024 + 64 * 1024;
