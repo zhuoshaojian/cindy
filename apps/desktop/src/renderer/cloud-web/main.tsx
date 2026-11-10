@@ -1,4 +1,5 @@
 import { installWebElectronApi } from './electronApi';
+import { showStartFailure } from './startFailure';
 
 /**
  * Browser entry for the cloud instance pages CIS serves to a signed-in owner. The bridge
@@ -34,4 +35,5 @@ async function start() {
     (await import('./desktopPage')).mountDesktopPage(deviceId);
   } else (await import('./app')).mountCloudApp(api, session);
 }
-void start();
+// A chunk that cannot load (or a missing browser feature) would otherwise leave a blank page.
+void start().catch((error: unknown) => showStartFailure(error, document.getElementById('root')!));

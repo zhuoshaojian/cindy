@@ -24,6 +24,7 @@ import { themeService } from '../themes/theme-service';
 import type { CloudInstanceView } from '../../shared/cloudInstanceControl';
 import type { CisSession, WebCloudApi } from './webApi';
 import { openDesktopTab } from './desktopTab';
+import { CloudWebErrorBoundary } from './crash';
 
 const unavailable = () => Promise.reject(new Error('UNSUPPORTED_IN_WEB'));
 
@@ -192,26 +193,29 @@ function Settings({ api }: { api: WebCloudApi }) {
 export function mountCloudApp(api: WebCloudApi, session: CisSession) {
   themeService.applyTheme(getInitialThemeVariant().theme);
   const auth = authValue(session);
+  // A render error shows the crash screen and its report instead of a blank page.
   createRoot(document.getElementById('root')!).render(
-    <ThemeProvider>
-      <LocaleProvider>
-        <ConfirmDialogProvider>
-          <Tooltip.Provider>
-            <StaticAuthContextProvider value={auth}>
-              <HashRouter>
-                <div className="h-screen w-screen overflow-hidden bg-[var(--settings-theme-bg,var(--background))]">
-                  <Routes>
-                    <Route path="/" element={<Instances api={api} />} />
-                    <Route path="/settings" element={<Settings api={api} />} />
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Routes>
-                </div>
-              </HashRouter>
-            </StaticAuthContextProvider>
-            <ToastContainer />
-          </Tooltip.Provider>
-        </ConfirmDialogProvider>
-      </LocaleProvider>
-    </ThemeProvider>,
+    <CloudWebErrorBoundary>
+      <ThemeProvider>
+        <LocaleProvider>
+          <ConfirmDialogProvider>
+            <Tooltip.Provider>
+              <StaticAuthContextProvider value={auth}>
+                <HashRouter>
+                  <div className="h-screen w-screen overflow-hidden bg-[var(--settings-theme-bg,var(--background))]">
+                    <Routes>
+                      <Route path="/" element={<Instances api={api} />} />
+                      <Route path="/settings" element={<Settings api={api} />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                  </div>
+                </HashRouter>
+              </StaticAuthContextProvider>
+              <ToastContainer />
+            </Tooltip.Provider>
+          </ConfirmDialogProvider>
+        </LocaleProvider>
+      </ThemeProvider>
+    </CloudWebErrorBoundary>,
   );
 }
