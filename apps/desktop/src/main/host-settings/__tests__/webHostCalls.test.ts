@@ -12,6 +12,7 @@ function deps(overrides: Partial<WebHostCallDeps> = {}) {
   const value: WebHostCallDeps = {
     privateHandler: vi.fn(async () => ({ handle })),
     invoke: vi.fn(async (_channel, args) => ({ args })),
+    providerGroup: vi.fn(async (_controller, raw) => ({ managed: raw })),
     inContext: vi.fn(async (controller, channel, run) => { contexts.push([controller, channel]); return run(); }),
     desktop: vi.fn(async (_controller, request) => ({ answered: request })),
     ice: vi.fn(async () => [{ urls: ['stun:stun.example.invalid:3478'] }]),
@@ -46,6 +47,30 @@ describe('Host calls from the browser build of the cloud pages', () => {
     expect(await executeWebHostCall(input({ kind: 'channel', channel: 'maker:model-catalog:read', args: ['codex'] }), f.deps)).toEqual({ ok: true, channel: { args: ['codex'] } });
     expect(await executeWebHostCall(input({ kind: 'channel', channel: 'maker:provider:list', args: [{ tunnel: 1 }] }), f.deps)).toEqual({ ok: true, channel: { args: [] } });
     expect(f.contexts.map(([, channel]) => channel)).toEqual(['maker:model-catalog:read', 'maker:provider:list']);
+  });
+
+  it('reaches cloud.4 quota and favorites channels as ordinary DeviceLink calls', async () => {
+    const f = deps();
+    for (const [channel, args] of [['maker:usage:account', ['claude-code', 'cindy-quota-state-v1']],
+      ['maker:usage:codex-rate-limits', ['openai']], ['maker:model-favorites:get', []],
+      ['maker:model-favorites:apply', [{ op: 'add', key: 'codex:openai:gpt' }]]] as const) {
+      expect(await executeWebHostCall(input({ kind: 'channel', channel, args: [...args] }), f.deps)).toEqual({ ok: true, channel: { args } });
+    }
+    expect(f.deps.providerGroup).not.toHaveBeenCalled();
+  });
+
+  it('takes only provider management on provider-group:remote, as the owner controller', async () => {
+    const f = deps();
+    const manage = { action: 'manage-share', command: { action: 'owned' } };
+    expect(await executeWebHostCall(input({ kind: 'channel', channel: 'provider-group:remote', args: [manage] }), f.deps)).toEqual({ ok: true, channel: { managed: manage } });
+    expect(f.deps.providerGroup).toHaveBeenCalledWith(`web:${sessionKey}`, manage);
+    expect(f.contexts).toEqual([[`web:${sessionKey}`, 'provider-group:remote']]);
+    // Group scheduling and continuity between the owner's computers never come from a browser.
+    for (const raw of [{ action: 'continuity-inspect', id: 'x' }, { action: 'usage-part' }, null, 'manage-group']) {
+      expect(await executeWebHostCall(input({ kind: 'channel', channel: 'provider-group:remote', args: [raw] }), f.deps)).toEqual({ ok: false, code: 'INVALID_PARAMS' });
+    }
+    expect(f.deps.providerGroup).toHaveBeenCalledTimes(1);
+    expect(f.deps.invoke).not.toHaveBeenCalled();
   });
 
   it('relays desktop signaling and ICE configuration, keeping null replies distinct from missing ones', async () => {

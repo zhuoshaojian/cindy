@@ -6,6 +6,8 @@ import type { CloudInstanceView } from '../../shared/cloudInstanceControl';
 import { createIpcError, isIpcErrorCode, type IpcErrorCode } from '../../shared/ipc-errors';
 import { SETTINGS_WEB_CHANNELS } from '../../shared/settingsWeb';
 import { MODEL_CATALOG_READ_CHANNELS } from '../../shared/controlledModelCatalog';
+import { isProviderManagementRequest, type ProviderManagementReply } from '../../shared/providerManagement';
+import { PROVIDER_SHARE_LINK_TTL_MS } from '@cindy/device-link';
 import { createCisClientHttp, createCisFetch, CisSignedOutError } from './cisHttp';
 import { createHostRelay, HostCallError, type HostChannel } from './hostRelay';
 
@@ -37,6 +39,27 @@ export function routeDeviceLinkCall(deviceId: string, channel: string, args: unk
   if (!(SETTINGS_WEB_CHANNELS as readonly string[]).includes(channel))
     throw createIpcError('DEVICE_LINK_CHANNEL_NOT_ALLOWED', 'DEVICE_LINK_CHANNEL_NOT_ALLOWED');
   return { deviceId, channel: channel as HostChannel, args: list };
+}
+
+/**
+ * The instance's reply to one owner provider-management request (its remote and share page),
+ * unwrapped as the native client's Main does. A link the instance created expires on the
+ * instance's clock, so its lifetime is carried over as the remaining duration. Join requests
+ * are approved in that page's request list: a browser cannot show the approval prompt.
+ */
+export function unwrapProviderManagementReply(request: unknown, raw: unknown, now = Date.now()): unknown {
+  const reply = raw as ProviderManagementReply | null;
+  if (!reply || typeof reply !== 'object' || !Object.hasOwn(reply, 'result') || !Number.isFinite(reply.respondedAt))
+    throw createIpcError('PRECONDITION_FAILED', 'Invalid provider management response');
+  const command = (request as { action?: string; command?: { action?: string } }).command;
+  if ((request as { action?: string }).action !== 'manage-share' || command?.action !== 'create-link') return reply.result;
+  const created = reply.result as { link?: unknown; linkId?: unknown; expiresAt?: unknown } | null;
+  if (!created || typeof created.link !== 'string' || !created.link || created.link.length > 4096
+    || typeof created.linkId !== 'string' || !/^[a-f0-9]{64}$/u.test(created.linkId)
+    || typeof created.expiresAt !== 'string' || !Number.isFinite(Date.parse(created.expiresAt)))
+    throw createIpcError('PRECONDITION_FAILED', 'Invalid provider share link');
+  const remaining = Math.max(0, Math.min(PROVIDER_SHARE_LINK_TTL_MS, Date.parse(created.expiresAt) - reply.respondedAt));
+  return { link: created.link, linkId: created.linkId, expiresAt: new Date(now + remaining).toISOString() };
 }
 
 /**
@@ -140,9 +163,28 @@ export function createWebCloudApi(session: CisSession, onSignedOut: () => void) 
     },
   };
 
+  /** The provider bridge the remote and share page uses: only management of an instance. */
+  const providerGroup = {
+    async command(raw: { action?: string; deviceId?: unknown; request?: unknown }) {
+      if (raw?.action !== 'remote-manage' || typeof raw.deviceId !== 'string' || !isProviderManagementRequest(raw.request))
+        throw new Error('UNSUPPORTED_IN_WEB');
+      let reply: unknown;
+      try {
+        reply = await deviceLink.invoke(raw.deviceId, 'provider-group:remote', [raw.request]);
+      } catch (error) {
+        // An instance before cloud.4 does not take it from the browser yet.
+        if ((error as { code?: unknown }).code === 'DEVICE_LINK_CHANNEL_NOT_ALLOWED')
+          throw createIpcError('UNSUPPORTED_CAPABILITY', 'Provider management requires an update on the instance');
+        throw error;
+      }
+      return unwrapProviderManagementReply(raw.request, reply);
+    },
+  };
+
   return {
     cloudSettings,
     deviceLink,
+    providerGroup,
     relay,
     listInstances,
     instances: () => instances,

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCisClientHttp, createCisFetch, CisSignedOutError } from '../cisHttp';
 import { createHostRelay, HostCallError } from '../hostRelay';
 import { installWebElectronApi } from '../electronApi';
-import { routeDeviceLinkCall } from '../webApi';
+import { routeDeviceLinkCall, unwrapProviderManagementReply } from '../webApi';
 import { createWebRemoteDesktopViewer } from '../remoteDesktopViewer';
 
 const instanceId = 'cloud-instance-0123456789abcdef';
@@ -161,8 +161,32 @@ describe('DeviceLink calls from the cloud pages', () => {
   it('keeps instance calls direct and refuses what no instance can answer', () => {
     expect(routeDeviceLinkCall(deviceId, 'maker:provider:list', [], deviceId)).toEqual({ deviceId, channel: 'maker:provider:list', args: [] });
     expect(() => routeDeviceLinkCall('share:abc', 'maker:provider:list', [], null)).toThrow('DEVICE_LINK_DEVICE_OFFLINE');
-    expect(() => routeDeviceLinkCall('share:abc', 'maker:usage:account', [], deviceId)).toThrow('DEVICE_LINK_CHANNEL_NOT_ALLOWED');
-    expect(() => routeDeviceLinkCall(deviceId, 'maker:usage:account', [], deviceId)).toThrow('DEVICE_LINK_CHANNEL_NOT_ALLOWED');
+    expect(() => routeDeviceLinkCall('share:abc', 'maker:session:delete', [], deviceId)).toThrow('DEVICE_LINK_CHANNEL_NOT_ALLOWED');
+    expect(() => routeDeviceLinkCall(deviceId, 'maker:session:delete', [], deviceId)).toThrow('DEVICE_LINK_CHANNEL_NOT_ALLOWED');
+    // cloud.4 instances also answer account quota, favorites and provider management.
+    expect(routeDeviceLinkCall(deviceId, 'maker:usage:account', ['claude-code'], deviceId).channel).toBe('maker:usage:account');
+    expect(routeDeviceLinkCall(deviceId, 'provider-group:remote', [{}], deviceId).channel).toBe('provider-group:remote');
+  });
+});
+
+describe('provider management of an instance from the browser', () => {
+  const manage = (action: string, extra: object = {}) => ({ action: 'manage-share', command: { action, ...extra } });
+
+  it('unwraps the reply as the native client does', () => {
+    expect(unwrapProviderManagementReply(manage('owned'), { result: { ready: true }, respondedAt: 1 })).toEqual({ ready: true });
+    for (const raw of [null, { respondedAt: 1 }, { result: 1 }, { result: 1, respondedAt: Number.NaN }])
+      expect(() => unwrapProviderManagementReply(manage('owned'), raw)).toThrow('PRECONDITION_FAILED');
+  });
+
+  it('carries a created link over as its remaining lifetime on the instance', () => {
+    const respondedAt = Date.parse('2026-11-10T08:00:00Z');
+    const created = { link: 'cindy://provider-share/join?x=1', linkId: 'a'.repeat(64),
+      expiresAt: new Date(respondedAt + 120_000).toISOString() };
+    const now = Date.parse('2026-11-10T09:00:00Z');
+    expect(unwrapProviderManagementReply(manage('create-link', { providerId: 'openai' }), { result: created, respondedAt }, now))
+      .toEqual({ ...created, expiresAt: new Date(now + 120_000).toISOString() });
+    expect(() => unwrapProviderManagementReply(manage('create-link'), { result: { ...created, linkId: 'x' }, respondedAt }))
+      .toThrow('PRECONDITION_FAILED');
   });
 });
 

@@ -797,6 +797,11 @@ let providerGroupRemoteHandler: ProviderGroupRemoteHandler | null = null;
 function setProviderGroupRemoteHandler(handler: ProviderGroupRemoteHandler | null): void {
   providerGroupRemoteHandler = handler;
 }
+
+/** Cloud fork: the owner's browser reaches provider management through the settings relay. */
+export function getProviderGroupRemoteHandler(): ProviderGroupRemoteHandler | null {
+  return providerGroupRemoteHandler;
+}
 let setupSnapshotRemoteHandler: SetupSnapshotRemoteHandler | null = null;
 
 function setSetupSnapshotRemoteHandler(handler: SetupSnapshotRemoteHandler | null): void {
