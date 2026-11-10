@@ -122,6 +122,7 @@ describe('cloud provider settings channel', () => {
       visibility: { status: 'ready', revision: 'rev-1', overrides: { 'codex:xd:hidden': false } },
     });
     expect(list.supportedOps).toContain('visibility-set');
+    expect((list as unknown as { shareActions: string[] }).shareActions).toContain('insights');
     const xd = list.providers[0];
     expect(xd.models.codex.map((m) => m.id)).toEqual(['shown', 'hidden', 'paid']);
     expect(xd.models.codex[2].availability).toBe('requires_payment');
@@ -384,13 +385,19 @@ describe('cloud provider settings channel', () => {
     });
     await share({ action: 'leave', memberId: 'm1' });
     expect(f.deps.shareCommand).toHaveBeenCalledTimes(2);
+    // cloud.4: the share's quota and usage as this instance (the member) reads them.
+    await expect(share({ action: 'insights', shareId: 's1', includeUsage: false })).resolves.toMatchObject({
+      value: { command: { action: 'insights', shareId: 's1', includeUsage: false } },
+    });
+    expect(f.deps.shareCommand).toHaveBeenCalledTimes(3);
     for (const forbidden of [
       { action: 'create-link', providerId: 'xd' },
       { action: 'approve', requestId: 'r1' },
       { action: 'send-request', link: 'cindy://provider-share/join?x=1' },
+      { action: 'insights', shareId: 's1' },
     ])
       await expect(share(forbidden)).rejects.toThrow('[INVALID_PARAMS]');
-    expect(f.deps.shareCommand).toHaveBeenCalledTimes(2);
+    expect(f.deps.shareCommand).toHaveBeenCalledTimes(3);
   });
 });
 
