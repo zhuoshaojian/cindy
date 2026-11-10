@@ -5,6 +5,7 @@ import type { CloudSettingsRendererApi } from '../../shared/cloudSettingsClient'
 import type { CloudInstanceView } from '../../shared/cloudInstanceControl';
 import { createIpcError, isIpcErrorCode, type IpcErrorCode } from '../../shared/ipc-errors';
 import { SETTINGS_WEB_CHANNELS } from '../../shared/settingsWeb';
+import { MODEL_CATALOG_READ_CHANNELS } from '../../shared/controlledModelCatalog';
 import { createCisClientHttp, createCisFetch, CisSignedOutError } from './cisHttp';
 import { createHostRelay, HostCallError, type HostChannel } from './hostRelay';
 
@@ -13,6 +14,29 @@ export interface CisSession {
   passportId: string;
   kind: string;
   orgSlug: string | null;
+}
+
+const CLOUD_DEVICE = /^cloud-device-[a-f0-9]{24}$/u;
+
+/**
+ * Where a DeviceLink call from the cloud pages goes. The browser reaches only the owner's
+ * instances. Model catalogs of the sources an instance lists (providers shared with it, the
+ * owner's other computers) live behind that instance, so the settings page reads them through
+ * the instance it shows, as the instance's own model picker does (`maker:model-catalog:read`).
+ */
+export function routeDeviceLinkCall(deviceId: string, channel: string, args: unknown[], viewing: string | null) {
+  const list = Array.isArray(args) ? args : [];
+  if (!CLOUD_DEVICE.test(deviceId) && (MODEL_CATALOG_READ_CHANNELS as readonly string[]).includes(channel)) {
+    if (!viewing) throw createIpcError('DEVICE_LINK_DEVICE_OFFLINE', 'DEVICE_LINK_DEVICE_OFFLINE');
+    return {
+      deviceId: viewing,
+      channel: 'maker:model-catalog:read' as HostChannel,
+      args: [{ op: 'read', agentDeviceId: deviceId, channel, args: list }],
+    };
+  }
+  if (!(SETTINGS_WEB_CHANNELS as readonly string[]).includes(channel))
+    throw createIpcError('DEVICE_LINK_CHANNEL_NOT_ALLOWED', 'DEVICE_LINK_CHANNEL_NOT_ALLOWED');
+  return { deviceId, channel: channel as HostChannel, args: list };
 }
 
 /**
@@ -73,12 +97,13 @@ export function createWebCloudApi(session: CisSession, onSignedOut: () => void) 
   const online = (item: CloudInstanceView) =>
     item.ready && item.desiredState === 'running' && !item.loginRequired;
 
+  // The instance the settings page shows; see routeDeviceLinkCall.
+  let viewing: string | null = null;
   const deviceLink = {
     async invoke(deviceId: string, channel: string, args: unknown[]) {
-      if (!(SETTINGS_WEB_CHANNELS as readonly string[]).includes(channel))
-        throw createIpcError('DEVICE_LINK_CHANNEL_NOT_ALLOWED', 'DEVICE_LINK_CHANNEL_NOT_ALLOWED');
+      const call = routeDeviceLinkCall(deviceId, channel, args, viewing);
       try {
-        return await relay.call(deviceId, { kind: 'channel', channel: channel as HostChannel, args: Array.isArray(args) ? args : [] });
+        return await relay.call(call.deviceId, { kind: 'channel', channel: call.channel, args: call.args });
       } catch (error) {
         throw invokeFailure(error);
       }
@@ -127,6 +152,10 @@ export function createWebCloudApi(session: CisSession, onSignedOut: () => void) 
     },
     online,
     invokeFailure,
+    /** The instance whose settings page is open, or null. */
+    view(deviceId: string | null) {
+      viewing = deviceId;
+    },
   };
 }
 export type WebCloudApi = ReturnType<typeof createWebCloudApi>;
