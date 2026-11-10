@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamVersion": "0.1.130",
   "upstreamCommit": "999f7b8b415b17d246acaed7fe07880439fcaf72",
-  "cloudRevision": 1,
+  "cloudRevision": 2,
   "region": "cn",
   "platform": "linux/amd64"
 }
