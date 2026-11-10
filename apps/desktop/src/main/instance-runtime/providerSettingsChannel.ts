@@ -4,6 +4,7 @@ import {
   CLOUD_PROVIDER_SETTINGS_CHANNEL,
   CLOUD_PROVIDER_SETTINGS_MAX_BYTES,
   CLOUD_PROVIDER_SETTINGS_OPS,
+  CLOUD_PROVIDER_SHARE_ACTIONS,
   cloudProviderSettingsRequestSchema,
   type CloudProviderSettingsList,
   type CloudProviderSettingsRequest,
@@ -57,7 +58,7 @@ export interface ProviderSettingsChannelDeps {
     modelId: string;
     effort: string | null;
   }): Promise<void>;
-  /** Guest share actions on this instance (received list, credential trust, leave). */
+  /** Guest share actions on this instance (received list, credential trust, leave, insights). */
   shareCommand(
     command: Extract<CloudProviderSettingsRequest, { op: 'share' }>['command'],
   ): Promise<unknown>;
@@ -178,6 +179,7 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
       visibility,
       efforts: deps.readEfforts(),
       supportedOps: [...CLOUD_PROVIDER_SETTINGS_OPS],
+      shareActions: [...CLOUD_PROVIDER_SHARE_ACTIONS],
     };
     if (Buffer.byteLength(JSON.stringify(result)) > CLOUD_PROVIDER_SETTINGS_MAX_BYTES)
       fail('TOO_LARGE', 'provider catalog exceeds the transfer limit');

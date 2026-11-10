@@ -250,6 +250,7 @@ export function useCloudProviderCatalog({
     providers: (list?.providers ?? []) as ProviderView[],
     providerOrder: list?.providerOrder ?? [],
     supportedOps: list?.supportedOps ?? [],
+    shareActions: list?.shareActions ?? [],
     source,
     load,
     write,

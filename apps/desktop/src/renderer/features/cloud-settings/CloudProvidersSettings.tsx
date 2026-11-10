@@ -277,10 +277,17 @@ function CloudProviderCatalogPage({
     () => ({
       received: shares,
       command: (async (command: { action: string }) => {
+        // The share's quota and usage as the instance (the member) reads them. Instances
+        // before cloud.4 do not run it; this computer's own reading stays the fallback.
+        if (command.action === 'insights' && !catalog.shareActions.includes('insights'))
+          return window.electronAPI.providerShare.command(
+            command as Parameters<typeof window.electronAPI.providerShare.command>[0],
+          );
         if (
           command.action !== 'get-credential-consent' &&
           command.action !== 'set-credential-consent' &&
-          command.action !== 'leave'
+          command.action !== 'leave' &&
+          command.action !== 'insights'
         )
           throw new Error('[UNSUPPORTED] not available for the cloud instance');
         const receipt = await catalog.send({
@@ -291,7 +298,7 @@ function CloudProviderCatalogPage({
         return receipt.value;
       }) as ProviderShareSource['command'],
     }),
-    [shares, loadShares, catalog.send],
+    [shares, loadShares, catalog.send, catalog.shareActions],
   );
   const selectedShare = shares.received.find((share) => share.shareId === selectedShareId) ?? null;
   const [detections, setDetections] = useState<LocalCliDetection[]>([]);
