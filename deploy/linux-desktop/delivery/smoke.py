@@ -76,6 +76,9 @@ for n in ['com.cindy.cloud-terminal.desktop','com.cindy.cloud-chrome.desktop']:
 # Under the shipped filter, shell permission tests must still see real modes;
 # sensible-browser relies on `test -x`.
 subprocess.run(['/usr/local/bin/cindy-seccomp','/bin/sh','-c','test -x /usr/bin/x-www-browser && test -w /tmp && ! test -x /etc/passwd'],check=True,timeout=10)
+helpers=dict(l.split('=',1) for l in pathlib.Path('/etc/xdg/xfce4/helpers.rc').read_text().splitlines() if '=' in l and not l.startswith('#'))
+assert helpers['WebBrowser']=='cindy-cloud-chrome','WEB_BROWSER_NOT_DOCK_CHROME'
+assert 'X-XFCE-Binaries=cindy-dock-chrome;' in pathlib.Path('/usr/share/xfce4/helpers/cindy-cloud-chrome.desktop').read_text()
 with open('/opt/cindy/resources/app.asar','rb') as archive:
  prefix=archive.read(16)
  header_size=struct.unpack_from('<I',prefix,4)[0];json_size=struct.unpack_from('<I',prefix,12)[0]
@@ -84,7 +87,7 @@ with open('/opt/cindy/resources/app.asar','rb') as archive:
  assert not package.get('unpacked') and 0<package['size']<1024*1024
  archive.seek(8+header_size+int(package['offset']))
  version=json.loads(archive.read(package['size']))['version']
-print(json.dumps({'dockPreferencesHidden':True,'desktopReady':True,'sandboxedRenderers':True,'legacyHome':True,'shellAccessChecks':True,'applicationVersion':version}))
+print(json.dumps({'dockPreferencesHidden':True,'desktopReady':True,'sandboxedRenderers':True,'legacyHome':True,'shellAccessChecks':True,'dockChromeDefault':True,'applicationVersion':version}))
 '''
 
 
