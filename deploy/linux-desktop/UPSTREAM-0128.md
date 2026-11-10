@@ -14,7 +14,7 @@ linear, with no merge commits, in the same order as the
 
 The 0.1.126-cloud.4 history from before the rebase is kept as
 `backup/cloud-settings-native-client-0126`. The source freeze names it as
-`cloudParent`. Release identity: `0.1.128-cloud.4`.
+`cloudParent`. Release identity: `0.1.128-cloud.5`.
 
 ## Compatibility decisions
 
@@ -291,3 +291,22 @@ controller gets, as for the cloud.3 calls. Instances before cloud.4 do not decla
 the web page shows those parts as needing an update. Native clients are unaffected,
 except that on a cloud.4 instance the cloud page reads received share insights through it.
 
+## cloud.5: links open in the Dock's Chrome
+
+Cloud.4 was built (run `42785360731`) but not rolled out; cloud.5 replaces it with the
+same app source (`22572449d1`) and two runtime image fixes. A colleague's XD Feishu
+reauthorization showed "Failed to execute default Web Browser: Input/output error"
+instead of opening the authorization page.
+
+- **Shell permission checks.** The instance seccomp profile predates `faccessat2` and
+  denied it with EPERM. glibc's `faccessat` falls back to the allowed call only on
+  ENOSYS, so under the filter every shell `test -x` / `-w` was false, for Cindy, its
+  agents and the desktop alike. `sensible-browser` found no browser and exited 1. The
+  launcher now answers `faccessat2` with ENOSYS, as it does for `clone3`; the allowlist
+  is unchanged.
+- **Default browser.** Xfce's preferred browser was `sensible-browser`, which starts
+  Chrome's default profile, an empty second Chrome beside the Dock's personal profile.
+  The image now makes the Dock's Chrome launcher the system default. A user's own
+  `~/.config/xfce4/helpers.rc` still takes precedence.
+
+The image smoke checks both under the shipped filter.
