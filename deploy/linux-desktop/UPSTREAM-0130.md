@@ -122,3 +122,18 @@ cloud login window preload exposed only `listSync`, so its entry failed with
 and the instance logged the same error when it prewarmed the window. The preload
 now exposes `onChanged` like the other window preloads. A test checks every preload
 that exposes local themes.
+
+The cloud.2 image (run `42824961066`) passed the native smoke test and reached the
+image cache. A cache probe in the cluster found the fix in the image's preload. Only
+the owner's instance was approved for cloud.2 and upgraded, with no hold. The final
+check found:
+
+- Main and init images updated, a cache hit, a ready pod with no restarts, and
+  maintenance released.
+- 4152 backup files.
+- Databases, sessions, messages and schedules unchanged.
+- No endpoint write; the list is still the approved official one.
+- Peer records and the defaults for new instances unchanged.
+
+Since that start the instance has logged neither the login window error nor
+`CHAT_ENDPOINT_UNAVAILABLE`.
