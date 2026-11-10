@@ -137,3 +137,9 @@ check found:
 
 Since that start the instance has logged neither the login window error nor
 `CHAT_ENDPOINT_UNAVAILABLE`.
+
+The instance had no teammate of its own, so a temporary one was created in the
+instance's Cindy and asked to call `get_teammate_home`. It returned `ok` with mode
+`local` and the instance itself as home, instead of the earlier `NOT_ENABLED`. The
+temporary teammate was then deleted; its archived task remains in history. The
+Dev client `0.1.130-dev.cloud.20261110.2` shows the cloud login window again.
