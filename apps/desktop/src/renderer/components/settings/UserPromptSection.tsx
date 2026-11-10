@@ -1,8 +1,8 @@
 import { personalizationDetailsSettings } from './PersonalizationDetails.settings-search';
 import { useSettingDefinition } from './useSettingDefinition';
 import { Button } from '@/components/ui/button';
-import { SettingsCard, SettingsField } from '@/components/ui/settings-rows';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SettingsCard, SettingsField, SettingsPageHeader, SettingsSection } from '@/components/ui/settings-rows';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
@@ -30,11 +30,13 @@ export function UserPromptSection() {
 /** Personalization page title; the cloud surface shows it alone when the prompt is not reported. */
 export function PersonalizationPageTitle() {
   const { t } = useTranslation();
-  return (
-    <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-      {t('settings.personalization.title')}
-    </h2>
-  );
+  return <SettingsPageHeader title={t('settings.personalization.title')} />;
+}
+
+/** The personalization page as the settings page frames it; another computer's page wraps its editor in it. */
+export function PersonalizationPage({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  return <SettingsSection variant="page" title={t('settings.personalization.title')}>{children}</SettingsSection>;
 }
 
 export interface UserPromptEditorProps {
@@ -173,7 +175,7 @@ export function UserPromptEditor({
 
           <div className="flex items-center gap-2">
             {resetValue && (
-              <Button
+              <Button data-settings-search-action="Reset the custom instructions of the Host this page edits"
                 variant="secondary"
                 onClick={handleReset}
                 disabled={!ready || !customized || saving || conflicted}

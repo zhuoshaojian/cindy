@@ -885,13 +885,3 @@ export function InfoRow({
     />
   );
 }
-
-export function Divider() {
-  return (
-    <div
-      aria-hidden
-      className="h-px w-full"
-      style={{ background: 'var(--settings-theme-card-border)' }}
-    />
-  );
-}

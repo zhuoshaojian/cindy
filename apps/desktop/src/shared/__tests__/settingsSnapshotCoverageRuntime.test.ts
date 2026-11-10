@@ -24,6 +24,11 @@ vi.mock('../../main/appSessionState.js', () => ({
   getActiveAppSession: state.forbidden, ownerScopedUserDataPath: state.forbidden, activeOwnerScopeKey: state.forbidden,
   getActiveDataOwnerPushStamp: state.forbidden, isAppSessionBoundaryPending: state.forbidden, dataOwnerStorageKey: (v: string) => `test-${v}`,
 }));
+// Native stores now resolve the ambient owner through the injected owner context; readers get roots explicitly.
+vi.mock('../../main/ownerContext.js', () => ({
+  configureOwnerContext: () => {}, ownerScopedPath: state.forbidden, activeDataOwnerId: state.forbidden,
+  hasCommittedOwner: state.forbidden, isOwnerBoundaryPending: state.forbidden, ownerGeneration: state.forbidden,
+}));
 vi.mock('../../main/authManager.js', () => ({ getAuthState: state.forbidden, getAccessToken: state.forbidden }));
 vi.mock('../../main/ownerNamespaceMigration.js', () => ({
   hasExclusiveSharedLegacyUserDataAccess: state.forbidden, hasLegacyOwnerNamespaceClaim: state.forbidden,
@@ -73,6 +78,7 @@ import { DEFAULT_APPEARANCE_SETTINGS } from '../appearanceSettings.js';
 import { emptyModelPresentationPreferences } from '../modelPresentationPreferences.js';
 import { encodeCatalogModelPin } from '../catalogModelPin.js';
 import type { HostSettingState, NewTaskDefaultSettings } from '../hostSettings.js';
+import { configureUserDataDir } from '../../main/userDataPath.js';
 
 const ownerRoot = () => path.join(state.root, 'owners', 'owner-a');
 function ready<T>(value: T, customizedKeys: string[] = []): Extract<HostSettingState<T>, { status: 'ready' }> {
@@ -116,8 +122,8 @@ function assertCoverage(parts: ReadonlySettingsInspection[]) {
   expect([...owned].sort()).toEqual([...SETTINGS_READ_FIELD_IDS].sort());
   // 真正执行结果独立于目录：删除实际 put/publish 或遗漏循环项必须使本断言失败。
   const produced = parts.flatMap(part => Object.keys(part.fields));
-  expect(produced.length).toBe(459);
-  expect(new Set(produced).size).toBe(459);
+  expect(produced.length).toBe(471);
+  expect(new Set(produced).size).toBe(471);
   expect(produced.sort()).toEqual([...SETTINGS_READ_FIELD_IDS].sort());
   for (const [index, expected] of [PREFERENCE_SETTINGS_FIELD_IDS, CORE_SETTINGS_FIELD_IDS, INTERACTION_SETTINGS_FIELD_IDS].entries()) {
     expect(Object.keys(parts[index]!.fields).sort()).toEqual([...expected].sort());
@@ -127,6 +133,8 @@ function assertCoverage(parts: ReadonlySettingsInspection[]) {
 }
 beforeEach(() => {
   state.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-coverage-'));
+  // Profile-root stores (e.g. agent-resource) read the injected userData root, not Electron.
+  configureUserDataDir(state.root);
   state.platform = 'darwin';
   vi.clearAllMocks();
   vi.stubGlobal('fetch', state.forbidden);
@@ -138,7 +146,7 @@ afterEach(() => {
 });
 
 describe('production reader to v2 coverage seam', () => {
-  it.each(['darwin', 'win32', 'linux'] as const)('reads all 459 native leaves and projects the 453 v2 leaves on %s without placeholder fill', platform => {
+  it.each(['darwin', 'win32', 'linux'] as const)('reads all 471 native leaves and projects the 453 v2 leaves on %s without placeholder fill', platform => {
     state.platform = platform;
     const { parts, inspection, report } = noWrites(() => read());
     assertCoverage(parts);
@@ -147,10 +155,23 @@ describe('production reader to v2 coverage seam', () => {
     }
     expect(Object.keys(report.fields)).toEqual([...SETTINGS_SNAPSHOT_V2_FIELD_IDS]);
     expect(Object.keys(inspection.fields).filter(id => !Object.hasOwn(report.fields, id)).sort())
-      // Leaves added after the frozen v2 wire stay native-only, including newer shortcuts.
+      // Leaves added after the frozen v2 wire stay native-only, including newer shortcuts and
+      // the iMessage IM defaults channel added upstream in 0.1.130.
       .toEqual([
         'gitSafety.autoInitProjectGit',
         'gitSafety.mode',
+        'im.imessage.agentKind',
+        'im.imessage.agents.claude-code.effort',
+        'im.imessage.agents.claude-code.model',
+        'im.imessage.agents.claude-code.providerId',
+        'im.imessage.agents.codex.effort',
+        'im.imessage.agents.codex.model',
+        'im.imessage.agents.codex.providerId',
+        'im.imessage.agents.pi.effort',
+        'im.imessage.agents.pi.model',
+        'im.imessage.agents.pi.providerId',
+        'im.imessage.groupPermissionMode',
+        'im.imessage.permissionMode',
         'shortcuts.region-screenshot',
         'shortcuts.session-history-back',
         'shortcuts.session-history-forward',

@@ -441,7 +441,7 @@ export async function shouldProjectToClaudeSkills(
   opts: { homeDir?: string; isCrossAgentSyncEnabled?: () => boolean } = {},
 ): Promise<boolean> {
   if (claudeSessionObserved) return true;
-  const homeDir = opts.homeDir ?? os.homedir();
+  const homeDir = opts.homeDir ?? cindyManagedHomeDir();
   if (fs.existsSync(path.join(homeDir, '.claude'))) return true;
   if (opts.isCrossAgentSyncEnabled) return opts.isCrossAgentSyncEnabled();
   // 延迟 import：本模块是纯 Node（无 electron 静态依赖），settings store 引
@@ -633,7 +633,7 @@ export async function prepareSharedProjectSkillLinks(
   opts: PrepareProjectOptions,
 ): Promise<SharedProjectSkillLinksResult> {
   const paths = sharedProjectSkillsPaths(opts.workingDir);
-  if (paths.workingDir === path.resolve(os.homedir())) {
+  if (paths.workingDir === path.resolve(cindyManagedHomeDir())) {
     const global = await prepareSharedGlobalSkillLinks({ homeDir: paths.workingDir });
     return {
       ...paths,

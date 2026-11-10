@@ -12,6 +12,9 @@ vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => in
 vi.mock('../../logger.js', () => ({ createLogger: () => state.log }));
 vi.mock('../../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => state.log } }));
 vi.mock('../../appSessionState.js', () => ({ getActiveAppSession: state.forbidden, ownerScopedUserDataPath: state.forbidden, activeOwnerScopeKey: state.forbidden, getActiveDataOwnerPushStamp: state.forbidden, isAppSessionBoundaryPending: state.forbidden, dataOwnerStorageKey: (v: string) => v }));
+// Upstream moved the ambient owner and profile root behind injected modules; readers get both explicitly.
+vi.mock('../../ownerContext.js', () => ({ configureOwnerContext: () => {}, ownerScopedPath: state.forbidden, activeDataOwnerId: state.forbidden, hasCommittedOwner: state.forbidden, isOwnerBoundaryPending: state.forbidden, ownerGeneration: state.forbidden }));
+vi.mock('../../userDataPath.js', () => ({ configureUserDataDir: () => {}, getUserDataDir: state.forbidden, userDataPath: state.forbidden }));
 vi.mock('../../ownerNamespaceMigration.js', () => ({ hasExclusiveSharedLegacyUserDataAccess: state.forbidden, hasLegacyOwnerNamespaceClaim: state.forbidden, isLegacyOwnerNamespaceClaimOwnedBy: state.forbidden, isLegacyOwnerNamespaceClaimedByOtherOwner: state.forbidden }));
 vi.mock('../../im/ownerScopedStorage.js', () => ({ claimLegacyImPath: state.forbidden, ownerScopedImUserDataPath: state.forbidden, ownerScopedImSecrets: { read: state.forbidden, write: state.forbidden } }));
 vi.mock('../../voice-input/VoiceDictionarySyncStore.js', () => ({ voiceDictionarySyncStore: new Proxy({}, { get: () => state.forbidden }) }));
@@ -63,7 +66,7 @@ describe('actual interaction preference readers', () => {
     expect(Object.keys(result.fields).filter(k => k.startsWith('shortcuts.'))).toHaveLength(30);
     for (const [key, item] of Object.entries(result.fields)) {
       expect(key in SETTINGS_READ_CATALOG, key).toBe(true);
-      if (item.status === 'value' && !key.match(/^im\.(global|feishu|slack|discord|wechat|telegram|dingtalk|wecom)\.agents\..*\.(model|providerId)$/)) expect(SETTINGS_READ_CATALOG[key as keyof typeof SETTINGS_READ_CATALOG].valueSchema.safeParse(item.value).success, key).toBe(true);
+      if (item.status === 'value' && !key.match(/^im\.(global|feishu|slack|discord|wechat|telegram|dingtalk|wecom|imessage)\.agents\..*\.(model|providerId)$/)) expect(SETTINGS_READ_CATALOG[key as keyof typeof SETTINGS_READ_CATALOG].valueSchema.safeParse(item.value).success, key).toBe(true);
     }
     expect(new Set(Object.keys(result.fields))).toEqual(new Set(INTERACTION_SETTINGS_FIELD_IDS));
     expect(INTERACTION_SETTINGS_FIELD_IDS).not.toContain('voice.refinerChain');

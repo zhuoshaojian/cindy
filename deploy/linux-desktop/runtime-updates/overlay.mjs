@@ -39,7 +39,8 @@ export function transformCloudUpdateSource(code, relativePath) {
   } else if (relativePath === notice) {
     code = once(code, '  useEffect(() => {\n    const appVersion = window.electronAPI.appVersion;', `  useEffect(() => {\n    if (${hint}) return;\n    const appVersion = window.electronAPI.appVersion;`);
   } else if (relativePath === about) {
-    code = once(code, '        <AutoUpdateToggleRow />\n        <Divider />', `        {!(${hint}) && <><AutoUpdateToggleRow /><Divider /></>}`);
+    // Since v0.1.130 About rows draw their own dividers.
+    code = once(code, '        <AutoUpdateToggleRow />\n', `        {!(${hint}) && <AutoUpdateToggleRow />}\n`);
   } else if (relativePath === aboutSearch) {
     // The catalog is static and independent of the rendered row. Remove its
     // declaration in cloud builds so search and deep links agree with the UI.

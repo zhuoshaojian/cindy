@@ -18,7 +18,6 @@ export function SettingsSidebar({
   const { t } = useTranslation();
   return (
     <aside
-      data-plugin-ui-element="sidebar"
       className="flex h-full min-h-0 shrink-0 flex-col gap-2 overflow-y-auto pl-6 pr-4 pt-7"
       style={{ width }}
       aria-label={t('settings.title')}

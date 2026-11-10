@@ -15,6 +15,16 @@ vi.mock('../../appSessionState.js', () => ({
   dataOwnerStorageKey: (id: string) => `test-${id}`,
   ownerScopedUserDataPath: (...segments: string[]) => path.join(context.root, 'owners', `test-${context.owner}`, ...segments),
 }));
+// Native stores resolve the owner through the injected owner context that the real
+// appSessionState installs; it is mocked above, so keep the context on the same owner.
+vi.mock('../../ownerContext.js', () => ({
+  configureOwnerContext: () => {},
+  ownerScopedPath: (...segments: string[]) => path.join(context.root, 'owners', `test-${context.owner}`, ...segments),
+  activeDataOwnerId: () => context.owner,
+  hasCommittedOwner: () => true,
+  isOwnerBoundaryPending: () => context.pending,
+  ownerGeneration: () => context.generation,
+}));
 vi.mock('../../im/ownerScopedStorage.js', () => ({
   ownerScopedImUserDataPath: (...segments: string[]) => path.join(context.root, 'owners', `test-${context.owner}`, ...segments),
 }));
@@ -24,6 +34,7 @@ import { readGitSafetySettings, writeGitSafetyMode } from '../../maker-host/git-
 import { readMemorySettings } from '../../maker-host/memory-settings-store.js';
 import { readCollaborationSettings } from '../../maker-host/collaboration-settings-store.js';
 import { getDefaultShellPref } from '../../terminal/terminalPrefsStore.js';
+import { configureUserDataDir } from '../../userDataPath.js';
 
 const confirm = vi.fn(async () => true);
 const caller = { id: 'test-session', assertCurrent() {}, confirm };
@@ -32,7 +43,7 @@ async function request(domain: HostSettingsDomain, values: { set?: Record<string
   if (state.status !== 'ready' || !('operationId' in state)) throw new Error(`Not ready: ${domain}`);
   return { domain, expectedRevision: state.revision, operationId: state.operationId, ...values };
 }
-beforeEach(() => { context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-catalog-')); context.owner = 'first'; context.generation++; context.pending = false; vi.clearAllMocks(); confirm.mockResolvedValue(true); });
+beforeEach(() => { context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-catalog-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; vi.clearAllMocks(); confirm.mockResolvedValue(true); });
 afterEach(() => fs.rmSync(context.root, { recursive: true, force: true }));
 
 describe('expanded settings use the real native stores', () => {

@@ -28,7 +28,7 @@ export function ProviderAccountUsageModule({
   reader,
 }: {
   provider?: ProviderView;
-  reader?: Parameters<typeof useProviderAccountUsage>[3];
+  reader?: Parameters<typeof useProviderAccountUsage>[4];
 }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
@@ -36,7 +36,7 @@ export function ProviderAccountUsageModule({
   const zhipu = isZhipuCodingPlanProviderView(provider);
   const kimi = isKimiCodingProviderView(provider);
   const opencodeGo = isOpenCodeGoProviderView(provider);
-  const usage = useProviderAccountUsage(deepSeek || zhipu || kimi || opencodeGo ? provider : undefined, undefined, null, reader);
+  const usage = useProviderAccountUsage(deepSeek || zhipu || kimi || opencodeGo ? provider : undefined, undefined, null, {}, reader);
   const dashboardUrl = usage.result?.dashboardUrl ?? getProviderAccountUsageDashboardUrlView(provider);
   if (!deepSeek && !zhipu && !kimi && !opencodeGo) return null;
   const snapshot = usage.result?.status === 'ready' ? usage.result.snapshot : null;

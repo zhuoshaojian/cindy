@@ -36,6 +36,7 @@ function authValue(session: CisSession): AuthContextValue {
     dataOwnerId: session.membershipId,
     dataOwnerRecoveryEpoch: 0,
     dataOwnerGeneration: 1,
+    ownerBoundaryPending: false,
     canEnterApp: true,
     isAuthenticated: true,
     isCanary: false,

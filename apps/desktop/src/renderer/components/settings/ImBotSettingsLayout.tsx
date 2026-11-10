@@ -2,6 +2,8 @@ import { Lightbulb } from 'lucide-react';
 import type { ReactNode, Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { SettingsPageHeader } from '@/components/ui/settings-rows';
+
 import type { ImBotSettingsGroup } from './ImBotSection';
 import { imBotSettings } from './ImBotSection.settings-search';
 
@@ -18,14 +20,12 @@ export function ImBotSettingsFrame({
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-          {t(imBotSettings.imBot.sectionKey)}
-        </h2>
-        <span className="rounded-full border border-[var(--settings-badge-border)] bg-[var(--settings-badge-bg)] px-2 py-[1px] text-10 font-medium uppercase leading-[1.5] tracking-wide text-[var(--text-secondary)]">
+      <SettingsPageHeader
+        title={t(imBotSettings.imBot.sectionKey)}
+        adornment={<span className="rounded-full border border-[var(--settings-badge-border)] bg-[var(--settings-badge-bg)] px-2 py-[1px] text-10 font-medium uppercase leading-[1.5] tracking-wide text-[var(--text-secondary)]">
           {t('settings.imBot.beta')}
-        </span>
-      </div>
+        </span>}
+      />
       {context}
       <div key={contentKey} className="mt-4 flex flex-col gap-8">
         {children}

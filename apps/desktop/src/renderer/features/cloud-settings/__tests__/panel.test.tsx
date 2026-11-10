@@ -317,8 +317,9 @@ describe('shared native cloud settings', () => {
       />,
     );
     fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.about' }));
-    const label = await screen.findByText('settings.about.appVersionLabel');
-    expect(label.parentElement?.textContent).toContain('0.1.120-cloud.1-cn-amd64');
+    await screen.findByText('settings.about.appVersionLabel');
+    // Since v0.1.130 an info row is a SettingsRow: the value sits in the row's trailing slot.
+    expect(screen.getByText('0.1.120-cloud.1-cn-amd64')).toBeTruthy();
   });
   it('removes cached controls when the cloud withdraws a capability', async () => {
     let supported = true;

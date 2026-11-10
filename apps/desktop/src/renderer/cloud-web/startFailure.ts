@@ -25,7 +25,7 @@ export function showStartFailure(error: unknown, root: HTMLElement) {
   const { details } = crashReport(error);
   const box = document.createElement('div');
   box.style.cssText =
-    'max-width:560px;margin:15vh auto;padding:0 24px;font:14px/1.6 system-ui,-apple-system,sans-serif;color:#333';
+    'max-width:560px;margin:15vh auto;padding:0 24px;font-size:14px;line-height:1.6;font-family:system-ui,-apple-system,sans-serif;color:#333';
   const title = document.createElement('p');
   title.style.cssText = 'font-size:16px;font-weight:600;margin:0 0 8px';
   title.textContent = zh ? '页面加载失败' : 'The page failed to load';
@@ -36,7 +36,7 @@ export function showStartFailure(error: unknown, root: HTMLElement) {
     : 'Reload to try again. If it still fails, send the details below to your administrator.';
   const pre = document.createElement('pre');
   pre.style.cssText =
-    'white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto;padding:12px;border-radius:8px;background:#f4f4f4;font:12px/1.5 ui-monospace,monospace;margin:0 0 12px';
+    'white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto;padding:12px;border-radius:8px;background:#f4f4f4;font-size:12px;line-height:1.5;font-family:ui-monospace,monospace;margin:0 0 12px';
   pre.textContent = details;
   const reload = document.createElement('button');
   reload.type = 'button';

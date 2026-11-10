@@ -13,7 +13,8 @@ export type SettingsReadPrivacy = 'value' | 'configured' | 'publicReference' | '
 export const SETTINGS_READ_PLATFORMS = ['darwin', 'win32', 'linux'] as const;
 export const SETTINGS_READ_HARNESSES = ['claude-code', 'codex', 'pi'] as const;
 export const SETTINGS_READ_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
-export const SETTINGS_READ_IM_CHANNELS = ['global', 'feishu', 'slack', 'discord', 'wechat', 'telegram', 'dingtalk', 'wecom'] as const;
+/** Native IM default channels. `imessage` (upstream 0.1.130) is newer than the frozen v2 wire and stays native-only. */
+export const SETTINGS_READ_IM_CHANNELS = ['global', 'feishu', 'slack', 'discord', 'wechat', 'telegram', 'dingtalk', 'wecom', 'imessage'] as const;
 export const SETTINGS_READ_SHORTCUT_IDS = [
   'session-history-back', 'session-history-forward', 'region-screenshot',
   'toggle-sidebar', 'open-settings', 'new-maker', 'close-tab-or-window', 'right-tab-prev', 'right-tab-next',

@@ -31,11 +31,11 @@ import {
   AnalyticsToggleView,
   CrashAutoUploadToggleView,
   DebugLogToggleView,
-  Divider as AboutDivider,
   InfoRow,
 } from '@/components/settings/AboutSection';
 import { ExperimentalSectionView } from '@/components/settings/ExperimentalSection';
 import {
+  PersonalizationPage,
   PersonalizationPageTitle,
   UserPromptEditor,
 } from '@/components/settings/UserPromptSection';
@@ -337,6 +337,7 @@ export function NativeCloudSections(props: Props) {
         {ready('personalization') ? (
           section(
             'settings-search-target-personalization-user-prompt',
+            <PersonalizationPage>
             <UserPromptEditor
               value={String(s('personalization').value?.userPrompt ?? '')}
               ready={!disabled}
@@ -353,7 +354,8 @@ export function NativeCloudSections(props: Props) {
                 if (revision !== s('personalization').revision) throw Error('CONFLICT');
                 await update('personalization', {}, ['userPrompt']);
               }}
-            />,
+            />
+            </PersonalizationPage>,
           )
         ) : trial ? (
           <div className="pb-[14px]">
@@ -610,9 +612,6 @@ export function NativeCloudSections(props: Props) {
             {appVersion && (
               <>
                 <InfoRow label={t('settings.about.appVersionLabel')} value={appVersion} />
-                {(ready('privacy') || ready('desktopNotifications') || ready('diagnostics')) && (
-                  <AboutDivider />
-                )}
               </>
             )}
             {ready('privacy') && (
@@ -626,7 +625,6 @@ export function NativeCloudSections(props: Props) {
             )}
             {ready('desktopNotifications') && (
               <>
-                {ready('privacy') && <AboutDivider />}
                 <DebugLogToggleView
                   enabled={bool(s('desktopNotifications'), 'networkDebugEnabled')}
                   disabled={disabled}
@@ -635,9 +633,6 @@ export function NativeCloudSections(props: Props) {
                   }
                 />
               </>
-            )}
-            {(ready('privacy') || ready('desktopNotifications')) && ready('diagnostics') && (
-              <AboutDivider />
             )}
             {ready('diagnostics') && (
               <CrashAutoUploadToggleView

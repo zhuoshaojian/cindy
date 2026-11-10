@@ -35,6 +35,7 @@ export function cloudSettingsFieldCoverage(id: SettingsSnapshotFieldId): CloudSe
       return {kind:'dedicated',reason:'Connection and server selection belong to the native IM binding flow.'};
     }
     if (segments[1] === 'groupPermissionMode' && segments[0] !== 'feishu') return {kind:'notApplicable',reason:'The native runtime consumes group permissions only for Feishu; other channel values are not active settings.'};
+    if (segments[0] === 'imessage') return {kind:'dedicated',reason:'iMessage defaults are newer than the frozen IM editor domains; they stay in the native teammate IM settings.'};
     const group = 'im' + segments[0]![0]!.toUpperCase() + segments[0]!.slice(1);
     return edit(group,segments[1] === 'agents' ? segments[2] === 'claude-code' ? 'claudeCode' : segments[2]! : segments[1]!);
   }

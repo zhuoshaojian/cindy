@@ -148,7 +148,7 @@ export function normalizeHostSettingsChange(raw: unknown): HostSettingsChange {
       set[key] = value as number | boolean;
     } else {
       if (!isValidAppearanceSetting(key, value)) throw new Error('INVALID_SETTINGS_CHANGE');
-      set[key] = typeof value === 'string' ? value.trim() : key === 'windowZoom' ? clampAppearanceWindowZoom(value) : value;
+      set[key] = typeof value === 'string' ? value.trim() : key === 'windowZoom' && typeof value === 'number' ? clampAppearanceWindowZoom(value) : value;
     }
   }
   if (Object.keys(set).length + clear.length === 0) throw new Error('INVALID_SETTINGS_CHANGE');

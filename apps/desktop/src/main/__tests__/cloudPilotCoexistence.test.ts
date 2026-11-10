@@ -60,6 +60,8 @@ it('keeps formal owner markers and Skills untouched through pilot login, fanout 
     prepareTransition: async () => {}, commit: () => {} });
   const privateSkill = path.join(pilot.managedHome, '.agents', 'skills', 'pilot-only');
   fs.mkdirSync(privateSkill, { recursive: true }); fs.writeFileSync(path.join(privateSkill, 'SKILL.md'), 'pilot-skill');
+  // Since v0.1.130 links go to Claude only where a Claude home exists; the pilot's own is in its managed home.
+  fs.mkdirSync(path.join(pilot.managedHome, '.claude'), { recursive: true });
   await skills.prepareSharedGlobalSkillLinks({ isCrossAgentSyncEnabled: () => false });
   expect(fs.realpathSync(path.join(pilot.managedHome, '.claude', 'skills', 'pilot-only'))).toBe(fs.realpathSync(privateSkill));
   await boundary.withGhostSkillProjectionOwnerCommit({ previousOwnerId: 'pilot-owner', nextOwnerId: null,

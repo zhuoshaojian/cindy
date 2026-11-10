@@ -42,6 +42,8 @@ export function inspectWindowBehaviorSettings() {
       swallowActivationClick: isSettingBoolean,
       windowsCloseBehavior: (value) => value === null || isWindowsCloseBehavior(value),
       linuxCloseBehavior: (value) => value === null || isLinuxCloseBehavior(value),
+      awayGuard: isSettingBoolean,
+      awayGuardDelaySeconds: (value) => value === null || isAwayGuardDelaySeconds(value),
     }),
   });
 }
