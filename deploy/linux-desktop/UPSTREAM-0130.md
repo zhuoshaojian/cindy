@@ -169,13 +169,18 @@ The instances were upgraded one at a time, each with its own backup:
   instance was idle, its record was rebased the way the console edits endpoints, and
   CIS restarted it once.
 
-Ten instances passed: seven verified and three native. Two were skipped:
+Ten instances passed in the run: seven verified and three native. Two were skipped,
+and one of them was finished afterwards:
 
-- `liufangxing1` (`…49e6c469`) runs scheduled tasks every few minutes. The first
-  attempt sampled it idle, but a run started before CIS sealed it and CIS refused
-  before changing anything. Later attempts found no gap of 90 seconds.
-- `…94121710` on 0.1.119-cloud.5 reports one unknown work item that never clears, so
-  CIS will not seal it.
+- `liufangxing1` (`…49e6c469`) runs scheduled tasks every few minutes, and the run
+  waited for a gap of 90 seconds. At the owner's request it was then launched as
+  soon as nothing was running. It passed, and the user-level browser stopgap from
+  cloud.5 was removed now that the image ships the default.
+- `…94121710` (sunyi, 0.1.119-cloud.5) has been signed out and not ready since
+  2026-11-10. Its runtime reports one unknown work item, so CIS will not seal it.
+  CIS's upgrade also needs the source and the candidate to be ready, so even a
+  direct upgrade would end in a hold. It was left unchanged, and the database
+  copies taken for a direct upgrade were removed. It upgrades through the standard
+  flow once sunyi signs in again.
 
-Both keep cloud.3 or 0.1.119 and the old list. Their maintenance window applies the
-same rules. The stopped instance `…250573f0` (manual updates) is untouched.
+The stopped instance `…250573f0` (manual updates) is untouched.
