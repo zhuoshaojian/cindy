@@ -15,14 +15,22 @@ const inertCache = new Map<string, unknown>();
 function inert(path: string): unknown {
   let value = inertCache.get(path);
   if (!value) {
+    const name = path.slice(path.lastIndexOf('.') + 1);
+    const answer = () => {
+      if (/^on[A-Z]/u.test(name)) return noop;
+      if (/Sync$/u.test(name)) return undefined;
+      return Promise.reject(new Error(UNSUPPORTED_IN_WEB));
+    };
+    // Shared code also calls bridges as `bridge.onX.call(owner, listener)`: those answer like a
+    // direct call, so a subscription still hands back its unsubscribe function.
+    const bound = () => answer;
     value = new Proxy(noop, {
-      get: (_target, key) => (typeof key === 'string' && key !== 'then' ? inert(`${path}.${key}`) : undefined),
-      apply: () => {
-        const name = path.slice(path.lastIndexOf('.') + 1);
-        if (/^on[A-Z]/u.test(name)) return noop;
-        if (/Sync$/u.test(name)) return undefined;
-        return Promise.reject(new Error(UNSUPPORTED_IN_WEB));
+      get: (_target, key) => {
+        if (typeof key !== 'string' || key === 'then') return undefined;
+        if (key === 'call' || key === 'apply') return answer;
+        return key === 'bind' ? bound : inert(`${path}.${key}`);
       },
+      apply: answer,
     });
     inertCache.set(path, value);
   }

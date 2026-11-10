@@ -107,6 +107,22 @@ describe('web bridge', () => {
     await expect((api.setClassicalReplyStyle as unknown as () => Promise<void>)()).resolves.toBeUndefined();
   });
 
+  it('answers bridges called through call/apply/bind like direct calls', async () => {
+    const parts = installWebElectronApi();
+    parts.deviceLink = { invoke: async () => null };
+    const api = window.electronAPI as unknown as Record<string, Record<string, (...args: unknown[]) => unknown>>;
+    // The provider page subscribes as `maker.onModelPricingChanged.call(maker, listener)` and
+    // calls the result on cleanup; a rejected promise there crashed the page.
+    const listener = () => {};
+    expect(typeof api.maker!.onModelPricingChanged!.call(api.maker, listener)).toBe('function');
+    expect(typeof api.maker!.onProvidersChanged!.apply(api.maker, [listener])).toBe('function');
+    expect(typeof api.maker!.onAgentsChanged!.bind(api.maker)(listener)).toBe('function');
+    // Missing members of a supplied bridge fall back the same way.
+    expect(typeof api.deviceLink!.onStatusChanged!.call(api.deviceLink, listener)).toBe('function');
+    expect(api.localDb!.readSync!.call(api.localDb)).toBeUndefined();
+    await expect(api.localDb!.list!.call(api.localDb)).rejects.toThrow('UNSUPPORTED_IN_WEB');
+  });
+
   it('activates the viewer after its first state read, as the native window does', async () => {
     const calls: unknown[] = [];
     const viewer = createWebRemoteDesktopViewer(
