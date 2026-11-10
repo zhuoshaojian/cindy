@@ -10,7 +10,7 @@ import { getInitialThemeVariant, ThemeProvider } from '@/hooks/useTheme';
 import { applyFontSettings, getInitialFontSettings, FontSettingsProvider } from '@/hooks/useFontSettings';
 import { themeService } from '../themes/theme-service';
 import { RemoteDesktopViewerWindow } from '../features/remote-desktop/RemoteDesktopViewerWindow';
-import { TopLevelErrorBoundary } from '../components/error/TopLevelErrorBoundary';
+import { CloudWebErrorBoundary } from './crash';
 
 /** The native viewer window's surface, as a browser tab bound to one owned instance. */
 export function mountDesktopPage(deviceId: string) {
@@ -22,12 +22,12 @@ export function mountDesktopPage(deviceId: string) {
     return;
   }
   createRoot(document.getElementById('root')!).render(
-    <TopLevelErrorBoundary>
+    <CloudWebErrorBoundary>
       <ThemeProvider syncWindowVibrancy={false}>
         <FontSettingsProvider>
           <RemoteDesktopViewerWindow />
         </FontSettingsProvider>
       </ThemeProvider>
-    </TopLevelErrorBoundary>,
+    </CloudWebErrorBoundary>,
   );
 }
