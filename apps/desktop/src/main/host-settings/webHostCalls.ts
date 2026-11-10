@@ -1,5 +1,6 @@
 import type { DesktopIceServer } from '@cindy/device-link';
 import { SETTINGS_WEB_CHANNELS, type SettingsWebEnvelope, type SettingsWebResult } from '../../shared/settingsWeb.js';
+import { isProviderManagementRequest } from '../../shared/providerManagement.js';
 
 /**
  * Cloud fork: the calls the browser build of the client's cloud pages makes where the
@@ -13,6 +14,8 @@ export interface WebHostCallDeps {
   privateHandler(channel: Channel): Promise<{ handle(controller: string, raw: unknown): Promise<unknown> } | undefined>;
   /** An ordinary allowlisted IPC handler, called as DeviceLink calls it. */
   invoke(channel: Channel, args: unknown[]): Promise<unknown>;
+  /** The `provider-group:remote` handler a same-account DeviceLink controller reaches. */
+  providerGroup(controller: string, raw: unknown): Promise<unknown>;
   /** Runs a call with the DeviceLink invoke context the handlers already read. */
   inContext<T>(controller: string, channel: string, run: () => Promise<T>): Promise<T>;
   desktop(controller: string, request: unknown): Promise<unknown>;
@@ -56,6 +59,13 @@ export async function executeWebHostCall(
       const handler = await deps.privateHandler(channel);
       if (!handler) return { ok: false, code: 'SETTINGS_UNSUPPORTED' };
       const value = await deps.inContext(controller, channel, () => handler.handle(controller, command.args[0]));
+      return { ok: true, channel: value ?? null };
+    }
+    if (channel === 'provider-group:remote') {
+      // The owner's provider management only (group and share settings of this instance's
+      // providers); group scheduling and continuity stay between the owner's computers.
+      if (!isProviderManagementRequest(command.args[0])) return { ok: false, code: 'INVALID_PARAMS' };
+      const value = await deps.inContext(controller, channel, () => deps.providerGroup(controller, command.args[0]));
       return { ok: true, channel: value ?? null };
     }
     // As over DeviceLink, provider:list's argument only negotiates tunnel features.

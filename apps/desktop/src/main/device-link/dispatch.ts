@@ -498,6 +498,11 @@ export function setProviderGroupRemoteHandler(handler: ProviderGroupRemoteHandle
   providerGroupRemoteHandler = handler;
 }
 
+/** Cloud fork: the owner's browser reaches provider management through the settings relay. */
+export function getProviderGroupRemoteHandler(): ProviderGroupRemoteHandler | null {
+  return providerGroupRemoteHandler;
+}
+
 /**
  * 新电脑设置(docs/product-rules/new-device-setup-migration.md)：同账号的另一台电脑读取这台电脑的
  * 非秘密配置快照。只读；Main 业务模块在 bootstrap 注入，未就绪时明确拒绝。

@@ -19,6 +19,11 @@ import { runDeviceLinkInvokeContext } from '../device-link/invoke-context.js';
 const webHostCallDeps: WebHostCallDeps = {
   privateHandler: async channel => (await import('../device-link/dispatch.js')).getCloudPrivateInvokeHandler(channel),
   invoke: (channel, args) => dispatchLocalInvoke(channel, args),
+  providerGroup: async (controller, raw) => {
+    const handler = (await import('../device-link/dispatch.js')).getProviderGroupRemoteHandler();
+    if (!handler) throw new Error('[UNAVAILABLE] provider groups are not ready yet');
+    return handler.handle(controller, raw);
+  },
   inContext: (controllerDeviceId, channel, run) => runDeviceLinkInvokeContext({ controllerDeviceId, channel }, run),
   desktop: async (controller, request) => (await import('../remote-desktop/index.js')).requestRemoteDesktop(controller, request),
   ice: async () => (await import('../remote-desktop/iceConfig.js')).loadDesktopIceServers(),

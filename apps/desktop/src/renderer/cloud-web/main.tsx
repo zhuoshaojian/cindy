@@ -23,6 +23,7 @@ async function start() {
   const api = createWebCloudApi(session, signIn);
   parts.cloudSettings = api.cloudSettings;
   parts.deviceLink = api.deviceLink;
+  parts.providerGroup = api.providerGroup;
   // Pages that point to the instance's own settings open its remote desktop the same way.
   const { openDesktopTab } = await import('./desktopTab');
   parts.openRemoteDesktop = async ({ deviceId, name }: { deviceId: string; name: string }) => openDesktopTab(deviceId, name);
