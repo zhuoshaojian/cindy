@@ -50,6 +50,8 @@ describe('native cloud MCP credentials', () => {
     expect(screen.getByText('https://example.com/mcp')).toBeTruthy();
     expect(screen.getByText('X-API-Key')).toBeTruthy();
     expect(f.manage.mock.calls.filter(([c]) => c.operation !== 'list')).toHaveLength(0);
+    // The page header reloads the category; the section offers a retry only after a failure.
+    expect(screen.queryByRole('button', { name: 'cloudSettings.reload' })).toBeNull();
   });
   it('does not interpret blank token or closing the form as credential removal', async () => {
     const f = await setup();

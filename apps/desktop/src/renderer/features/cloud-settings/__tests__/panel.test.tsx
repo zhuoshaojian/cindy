@@ -429,3 +429,50 @@ describe('shared native cloud settings', () => {
     expect(save).not.toHaveBeenCalled();
   });
 });
+describe('cloud settings page chrome', () => {
+  const panel = (props: { online: boolean; connecting?: boolean }, client = bare()) =>
+    render(<CloudSettingsPanel name="Cloud A" client={client} onBack={vi.fn()} {...props} />);
+  // No instance overview: the page opens on the first settings category.
+  const bare = () => {
+    const client = createTrialCloudSettingsClient();
+    delete (client as Partial<CloudSettingsClient>).instance;
+    return client;
+  };
+  it('says it is loading until the instance has been read, and offline only after that', () => {
+    const first = panel({ online: false, connecting: true });
+    expect(screen.getAllByText('cloudSettings.loading').length).toBeGreaterThan(0);
+    expect(screen.queryByText('cloudSettings.offline')).toBeNull();
+    expect(screen.queryByText('cloudSettings.noFields')).toBeNull();
+    first.unmount();
+    panel({ online: false });
+    expect(screen.getAllByText('cloudSettings.offline').length).toBeGreaterThan(0);
+    expect(screen.queryByText('cloudSettings.loading')).toBeNull();
+    expect(screen.queryByText('cloudSettings.noFields')).toBeNull();
+  });
+  it('keeps the provider and IM categories in place before the instance answers', () => {
+    panel({ online: false, connecting: true });
+    expect(screen.getByRole('tab', { name: 'settings.tabs.providers' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'settings.tabs.imBot' })).toBeTruthy();
+  });
+  it('drops a category once the instance says it cannot manage it', async () => {
+    const client = bare();
+    const connect = client.connect.bind(client);
+    vi.spyOn(client, 'connect').mockImplementation(async () => {
+      const capabilities = await connect();
+      delete capabilities.providerAuthorization;
+      delete capabilities.botAuthorization;
+      return capabilities;
+    });
+    panel({ online: true }, client);
+    await waitFor(() =>
+      expect(screen.queryByRole('tab', { name: 'settings.tabs.providers' })).toBeNull(),
+    );
+    expect(screen.queryByRole('tab', { name: 'settings.tabs.imBot' })).toBeNull();
+  });
+  it('offers one reload for the open category', async () => {
+    panel({ online: true });
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.builtinTools' }));
+    await screen.findByRole('heading', { level: 2, name: 'settings.tabs.builtinTools' });
+    expect(screen.getAllByRole('button', { name: 'cloudSettings.reload' })).toHaveLength(1);
+  });
+});

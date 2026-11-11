@@ -21,6 +21,7 @@ import type { MobileCodexRateLimitsResult } from '@cindy/maker-shared/device-lin
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { SettingsPageHeader } from '@/components/ui/settings-rows';
 import { Tip } from '@/components/ui/tooltip';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import {
@@ -1040,23 +1041,13 @@ function CloudProviderCatalogPage({
           className="flex h-full min-h-0 flex-col gap-[14px]"
           aria-label={t('settings.providers.title')}
         >
-          <div className="flex shrink-0 items-start justify-between gap-3">
-            <div className="flex min-w-0 flex-col gap-1">
-              <h2
-                className="text-16 font-medium leading-[1.2]"
-                style={{ color: 'var(--settings-section-title)' }}
-              >
-                {t('settings.providers.title')}
-              </h2>
-              <p
-                className="text-13 leading-[1.5]"
-                style={{ color: 'var(--settings-section-desc)' }}
-              >
-                {t('settings.providers.subtitle')}
-              </p>
-            </div>
-            {/* Joining by link is an account action, as on the local page. */}
-            <ProviderSharePasteButton />
+          {/* The local page's header. Joining by link is an account action, as there. */}
+          <div className="shrink-0">
+            <SettingsPageHeader
+              title={t('settings.providers.title')}
+              description={t('settings.providers.subtitle')}
+              action={<ProviderSharePasteButton />}
+            />
           </div>
           {auth.failure && (
             <p role="alert" className="text-13 text-[var(--text-secondary)]">

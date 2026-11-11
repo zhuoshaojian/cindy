@@ -401,3 +401,12 @@ it.each(['zh-CN', 'zh-TW', 'en', 'ja', 'ko'])(
     expect(f.client.upgrade).toHaveBeenCalledOnce();
   },
 );
+it('shows the maintenance save row only while something is changed', async () => {
+  await setup();
+  expect(screen.queryByRole('button', { name: '保存维护设置' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '撤销修改' })).toBeNull();
+  fireEvent.click(screen.getByRole('switch', { name: '自动更新云实例' }));
+  expect(screen.getByRole('button', { name: '保存维护设置' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '撤销修改' }));
+  expect(screen.queryByRole('button', { name: '保存维护设置' })).toBeNull();
+});

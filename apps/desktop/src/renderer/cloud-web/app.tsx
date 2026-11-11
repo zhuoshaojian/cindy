@@ -156,6 +156,7 @@ function Settings({ api }: { api: WebCloudApi }) {
   const [instance, setInstance] = useState<CloudInstanceView | undefined>(() =>
     api.instances().find((item) => item.deviceId === deviceId),
   );
+  const [checked, setChecked] = useState(false);
   // Model sources this instance lists (shared providers) are read through it.
   useEffect(() => {
     api.view(valid ? deviceId : null);
@@ -168,6 +169,8 @@ function Settings({ api }: { api: WebCloudApi }) {
       setInstance(await client.instance());
     } catch {
       setInstance(undefined);
+    } finally {
+      setChecked(true);
     }
   }, [client]);
   useEffect(() => {
@@ -183,12 +186,15 @@ function Settings({ api }: { api: WebCloudApi }) {
   }, [refresh]);
   if (!client) return <Navigate to="/" replace />;
   const online = !!instance?.ready && instance.desiredState === 'running' && !instance.loginRequired;
+  // As in the native window: unknown until CIS has answered once, which is not offline.
+  const connecting = !instance && !checked;
   return (
     <CloudSettingsPanel
       key={deviceId}
       name={instance ? cloudInstanceName(t, instance) : t('cloudSettings.instance.title')}
       client={client}
       online={online}
+      connecting={connecting}
       onBack={() => navigate('/')}
       focusMaintenance={params.get('section') === 'maintenance'}
       version={instance?.version ?? undefined}
