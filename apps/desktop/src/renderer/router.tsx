@@ -48,6 +48,7 @@ function EmptyRouteFallback() {
  *
  * LocalDbGate 下沉在路由层：AuthProvider 在 RouterProvider 之外无法 useNavigate。
  */
+const CloudPluginManagement = lazy(() => import('@/features/cloud-settings/CloudPluginManagement').then(module => ({ default: module.CloudPluginManagement })));
 const CloudSettingsTrial = import.meta.env.DEV ? lazy(() => import('@/features/cloud-settings/trial').then(module => ({ default: module.CloudSettingsTrial }))) : null;
 export const router = createHashRouter([
   {
@@ -268,7 +269,7 @@ export const router = createHashRouter([
                     ],
                   },
                   { path: 'settings', element: <SettingsView /> },
-                  { path: 'cloud-settings', element: <CloudSettingsView /> },
+                  { path: 'cloud-settings', element: <CloudSettingsView plugins={CloudPluginManagement} /> },
                   ...(CloudSettingsTrial ? [{ path: 'cloud-settings-trial', element: <Suspense fallback={null}><CloudSettingsTrial /></Suspense> }] : []),
                   {
                     path: 'plugins',
