@@ -31,6 +31,18 @@ describe('CIS browser session for the shared cloud client', () => {
     expect(signedOut).toHaveBeenCalledOnce();
   });
 
+  it('keeps a CIS refusal as its own code, and the status mapping for anything else', async () => {
+    const call = (remote: string, status: number) => {
+      vi.stubGlobal('fetch', vi.fn(async () => reply({ error: { code: remote, message: 'private-detail' } }, status)));
+      return createCisFetch(() => {})('/instance-login/api/manage/instances/wake', 'POST', {}, new AbortController().signal)
+        .catch((error: Error) => error.message);
+    };
+    expect(await call('CLOUD_MEMBER_SUSPENDED', 403)).toBe('CLOUD_SETTINGS_MEMBER_SUSPENDED');
+    expect(await call('CLOUD_INSTANCE_TRANSFERRED', 409)).toBe('CLOUD_SETTINGS_INSTANCE_TRANSFERRED');
+    expect(await call('INSTANCE_QUOTA_EXCEEDED', 409)).toBe('CLOUD_SETTINGS_QUOTA_EXCEEDED');
+    expect(await call('SOMETHING_ELSE', 403)).toBe('CLOUD_SETTINGS_SCOPE_CHANGED');
+  });
+
   it('maps native caller paths onto the browser routes and opens no server session', async () => {
     const calls: Array<[string, string, unknown]> = [];
     const http = createCisClientHttp(async (path, method, body) => {

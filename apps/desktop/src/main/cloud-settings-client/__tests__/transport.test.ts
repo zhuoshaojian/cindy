@@ -83,6 +83,27 @@ it.each([
   expect(error.message).not.toContain('private');
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
+it.each([
+  [403, 'CLOUD_MEMBER_SUSPENDED', 'MEMBER_SUSPENDED'],
+  [403, 'MANAGEMENT_ACCESS_DENIED', 'ACCESS_DENIED'],
+  [403, 'CLOUD_ADMISSION_NOT_LISTED', 'ADMISSION_NOT_LISTED'],
+  [409, 'INSTANCE_QUOTA_EXCEEDED', 'QUOTA_EXCEEDED'],
+  [409, 'CLOUD_INSTANCE_TRANSFERRED', 'INSTANCE_TRANSFERRED'],
+  [409, 'CLOUD_INSTANCE_HANDOVER_IN_PROGRESS', 'TRANSFER_IN_PROGRESS'],
+  // Anything else keeps the status mapping, and nothing but a known code is kept.
+  [403, 'SOMETHING_ELSE', 'SCOPE_CHANGED'],
+  [409, 'toString', 'SCOPE_CHANGED'],
+] as const)('keeps the CIS refusal %s %s as its own code', async (status, remote, code) => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({ error: { code: remote, message: 'private-detail' } }, { status }),
+  );
+  const error = (await createCloudClientHttp(fetcher)
+    .request(owner, '/instance-login/api/manage/instances/wake', 'POST', {}, signal(), () => {})
+    .catch((e) => e)) as Error;
+  expect(error).toBeInstanceOf(CloudClientError);
+  expect(error.message).toBe(`CLOUD_SETTINGS_${code}`);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
 it('bounds streamed response size and cancels the reader', async () => {
   const cancel = vi.fn();
   const stream = new ReadableStream({

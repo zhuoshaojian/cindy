@@ -204,6 +204,43 @@ it('quick wake submits once for the selected instance and keeps stale list resul
   );
 });
 
+it.each(Object.keys(resources) as Array<keyof typeof resources>)(
+  'a refused claim says why in %s and is not left uncertain',
+  async (lang) => {
+    const f = await setup([], lang);
+    // As it arrives over IPC on the desktop.
+    f.api.instanceClaim.mockRejectedValue(
+      Error(
+        "Error invoking remote method 'cloud-settings:instance-claim': Error: [CLOUD_SETTINGS_ADMISSION_NOT_LISTED] CLOUD_SETTINGS_ADMISSION_NOT_LISTED",
+      ),
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: resources[lang].cloudSettings.onboarding.claim }),
+    );
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      resources[lang].cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_NOT_LISTED,
+    );
+    expect(
+      screen.queryByRole('button', { name: resources[lang].cloudSettings.onboarding.checkClaim }),
+    ).toBeNull();
+    expect(f.api.instanceClaim).toHaveBeenCalledTimes(1);
+    // The instance sign-in window resolves the same codes through its own error keys.
+    expect(f.i18n.t('login.errors.CLOUD_SETTINGS_MEMBER_SUSPENDED')).toBe(
+      resources[lang].cloudSettings.refusal.CLOUD_SETTINGS_MEMBER_SUSPENDED,
+    );
+  },
+);
+it('a refused wake says why instead of an unconfirmed result', async () => {
+  const f = await setup([sleeping]);
+  // As it arrives in the cloud web page.
+  f.api.instancePower.mockRejectedValueOnce(Error('CLOUD_SETTINGS_INSTANCE_TRANSFERRED'));
+  fireEvent.click(await screen.findByRole('button', { name: '唤醒' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    zhCN.cloudSettings.refusal.CLOUD_SETTINGS_INSTANCE_TRANSFERRED,
+  );
+  fireEvent.click(screen.getByRole('button', { name: zhCN.cloudSettings.reload }));
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+});
 it('unknown power results are not retried or cleared by background refresh', async () => {
   const f = await setup([sleeping]);
   f.api.instancePower.mockRejectedValueOnce(Error('unconfirmed'));

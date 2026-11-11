@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { cloudInstanceAccessSchema } from '../../shared/cloudSettingsClient';
+import { isCloudRefusal } from '../../shared/cloudSettingsErrors';
 import type { CloudClientCaller } from './service';
 import {
   CloudClientError,
@@ -138,10 +139,12 @@ export function createCloudInstanceOnboarding(deps: {
         try {
           // CIS atomically ensures one default instance and chooses image/quota/defaults.
           await call(`${instancesPath}/wake`, 'POST', {});
-        } catch {
+        } catch (error) {
           check();
-          // LOGIN_REQUIRED persists a record before returning an error. A lost
-          // response can do the same: read back instead of retrying the POST.
+          // A refusal creates nothing: say why. LOGIN_REQUIRED persists a record before
+          // returning an error, and a lost response can do the same: read back instead of
+          // retrying the POST.
+          if (error instanceof CloudClientError && isCloudRefusal(error.code)) throw error;
         }
         try {
           const after = parseOwnedInstances(await call(instancesPath));

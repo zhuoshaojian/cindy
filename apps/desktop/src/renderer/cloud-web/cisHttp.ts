@@ -1,5 +1,6 @@
 import { CloudClientError, type CloudClientHttp } from '../../main/cloud-settings-client/transport';
 import { SETTINGS_WEB_LARGE_RESULT_MAX_BYTES } from '../../shared/settingsWeb';
+import { cloudRefusal } from '../../shared/cloudSettingsErrors';
 
 /**
  * The CIS browser session for the shared cloud client modules. They were written for the
@@ -21,9 +22,13 @@ export interface CisFetch {
   (path: string, method: string, body: unknown, signal: AbortSignal, limit?: number): Promise<unknown>;
 }
 
-function failure(status: number, path: string, method: string): CloudClientError {
+function failure(status: number, path: string, method: string, code: unknown): CloudClientError {
+  // A refusal (not authorized, suspended, over a limit, transferred) keeps its own code.
+  const refusal = cloudRefusal(code);
   return new CloudClientError(
-    status === 404 || status === 501
+    refusal
+      ? refusal
+      : status === 404 || status === 501
       ? 'CLOUD_SETTINGS_UNSUPPORTED'
       : status === 409 && (method === 'PATCH' || /\/maintenance\/upgrade$/u.test(path))
         ? 'CLOUD_SETTINGS_CONFLICT'
@@ -64,7 +69,7 @@ export function createCisFetch(onSignedOut: () => void): CisFetch {
         onSignedOut();
         throw new CisSignedOutError();
       }
-      const error = failure(response.status, path, method);
+      const error = failure(response.status, path, method, code);
       (error as CloudClientError & { remoteCode?: unknown }).remoteCode = code;
       throw error;
     }

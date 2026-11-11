@@ -9193,7 +9193,15 @@
       "INVALID_BIND_TICKET": "The verification session expired. Start again.",
       "REGION_MISMATCH": "The sign-in service region does not match this app.",
       "LOGIN_OWNERSHIP_MISMATCH": "Use the account that owns this cloud instance. For an organization account, choose SSO.",
-      "LOGIN_AUTH_UPGRADE_REQUIRED": "The cloud sign-in service needs an update. Please try again later."
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "The cloud sign-in service needs an update. Please try again later.",
+      "CLOUD_SETTINGS_ACCESS_DENIED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ACCESS_DENIED)",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_MEMBER_SUSPENDED)",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_CLOSED)",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_NOT_LISTED)",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_FULL)",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_QUOTA_EXCEEDED)",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_INSTANCE_TRANSFERRED)",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "$t(cloudSettings.refusal.CLOUD_SETTINGS_TRANSFER_IN_PROGRESS)"
     },
     "rateLimit": {
       "retryAt": "Try again after {{time}} (local time).",
@@ -20117,6 +20125,16 @@
       "allocated": "Instance created",
       "identity": "Cloud sign-in",
       "start": "Ready to use"
+    },
+    "refusal": {
+      "CLOUD_SETTINGS_ACCESS_DENIED": "This account is not yet authorized to use cloud instances. Ask an administrator to enable it.",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "Cloud instances are suspended for your account, or its authorization has expired. Your data is kept. Ask an administrator.",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "Your organization is not issuing new cloud instances right now. Ask an administrator.",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "Your account has not been admitted to cloud instances yet. Ask an administrator to add you.",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "Your organization has reached its cloud instance limit. Ask an administrator.",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "You have reached your cloud instance limit. Ask an administrator to raise it.",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "This instance has been transferred to someone else and can no longer be woken. Ask an administrator if you still need it.",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "Transferred files are being copied. The instance is available again in a few minutes."
     }
   },
   "usageCost": {

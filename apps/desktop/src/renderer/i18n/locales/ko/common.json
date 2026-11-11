@@ -9150,7 +9150,15 @@
       "INVALID_BIND_TICKET": "확인 세션이 만료되었습니다.",
       "REGION_MISMATCH": "로그인 서비스 지역이 이 앱과 일치하지 않습니다.",
       "LOGIN_OWNERSHIP_MISMATCH": "이 클라우드를 받은 계정으로 로그인하세요. 조직 계정은 SSO를 선택하세요.",
-      "LOGIN_AUTH_UPGRADE_REQUIRED": "클라우드 로그인 서비스 업데이트가 필요합니다. 나중에 다시 시도하세요."
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "클라우드 로그인 서비스 업데이트가 필요합니다. 나중에 다시 시도하세요.",
+      "CLOUD_SETTINGS_ACCESS_DENIED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ACCESS_DENIED)",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_MEMBER_SUSPENDED)",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_CLOSED)",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_NOT_LISTED)",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_FULL)",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_QUOTA_EXCEEDED)",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_INSTANCE_TRANSFERRED)",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "$t(cloudSettings.refusal.CLOUD_SETTINGS_TRANSFER_IN_PROGRESS)"
     },
     "rateLimit": {
       "retryAt": "{{time}}(현지 시간) 이후에 다시 시도하세요.",
@@ -20045,6 +20053,16 @@
       "allocated": "인스턴스 생성됨",
       "identity": "클라우드 로그인",
       "start": "사용 준비 완료"
+    },
+    "refusal": {
+      "CLOUD_SETTINGS_ACCESS_DENIED": "이 계정은 아직 클라우드 인스턴스 사용 권한이 없습니다. 관리자에게 활성화를 요청하세요.",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "계정의 클라우드 인스턴스 이용이 정지되었거나 권한이 만료되었습니다. 데이터는 유지됩니다. 관리자에게 문의하세요.",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "소속 조직에서 현재 새 클라우드 인스턴스를 발급하지 않습니다. 관리자에게 문의하세요.",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "계정이 아직 클라우드 인스턴스를 받을 수 있도록 허가되지 않았습니다. 관리자에게 추가를 요청하세요.",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "소속 조직의 클라우드 인스턴스 수가 한도에 도달했습니다. 관리자에게 문의하세요.",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "클라우드 인스턴스 수가 한도에 도달했습니다. 관리자에게 한도 조정을 요청하세요.",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "이 인스턴스는 다른 사람에게 이관되어 더 이상 깨울 수 없습니다. 계속 필요하면 관리자에게 문의하세요.",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "이관 파일을 복사하는 중입니다. 몇 분 뒤 인스턴스를 다시 사용할 수 있습니다."
     }
   },
   "usageCost": {

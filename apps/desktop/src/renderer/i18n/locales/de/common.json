@@ -9193,7 +9193,15 @@
       "INVALID_BIND_TICKET": "Die Bestätigungssitzung ist abgelaufen. Starte erneut.",
       "REGION_MISMATCH": "Die Region des Anmeldedienstes stimmt nicht mit dieser App überein.",
       "LOGIN_OWNERSHIP_MISMATCH": "Verwende das Konto, dem diese Cloud-Instanz gehört. Wähle für ein Organisationskonto SSO.",
-      "LOGIN_AUTH_UPGRADE_REQUIRED": "Der Cloud-Anmeldedienst muss aktualisiert werden. Versuche es später erneut."
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "Der Cloud-Anmeldedienst muss aktualisiert werden. Versuche es später erneut.",
+      "CLOUD_SETTINGS_ACCESS_DENIED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ACCESS_DENIED)",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_MEMBER_SUSPENDED)",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_CLOSED)",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_NOT_LISTED)",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_FULL)",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_QUOTA_EXCEEDED)",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_INSTANCE_TRANSFERRED)",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "$t(cloudSettings.refusal.CLOUD_SETTINGS_TRANSFER_IN_PROGRESS)"
     },
     "rateLimit": {
       "retryAt": "Versuche es nach {{time}} (Ortszeit) erneut.",
@@ -20117,6 +20125,16 @@
       "allocated": "Instanz erstellt",
       "identity": "Cloud-Anmeldung",
       "start": "Einsatzbereit"
+    },
+    "refusal": {
+      "CLOUD_SETTINGS_ACCESS_DENIED": "Dieses Konto ist noch nicht für Cloud-Instanzen freigegeben. Bitte die Administration, es freizuschalten.",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "Cloud-Instanzen sind für dein Konto gesperrt oder die Freigabe ist abgelaufen. Deine Daten bleiben erhalten. Wende dich an die Administration.",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "Deine Organisation vergibt derzeit keine neuen Cloud-Instanzen. Wende dich an die Administration.",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "Dein Konto ist noch nicht für Cloud-Instanzen zugelassen. Bitte die Administration, dich hinzuzufügen.",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "Deine Organisation hat ihr Limit an Cloud-Instanzen erreicht. Wende dich an die Administration.",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "Du hast dein Limit an Cloud-Instanzen erreicht. Bitte die Administration, es zu erhöhen.",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "Diese Instanz wurde an eine andere Person übertragen und kann nicht mehr aufgeweckt werden. Wende dich an die Administration, wenn du sie noch brauchst.",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "Die Dateien der Übertragung werden kopiert. Die Instanz ist in wenigen Minuten wieder verfügbar."
     }
   },
   "usageCost": {
