@@ -94,11 +94,7 @@ it('uses the Main bridge even if device-link remote control is disabled', async 
 });
 it('loads the plugin page for the selected instance only once its category is opened', async () => {
   Object.assign(window, { electronAPI: { cloudSettings: {} } });
-  // As the real client: it reports no plugin authorization of its own.
-  const client = createTrialCloudSettingsClient();
-  const connect = client.connect;
-  client.connect = async () => ({ ...(await connect()), pluginAuthorization: undefined });
-  vi.mocked(createCloudSettingsClient).mockReturnValue(client);
+  vi.mocked(createCloudSettingsClient).mockReturnValue(createTrialCloudSettingsClient());
   const Plugins = vi.fn((props: { deviceId: string; name: string; active: boolean }) => (
     <p data-testid="plugins">{`${props.deviceId} ${props.name} ${props.active}`}</p>
   ));

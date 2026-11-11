@@ -336,14 +336,9 @@ describe('shared native cloud settings', () => {
     await waitFor(() => expect(screen.queryByText('settings.terminalShell.title')).toBeNull());
     expect(save).not.toHaveBeenCalled();
   });
-  // 2026-11-04 product review: without plugin management here, the category is not a dead end.
+  // 2026-11-04 product review: without a plugin page (a browser), the category is not a dead end.
   it('opens the cloud desktop for plugins when the page cannot manage them', async () => {
-    setup((client) => {
-      const connect = client.connect;
-      client.connect = async () => {
-        return { ...(await connect()), pluginAuthorization: undefined };
-      };
-    });
+    setup();
     await screen.findByText('settings.memory.title');
     fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.ghosts' }));
     expect(
@@ -353,8 +348,6 @@ describe('shared native cloud settings', () => {
   // The native client supplies its plugin page for the instance; a browser supplies none.
   it('shows the supplied plugin page instead of the cloud desktop entry', async () => {
     const client = createTrialCloudSettingsClient();
-    const connect = client.connect;
-    client.connect = async () => ({ ...(await connect()), pluginAuthorization: undefined });
     const plugins = vi.fn((active: boolean) => <p data-testid="plugins">{String(active)}</p>);
     render(
       <CloudSettingsPanel
