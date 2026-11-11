@@ -204,3 +204,34 @@ Checked with the Dev client `0.1.130-dev.cloud.20261111.1` against the owner's
 
 Not exercised: connecting an account, saving a setting, enabling or installing a
 plugin.
+
+## Cloud settings page chrome (client and web)
+
+Layout and button changes in the cloud settings panel (`0d60a5daa9`, `da295345c4`).
+The local settings pages are not changed; where a cloud page reuses a local one, it
+keeps the local look.
+
+- The header and the category body say "loading" until the instance has been read,
+  and "offline" only after that.
+- Model providers and IM bots keep their place in the sidebar until the instance
+  answers, and are dropped only if it does not offer them.
+- One reload button, in the page header, reloads the open category. The IM, external
+  tools and ticket-only provider sections offer a retry only after a failed read.
+- The plugin target button names only the scope, since the page names the instance.
+- Providers, Tools and the instance overview carry the page title of the local pages.
+- The maintenance save row shows only while something is changed.
+
+Not changed, because they already match the local page: the storage usage card and
+the database card.
+
+The web pages share the panel. CIS pins the build of `da295345c4`
+(`cloud-web-da295345c4`, 39,826,288 bytes, cindy-server `e31e992a1`); the host call
+contract is unchanged since the previous pin (`33f0c9ad7b`, 0.1.128 source).
+
+Checks: desktop typecheck; 1,415 cloud settings, web, plugin and skill tests; the
+web build against a mock CIS (no script errors); CIS typecheck and 1,873 tests. On
+the deployed CIS both roles are Ready with no restarts and serve `da295345c4`. In a
+signed-in browser against the owner's `0.1.130-cloud.2` instance the instance,
+provider (quota, model list, shared provider), Tools and IM pages load with the new
+layout. The Dev client `0.1.130-dev.cloud.20261111.3` is built from `0d60a5daa9`;
+its real-UI pass is pending.
