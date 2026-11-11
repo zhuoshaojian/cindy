@@ -184,3 +184,23 @@ and one of them was finished afterwards:
   flow once sunyi signs in again.
 
 The stopped instance `…250573f0` (manual updates) is untouched.
+
+## Plugins on the remote plugin page (client only)
+
+The cloud settings Plugins category used to offer only the instance's remote desktop.
+Upstream has managed another computer's plugins and skills over DeviceLink since
+v0.1.112, and an instance serves that like any other computer. The native client now
+shows those two pages in the category, fixed to the instance (`98feb2f31a`). This
+needs no CIS or image change. The browser build does not load the pages and keeps
+the remote desktop entry.
+
+Checked with the Dev client `0.1.130-dev.cloud.20261111.1` against the owner's
+`0.1.130-cloud.2` instance:
+
+- The category lists the instance's eight installed plugins and the market.
+- XD Feishu's settings page opens in the client and shows the account connected on
+  the instance.
+- The Skills tab lists the instance's skills without leaving cloud settings.
+
+Not exercised: connecting an account, saving a setting, enabling or installing a
+plugin.
