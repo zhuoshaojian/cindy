@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from 'react';
 import {
   Navigate,
   useLocation,
@@ -54,6 +62,7 @@ export function CloudSettingsPanel({
   trial = false,
   focusMaintenance = false,
   version,
+  plugins,
 }: {
   name: string;
   client: CloudSettingsClient;
@@ -63,6 +72,8 @@ export function CloudSettingsPanel({
   focusMaintenance?: boolean;
   /** Runtime version CIS reports for the instance; shown in About like the local app version. */
   version?: string;
+  /** The native client's plugin page for this instance. Absent in a browser, which opens the desktop. */
+  plugins?: (active: boolean) => ReactNode;
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
@@ -80,6 +91,10 @@ export function CloudSettingsPanel({
   const [botAuthorization, setBotAuthorization] = useState(false);
   const [pluginAuthorization, setPluginAuthorization] = useState(false);
   const [providerAuthorization, setProviderAuthorization] = useState(false);
+  // Like the local Plugins tab, the plugin page fills the panel and scrolls inside itself.
+  const managesPlugins = !!plugins && !pluginAuthorization;
+  const pluginPage = tab === 'ghosts' && managesPlugins;
+  const fills = tab === 'providers' || pluginPage;
   const [deviceId, setDeviceId] = useState('');
   const [cpuCount, setCpuCount] = useState<number | undefined>();
   const [states, setStates] = useState<Partial<Record<CloudSettingsDomain, CloudSettingsState>>>(
@@ -398,10 +413,10 @@ export function CloudSettingsPanel({
             {/* Providers scroll inside their card, as on the local settings page. */}
             <div
               ref={scrollRef}
-              className={`min-h-0 flex-1 [scrollbar-gutter:stable] ${tab === 'providers' ? 'overflow-hidden' : 'overflow-y-auto'}`}
+              className={`min-h-0 flex-1 [scrollbar-gutter:stable] ${fills ? 'overflow-hidden' : 'overflow-y-auto'}`}
             >
               <div
-                className={`mx-auto w-full min-w-0 max-w-[920px] px-1 animate-fade-in ${tab === 'providers' ? 'flex h-full min-h-0 flex-col' : 'pb-32'}`}
+                className={`mx-auto w-full min-w-0 animate-fade-in ${pluginPage ? 'max-w-none' : 'max-w-[920px] px-1'} ${fills ? 'flex h-full min-h-0 flex-col' : 'pb-32'}`}
               >
                 {failure && tab !== 'instance' && (
                   <div role="alert" className={card}>
@@ -464,7 +479,7 @@ export function CloudSettingsPanel({
                   <div
                     key={group}
                     hidden={tab !== group}
-                    className={group === 'providers' ? 'min-h-0 flex-1' : undefined}
+                    className={group === 'providers' || (group === 'ghosts' && managesPlugins) ? 'min-h-0 flex-1' : undefined}
                     role="tabpanel"
                     id={`settings-panel-${group}`}
                     aria-labelledby={`settings-tab-${group}`}
@@ -519,8 +534,10 @@ export function CloudSettingsPanel({
                           trial={trial}
                           refresh={epoch}
                         />
+                      ) : plugins ? (
+                        plugins(tab === group)
                       ) : (
-                        // Plugins are managed in the instance's own settings (2026-11-04 review).
+                        // A browser has no plugin page: the instance's own settings (2026-11-04 review).
                         <CloudDesktopFallback
                           deviceId={deviceId}
                           name={name}
@@ -580,14 +597,26 @@ export function CloudSettingsPanel({
   );
 }
 
-export function CloudSettingsView() {
+/** The native client's plugin page for one instance; see CloudPluginManagement. */
+type CloudPluginPage = ComponentType<{ deviceId: string; name: string; active: boolean }>;
+
+export function CloudSettingsView({ plugins }: { plugins?: CloudPluginPage }) {
   const access = useCloudInstanceAccess();
   if (access === 'checking') return null;
   if (access !== 'allowed') return <Navigate to="/settings" replace />;
-  return <AuthorizedCloudSettingsView />;
+  return <AuthorizedCloudSettingsView plugins={plugins} />;
 }
 
-function AuthorizedCloudSettingsView() {
+/** Loads the plugin page, and reads the instance for it, only once the category is opened. */
+function PluginPageGate({ active, children }: { active: boolean; children: ReactNode }) {
+  const [opened, setOpened] = useState(active);
+  useEffect(() => {
+    if (active) setOpened(true);
+  }, [active]);
+  return opened ? <Suspense fallback={null}>{children}</Suspense> : null;
+}
+
+function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPluginPage }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -662,14 +691,22 @@ function AuthorizedCloudSettingsView() {
         ? returnTo
         : '/cc-agent',
     );
-  if (selected && /^cloud-device-[a-f0-9]{24}$/.test(selected) && client)
+  if (selected && /^cloud-device-[a-f0-9]{24}$/.test(selected) && client) {
+    const name =
+      device?.name ??
+      instance?.name ??
+      (instance ? cloudInstanceName(t, instance) : t('cloudSettings.instance.title'));
     return (
       <CloudSettingsPanel
         key={scope}
-        name={
-          device?.name ??
-          instance?.name ??
-          (instance ? cloudInstanceName(t, instance) : t('cloudSettings.instance.title'))
+        name={name}
+        plugins={
+          Plugins &&
+          ((active) => (
+            <PluginPageGate active={active}>
+              <Plugins deviceId={selected} name={name} active={active} />
+            </PluginPageGate>
+          ))
         }
         client={client}
         online={online}
@@ -678,5 +715,6 @@ function AuthorizedCloudSettingsView() {
         version={instance?.version ?? undefined}
       />
     );
+  }
   return <Navigate to="/settings?tab=cloud-instances" replace />;
 }

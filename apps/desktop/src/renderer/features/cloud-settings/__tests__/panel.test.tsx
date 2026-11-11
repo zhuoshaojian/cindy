@@ -350,6 +350,29 @@ describe('shared native cloud settings', () => {
       await screen.findByRole('button', { name: 'cloudSettings.openInCloudDesktop' }),
     ).toBeTruthy();
   });
+  // The native client supplies its plugin page for the instance; a browser supplies none.
+  it('shows the supplied plugin page instead of the cloud desktop entry', async () => {
+    const client = createTrialCloudSettingsClient();
+    const connect = client.connect;
+    client.connect = async () => ({ ...(await connect()), pluginAuthorization: undefined });
+    const plugins = vi.fn((active: boolean) => <p data-testid="plugins">{String(active)}</p>);
+    render(
+      <CloudSettingsPanel
+        name="Cloud trial"
+        client={client}
+        online
+        trial
+        onBack={vi.fn()}
+        plugins={plugins}
+      />,
+    );
+    expect(screen.getByTestId('plugins').textContent).toBe('false');
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.ghosts' }));
+    await waitFor(() => expect(screen.getByTestId('plugins').textContent).toBe('true'));
+    expect(screen.queryByRole('button', { name: 'cloudSettings.openInCloudDesktop' })).toBeNull();
+    // The page scrolls inside itself, as the local Plugins tab does.
+    expect(document.querySelector('#settings-panel-ghosts')!.className).toContain('flex-1');
+  });
   it('filters automation search by the individual capability', () => {
     for (const [id, domain] of [
       ['settings.computerUse.browser.title', 'browserTools'],

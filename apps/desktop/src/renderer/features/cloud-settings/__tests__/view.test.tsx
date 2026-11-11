@@ -92,6 +92,31 @@ it('uses the Main bridge even if device-link remote control is disabled', async 
   );
   expect(screen.queryByText('cloudSettings.offline')).toBeNull();
 });
+it('loads the plugin page for the selected instance only once its category is opened', async () => {
+  Object.assign(window, { electronAPI: { cloudSettings: {} } });
+  // As the real client: it reports no plugin authorization of its own.
+  const client = createTrialCloudSettingsClient();
+  const connect = client.connect;
+  client.connect = async () => ({ ...(await connect()), pluginAuthorization: undefined });
+  vi.mocked(createCloudSettingsClient).mockReturnValue(client);
+  const Plugins = vi.fn((props: { deviceId: string; name: string; active: boolean }) => (
+    <p data-testid="plugins">{`${props.deviceId} ${props.name} ${props.active}`}</p>
+  ));
+  render(
+    <MemoryRouter initialEntries={[`/cloud-settings?deviceId=${state.deviceId}`]}>
+      <CloudSettingsView plugins={Plugins} />
+    </MemoryRouter>,
+  );
+  await screen.findByRole('tab', { name: 'settings.tabs.ghosts' });
+  expect(Plugins).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.ghosts' }));
+  expect((await screen.findByTestId('plugins')).textContent).toBe(`${state.deviceId} Cloud A true`);
+  // It stays mounted when another category is shown, so its page state is kept.
+  fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.general' }));
+  await waitFor(() =>
+    expect(screen.getByTestId('plugins').textContent).toBe(`${state.deviceId} Cloud A false`),
+  );
+});
 it('does not connect or wake an offline instance', async () => {
   state.online = false;
   const client = createTrialCloudSettingsClient();
