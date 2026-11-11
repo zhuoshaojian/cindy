@@ -1,5 +1,6 @@
-import { Plus, RefreshCw } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SettingsPageHeader } from '@/components/ui/settings-rows';
 import { ProviderListEntry } from '@/components/settings/ProviderListEntry';
 import { ProviderAccountHeader, ConnectedPill } from '@/components/settings/ProviderAccountHeader';
 import { OAuthBrowserLink, OAuthDeviceCodeCard } from '@/components/settings/OAuthDeviceCodeCard';
@@ -50,32 +51,27 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
       className="flex min-h-0 flex-col gap-[14px]"
       aria-label={t('settings.providers.title')}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-            {t('settings.providers.title')}
-          </h2>
-          <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
-            {t('cloudSettings.authScope', { name })}
-          </p>
-        </div>
-        <Button
-          variant="secondary"
-          size="md"
-          disabled={buttonDisabled || busy}
-          onClick={() => {
-            setFailure(undefined);
-            void load();
-          }}
-        >
-          <RefreshCw size={14} />
-          {t('cloudSettings.reload')}
-        </Button>
-      </div>
+      {/* The page title of the local providers page; the page header reloads the category. */}
+      <SettingsPageHeader
+        title={t('settings.providers.title')}
+        description={t('cloudSettings.authScope', { name })}
+      />
       {failure && (
-        <p role="alert" className="text-13 text-[var(--text-secondary)]">
-          {t(`cloudSettings.${failure}`)}
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-13 text-[var(--text-secondary)]">
+            {t(`cloudSettings.${failure}`)}
+          </p>
+          <Button
+            size="sm"
+            disabled={buttonDisabled || busy}
+            onClick={() => {
+              setFailure(undefined);
+              void load();
+            }}
+          >
+            {t('cloudSettings.reload')}
+          </Button>
+        </div>
       )}
       {loading && !items.length && <p role="status">{t('cloudSettings.loading')}</p>}
       {!!items.length && (
