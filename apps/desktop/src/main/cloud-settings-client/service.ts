@@ -323,6 +323,7 @@ export function createCloudSettingsService(deps: {
   return {
     instanceAccess: onboarding.access,
     instanceList: onboarding.list,
+    instanceCapacity: onboarding.capacity,
     instanceClaim: onboarding.claim,
     instanceInitialize: onboarding.initialize,
     instanceLoginStart: login.start,

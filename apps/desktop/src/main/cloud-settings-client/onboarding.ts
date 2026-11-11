@@ -9,6 +9,7 @@ import {
   type CloudClientIdentity,
 } from './transport';
 import {
+  parseCapacity,
   parseCloud,
   parseOwnedInstances,
   projectCloudInstance,
@@ -120,6 +121,33 @@ export function createCloudInstanceOnboarding(deps: {
       if (mutation) mutations.delete(identity.key);
     }
   }
+  /** One more instance, only while CIS reports the owner below their limit. CIS checks the limit
+   * again when it creates the instance. Like the first claim, a lost response or LOGIN_REQUIRED is
+   * read back from the list instead of resubmitted. */
+  async function claimAnother(
+    call: (path: string, method?: 'GET' | 'POST', body?: unknown) => Promise<unknown>,
+    check: () => void,
+    before: ReturnType<typeof parseOwnedInstances>,
+    capacity: ReturnType<typeof parseCapacity>,
+  ) {
+    if (!capacity) throw new CloudClientError('CLOUD_SETTINGS_UNSUPPORTED');
+    if (capacity.used >= capacity.limit) throw new CloudClientError('CLOUD_SETTINGS_QUOTA_EXCEEDED');
+    try {
+      await call(instancesPath, 'POST', {});
+    } catch (error) {
+      check();
+      if (error instanceof CloudClientError && isCloudRefusal(error.code)) throw error;
+    }
+    try {
+      const after = parseOwnedInstances(await call(instancesPath));
+      const known = new Set(before.map((v) => v.deviceId));
+      if (after.some((v) => !known.has(v.deviceId)))
+        return after.map((v) => projectCloudInstance(v, after));
+    } catch {
+      check();
+    }
+    throw new CloudClientError('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
+  }
   return {
     access(caller: CloudClientCaller) {
       return perform(caller, false, async (call) =>
@@ -131,9 +159,14 @@ export function createCloudInstanceOnboarding(deps: {
         projectOwnedInstances(await call(instancesPath)),
       );
     },
-    claim(caller: CloudClientCaller) {
+    capacity(caller: CloudClientCaller) {
+      return perform(caller, false, async (call) => parseCapacity(await call(instancesPath)));
+    },
+    claim(caller: CloudClientCaller, another = false) {
       return perform(caller, true, async (call, _identity, check) => {
-        const before = parseOwnedInstances(await call(instancesPath));
+        const raw = await call(instancesPath);
+        const before = parseOwnedInstances(raw);
+        if (another) return claimAnother(call, check, before, parseCapacity(raw));
         // Do not wake or allocate on entry, errors, or an existing membership.
         if (before.length) return before.map((v) => projectCloudInstance(v, before));
         try {

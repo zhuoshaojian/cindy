@@ -19963,7 +19963,12 @@
       "progress": "セットアップの進行状況",
       "allocated": "インスタンス取得済み",
       "identity": "クラウドログイン",
-      "start": "起動完了"
+      "start": "起動完了",
+      "capacity": "{{limit}} 台中 {{used}} 台を使用中",
+      "capacityRemaining": "あと {{n}} 台取得できます。新しいインスタンスには個別にログインが必要です。ほかのインスタンスには影響しません。",
+      "claimAnother": "新しいインスタンスを取得",
+      "claimAnotherTitle": "新しいクラウドインスタンスを取得",
+      "claimAnotherBody": "既存のインスタンスとは別に、新しいクラウドインスタンスを作成します。使う前にログインしてください。"
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "このアカウントはまだクラウドインスタンスの利用を許可されていません。管理者に有効化を依頼してください。",

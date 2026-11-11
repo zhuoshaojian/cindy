@@ -20035,7 +20035,12 @@
       "progress": "Setup progress",
       "allocated": "Instance created",
       "identity": "Cloud sign-in",
-      "start": "Ready to use"
+      "start": "Ready to use",
+      "capacity": "Using {{used}} of {{limit}} instances",
+      "capacityRemaining": "You can claim {{n}} more. A new instance needs its own sign-in; your other instances are not affected.",
+      "claimAnother": "Claim new instance",
+      "claimAnotherTitle": "Claim a new cloud instance",
+      "claimAnotherBody": "A new cloud instance will be created for you, separate from your current ones. Sign in to it before using it."
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "This account is not yet authorized to use cloud instances. Ask an administrator to enable it.",

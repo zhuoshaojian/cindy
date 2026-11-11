@@ -40,7 +40,10 @@ export function cloudSettingsClientHandlers(
   return {
     instanceAccess: handler(z.object({}).strict(), (c) => service.instanceAccess(c)),
     instanceList: handler(z.object({}).strict(), (c) => service.instanceList(c)),
-    instanceClaim: handler(z.object({}).strict(), (c) => service.instanceClaim(c)),
+    instanceCapacity: handler(z.object({}).strict(), (c) => service.instanceCapacity(c)),
+    instanceClaim: handler(z.object({ another: z.literal(true).optional() }).strict(), (c, v) =>
+      service.instanceClaim(c, v.another === true),
+    ),
     instanceInitialize: handler(cloudInstanceTargetSchema, (c, v) =>
       service.instanceInitialize(c, v.deviceId),
     ),

@@ -19671,7 +19671,12 @@
       "progress": "領取進度",
       "allocated": "實例已領",
       "identity": "雲端登入",
-      "start": "啟動就緒"
+      "start": "啟動就緒",
+      "capacity": "已用 {{used}} / {{limit}} 台",
+      "capacityRemaining": "尚可再領 {{n}} 台。新實例須另行登入，名下他實例不受影響。",
+      "claimAnother": "領取新實例",
+      "claimAnotherTitle": "領取新雲實例一台",
+      "claimAnotherBody": "將為此帳號新建雲實例一台，與現有實例各自獨立。新實例須先登入方可用之。"
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "此帳號尚未獲准使用雲實例，請告管理員開通。",

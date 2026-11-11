@@ -20222,7 +20222,12 @@
       "progress": "Progresso da configuração",
       "allocated": "Instância criada",
       "identity": "Login na nuvem",
-      "start": "Pronta para uso"
+      "start": "Pronta para uso",
+      "capacity": "{{used}} de {{limit}} instâncias em uso",
+      "capacityRemaining": "Você pode obter mais {{n}}. Uma nova instância precisa de login próprio; suas outras instâncias não são afetadas.",
+      "claimAnother": "Obter nova instância",
+      "claimAnotherTitle": "Obter uma nova instância na nuvem",
+      "claimAnotherBody": "Uma nova instância na nuvem será criada para você, separada das atuais. Faça login antes de usá-la."
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "Esta conta ainda não está autorizada a usar instâncias na nuvem. Peça a um administrador para ativá-la.",

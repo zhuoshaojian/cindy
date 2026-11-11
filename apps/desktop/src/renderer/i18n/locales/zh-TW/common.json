@@ -19963,7 +19963,12 @@
       "progress": "領取進度",
       "allocated": "已領取執行個體",
       "identity": "雲端登入",
-      "start": "啟動就緒"
+      "start": "啟動就緒",
+      "capacity": "已用 {{used}} / {{limit}} 台",
+      "capacityRemaining": "還可以再領取 {{n}} 台。新執行個體需要單獨登入，名下其他執行個體不受影響。",
+      "claimAnother": "領取新執行個體",
+      "claimAnotherTitle": "領取一台新的雲端執行個體",
+      "claimAnotherBody": "將為你新建一台雲端執行個體，與現有執行個體互相獨立。新執行個體需要先登入才能使用。"
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "這個帳號尚未獲准使用雲端執行個體，請聯絡管理員開通。",

@@ -4,6 +4,7 @@ import {
   cloudUpgradeStatusSchema,
 } from '../../shared/cloudInstanceControl';
 import { CloudClientError } from './transport';
+import { cloudInstanceCapacitySchema, type CloudInstanceCapacity } from '../../shared/cloudSettingsClient';
 export const cloudOwnedInstancesSchema = z.object({
   instances: z
     .array(
@@ -60,6 +61,11 @@ export function parseOwnedInstances(raw: unknown): CloudOwnedInstance[] {
     devices.add(v.deviceId);
   }
   return list.filter((v) => v.status.desiredState !== 'deleted');
+}
+/** The owner's limit and use, when CIS reports them (older CIS does not). */
+export function parseCapacity(raw: unknown): CloudInstanceCapacity | null {
+  const value = z.object({ quota: cloudInstanceCapacitySchema }).safeParse(raw);
+  return value.success ? value.data.quota : null;
 }
 export function projectOwnedInstances(raw: unknown) {
   const owned = parseOwnedInstances(raw);

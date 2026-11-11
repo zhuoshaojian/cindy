@@ -19963,7 +19963,12 @@
       "progress": "领取进度",
       "allocated": "实例已领取",
       "identity": "云端登录",
-      "start": "启动就绪"
+      "start": "启动就绪",
+      "capacity": "已用 {{used}} / {{limit}} 台",
+      "capacityRemaining": "还可以再领取 {{n}} 台。新实例需要单独登录，名下其他实例不受影响。",
+      "claimAnother": "领取新实例",
+      "claimAnotherTitle": "领取一台新的云实例",
+      "claimAnotherBody": "将为你新建一台云实例，与现有实例相互独立。新实例需要先登录才能使用。"
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "这个账号还没有获准使用云实例，请联系管理员开通。",

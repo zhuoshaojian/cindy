@@ -70,14 +70,25 @@ export const cloudClientReceiptSchema = cloudClientHandleSchema
 export const cloudClientManageSchema = cloudClientHandleSchema
   .extend({ command: managementCommandSchema })
   .strict();
+/** How many cloud instances the owner has and may have; CIS decides the limit. */
+export const cloudInstanceCapacitySchema = z
+  .object({
+    limit: z.number().int().min(0).max(1_000_000),
+    used: z.number().int().min(0).max(1_000_000),
+  })
+  .strict();
+export type CloudInstanceCapacity = z.infer<typeof cloudInstanceCapacitySchema>;
 export interface CloudSettingsRendererApi {
   instanceAccess(input: Record<string, never>): Promise<CloudInstanceAccess>;
   instanceList(
     input: Record<string, never>,
   ): Promise<import('./cloudInstanceControl').CloudInstanceView[]>;
-  instanceClaim(
-    input: Record<string, never>,
-  ): Promise<import('./cloudInstanceControl').CloudInstanceView[]>;
+  /** Null when this CIS does not report a limit; then no further instance is offered. */
+  instanceCapacity(input: Record<string, never>): Promise<CloudInstanceCapacity | null>;
+  /** The first instance; with `another`, one more while below the limit. */
+  instanceClaim(input: {
+    another?: true;
+  }): Promise<import('./cloudInstanceControl').CloudInstanceView[]>;
   instanceInitialize(input: { deviceId: string }): Promise<void>;
   instanceLoginStart(input: { deviceId: string }): Promise<import('./cloudInstanceLogin').CloudInstanceLoginView>;
   instanceLoginDispatch(input: z.infer<typeof import('./cloudInstanceLogin').cloudLoginDispatchSchema>): Promise<import('./cloudInstanceLogin').CloudInstanceLoginView>;
@@ -109,6 +120,7 @@ export interface CloudSettingsRendererApi {
 export const CLOUD_CLIENT_CHANNELS = {
   instanceAccess: 'cloud-settings-client:instance-access',
   instanceList: 'cloud-settings-client:instance-list',
+  instanceCapacity: 'cloud-settings-client:instance-capacity',
   instanceClaim: 'cloud-settings-client:instance-claim',
   instanceInitialize: 'cloud-settings-client:instance-initialize',
   instanceLoginStart: 'cloud-settings-client:instance-login-start',

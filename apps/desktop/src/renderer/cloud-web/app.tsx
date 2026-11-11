@@ -128,7 +128,13 @@ function Instances({ api }: { api: WebCloudApi }) {
   const pageApi = useMemo<CloudInstancesApi>(
     () => ({
       instanceList: () => api.listInstances(),
-      instanceClaim: (input) => api.cloudSettings.instanceClaim(input),
+      instanceCapacity: (input) => api.cloudSettings.instanceCapacity(input),
+      // Refresh the page's own list too, so a new instance can be signed in at once.
+      instanceClaim: async (input) => {
+        const next = await api.cloudSettings.instanceClaim(input);
+        await api.listInstances().catch(() => undefined);
+        return next;
+      },
       instancePower: (input) => api.cloudSettings.instancePower(input),
       instanceInitialize: ({ deviceId }) =>
         signInInstance(api.instances().find((item) => item.deviceId === deviceId)),
