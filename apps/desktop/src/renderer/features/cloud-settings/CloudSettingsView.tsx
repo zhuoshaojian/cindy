@@ -15,8 +15,9 @@ import {
   useOutletContext,
 } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Cloud } from 'lucide-react';
+import { Cloud, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SettingsSection } from '@/components/ui/settings-rows';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { TAB_IDS } from '@/lib/tabLabels';
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar';
@@ -62,10 +63,13 @@ export function CloudSettingsPanel({
   focusMaintenance = false,
   version,
   plugins,
+  connecting = false,
 }: {
   name: string;
   client: CloudSettingsClient;
   online: boolean;
+  /** The instance's availability has not been read yet: not offline, just not known. */
+  connecting?: boolean;
   onBack(): void;
   trial?: boolean;
   focusMaintenance?: boolean;
@@ -87,11 +91,17 @@ export function CloudSettingsPanel({
     activation: number;
   }>({ entry: null, activation: 0 });
   const [mcpAuthorization, setMcpAuthorization] = useState(false);
-  const [botAuthorization, setBotAuthorization] = useState(false);
-  const [providerAuthorization, setProviderAuthorization] = useState(false);
+  // Unknown until the instance answers: the category keeps its place in the sidebar meanwhile.
+  const [botAuthorization, setBotAuthorization] = useState<boolean>();
+  const [providerAuthorization, setProviderAuthorization] = useState<boolean>();
   // Like the local Plugins tab, the plugin page fills the panel and scrolls inside itself.
   const pluginPage = tab === 'ghosts' && !!plugins;
   const fills = tab === 'providers' || pluginPage;
+  // The instance page has its own status refresh; the plugin page follows the instance live.
+  const reloadable = tab !== 'instance' && !pluginPage;
+  const pendingCapability =
+    (tab === 'providers' && providerAuthorization === undefined) ||
+    (tab === 'im-bot' && botAuthorization === undefined);
   const [deviceId, setDeviceId] = useState('');
   const [cpuCount, setCpuCount] = useState<number | undefined>();
   const [states, setStates] = useState<Partial<Record<CloudSettingsDomain, CloudSettingsState>>>(
@@ -285,18 +295,23 @@ export function CloudSettingsPanel({
   };
   const tabs = groups.filter((group) =>
     group === 'providers'
-      ? providerAuthorization
+      ? providerAuthorization !== false
       : group === 'im-bot'
-        ? botAuthorization
+        ? botAuthorization !== false
         : group === 'ghosts'
           ? true
           : !domains.length || CLOUD_SETTINGS_GROUPS[group].some((d) => domains.includes(d)),
   );
+  // A category the instance turns out not to offer is left for the first one it does.
+  const tabKey = tabs.join();
+  useEffect(() => {
+    if (tab !== 'instance' && !tabs.includes(tab)) setTab(tabs[0] ?? 'general');
+  }, [tabKey, tab]);
   const allowSearchEntry = (entry: SettingsSearchEntry) =>
     entry.tab === 'providers'
-      ? providerAuthorization && entry.id === 'providers'
+      ? providerAuthorization === true && entry.id === 'providers'
       : entry.tab === 'im-bot'
-        ? botAuthorization && entry.id === 'im-bot'
+        ? botAuthorization === true && entry.id === 'im-bot'
         : entry.tab === 'ghosts'
           ? entry.id === 'ghosts'
           : cloudSearchEntryAllowed(
@@ -361,19 +376,6 @@ export function CloudSettingsPanel({
                 }
               }}
             />
-            {tab !== 'instance' && (
-              <div className="mt-auto flex flex-col gap-2 px-3 pb-3 pt-6 text-12 leading-[1.5] text-[var(--settings-section-desc)]">
-                <Button
-                  variant="secondary"
-                  tone="quiet"
-                  compact
-                  disabled={loading || !online || writing}
-                  onClick={() => void reload()}
-                >
-                  {t('cloudSettings.reload')}
-                </Button>
-              </div>
-            )}
           </SettingsSidebar>
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col pl-4 pr-6">
             <header
@@ -400,11 +402,27 @@ export function CloudSettingsPanel({
                         ? 'cloudSettings.trial'
                         : online
                           ? 'cloudSettings.onlyTarget'
-                          : 'cloudSettings.offline',
+                          : connecting
+                            ? 'cloudSettings.loading'
+                            : 'cloudSettings.offline',
                     )}
                   </span>
                 </div>
               </div>
+              {/* One reload for the open category, in place of a button per section. */}
+              {reloadable && (
+                <Button
+                  className="ml-auto shrink-0"
+                  variant="secondary"
+                  tone="quiet"
+                  compact
+                  disabled={loading || !online || writing}
+                  onClick={() => void reload()}
+                >
+                  <RefreshCw size={14} />
+                  {t('cloudSettings.reload')}
+                </Button>
+              )}
             </header>
             {/* Providers scroll inside their card, as on the local settings page. */}
             <div
@@ -447,14 +465,32 @@ export function CloudSettingsPanel({
                     {t('cloudSettings.loading')}
                   </p>
                 )}
-                {activeDomains.length > 0 &&
+                {!online && tab !== 'instance' && !pluginPage ? (
+                  // Not read yet, or not reachable: say which, not that the category is empty.
+                  <p
+                    role="status"
+                    className="py-[18px] text-13 text-[var(--settings-section-desc)]"
+                  >
+                    {t(connecting ? 'cloudSettings.loading' : 'cloudSettings.offline')}
+                  </p>
+                ) : (
+                  activeDomains.length > 0 &&
                   !loading &&
                   !failure &&
                   !activeDomains.some((d) => states[d]?.status === 'ready') && (
                     <p className="py-[18px] text-13 text-[var(--settings-section-desc)]">
                       {t('cloudSettings.noFields')}
                     </p>
-                  )}
+                  )
+                )}
+                {online && loading && pendingCapability && (
+                  <p
+                    role="status"
+                    className="py-[18px] text-13 text-[var(--settings-section-desc)]"
+                  >
+                    {t('cloudSettings.loading')}
+                  </p>
+                )}
                 {client.instance && (
                   <div
                     hidden={tab !== 'instance'}
@@ -544,34 +580,45 @@ export function CloudSettingsPanel({
                         />
                       )
                     ) : (
-                      <fieldset
-                        disabled={!online || loading || writing || !!failure || tab !== group}
-                        className="m-0 min-w-0 border-0 p-0"
-                      >
-                        <NativeCloudSections
-                          tab={group}
-                          deviceId={deviceId}
-                          name={name}
-                          states={states}
-                          // Hidden categories do not read (e.g. the instance prompt) on every save.
-                          disabled={!online || loading || writing || !!failure || tab !== group}
-                          cpuCount={cpuCount}
-                          appVersion={version}
-                          trial={trial}
-                          save={save}
-                          changed={changed}
-                        />
-                      </fieldset>
-                    )}
-                    {group === 'builtin-tools' && mcpAuthorization && (
-                      <CloudMcpAuthorization
-                        client={client}
-                        name={name}
-                        online={online}
-                        active={tab === group}
-                        trial={trial}
-                        refresh={epoch}
-                      />
+                      (() => {
+                        const sections = (
+                          <fieldset
+                            disabled={!online || loading || writing || !!failure || tab !== group}
+                            className="m-0 min-w-0 border-0 p-0"
+                          >
+                            <NativeCloudSections
+                              tab={group}
+                              deviceId={deviceId}
+                              name={name}
+                              states={states}
+                              // Hidden categories do not read (e.g. the instance prompt) on every save.
+                              disabled={!online || loading || writing || !!failure || tab !== group}
+                              cpuCount={cpuCount}
+                              appVersion={version}
+                              trial={trial}
+                              save={save}
+                              changed={changed}
+                            />
+                          </fieldset>
+                        );
+                        if (group !== 'builtin-tools') return sections;
+                        // As on the local Tools page: one page title over built-in and external tools.
+                        return (
+                          <SettingsSection variant="page" title={t('settings.tabs.builtinTools')}>
+                            {sections}
+                            {mcpAuthorization && (
+                              <CloudMcpAuthorization
+                                client={client}
+                                name={name}
+                                online={online}
+                                active={tab === group}
+                                trial={trial}
+                                refresh={epoch}
+                              />
+                            )}
+                          </SettingsSection>
+                        );
+                      })()
                     )}
                   </div>
                 ))}
@@ -668,6 +715,8 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
   const online = client?.instance
     ? !!instance?.ready && instance.desiredState === 'running' && !instance.loginRequired
     : !!device?.online;
+  // Until CIS has answered for this instance its state is unknown, which is not offline.
+  const connecting = !!client?.instance && availability?.scope !== scope;
   const returnTo: unknown = location.state?.returnTo;
   const back = () =>
     navigate(
@@ -697,6 +746,7 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
         }
         client={client}
         online={online}
+        connecting={connecting}
         onBack={back}
         focusMaintenance={params.get('section') === 'maintenance'}
         version={instance?.version ?? undefined}

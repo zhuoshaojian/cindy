@@ -137,23 +137,18 @@ export function CloudBotAuthorization(
     <ImBotSettingsFrame
       context={
         <>
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-13 text-[var(--settings-section-desc)]">
-              {t('cloudSettings.authScope', { name: props.name })}
-            </p>
-            <Button
-              variant="secondary"
-              size="md"
-              disabled={disabled || busy}
-              onClick={() => void load()}
-            >
-              {t('cloudSettings.reload')}
-            </Button>
-          </div>
+          <p className="text-13 text-[var(--settings-section-desc)]">
+            {t('cloudSettings.authScope', { name: props.name })}
+          </p>
           {failure && (
-            <p role="alert" className="text-13 text-[var(--text-secondary)]">
-              {t(`cloudSettings.${failure}`)}
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p role="alert" className="text-13 text-[var(--text-secondary)]">
+                {t(`cloudSettings.${failure}`)}
+              </p>
+              <Button size="sm" disabled={disabled || busy} onClick={() => void load()}>
+                {t('cloudSettings.reload')}
+              </Button>
+            </div>
           )}
           {loading && !items.length && <p role="status">{t('cloudSettings.loading')}</p>}
         </>

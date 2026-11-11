@@ -83,9 +83,9 @@ export function PluginDevicePicker({
   const computerName = selected
     ? (target?.name ?? selected.name)
     : t('settings.ghosts.remote.thisComputer');
-  const label = projectMenu
-    ? `${computerName} / ${projectLabel ?? t('settings.ghosts.scopePicker.globalScope')}`
-    : computerName;
+  const scopeLabel = projectLabel ?? t('settings.ghosts.scopePicker.globalScope');
+  // A fixed page already names its computer; the button then only says which scope is shown.
+  const label = projectMenu ? (fixed ? scopeLabel : `${computerName} / ${scopeLabel}`) : computerName;
   if (fixed && !projectMenu) return null;
   return (
     <DropdownMenu>

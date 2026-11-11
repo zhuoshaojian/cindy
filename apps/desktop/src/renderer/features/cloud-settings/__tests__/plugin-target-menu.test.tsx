@@ -46,7 +46,8 @@ it('offers the computers and the project scope on the ordinary plugin page', () 
 // Cloud settings belong to one instance: its page offers no other computer.
 it('offers only the project scope when the computer is fixed', () => {
   render(<CatalogTargetControls computer={control(true)} project={project} />);
-  expect(screen.getByRole('button').textContent).toContain('Cloud A');
+  // The page already names the instance; the button only says which scope is shown.
+  expect(screen.getByRole('button').textContent).toBe('settings.ghosts.scopePicker.globalScope');
   expect(screen.queryByText('settings.ghosts.remote.thisComputer')).toBeNull();
   expect(screen.queryByText('Mac')).toBeNull();
   expect(screen.queryByText('settings.ghosts.scopePicker.computers')).toBeNull();

@@ -241,29 +241,24 @@ export function CloudMcpAuthorization({
   }, [client, online, operation]);
   const busy = pending || !!running || operation?.phase === 'unknown';
   return (
-    <section className="mt-6 flex flex-col gap-[14px]" aria-label={t('settings.mcp.title')}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-            {t('settings.mcp.title')}
-          </h2>
-          <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
-            {t('settings.mcp.subtitle')}
-          </p>
-        </div>
-        <Button
-          variant="secondary"
-          size="md"
-          disabled={!online || loading || busy}
-          onClick={() => void load()}
-        >
-          {t('cloudSettings.reload')}
-        </Button>
+    <section className="flex flex-col gap-[14px]" aria-label={t('settings.mcp.title')}>
+      <div className="flex flex-col gap-1">
+        <h3 className="text-16 font-medium leading-[1.2] text-[var(--settings-section-title)]">
+          {t('settings.mcp.title')}
+        </h3>
+        <p className="text-13 leading-[1.5] text-[var(--settings-section-desc)]">
+          {t('settings.mcp.subtitle')}
+        </p>
       </div>
       {failure && (
-        <p role="alert" className="text-13 text-[var(--text-secondary)]">
-          {t(`cloudSettings.${failure}`)}
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-13 text-[var(--text-secondary)]">
+            {t(`cloudSettings.${failure}`)}
+          </p>
+          <Button size="sm" disabled={!online || loading || busy} onClick={() => void load()}>
+            {t('cloudSettings.reload')}
+          </Button>
+        </div>
       )}
       {operation && (
         <div className="flex items-center gap-2 text-13 text-[var(--text-secondary)]" role="status">

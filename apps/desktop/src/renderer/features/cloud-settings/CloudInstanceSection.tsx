@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { SettingsPageHeader } from '@/components/ui/settings-rows';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import {
   cloudMaintenanceEditSchema,
@@ -300,19 +301,22 @@ export function CloudInstanceSection({
   const status = view ? instanceStatus(view) : 'starting';
   return (
     <div className="flex flex-col gap-6" data-testid="cloud-instance-overview">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-16 font-medium text-[var(--settings-section-title)]">{tr('title')}</h2>
-        <Button
-          variant="secondary"
-          tone="quiet"
-          compact
-          disabled={busy}
-          onClick={() => void reload()}
-        >
-          <RefreshCw size={14} />
-          {tr('refresh')}
-        </Button>
-      </div>
+      {/* The page title, as the local settings pages carry theirs. */}
+      <SettingsPageHeader
+        title={tr('title')}
+        action={
+          <Button
+            variant="secondary"
+            tone="quiet"
+            compact
+            disabled={busy}
+            onClick={() => void reload()}
+          >
+            <RefreshCw size={14} />
+            {tr('refresh')}
+          </Button>
+        }
+      />
       {error && (
         <p role="alert" className={description}>
           {tr(error)}
@@ -585,30 +589,33 @@ export function CloudInstanceSection({
                 {policy.raw.scheduledTaskPolicy !== 'protect' && (
                   <p className={description}>{tr('unsupportedPolicy')}</p>
                 )}
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Button
-                    variant="secondary"
-                    tone="quiet"
-                    compact
-                    disabled={!dirty.current || busy}
-                    onClick={() => {
-                      setDraft(fromPolicy(policy));
-                      mark(false);
-                      if (!uncertain.current) setError(undefined);
-                    }}
-                  >
-                    {tr('discard')}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={
-                      !dirty.current || disabled || policy.raw.scheduledTaskPolicy !== 'protect'
-                    }
-                    onClick={() => void save()}
-                  >
-                    {tr('save')}
-                  </Button>
-                </div>
+                {/* Shown once something is changed, like a save bar. */}
+                {dirty.current && (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      tone="quiet"
+                      compact
+                      disabled={!dirty.current || busy}
+                      onClick={() => {
+                        setDraft(fromPolicy(policy));
+                        mark(false);
+                        if (!uncertain.current) setError(undefined);
+                      }}
+                    >
+                      {tr('discard')}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={
+                        !dirty.current || disabled || policy.raw.scheduledTaskPolicy !== 'protect'
+                      }
+                      onClick={() => void save()}
+                    >
+                      {tr('save')}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </section>
