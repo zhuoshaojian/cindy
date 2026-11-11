@@ -15,11 +15,14 @@ import {
   readNewTaskPreferenceHistory,
 } from '../host-settings/new-task-defaults.js';
 import { commitPersonalization, currentSettingsOwner, inspectPersonalization } from '../host-settings/personalization.js';
+import { createLogger } from '../logger.js';
 import { getCustomProvider } from '../maker-host/custom-provider-store.js';
+import { activeDataOwnerId, ownerScopedPath } from '../ownerContext.js';
 import { executeProviderShareGuestCommand } from '../device-link/providerShareRuntime.js';
 import { cloudModelAccessControl } from '../model-access/index.js';
 import { providerSecretStorageKey } from '../../shared/providerSecrets.js';
 import { getInstanceConfig } from './config.js';
+import { startCloudHandoverSettings } from './handoverSettings.js';
 import { createProviderSettingsChannel } from './providerSettingsChannel.js';
 import { createPersonalizationChannel } from './personalizationChannel.js';
 import { createImSettingsChannel } from './imSettingsChannel.js';
@@ -111,7 +114,17 @@ export function registerCloudProviderSettings(): () => void {
       },
     }),
   );
+  // The settings half of an instance handover: keep the owner's portable preferences where CIS
+  // can pick them up, and take in what a handover left for this instance.
+  const stopHandoverSettings = startCloudHandoverSettings({
+    membershipId: instance.membershipId,
+    activeOwnerId: activeDataOwnerId,
+    ownerDirectory: () => ownerScopedPath(),
+    userDataDirectory: () => app.getPath('userData'),
+    warn: (message) => createLogger('instance-runtime').warn(message),
+  });
   return () => {
+    stopHandoverSettings();
     setCloudPrivateInvokeHandler(null);
     setProviderSetup(null);
   };

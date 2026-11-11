@@ -249,3 +249,26 @@ checked against the same instance, all ten categories:
 
 Not exercised: a failed read (the retry buttons), and an instance that does not
 offer providers or IM.
+
+## Instance handover: portable settings (runtime only, not yet in an image)
+
+CIS can copy one member's work files to another member's instance (cindy-server,
+`docs/cloud-instance/instance-handover-review.md`). It never reads or writes
+settings. The settings half lives in the runtime:
+
+- `apps/desktop/src/main/instance-runtime/handoverSettings.ts`, started from
+  `registerCloudProviderSettings()` so `bootstrap-electron.ts` is unchanged.
+- Once the instance's own member is the active owner, the runtime keeps
+  `owners/<key>/handover/portable-settings.v1.json` equal to what the owner
+  changed from the defaults: on start, every ten minutes and once more while
+  quitting. CIS archives that one file with the work files.
+- On start it applies any snapshot found in
+  `<userData>/handover-inbox/<handoverId>/` and removes the entry. Only keys the
+  receiver left at their defaults are filled in; each store validates the values.
+- The stores are upstream's `SETUP_SETTINGS_GROUPS` (what new-computer setup
+  copies: no credentials, nothing tied to a machine or an account), minus
+  `autoUpdate` and `updateChannel`, which belong to the managed runtime.
+
+No upstream file changes. Checked with unit tests only; no image has been built
+with it, so no instance writes the snapshot yet. Until one does, a handover
+carries files and reports that no settings came along.
