@@ -8891,7 +8891,15 @@
       "INVALID_BIND_TICKET": "繫結會話已逾期，請重新登入",
       "REGION_MISMATCH": "登入服務之區與當前客戶端不符",
       "LOGIN_OWNERSHIP_MISMATCH": "請用領取此雲實例之同一名籍；企業名籍請擇 SSO。",
-      "LOGIN_AUTH_UPGRADE_REQUIRED": "雲端登入之服須更新，請稍後再試。"
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "雲端登入之服須更新，請稍後再試。",
+      "CLOUD_SETTINGS_ACCESS_DENIED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ACCESS_DENIED)",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_MEMBER_SUSPENDED)",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_CLOSED)",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_NOT_LISTED)",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_FULL)",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_QUOTA_EXCEEDED)",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_INSTANCE_TRANSFERRED)",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "$t(cloudSettings.refusal.CLOUD_SETTINGS_TRANSFER_IN_PROGRESS)"
     },
     "rateLimit": {
       "retryAt": "請於 {{time}}（本機時間）之後再試。",
@@ -19664,6 +19672,16 @@
       "allocated": "實例已領",
       "identity": "雲端登入",
       "start": "啟動就緒"
+    },
+    "refusal": {
+      "CLOUD_SETTINGS_ACCESS_DENIED": "此帳號尚未獲准使用雲實例，請告管理員開通。",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "此帳號之雲實例已停用，或授權已屆期；資料仍存。請告管理員。",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "所屬企業暫不發放新雲實例，請告管理員。",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "此帳號尚未獲准領取雲實例，請告管理員列入名單。",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "所屬企業之雲實例數已達上限，請告管理員。",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "此帳號之雲實例數已達上限，請告管理員調整。",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "此實例已轉交他人，不可復喚醒。如仍需之，請告管理員。",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "轉交之檔案正在複製，實例數分鐘後復可用。"
     }
   },
   "usageCost": {

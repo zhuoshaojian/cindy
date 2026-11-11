@@ -7,6 +7,7 @@ export function isCloudLoginAttemptId(value: unknown): value is string {
   );
 }
 import type { CloudClientErrorCode } from '../../shared/cloudSettingsClient';
+import { cloudRefusal } from '../../shared/cloudSettingsErrors';
 
 export class CloudClientError extends Error {
   constructor(readonly code: CloudClientErrorCode) {
@@ -110,7 +111,9 @@ export function createCloudClientHttp(fetcher: typeof fetch): CloudClientHttp {
         });
         assertCurrent();
         if (!response.ok) {
-          if (/^\/instance-login\/api\/attempts(?:\/|$)/u.test(path)) {
+          const attempts = /^\/instance-login\/api\/attempts(?:\/|$)/u.test(path);
+          // A refusal (not authorized, suspended, over a limit, transferred) keeps its own code.
+          if (attempts || response.status === 403 || response.status === 409) {
             const reader = response.body?.getReader();
             const chunks: Uint8Array[] = [];
             let size = 0;
@@ -126,8 +129,10 @@ export function createCloudClientHttp(fetcher: typeof fetch): CloudClientHttp {
             assertCurrent();
             let code: unknown;
             try { code = JSON.parse(Buffer.concat(chunks).toString('utf8'))?.error?.code; } catch { /* sanitized below */ }
-            if (typeof code === 'string' && loginCodes.has(code)) throw new CloudLoginRemoteError(code);
-            if (response.status === 404 && path.endsWith('/prepare-code'))
+            if (attempts && typeof code === 'string' && loginCodes.has(code)) throw new CloudLoginRemoteError(code);
+            const refusal = cloudRefusal(code);
+            if (refusal) throw new CloudClientError(refusal);
+            if (attempts && response.status === 404 && path.endsWith('/prepare-code'))
               throw new CloudLoginRemoteError('LOGIN_AUTH_UPGRADE_REQUIRED');
           }
           if (!response.bodyUsed) await response.body?.cancel();

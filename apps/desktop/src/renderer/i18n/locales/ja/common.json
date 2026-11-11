@@ -8891,7 +8891,15 @@
       "INVALID_BIND_TICKET": "確認セッションの期限が切れました。",
       "REGION_MISMATCH": "ログインサービスの地域がこのアプリと一致しません。",
       "LOGIN_OWNERSHIP_MISMATCH": "このクラウドを取得したアカウントを使ってください。組織アカウントは SSO を選択してください。",
-      "LOGIN_AUTH_UPGRADE_REQUIRED": "クラウドのログインサービスの更新が必要です。後でもう一度お試しください。"
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "クラウドのログインサービスの更新が必要です。後でもう一度お試しください。",
+      "CLOUD_SETTINGS_ACCESS_DENIED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ACCESS_DENIED)",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_MEMBER_SUSPENDED)",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_CLOSED)",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_NOT_LISTED)",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_FULL)",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_QUOTA_EXCEEDED)",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_INSTANCE_TRANSFERRED)",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "$t(cloudSettings.refusal.CLOUD_SETTINGS_TRANSFER_IN_PROGRESS)"
     },
     "rateLimit": {
       "retryAt": "{{time}}（現地時間）以降に再試行してください。",
@@ -19956,6 +19964,16 @@
       "allocated": "インスタンス取得済み",
       "identity": "クラウドログイン",
       "start": "起動完了"
+    },
+    "refusal": {
+      "CLOUD_SETTINGS_ACCESS_DENIED": "このアカウントはまだクラウドインスタンスの利用を許可されていません。管理者に有効化を依頼してください。",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "あなたのアカウントではクラウドインスタンスが停止されているか、許可の期限が切れています。データは保持されています。管理者にお問い合わせください。",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "あなたの組織では現在、新しいクラウドインスタンスを発行していません。管理者にお問い合わせください。",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "あなたのアカウントはまだクラウドインスタンスの取得を許可されていません。管理者に追加を依頼してください。",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "あなたの組織はクラウドインスタンスの上限に達しています。管理者にお問い合わせください。",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "クラウドインスタンスの上限に達しています。管理者に上限の引き上げを依頼してください。",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "このインスタンスは他のメンバーに引き継がれたため起動できません。引き続き必要な場合は管理者にお問い合わせください。",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "引き継ぎのファイルをコピーしています。インスタンスは数分後に再び使えます。"
     }
   },
   "usageCost": {

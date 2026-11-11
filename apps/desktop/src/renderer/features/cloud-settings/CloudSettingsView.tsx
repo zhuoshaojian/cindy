@@ -51,6 +51,7 @@ import type { CloudBotNotificationPreferences } from './CloudBotNotificationSett
 import { cloudSearchEntryAllowed } from './search';
 import type { SettingsSearchEntry } from '@/components/settings/settingsSearchTypes';
 import { CloudDesktopFallback } from './CloudDesktopFallback';
+import { cloudRefusalKey } from './refusal';
 const groups = TAB_IDS.filter((tab): tab is CloudSettingsTab => tab in CLOUD_SETTINGS_GROUPS);
 const card =
   'rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
@@ -182,9 +183,10 @@ export function CloudSettingsPanel({
       .catch((error) => {
         if (current)
           setFailure(
-            error instanceof Error && error.message === 'CLOUD_SETTINGS_UNSUPPORTED'
-              ? 'unsupported'
-              : 'readFailed',
+            cloudRefusalKey(error)?.slice('cloudSettings.'.length) ??
+              (error instanceof Error && error.message === 'CLOUD_SETTINGS_UNSUPPORTED'
+                ? 'unsupported'
+                : 'readFailed'),
           );
       })
       .finally(() => {
@@ -228,8 +230,8 @@ export function CloudSettingsPanel({
         setFailure(undefined);
         setEpoch((value) => value + 1);
       }
-    } catch {
-      if (alive.current) setFailure('readFailed');
+    } catch (error) {
+      if (alive.current) setFailure(cloudRefusalKey(error)?.slice('cloudSettings.'.length) ?? 'readFailed');
     } finally {
       if (alive.current) setLoading(false);
     }

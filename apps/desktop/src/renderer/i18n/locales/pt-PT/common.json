@@ -9004,7 +9004,15 @@
       "INVALID_BIND_TICKET": "A sessão de verificação expirou. Recomece.",
       "REGION_MISMATCH": "A região do serviço de início de sessão não corresponde à desta aplicação.",
       "LOGIN_OWNERSHIP_MISMATCH": "Utilize a conta proprietária desta instância na nuvem. Para uma conta de organização, escolha SSO.",
-      "LOGIN_AUTH_UPGRADE_REQUIRED": "O serviço de início de sessão na nuvem precisa de uma atualização. Tente novamente mais tarde."
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "O serviço de início de sessão na nuvem precisa de uma atualização. Tente novamente mais tarde.",
+      "CLOUD_SETTINGS_ACCESS_DENIED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ACCESS_DENIED)",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_MEMBER_SUSPENDED)",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_CLOSED)",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_NOT_LISTED)",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_FULL)",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_QUOTA_EXCEEDED)",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_INSTANCE_TRANSFERRED)",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "$t(cloudSettings.refusal.CLOUD_SETTINGS_TRANSFER_IN_PROGRESS)"
     },
     "rateLimit": {
       "retryAt": "Tente novamente após as {{time}} (hora local).",
@@ -20215,6 +20223,16 @@
       "allocated": "Instância criada",
       "identity": "Início de sessão na nuvem",
       "start": "Pronta a usar"
+    },
+    "refusal": {
+      "CLOUD_SETTINGS_ACCESS_DENIED": "Esta conta ainda não está autorizada a usar instâncias na nuvem. Peça a um administrador para a ativar.",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "As instâncias na nuvem estão suspensas para a sua conta ou a autorização expirou. Os seus dados são mantidos. Contacte um administrador.",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "A sua organização não está a emitir novas instâncias na nuvem neste momento. Contacte um administrador.",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "A sua conta ainda não tem acesso a instâncias na nuvem. Peça a um administrador para o adicionar.",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "A sua organização atingiu o limite de instâncias na nuvem. Contacte um administrador.",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "Atingiu o seu limite de instâncias na nuvem. Peça a um administrador para o aumentar.",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "Esta instância foi transferida para outra pessoa e já não pode ser despertada. Contacte um administrador se ainda precisar dela.",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "Os ficheiros da transferência estão a ser copiados. A instância volta a estar disponível dentro de alguns minutos."
     }
   },
   "usageCost": {

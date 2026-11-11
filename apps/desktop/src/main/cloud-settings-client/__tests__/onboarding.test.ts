@@ -131,6 +131,21 @@ describe('native cloud instance onboarding', () => {
     await expect(f.api.claim(f.caller)).rejects.toThrow('SAVE_UNCONFIRMED');
     expect(f.request.mock.calls.filter((v) => v[2] === 'POST')).toHaveLength(1);
   });
+  it.each([
+    'CLOUD_SETTINGS_ADMISSION_NOT_LISTED',
+    'CLOUD_SETTINGS_QUOTA_EXCEEDED',
+    'CLOUD_SETTINGS_MEMBER_SUSPENDED',
+  ] as const)('reports the refusal %s at once, without reading back or resubmitting', async (code) => {
+    const f = fixture();
+    f.request
+      .mockResolvedValueOnce({ instances: [] })
+      .mockRejectedValueOnce(new CloudClientError(code));
+    await expect(f.api.claim(f.caller)).rejects.toThrow(code);
+    expect(f.request.mock.calls.map((v) => [v[1], v[2]])).toEqual([
+      [listPath, 'GET'],
+      [`${listPath}/wake`, 'POST'],
+    ]);
+  });
   it('serializes creation across windows for the same membership', async () => {
     const f = fixture();
     const first = f.api.claim(f.caller);

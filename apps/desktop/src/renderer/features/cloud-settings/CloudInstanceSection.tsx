@@ -15,6 +15,7 @@ import {
 } from '../../../shared/cloudInstanceControl';
 import type { CloudSettingsClient } from './client';
 import { CloudTimezoneSelect } from './CloudTimezoneSelect';
+import { cloudRefusalKey } from './refusal';
 import {
   stableInstanceState as stableState,
   instanceStatus,
@@ -182,10 +183,12 @@ export function CloudInstanceSection({
       if (!alive.current) return;
       await client.power(action);
       if (alive.current) setMessage(action === 'wake' ? 'wakeSent' : 'sleepSent');
-    } catch {
+    } catch (cause) {
       if (alive.current) {
-        uncertain.current = true;
-        setError('unconfirmed');
+        // A refusal certainly did not change anything; it says why instead.
+        const refusal = cloudRefusalKey(cause);
+        if (!refusal) uncertain.current = true;
+        setError(refusal ?? 'unconfirmed');
       }
     } finally {
       inFlight.current = false;
@@ -216,12 +219,14 @@ export function CloudInstanceSection({
       setView((before) => before && { ...before, upgradeOperation: operation });
     } catch (cause) {
       if (alive.current) {
-        uncertain.current = true;
+        const refusal = cloudRefusalKey(cause);
+        if (!refusal) uncertain.current = true;
         setError(
-          cause instanceof Error &&
+          refusal ??
+            (cause instanceof Error &&
             ['CLOUD_SETTINGS_CONFLICT', 'CLOUD_SETTINGS_UNSUPPORTED'].includes(cause.message)
-            ? 'upgradeUnavailable'
-            : 'upgradeUnconfirmed',
+              ? 'upgradeUnavailable'
+              : 'upgradeUnconfirmed'),
         );
       }
     } finally {
@@ -319,7 +324,7 @@ export function CloudInstanceSection({
       />
       {error && (
         <p role="alert" className={description}>
-          {tr(error)}
+          {error.startsWith('cloudSettings.') ? t(error) : tr(error)}
         </p>
       )}
       {message && (

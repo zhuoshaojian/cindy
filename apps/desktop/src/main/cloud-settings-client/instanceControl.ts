@@ -13,6 +13,7 @@ import {
   type CloudInstanceView,
 } from '../../shared/cloudInstanceControl';
 import type { CloudClientCaller } from './service';
+import { isCloudRefusal } from '../../shared/cloudSettingsErrors';
 import { CloudClientError, type CloudClientHttp, type CloudClientIdentity } from './transport';
 
 /** Lifecycle reads stay available while the runtime is asleep. No runtime session,
@@ -121,11 +122,11 @@ export function createCloudInstanceControl(deps: {
         } catch (error) {
           if (
             error instanceof CloudClientError &&
-            [
+            ([
               'CLOUD_SETTINGS_SCOPE_CHANGED',
               'CLOUD_SETTINGS_CONFLICT',
               'CLOUD_SETTINGS_UNSUPPORTED',
-            ].includes(error.code)
+            ].includes(error.code) || isCloudRefusal(error.code))
           )
             throw error;
           throw new CloudClientError('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
@@ -149,7 +150,11 @@ export function createCloudInstanceControl(deps: {
               {},
             );
         } catch (error) {
-          if (error instanceof CloudClientError && error.code === 'CLOUD_SETTINGS_SCOPE_CHANGED')
+          // A refusal (suspended, transferred, being transferred) was certainly not carried out.
+          if (
+            error instanceof CloudClientError &&
+            (error.code === 'CLOUD_SETTINGS_SCOPE_CHANGED' || isCloudRefusal(error.code))
+          )
             throw error;
           throw new CloudClientError('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
         }

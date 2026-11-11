@@ -142,6 +142,17 @@ describe('CIS instance controls', () => {
     await expect(f.control.power(f.caller, 'cloud-a', 'wake')).rejects.toThrow('SAVE_UNCONFIRMED');
     expect(f.request).toHaveBeenCalledTimes(2);
   });
+  it.each(['CLOUD_SETTINGS_INSTANCE_TRANSFERRED', 'CLOUD_SETTINGS_MEMBER_SUSPENDED'] as const)(
+    'reports the refusal %s instead of an unconfirmed result',
+    async (code) => {
+      const f = fixture();
+      f.request
+        .mockResolvedValueOnce({ instances: [f.target] })
+        .mockRejectedValueOnce(new CloudClientError(code));
+      await expect(f.control.power(f.caller, 'cloud-a', 'wake')).rejects.toThrow(code);
+      expect(f.request).toHaveBeenCalledTimes(2);
+    },
+  );
   it('no-ops an already sleeping instance', async () => {
     const f = fixture();
     await f.control.power(f.caller, 'cloud-a', 'sleep');

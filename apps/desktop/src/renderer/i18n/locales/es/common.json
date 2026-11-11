@@ -9004,7 +9004,15 @@
       "INVALID_BIND_TICKET": "La sesión de verificación venció. Comienza de nuevo.",
       "REGION_MISMATCH": "La región del servicio de inicio de sesión no coincide con la de esta aplicación.",
       "LOGIN_OWNERSHIP_MISMATCH": "Usa la cuenta propietaria de esta instancia en la nube. Si es una cuenta de organización, elige SSO.",
-      "LOGIN_AUTH_UPGRADE_REQUIRED": "El servicio de inicio de sesión en la nube necesita una actualización. Inténtalo de nuevo más tarde."
+      "LOGIN_AUTH_UPGRADE_REQUIRED": "El servicio de inicio de sesión en la nube necesita una actualización. Inténtalo de nuevo más tarde.",
+      "CLOUD_SETTINGS_ACCESS_DENIED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ACCESS_DENIED)",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_MEMBER_SUSPENDED)",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_CLOSED)",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_NOT_LISTED)",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "$t(cloudSettings.refusal.CLOUD_SETTINGS_ADMISSION_FULL)",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_QUOTA_EXCEEDED)",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "$t(cloudSettings.refusal.CLOUD_SETTINGS_INSTANCE_TRANSFERRED)",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "$t(cloudSettings.refusal.CLOUD_SETTINGS_TRANSFER_IN_PROGRESS)"
     },
     "rateLimit": {
       "retryAt": "Vuelve a intentarlo después de las {{time}} (hora local).",
@@ -20215,6 +20223,16 @@
       "allocated": "Instancia creada",
       "identity": "Inicio de sesión en la nube",
       "start": "Lista para usar"
+    },
+    "refusal": {
+      "CLOUD_SETTINGS_ACCESS_DENIED": "Esta cuenta aún no está autorizada para usar instancias en la nube. Pide a un administrador que la habilite.",
+      "CLOUD_SETTINGS_MEMBER_SUSPENDED": "Las instancias en la nube están suspendidas para tu cuenta o su autorización ha caducado. Tus datos se conservan. Contacta con un administrador.",
+      "CLOUD_SETTINGS_ADMISSION_CLOSED": "Tu organización no está emitiendo nuevas instancias en la nube en este momento. Contacta con un administrador.",
+      "CLOUD_SETTINGS_ADMISSION_NOT_LISTED": "Tu cuenta aún no tiene acceso a instancias en la nube. Pide a un administrador que te añada.",
+      "CLOUD_SETTINGS_ADMISSION_FULL": "Tu organización ha alcanzado su límite de instancias en la nube. Contacta con un administrador.",
+      "CLOUD_SETTINGS_QUOTA_EXCEEDED": "Has alcanzado tu límite de instancias en la nube. Pide a un administrador que lo aumente.",
+      "CLOUD_SETTINGS_INSTANCE_TRANSFERRED": "Esta instancia se ha transferido a otra persona y ya no se puede reactivar. Contacta con un administrador si aún la necesitas.",
+      "CLOUD_SETTINGS_TRANSFER_IN_PROGRESS": "Se están copiando los archivos de la transferencia. La instancia volverá a estar disponible en unos minutos."
     }
   },
   "usageCost": {

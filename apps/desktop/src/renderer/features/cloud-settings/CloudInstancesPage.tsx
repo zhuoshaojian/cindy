@@ -19,12 +19,19 @@ import type { CloudSettingsRendererApi } from '../../../shared/cloudSettingsClie
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { stableInstanceState, instanceStatus, canChangeInstancePower } from './instanceState';
 import { cloudInstanceName } from './instanceName';
+import { cloudRefusalKey } from './refusal';
 
 export type CloudInstancesApi = Pick<
   CloudSettingsRendererApi,
   'instanceList' | 'instanceClaim' | 'instanceInitialize' | 'instancePower'
 > & { onLoginCompleted?(cb: () => void): () => void };
-type PowerPending = { deviceId: string; action: 'wake' | 'sleep'; uncertain: boolean };
+type PowerPending = {
+  deviceId: string;
+  action: 'wake' | 'sleep';
+  uncertain: boolean;
+  /** CIS refused the change, so it certainly did not happen; the message says why. */
+  refusal?: string;
+};
 const card =
   'rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
 const description = 'text-13 leading-[1.6] text-[var(--settings-section-desc)]';
@@ -157,10 +164,12 @@ export function CloudInstancesPage({
         if (next.length === 1 && next[0]!.loginRequired) await initialize(next[0]!.deviceId);
         else if (next.length === 1) openWhenReady.current = next[0]!.deviceId;
       } else if (deviceId) await initialize(deviceId);
-    } catch {
+    } catch (caught) {
       if (live.current) {
-        setError(creating ? 'claimUnconfirmed' : 'loginFailed');
-        if (creating) setUncertain(true);
+        // A refusal created nothing, so the claim is not left uncertain.
+        const refusal = cloudRefusalKey(caught);
+        setError(refusal ?? (creating ? 'claimUnconfirmed' : 'loginFailed'));
+        if (creating && !refusal) setUncertain(true);
       }
     } finally {
       inFlight.current = false;
@@ -190,8 +199,10 @@ export function CloudInstancesPage({
       }
       markPower({ deviceId: instance.deviceId, action, uncertain: false });
       await api.instancePower({ deviceId: instance.deviceId, action });
-    } catch {
-      if (live.current) markPower({ deviceId: instance.deviceId, action, uncertain: true });
+    } catch (caught) {
+      const refusal = cloudRefusalKey(caught) ?? undefined;
+      if (live.current)
+        markPower({ deviceId: instance.deviceId, action, uncertain: true, ...(refusal ? { refusal } : {}) });
     } finally {
       inFlight.current = false;
       if (live.current) {
@@ -238,7 +249,7 @@ export function CloudInstancesPage({
           </header>
           {error && (
             <p role="alert" className={`${description} mb-4`}>
-              {tr(error)}
+              {error.startsWith('cloudSettings.') ? t(error) : tr(error)}
             </p>
           )}
           {instances === null && !error && (
@@ -422,7 +433,8 @@ export function CloudInstancesPage({
                         className={`${description} mt-3`}
                       >
                         {t(
-                          `cloudSettings.instance.${pending.uncertain ? 'unconfirmed' : pending.action === 'wake' ? 'wakeSent' : 'sleepSent'}`,
+                          pending.refusal ??
+                            `cloudSettings.instance.${pending.uncertain ? 'unconfirmed' : pending.action === 'wake' ? 'wakeSent' : 'sleepSent'}`,
                         )}
                       </p>
                     )}

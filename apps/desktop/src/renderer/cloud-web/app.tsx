@@ -22,6 +22,7 @@ import { createCloudSettingsClient } from '@/features/cloud-settings/client';
 import { cloudInstanceName } from '@/features/cloud-settings/instanceName';
 import { themeService } from '../themes/theme-service';
 import type { CloudInstanceView } from '../../shared/cloudInstanceControl';
+import { cloudRefusal } from '../../shared/cloudSettingsErrors';
 import type { CisSession, WebCloudApi } from './webApi';
 import { openDesktopTab } from './desktopTab';
 import { CloudWebErrorBoundary } from './crash';
@@ -82,7 +83,16 @@ async function signInInstance(instance: CloudInstanceView | undefined) {
     cache: 'no-store',
     redirect: 'error',
   });
-  if (!response.ok) throw new Error('CLOUD_SETTINGS_UNAVAILABLE');
+  if (!response.ok) {
+    // A refusal (suspended, transferred, being transferred) says why; anything else stays generic.
+    let code: unknown;
+    try {
+      code = ((await response.json()) as { error?: { code?: unknown } })?.error?.code;
+    } catch {
+      /* Only a known code is used. */
+    }
+    throw new Error(cloudRefusal(code) ?? 'CLOUD_SETTINGS_UNAVAILABLE');
+  }
   const { continueUrl } = (await response.json()) as { continueUrl?: unknown };
   if (typeof continueUrl !== 'string' || !continueUrl.startsWith('/instance-login/#'))
     throw new Error('CLOUD_SETTINGS_INVALID_RESPONSE');
