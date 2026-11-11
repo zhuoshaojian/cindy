@@ -26,10 +26,6 @@ import {
   type CloudSettingsState,
 } from '../../../shared/cloudSettings';
 import type { ManagementCommand, ManagementResult } from '../../../shared/settingsManagement';
-import type {
-  CloudPluginCommand,
-  CloudPluginResult,
-} from '../../../shared/cloudPluginAuthorization';
 import { extractIpcError } from '@/utils/ipcError';
 
 export interface CloudSettingsClient {
@@ -37,7 +33,6 @@ export interface CloudSettingsClient {
   upgrade?(): Promise<CloudUpgradeOperation>;
   power?(action: 'wake' | 'sleep'): Promise<void>;
   maintenance?(change: CloudMaintenanceEdit): Promise<CloudMaintenanceView>;
-  plugins?(command: CloudPluginCommand): Promise<CloudPluginResult>;
   manage?(command: ManagementCommand): Promise<ManagementResult>;
   connect(): Promise<CloudSettingsCapabilities>;
   reconnect(): Promise<CloudSettingsCapabilities>;

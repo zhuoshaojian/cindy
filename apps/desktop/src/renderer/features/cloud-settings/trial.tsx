@@ -1,6 +1,5 @@
 import { createTrialMcpAuthorization } from './trialMcpAuthorization';
 /** Development-only interactive trial. Never connected to a real owner or disk. */
-import { createTrialPluginAuthorization } from './trialPluginAuthorization';
 import { createTrialAuthorization } from './trialAuthorization';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -19,7 +18,7 @@ import {
 } from '../../../shared/cloudSettings';
 
 export function createTrialCloudSettingsClient(): CloudSettingsClient &
-  Required<Pick<CloudSettingsClient, 'manage' | 'plugins'>> {
+  Required<Pick<CloudSettingsClient, 'manage'>> {
   const binding = {
     deviceId: 'cloud-settings-trial',
     runtimeId: crypto.randomUUID(),
@@ -135,16 +134,11 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
   );
   const manage = createTrialAuthorization();
   const mcp = createTrialMcpAuthorization();
-  const plugins = createTrialPluginAuthorization();
   let closed = false;
   const check = () => {
     if (closed) throw new Error('CLOSED');
   };
   return {
-    async plugins(command) {
-      check();
-      return plugins(command);
-    },
     async manage(command) {
       check();
       return mcp.owns(command) ? mcp.execute(command) : manage(command);
@@ -155,7 +149,6 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
         version: 1,
         providerAuthorization: 1,
         botAuthorization: 1,
-        pluginAuthorization: 1,
         mcpAuthorization: 1,
         cpuCount: 8,
         ...binding,
@@ -168,7 +161,6 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
         version: 1,
         providerAuthorization: 1,
         botAuthorization: 1,
-        pluginAuthorization: 1,
         mcpAuthorization: 1,
         cpuCount: 8,
         ...binding,

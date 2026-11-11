@@ -44,7 +44,6 @@ import { cloudInstanceName } from './instanceName';
 import { CloudImSettings, cloudImSettingsSummary, useCloudImDisplays } from './CloudImSettings';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
 import { CloudMcpAuthorization } from './CloudMcpAuthorization';
-import { CloudPluginAuthorization } from './CloudPluginAuthorization';
 import { CloudProvidersSettings } from './CloudProvidersSettings';
 import { NativeCloudSections } from './NativeCloudSections';
 import type { CloudBotNotificationPreferences } from './CloudBotNotificationSettings';
@@ -89,11 +88,9 @@ export function CloudSettingsPanel({
   }>({ entry: null, activation: 0 });
   const [mcpAuthorization, setMcpAuthorization] = useState(false);
   const [botAuthorization, setBotAuthorization] = useState(false);
-  const [pluginAuthorization, setPluginAuthorization] = useState(false);
   const [providerAuthorization, setProviderAuthorization] = useState(false);
   // Like the local Plugins tab, the plugin page fills the panel and scrolls inside itself.
-  const managesPlugins = !!plugins && !pluginAuthorization;
-  const pluginPage = tab === 'ghosts' && managesPlugins;
+  const pluginPage = tab === 'ghosts' && !!plugins;
   const fills = tab === 'providers' || pluginPage;
   const [deviceId, setDeviceId] = useState('');
   const [cpuCount, setCpuCount] = useState<number | undefined>();
@@ -163,7 +160,6 @@ export function CloudSettingsPanel({
         setProviderAuthorization(cap.providerAuthorization === 1);
         setMcpAuthorization(cap.mcpAuthorization === 1);
         setBotAuthorization(cap.botAuthorization === 1);
-        setPluginAuthorization(cap.pluginAuthorization === 1);
         setStates((before) => ({
           ...Object.fromEntries(
             Object.entries(before).filter(([domain]) =>
@@ -479,7 +475,7 @@ export function CloudSettingsPanel({
                   <div
                     key={group}
                     hidden={tab !== group}
-                    className={group === 'providers' || (group === 'ghosts' && managesPlugins) ? 'min-h-0 flex-1' : undefined}
+                    className={group === 'providers' || (group === 'ghosts' && !!plugins) ? 'min-h-0 flex-1' : undefined}
                     role="tabpanel"
                     id={`settings-panel-${group}`}
                     aria-labelledby={`settings-tab-${group}`}
@@ -525,16 +521,7 @@ export function CloudSettingsPanel({
                         />
                       )
                     ) : group === 'ghosts' ? (
-                      pluginAuthorization ? (
-                        <CloudPluginAuthorization
-                          client={client}
-                          name={name}
-                          online={online}
-                          active={tab === group}
-                          trial={trial}
-                          refresh={epoch}
-                        />
-                      ) : plugins ? (
+                      plugins ? (
                         plugins(tab === group)
                       ) : (
                         // A browser has no plugin page: the instance's own settings (2026-11-04 review).

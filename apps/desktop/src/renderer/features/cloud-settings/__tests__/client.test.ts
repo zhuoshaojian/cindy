@@ -40,7 +40,6 @@ describe('native CIS settings client using existing settingsWeb commands', () =>
     const cap = await f.client.connect();
     expect(cap.domains).toEqual(['memory']);
     expect(cap.cpuCount).toBe(4);
-    expect(cap.pluginAuthorization).toBeUndefined();
     await f.client.read(['memory']);
     expect(f.history).toEqual([{ kind: 'readBatch', domains: ['memory'] }]);
     expect(f.request.mock.calls.every((c) => !c[1].includes('remote-resources'))).toBe(true);

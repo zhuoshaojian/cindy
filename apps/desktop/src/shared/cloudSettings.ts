@@ -65,7 +65,6 @@ export interface CloudSettingsCapabilities {
   ownerGeneration: number;
   providerAuthorization?: 1;
   botAuthorization?: 1;
-  pluginAuthorization?: 1;
   mcpAuthorization?: 1;
   cpuCount?: number;
   domains: CloudSettingsDomain[];
