@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CloudPluginManagement } from '../CloudPluginManagement';
 
@@ -16,6 +15,7 @@ type PageProps = {
     selected: { deviceId: string } | null;
     onSelect(device: { deviceId: string; name: string } | null): void;
     directory: { candidates: Array<{ deviceId: string }>; online: boolean };
+    fixed?: boolean;
   };
   onSelectCatalogTab(tab: 'plugins' | 'skills'): void;
 };
@@ -27,10 +27,6 @@ vi.mock('@/features/plugin/RemotePluginPage', () => ({
     return (
       <div data-testid="plugins">
         <button onClick={() => props.onSelectCatalogTab('skills')}>skills</button>
-        <button onClick={() => props.deviceControl.onSelect(null)}>this computer</button>
-        <button onClick={() => props.deviceControl.onSelect({ deviceId: 'mac', name: 'Mac' })}>
-          other computer
-        </button>
       </div>
     );
   },
@@ -60,15 +56,7 @@ afterEach(() => {
 });
 const show = (active = true) =>
   render(
-    <MemoryRouter initialEntries={['/cloud-settings']}>
-      <Routes>
-        <Route
-          path="/cloud-settings"
-          element={<CloudPluginManagement deviceId={instance} name="Cloud A" active={active} />}
-        />
-        <Route path="/settings" element={<p>Local settings</p>} />
-      </Routes>
-    </MemoryRouter>,
+    <CloudPluginManagement deviceId={instance} name="Cloud A" active={active} />,
   );
 const last = (list: unknown[]) => list.at(-1) as PageProps;
 
@@ -78,10 +66,8 @@ it('manages the instance with the remote plugin page, fixed to that instance', (
   expect(props.device).toEqual({ deviceId: instance, name: 'Cloud A' });
   expect(props).toMatchObject({ online: true, active: true, embedded: true });
   expect(props.deviceControl.selected).toEqual(props.device);
-  // The owner's other computers are not offered here.
-  expect(props.deviceControl.directory.candidates.map((item) => item.deviceId)).toEqual([instance]);
-  fireEvent.click(screen.getByText('other computer'));
-  expect(screen.getByTestId('plugins')).toBeTruthy();
+  // These settings belong to the instance: no computer can be chosen from here.
+  expect(props.deviceControl.fixed).toBe(true);
 });
 it('follows DeviceLink presence, not the settings connection', () => {
   pages.online = false;
@@ -104,11 +90,6 @@ it('reads skills only once their tab is opened and keeps the plugin page mounted
 it('pauses the page while another settings category is shown', () => {
   show(false);
   expect(last(pages.plugins).active).toBe(false);
-});
-it("opens the local plugin settings for this computer's entry", () => {
-  show();
-  fireEvent.click(screen.getByText('this computer'));
-  expect(screen.getByText('Local settings')).toBeTruthy();
 });
 // The browser build shares CloudSettingsPanel; the plugin page must stay out of what it loads.
 it('is supplied by the native router only', () => {

@@ -1,5 +1,4 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { RemotePluginPage } from '@/features/plugin/RemotePluginPage';
 import {
   usePluginDeviceDirectory,
@@ -27,19 +26,14 @@ export function CloudPluginManagement({
   name: string;
   active: boolean;
 }) {
-  const navigate = useNavigate();
   const device = useMemo(() => ({ deviceId, name }), [deviceId, name]);
   const directory = usePluginDeviceDirectory(device);
+  // These settings belong to the instance: no other computer can be chosen from here.
   const control: CatalogDeviceControl = {
     selected: device,
-    // The menu still lists this computer: its plugins are on the local settings page.
-    onSelect: (next) => {
-      if (!next) navigate('/settings?tab=ghosts');
-    },
-    directory: {
-      ...directory,
-      candidates: directory.candidates.filter((item) => item.deviceId === deviceId),
-    },
+    onSelect: () => {},
+    directory,
+    fixed: true,
   };
   const [tab, setTab] = useState<'plugins' | 'skills'>('plugins');
   // Skills are read once their tab is opened, as on the local settings page.
