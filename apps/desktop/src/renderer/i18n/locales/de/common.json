@@ -20124,7 +20124,12 @@
       "progress": "Einrichtungsfortschritt",
       "allocated": "Instanz erstellt",
       "identity": "Cloud-Anmeldung",
-      "start": "Einsatzbereit"
+      "start": "Einsatzbereit",
+      "capacity": "{{used}} von {{limit}} Instanzen belegt",
+      "capacityRemaining": "Du kannst noch {{n}} anfordern. Eine neue Instanz braucht eine eigene Anmeldung; deine anderen Instanzen bleiben unverändert.",
+      "claimAnother": "Neue Instanz anfordern",
+      "claimAnotherTitle": "Neue Cloud-Instanz anfordern",
+      "claimAnotherBody": "Für dich wird eine neue Cloud-Instanz erstellt, getrennt von deinen bisherigen. Melde dich an, bevor du sie verwendest."
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "Dieses Konto ist noch nicht für Cloud-Instanzen freigegeben. Bitte die Administration, es freizuschalten.",

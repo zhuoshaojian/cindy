@@ -146,6 +146,49 @@ describe('native cloud instance onboarding', () => {
       [`${listPath}/wake`, 'POST'],
     ]);
   });
+  it('offers another instance only below the limit CIS reports, and reads a new one back', async () => {
+    const f = fixture();
+    const second = { ...f.target, instanceId: 'instance-b', deviceId: 'cloud-device-bbbbbbbbbbbbbbbbbbbbbbbb',
+      nameSequence: 2, status: { ...f.target.status, instanceId: 'instance-b', deviceId: 'cloud-device-bbbbbbbbbbbbbbbbbbbbbbbb' } };
+    let list = [f.target];
+    let quota: { limit: number; used: number } | undefined = { limit: 3, used: 1 };
+    f.request.mockImplementation(async (_identity, path, method, _body, _signal, check) => {
+      check();
+      if (path === listPath && method === 'GET') return { instances: list, ...(quota ? { quota } : {}) };
+      if (path === listPath && method === 'POST') {
+        list = [f.target, second];
+        // As CIS answers when the new instance waits for its sign-in.
+        throw new CloudClientError('CLOUD_SETTINGS_SCOPE_CHANGED');
+      }
+      throw Error('unexpected route');
+    });
+    expect(await f.api.capacity(f.caller)).toEqual({ limit: 3, used: 1 });
+    const next = await f.api.claim(f.caller, true);
+    expect(next.map((v) => v.deviceId)).toEqual([f.target.deviceId, second.deviceId]);
+    expect(f.request.mock.calls.filter((v) => v[2] === 'POST')).toHaveLength(1);
+    expect(f.request.mock.calls.find((v) => v[2] === 'POST')![3]).toEqual({});
+    // At the limit nothing is sent; an older CIS without a limit is not offered another either.
+    quota = { limit: 2, used: 2 };
+    await expect(f.api.claim(f.caller, true)).rejects.toThrow('CLOUD_SETTINGS_QUOTA_EXCEEDED');
+    quota = undefined;
+    expect(await f.api.capacity(f.caller)).toBeNull();
+    await expect(f.api.claim(f.caller, true)).rejects.toThrow('CLOUD_SETTINGS_UNSUPPORTED');
+    expect(f.request.mock.calls.filter((v) => v[2] === 'POST')).toHaveLength(1);
+  });
+  it('reports a refused or unconfirmed additional instance without resubmitting', async () => {
+    const f = fixture();
+    f.request
+      .mockResolvedValueOnce({ instances: [f.target], quota: { limit: 3, used: 1 } })
+      .mockRejectedValueOnce(new CloudClientError('CLOUD_SETTINGS_ADMISSION_CLOSED'));
+    await expect(f.api.claim(f.caller, true)).rejects.toThrow('CLOUD_SETTINGS_ADMISSION_CLOSED');
+    f.request.mockReset();
+    f.request
+      .mockResolvedValueOnce({ instances: [f.target], quota: { limit: 3, used: 1 } })
+      .mockRejectedValueOnce(Error('lost'))
+      .mockResolvedValueOnce({ instances: [f.target], quota: { limit: 3, used: 1 } });
+    await expect(f.api.claim(f.caller, true)).rejects.toThrow('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
+    expect(f.request.mock.calls.filter((v) => v[2] === 'POST')).toHaveLength(1);
+  });
   it('serializes creation across windows for the same membership', async () => {
     const f = fixture();
     const first = f.api.claim(f.caller);

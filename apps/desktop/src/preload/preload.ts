@@ -1346,6 +1346,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cloudSettings: {
     instanceAccess: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceAccess, input),
     instanceList: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceList, input),
+    instanceCapacity: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceCapacity, input),
     instanceClaim: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceClaim, input),
     instanceInitialize: (input) =>
       ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceInitialize, input),

@@ -20311,7 +20311,12 @@
       "progress": "Progreso de la configuración",
       "allocated": "Instancia creada",
       "identity": "Inicio de sesión en la nube",
-      "start": "Lista para usar"
+      "start": "Lista para usar",
+      "capacity": "{{used}} de {{limit}} instancias en uso",
+      "capacityRemaining": "Puedes obtener {{n}} más. Una instancia nueva necesita su propio inicio de sesión; tus otras instancias no se ven afectadas.",
+      "claimAnother": "Obtener una instancia nueva",
+      "claimAnotherTitle": "Obtener una nueva instancia en la nube",
+      "claimAnotherBody": "Se creará una nueva instancia en la nube para ti, independiente de las actuales. Inicia sesión antes de usarla."
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "Esta cuenta aún no está autorizada para usar instancias en la nube. Pide a un administrador que la habilite.",

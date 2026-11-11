@@ -20311,7 +20311,12 @@
       "progress": "Progression de la configuration",
       "allocated": "Instance créée",
       "identity": "Connexion cloud",
-      "start": "Prête à l'emploi"
+      "start": "Prête à l'emploi",
+      "capacity": "{{used}} instances sur {{limit}} utilisées",
+      "capacityRemaining": "Vous pouvez encore en obtenir {{n}}. Une nouvelle instance nécessite sa propre connexion ; vos autres instances ne sont pas affectées.",
+      "claimAnother": "Obtenir une nouvelle instance",
+      "claimAnotherTitle": "Obtenir une nouvelle instance cloud",
+      "claimAnotherBody": "Une nouvelle instance cloud sera créée pour vous, distincte de vos instances actuelles. Connectez-vous avant de l'utiliser."
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "Ce compte n'est pas encore autorisé à utiliser des instances cloud. Demandez à un administrateur de l'activer.",

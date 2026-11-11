@@ -44,9 +44,13 @@ async function setup(
   locale: keyof typeof resources = 'zh-CN',
   fail = false,
   onLoginCompleted?: CloudInstancesApi['onLoginCompleted'],
+  capacity?: { limit: number; used: number } | null,
 ) {
   const api = {
     onLoginCompleted,
+    ...(capacity !== undefined
+      ? { instanceCapacity: vi.fn<NonNullable<CloudInstancesApi['instanceCapacity']>>().mockResolvedValue(capacity) }
+      : {}),
     instanceList: vi.fn<CloudInstancesApi['instanceList']>().mockResolvedValue(items),
     instanceClaim: vi.fn<CloudInstancesApi['instanceClaim']>().mockResolvedValue([target]),
     instanceInitialize: vi.fn<CloudInstancesApi['instanceInitialize']>().mockResolvedValue(),
@@ -240,6 +244,39 @@ it('a refused wake says why instead of an unconfirmed result', async () => {
   );
   fireEvent.click(screen.getByRole('button', { name: zhCN.cloudSettings.reload }));
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+});
+const fill = (text: string, values: Record<string, number>) =>
+  text.replace(/\{\{(\w+)\}\}/gu, (_, key: string) => String(values[key]));
+it.each(Object.keys(resources) as Array<keyof typeof resources>)(
+  'offers another instance below the limit in %s, confirms first, and signs the new one in',
+  async (lang) => {
+    const words = resources[lang].cloudSettings.onboarding;
+    const second: CloudInstanceView = { ...target, instanceId: 'second-instance', deviceId: 'second-device', name: 'Cloud B' };
+    const f = await setup([running], lang, false, undefined, { limit: 3, used: 1 });
+    await screen.findByText(fill(words.capacity, { used: 1, limit: 3 }));
+    expect(screen.getByText(fill(words.capacityRemaining, { n: 2 }))).toBeTruthy();
+    expect(f.container.textContent).not.toContain('cloudSettings.');
+    f.api.instanceClaim.mockResolvedValue([running, second]);
+    fireEvent.click(screen.getByRole('button', { name: words.claimAnother }));
+    await waitFor(() => expect(f.api.instanceInitialize).toHaveBeenCalledExactlyOnceWith({ deviceId: 'second-device' }));
+    expect(confirmation.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: words.claimAnotherTitle, confirmText: words.claimAnother }));
+    expect(f.api.instanceClaim).toHaveBeenCalledExactlyOnceWith({ another: true });
+  },
+);
+it('offers no further instance at the limit, without a reported limit, or when the confirmation is declined', async () => {
+  let f = await setup([running], 'zh-CN', false, undefined, { limit: 1, used: 1 });
+  await screen.findByText(zhCN.cloudSettings.instance.noUpdate);
+  expect(screen.queryByRole('button', { name: zhCN.cloudSettings.onboarding.claimAnother })).toBeNull();
+  cleanup();
+  f = await setup([running], 'zh-CN', false, undefined, null);
+  await screen.findByText(zhCN.cloudSettings.instance.noUpdate);
+  expect(screen.queryByRole('button', { name: zhCN.cloudSettings.onboarding.claimAnother })).toBeNull();
+  cleanup();
+  f = await setup([running], 'zh-CN', false, undefined, { limit: 2, used: 1 });
+  confirmation.confirm.mockResolvedValueOnce(false);
+  fireEvent.click(await screen.findByRole('button', { name: zhCN.cloudSettings.onboarding.claimAnother }));
+  await waitFor(() => expect(confirmation.confirm).toHaveBeenCalledTimes(1));
+  expect(f.api.instanceClaim).not.toHaveBeenCalled();
 });
 it('unknown power results are not retried or cleared by background refresh', async () => {
   const f = await setup([sleeping]);

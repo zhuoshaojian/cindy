@@ -11,11 +11,15 @@ import {
   Moon,
   Play,
   CalendarClock,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
-import type { CloudSettingsRendererApi } from '../../../shared/cloudSettingsClient';
+import type {
+  CloudInstanceCapacity,
+  CloudSettingsRendererApi,
+} from '../../../shared/cloudSettingsClient';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { stableInstanceState, instanceStatus, canChangeInstancePower } from './instanceState';
 import { cloudInstanceName } from './instanceName';
@@ -24,7 +28,10 @@ import { cloudRefusalKey } from './refusal';
 export type CloudInstancesApi = Pick<
   CloudSettingsRendererApi,
   'instanceList' | 'instanceClaim' | 'instanceInitialize' | 'instancePower'
-> & { onLoginCompleted?(cb: () => void): () => void };
+> &
+  Partial<Pick<CloudSettingsRendererApi, 'instanceCapacity'>> & {
+    onLoginCompleted?(cb: () => void): () => void;
+  };
 type PowerPending = {
   deviceId: string;
   action: 'wake' | 'sleep';
@@ -65,11 +72,14 @@ export function CloudInstancesPage({
   const [waiting, setWaiting] = useState<string>();
   const [uncertain, setUncertain] = useState(false);
   const [powerPending, setPowerPending] = useState<PowerPending>();
+  // How many instances the owner has and may have; another is offered only below the limit.
+  const [capacity, setCapacity] = useState<CloudInstanceCapacity | null>(null);
   const powerRef = useRef<PowerPending | undefined>(undefined);
   const markPower = (value: PowerPending | undefined) => {
     powerRef.current = value;
     setPowerPending(value);
   };
+  const capacityCount = useRef<number>(-1);
   const live = useRef(false),
     inFlight = useRef(false),
     openWhenReady = useRef<string | undefined>(undefined);
@@ -79,8 +89,17 @@ export function CloudInstancesPage({
       inFlight.current = true;
       try {
         const next = await api.instanceList({});
+        // Read again on an explicit refresh, or when the number of instances changed.
+        const read =
+          api.instanceCapacity && (explicit || capacityCount.current !== next.length)
+            ? await api.instanceCapacity({}).catch(() => null)
+            : undefined;
         if (live.current) {
           setInstances(next);
+          if (read !== undefined) {
+            capacityCount.current = next.length;
+            setCapacity(read);
+          }
           setError(undefined);
           const pending = powerRef.current;
           const observed = next.find((item) => item.deviceId === pending?.deviceId);
@@ -146,6 +165,36 @@ export function CloudInstancesPage({
       setWaiting(deviceId);
       // An auxiliary login must not navigate the workspace when it completes.
       if (!api.onLoginCompleted) openWhenReady.current = deviceId;
+    }
+  };
+  const claimAnother = async () => {
+    if (inFlight.current || error) return;
+    const ok = await confirm({
+      presentation: 'standard',
+      title: tr('claimAnotherTitle'),
+      description: tr('claimAnotherBody'),
+      confirmText: tr('claimAnother'),
+    });
+    if (!ok || !live.current || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError(undefined);
+    const known = new Set(instances?.map((v) => v.deviceId));
+    try {
+      const next = await api.instanceClaim({ another: true });
+      if (!live.current) return;
+      setInstances(next);
+      const created = next.find((v) => !known.has(v.deviceId));
+      if (created?.loginRequired) await initialize(created.deviceId);
+    } catch (caught) {
+      if (live.current) setError(cloudRefusalKey(caught) ?? 'claimUnconfirmed');
+    } finally {
+      inFlight.current = false;
+      if (live.current) {
+        setBusy(false);
+        capacityCount.current = -1;
+        await load();
+      }
     }
   };
   const act = async (claim: boolean, deviceId?: string) => {
@@ -472,6 +521,29 @@ export function CloudInstancesPage({
                 </section>
               );
             })}
+            {!!instances?.length && capacity && capacity.used < capacity.limit && (
+              <section
+                className={`${card} flex flex-wrap items-center justify-between gap-3`}
+                aria-label={tr('claimAnother')}
+              >
+                <div className="min-w-0 flex-1 basis-48">
+                  <h3 className="text-14 font-medium tabular-nums text-[var(--settings-section-title)]">
+                    {tr('capacity', { used: capacity.used, limit: capacity.limit })}
+                  </h3>
+                  <p className={`${description} mt-1`}>
+                    {tr('capacityRemaining', { n: capacity.limit - capacity.used })}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  disabled={busy || !!error || !!powerPending}
+                  onClick={() => void claimAnother()}
+                >
+                  {busy ? <Spinner size={16} /> : <Plus size={16} />}
+                  {tr('claimAnother')}
+                </Button>
+              </section>
+            )}
           </div>
         </div>
       </div>

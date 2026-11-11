@@ -20052,7 +20052,12 @@
       "progress": "설정 진행 상황",
       "allocated": "인스턴스 생성됨",
       "identity": "클라우드 로그인",
-      "start": "사용 준비 완료"
+      "start": "사용 준비 완료",
+      "capacity": "{{limit}}대 중 {{used}}대 사용 중",
+      "capacityRemaining": "{{n}}대를 더 받을 수 있습니다. 새 인스턴스는 따로 로그인해야 하며, 다른 인스턴스에는 영향이 없습니다.",
+      "claimAnother": "새 인스턴스 받기",
+      "claimAnotherTitle": "새 클라우드 인스턴스 받기",
+      "claimAnotherBody": "기존 인스턴스와 별개로 새 클라우드 인스턴스를 만듭니다. 사용하기 전에 로그인하세요."
     },
     "refusal": {
       "CLOUD_SETTINGS_ACCESS_DENIED": "이 계정은 아직 클라우드 인스턴스 사용 권한이 없습니다. 관리자에게 활성화를 요청하세요.",
