@@ -233,5 +233,19 @@ web build against a mock CIS (no script errors); CIS typecheck and 1,873 tests. 
 the deployed CIS both roles are Ready with no restarts and serve `da295345c4`. In a
 signed-in browser against the owner's `0.1.130-cloud.2` instance the instance,
 provider (quota, model list, shared provider), Tools and IM pages load with the new
-layout. The Dev client `0.1.130-dev.cloud.20261111.3` is built from `0d60a5daa9`;
-its real-UI pass is pending.
+layout.
+
+The Dev client `0.1.130-dev.cloud.20261111.3` (built from `0d60a5daa9`) was then
+checked against the same instance, all ten categories:
+
+- On opening, the header and the body say "loading" until the instance has been
+  read; provider and IM categories are in the sidebar from the first frame.
+- One reload button in the header on every category except the instance overview
+  and the plugin page; none inside the IM or Tools sections.
+- The plugin target button reads "全局" only.
+- Providers, Tools and the instance overview show the page title.
+- The maintenance save row appears after toggling auto update and disappears after
+  discarding; nothing was saved and the instance's setting is unchanged.
+
+Not exercised: a failed read (the retry buttons), and an instance that does not
+offer providers or IM.
