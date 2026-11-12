@@ -22,7 +22,6 @@ import { createCloudSettingsClient } from '@/features/cloud-settings/client';
 import { cloudInstanceName } from '@/features/cloud-settings/instanceName';
 import { themeService } from '../themes/theme-service';
 import type { CloudInstanceView } from '../../shared/cloudInstanceControl';
-import { cloudRefusal } from '../../shared/cloudSettingsErrors';
 import type { CisSession, WebCloudApi } from './webApi';
 import { openDesktopTab } from './desktopTab';
 import { CloudWebErrorBoundary } from './crash';
@@ -69,36 +68,6 @@ function authValue(session: CisSession): AuthContextValue {
   } as AuthContextValue;
 }
 
-/** Signing in an instance stays on the existing CIS page, which owns SSO and verification. */
-async function signInInstance(instance: CloudInstanceView | undefined) {
-  if (!instance) throw new Error('CLOUD_SETTINGS_SCOPE_CHANGED');
-  const response = await fetch('/instance-login/api/attempts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      instanceId: instance.instanceId,
-      ...(instance.desiredState === 'stopped' ? { wake: true } : {}),
-    }),
-    credentials: 'same-origin',
-    cache: 'no-store',
-    redirect: 'error',
-  });
-  if (!response.ok) {
-    // A refusal (suspended, transferred, being transferred) says why; anything else stays generic.
-    let code: unknown;
-    try {
-      code = ((await response.json()) as { error?: { code?: unknown } })?.error?.code;
-    } catch {
-      /* Only a known code is used. */
-    }
-    throw new Error(cloudRefusal(code) ?? 'CLOUD_SETTINGS_UNAVAILABLE');
-  }
-  const { continueUrl } = (await response.json()) as { continueUrl?: unknown };
-  if (typeof continueUrl !== 'string' || !continueUrl.startsWith('/instance-login/#'))
-    throw new Error('CLOUD_SETTINGS_INVALID_RESPONSE');
-  location.assign(continueUrl);
-}
-
 /** Instances whose running Host takes remote desktop calls from this browser. */
 function useDesktopReady(api: WebCloudApi) {
   const [ready, setReady] = useState<ReadonlySet<string>>(new Set());
@@ -136,8 +105,7 @@ function Instances({ api }: { api: WebCloudApi }) {
         return next;
       },
       instancePower: (input) => api.cloudSettings.instancePower(input),
-      instanceInitialize: ({ deviceId }) =>
-        signInInstance(api.instances().find((item) => item.deviceId === deviceId)),
+      instanceInitialize: ({ deviceId }) => api.initializeInstance(deviceId),
     }),
     [api],
   );

@@ -187,6 +187,19 @@ export function createWebCloudApi(session: CisSession, onSignedOut: () => void) 
     providerGroup,
     relay,
     listInstances,
+    /** The existing CIS page owns SSO and verification for this selected instance. */
+    async initializeInstance(deviceId: string) {
+      const instance = instances.find((item) => item.deviceId === deviceId);
+      if (!instance) throw new CloudClientError('CLOUD_SETTINGS_SCOPE_CHANGED');
+      const result = await request('/instance-login/api/attempts', 'POST', {
+        instanceId: instance.instanceId,
+        ...(session.kind === 'org' && session.orgSlug ? { org: session.orgSlug } : {}),
+        ...(instance.desiredState === 'stopped' ? { wake: true } : {}),
+      }, AbortSignal.timeout(10_000)) as { continueUrl?: unknown };
+      if (typeof result?.continueUrl !== 'string' || !result.continueUrl.startsWith('/instance-login/#'))
+        throw new CloudClientError('CLOUD_SETTINGS_INVALID_RESPONSE');
+      location.assign(result.continueUrl);
+    },
     instances: () => instances,
     onInstancesChanged(listener: () => void) {
       listeners.add(listener);

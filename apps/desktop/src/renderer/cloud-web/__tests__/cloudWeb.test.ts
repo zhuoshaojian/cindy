@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCisClientHttp, createCisFetch, CisSignedOutError } from '../cisHttp';
 import { createHostRelay, HostCallError } from '../hostRelay';
 import { installWebElectronApi } from '../electronApi';
-import { routeDeviceLinkCall, unwrapProviderManagementReply } from '../webApi';
+import { createWebCloudApi, routeDeviceLinkCall, unwrapProviderManagementReply } from '../webApi';
 import { createWebRemoteDesktopViewer } from '../remoteDesktopViewer';
 
 const instanceId = 'cloud-instance-0123456789abcdef';
@@ -13,6 +13,56 @@ const reply = (body: unknown, status = 200) => new Response(body === undefined ?
 const identity = { key: 'web:fixture', generation: 1, baseUrl: 'https://cloud.example.invalid', accessToken: '' };
 
 afterEach(() => vi.unstubAllGlobals());
+
+// Regression: the web login button omitted the organization, so a second claim
+// failed before CIS could create a login attempt. Existing transport tests did not
+// exercise this entry. Minimal input: two owned instances and an org session.
+// Unit tier: real browser adapter, in-memory HTTP, observable body and navigation.
+describe('signing in a selected cloud instance from the web page', () => {
+  it.each([
+    { kind: 'org', orgSlug: 'example', desiredState: 'running' },
+    { kind: 'personal', orgSlug: null, desiredState: 'running' },
+    { kind: 'org', orgSlug: 'example', desiredState: 'stopped' },
+  ])('uses the $kind login method for the selected $desiredState instance', async (session) => {
+    const secondId = 'cloud-instance-fedcba9876543210';
+    const secondDevice = `cloud-device-${'b'.repeat(24)}`;
+    const next = '/instance-login/#attemptId=fixture&attemptSecret=invalid-test-only';
+    const assign = vi.fn();
+    vi.stubGlobal('location', { origin: identity.baseUrl, assign });
+    const owned = (id: string, device: string, sequence: number) => ({
+      instanceId: id, deviceId: device, customLabel: null, nameSequence: sequence,
+      status: { instanceId: id, deviceId: device, desiredState: session.desiredState,
+        runtimeState: 'missing', image: 'registry.example.invalid/cloud:1',
+        readiness: { ready: false }, updateAvailable: false, latestReleaseTag: null,
+        upgrade: { state: 'idle' }, loginRequired: true },
+    });
+    const fetch = vi.fn(async (path: string, init: RequestInit) => {
+      if (path === '/instance-login/api/manage/instances')
+        return reply({ instances: [owned(instanceId, deviceId, 1), owned(secondId, secondDevice, 2)] });
+      if (path !== '/instance-login/api/attempts') throw new Error('Unexpected request');
+      const body = JSON.parse(String(init.body));
+      // CIS rejects organization sign-in without org and personal sign-in with it.
+      if (session.kind === 'org' ? body.org !== session.orgSlug : 'org' in body)
+        return reply({ error: { code: 'INVALID_PARAMS' } }, 400);
+      return reply({ continueUrl: next });
+    });
+    vi.stubGlobal('fetch', fetch);
+    const api = createWebCloudApi({ membershipId: 'owner', passportId: 'passport', ...session }, () => {});
+    await api.listInstances();
+    await expect(api.initializeInstance(secondDevice)).resolves.toBeUndefined();
+    const [, init] = fetch.mock.calls.find(([path]) => path === '/instance-login/api/attempts')!;
+    expect(JSON.parse(String(init.body))).toEqual({ instanceId: secondId,
+      ...(session.orgSlug ? { org: session.orgSlug } : {}),
+      ...(session.desiredState === 'stopped' ? { wake: true } : {}),
+    });
+    expect(init.credentials).toBe('same-origin');
+    expect(assign).toHaveBeenCalledExactlyOnceWith(next);
+    const calls = fetch.mock.calls.length;
+    await expect(api.initializeInstance(`cloud-device-${'c'.repeat(24)}`))
+      .rejects.toMatchObject({ code: 'CLOUD_SETTINGS_SCOPE_CHANGED' });
+    expect(fetch).toHaveBeenCalledTimes(calls);
+  });
+});
 
 describe('CIS browser session for the shared cloud client', () => {
   it('uses the session cookie on the same origin and never a bearer token', async () => {
