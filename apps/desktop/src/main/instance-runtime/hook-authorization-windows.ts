@@ -1,7 +1,7 @@
-import type { SlackHookView } from '../../shared/hookControlIpc.js';
+import type { HookProvider, SlackHookView } from '../../shared/hookControlIpc.js';
 import type { AuthorizationBrowser } from './authorization-browser.js';
 
-type Provider = 'slack' | 'telegram' | 'x';
+type Provider = HookProvider;
 interface Lease {
   close: Promise<() => Promise<void>>;
   timer: NodeJS.Timeout;
@@ -23,8 +23,8 @@ export class HookAuthorizationWindows {
     if (!view) return false;
     if (provider !== 'slack')
       return (
-        view[provider].enabled &&
-        ['pending', 'awaiting_confirmation'].includes(view[provider].binding?.state ?? '')
+        Boolean(view[provider]?.enabled) &&
+        ['pending', 'awaiting_confirmation'].includes(view[provider]?.binding?.state ?? '')
       );
     const binding = view.pendingBind ?? view.binding;
     return (

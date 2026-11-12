@@ -16,6 +16,7 @@ function setup() {
     binding: null,
     telegram: {},
     x: {},
+    feishu: {},
   };
   const manager = {
     snapshot: () => structuredClone(view),
@@ -101,5 +102,65 @@ describe('official cloud bot native binding branches', () => {
     )!;
     await action.run({}, s.execution);
     expect(s.manager.bindRevoke).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Unit: remote official authorization omitted Feishu, and enabling an unbound provider
+// already starts a native attempt. The ticket must follow that attempt, not replace its URL.
+// Prior coverage only exercised Slack; a disabled Feishu lane is the minimal missing case.
+describe('official provider authorization tickets', () => {
+  function providerSetup(provider: 'telegram' | 'x' | 'feishu') {
+    vi.useFakeTimers();
+    const s = setup();
+    const url = 'https://auth.example.invalid/authorize?state=fixture';
+    const pending = () => ({ state: 'pending', attemptId: 'attempt-a', connectUrl: url, bindCode: provider === 'feishu' ? 'TEST-CODE' : null, expiresAt: Date.now() + 300_000 });
+    s.view[provider] = { url: 'https://hook.example.invalid', enabled: false, available: true, status: 'connected', binding: null };
+    const enable = vi.fn((_provider, enabled) => { s.view[provider].enabled = enabled; s.view[provider].binding = pending(); });
+    const start = vi.fn(() => { s.view[provider].binding = { ...pending(), attemptId: 'duplicate-attempt' }; return true; });
+    const cancel = vi.fn(() => true);
+    Object.assign(s.manager, { setProviderEnabled: enable, providerBindStart: start, providerBindCancel: cancel });
+    const action = () => listOfficialBotManagement(caller).find(e => e.id === `bot:official:${provider}`)?.actions.find(a => a.intent === 'authorize');
+    return { ...s, action, enable, start, cancelProvider: cancel, url };
+  }
+
+  it.each(['telegram', 'x', 'feishu'] as const)('follows one %s attempt through confirmation', async provider => {
+    const s = providerSetup(provider);
+    expect(s.action()).toBeDefined();
+    const run = s.action()!.run({}, s.execution);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.start).not.toHaveBeenCalled();
+    expect(s.execution.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      url: s.url, ...(provider === 'feishu' ? { userCode: 'TEST-CODE', kind: 'device' } : { kind: 'browser' }),
+    }));
+    s.view[provider].binding = { ...s.view[provider].binding, state: 'confirmed', connectUrl: null, bindCode: null };
+    await vi.advanceTimersByTimeAsync(1000);
+    await run;
+    expect(s.cancelProvider).not.toHaveBeenCalled();
+  });
+
+  it('does not cancel a newer Feishu attempt or accept its result', async () => {
+    const s = providerSetup('feishu');
+    expect(s.action()).toBeDefined();
+    const run = s.action()!.run({}, s.execution);
+    const rejected = expect(run).rejects.toThrow('CHANGED');
+    await vi.advanceTimersByTimeAsync(0);
+    s.view.feishu.binding = { ...s.view.feishu.binding, attemptId: 'attempt-b' };
+    s.cancel();
+    expect(s.cancelProvider).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    await rejected;
+  });
+
+  it('cancels the Feishu attempt owned by its ticket', async () => {
+    const s = providerSetup('feishu');
+    expect(s.action()).toBeDefined();
+    const run = s.action()!.run({}, s.execution);
+    const rejected = expect(run).rejects.toThrow('AUTH_FAILED');
+    await vi.advanceTimersByTimeAsync(0);
+    s.cancel();
+    expect(s.cancelProvider).toHaveBeenCalledWith('feishu');
+    s.view.feishu.binding.state = 'failed';
+    await vi.advanceTimersByTimeAsync(1000);
+    await rejected;
   });
 });

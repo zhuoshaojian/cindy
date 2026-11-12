@@ -130,7 +130,7 @@ export function CloudBotAuthorization(
   const description = (id: string) =>
     id === 'bot:official:slack'
       ? t('settings.remoteControl.hook.slackDescription')
-      : id === 'bot:official:telegram' || id === 'bot:official:x'
+      : id === 'bot:official:telegram' || id === 'bot:official:x' || id === 'bot:official:feishu'
         ? t(`settings.remoteControl.hook.${id.slice(13)}.description`)
         : props.name;
   return (

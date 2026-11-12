@@ -5,9 +5,8 @@ import {
   cloudImSettingsReplySchema,
   type CloudImSettingsCall,
 } from '../../../shared/cloudImSettings';
-import type { SlackHookView } from '../../../shared/hookControlIpc';
-
-const FEISHU_ON_INSTANCE = '[UNSUPPORTED] Feishu is connected on the cloud instance';
+import type { NeutralHookProvider, SlackHookView } from '../../../shared/hookControlIpc';
+import { openCloudExternal } from './openCloudExternal';
 
 type HookControl = SettingsTargetApi['hookControl'];
 type HookReply = { hook: SlackHookView };
@@ -21,10 +20,12 @@ export interface CloudImAuthorization {
     request:
       | { kind: 'slack' }
       | { kind: 'slack-rebind'; teamId: string }
-      | { kind: 'provider'; provider: 'telegram' | 'x' },
+      | { kind: 'provider'; provider: NeutralHookProvider },
   ): Promise<void>;
   /** Cancels the running ticket of this card; false when none is running. */
-  cancel(card: 'slack' | 'telegram' | 'x'): Promise<boolean>;
+  cancel(card: 'slack' | NeutralHookProvider): Promise<boolean>;
+  /** Older Hosts do not list every provider's authorization action. */
+  canAuthorizeProvider?(provider: NeutralHookProvider): boolean;
 }
 
 /** One call over the instance's private IM channel; the reply must belong to the same account. */
@@ -120,8 +121,17 @@ export function createCloudImTarget(
         : call('maker:hook-control:set-enabled', { enabled: false }),
     setLifecycleAnnouncement: (enabled) =>
       call('maker:hook-control:set-lifecycle-announcement', { enabled }),
-    setProviderEnabled: (provider, enabled) =>
-      call('maker:hook-control:set-provider-enabled', { provider, enabled }),
+    setProviderEnabled: async (provider, enabled) => {
+      // Retained bindings only resume their connection; a new bind needs a controller-side
+      // ticket so its authorization page and cancellation stay on this computer.
+      if (
+        enabled &&
+        deps.authorization.canAuthorizeProvider?.(provider) !== false &&
+        (await get()).hook[provider].binding?.state !== 'confirmed'
+      )
+        return after(() => deps.authorization.start({ kind: 'provider', provider }));
+      return call('maker:hook-control:set-provider-enabled', { provider, enabled });
+    },
     setWorkspaces: (workspaces) => call('maker:hook-control:set-workspaces', { workspaces }),
     setXCompanion: () => Promise.reject(new Error('[UNSUPPORTED] teammates are set on the instance')),
     setProviderDefaultWorkspace: (provider, alias) =>
@@ -141,20 +151,19 @@ export function createCloudImTarget(
     revokeTeam: (teamId) => call('maker:hook-control:revoke-team', { teamId }),
     cancelPendingBind: async () =>
       (await deps.authorization.cancel('slack')) ? get() : call('maker:hook-control:cancel-pending-bind'),
-    // The frozen CIS IM contract has no Feishu channel yet; it is connected on the instance itself.
     providerBindStart: (provider) =>
-      provider === 'feishu'
-        ? Promise.reject(new Error(FEISHU_ON_INSTANCE))
-        : after(() => deps.authorization.start({ kind: 'provider', provider })),
-    providerBindSelect: () => Promise.reject(new Error(FEISHU_ON_INSTANCE)),
+      after(() => deps.authorization.start({ kind: 'provider', provider })),
+    providerBindSelect: (provider) => call('maker:hook-control:provider-bind-select', { provider }),
     providerBindCancel: async (provider) =>
-      provider !== 'feishu' && (await deps.authorization.cancel(provider))
+      (await deps.authorization.cancel(provider))
         ? get()
         : call('maker:hook-control:provider-bind-cancel', { provider }),
     providerBindRevoke: (provider) => call('maker:hook-control:provider-bind-revoke', { provider }),
     openProviderAction: async (provider, action) => {
-      const { url } = await call<{ url: string }>(CLOUD_HOOK_PROVIDER_ACTION_URL, { provider, action });
-      await window.electronAPI.openExternal(url);
+      await openCloudExternal(async () => {
+        const { url } = await call<{ url: string }>(CLOUD_HOOK_PROVIDER_ACTION_URL, { provider, action });
+        return url;
+      });
       return { ok: true as const };
     },
     getWorkspacePrefs: () => call('maker:hook-control:prefs-get'),

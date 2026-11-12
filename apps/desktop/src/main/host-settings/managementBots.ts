@@ -250,14 +250,14 @@ export function listOfficialBotManagement(caller: ManagementCaller): ManagementE
       });
     }
   }
-  for (const provider of ['telegram', 'x'] as const) {
+  for (const provider of ['telegram', 'x', 'feishu'] as const) {
     const view = snapshot[provider];
-    if (!view.url) continue;
+    if (!view?.url) continue;
     const resource = `bot:official:${provider}`,
       connected = view.binding?.state === 'confirmed';
     entries.push({
       id: resource,
-      label: provider === 'telegram' ? 'Telegram' : 'X',
+      label: provider === 'telegram' ? 'Telegram' : provider === 'feishu' ? 'Feishu / Lark' : 'X',
       group: 'management.officialBots',
       status: connected ? 'connected' : 'disconnected',
       actions: connected
@@ -287,18 +287,27 @@ export function listOfficialBotManagement(caller: ManagementCaller): ManagementE
               label: 'management.actions.authorize',
               async run(_values, execution) {
                 execution.assertCurrent();
-                const before = manager.snapshot()[provider].binding;
-                if (before?.state === 'pending') throw new Error('MANAGEMENT_BUSY');
+                const before = manager.snapshot()[provider];
+                if (['pending', 'awaiting_confirmation'].includes(before.binding?.state ?? ''))
+                  throw new Error('MANAGEMENT_BUSY');
                 let attemptId: string | null = null;
                 const expiresAt = Date.now() + 5 * 60_000;
-                manager.setProviderEnabled(provider, true);
+                const enabling = !before.enabled;
+                if (enabling) manager.setProviderEnabled(provider, true);
                 await managementWait(async () => {
                   const current = manager.snapshot()[provider];
                   if (current.status === 'connected' && !current.available)
                     throw new Error('MANAGEMENT_UNAVAILABLE');
                   return current.available;
                 }, execution);
-                if (!manager.providerBindStart(provider)) throw new Error('MANAGEMENT_AUTH_FAILED');
+                const ready = manager.snapshot()[provider].binding;
+                // Enabling the native lane already starts its first bind. Follow that one
+                // attempt so its URL/code is not immediately superseded by a second start.
+                if (ready?.state === 'confirmed') return;
+                if (
+                  (!enabling || !['pending', 'awaiting_confirmation'].includes(ready?.state ?? '')) &&
+                  !manager.providerBindStart(provider)
+                ) throw new Error('MANAGEMENT_AUTH_FAILED');
                 execution.onCancel(() => {
                   if (attemptId && manager.snapshot()[provider].binding?.attemptId === attemptId)
                     manager.providerBindCancel(provider);
@@ -317,8 +326,9 @@ export function listOfficialBotManagement(caller: ManagementCaller): ManagementE
                     throw new Error('MANAGEMENT_AUTH_FAILED');
                   if (binding?.connectUrl)
                     execution.prompt({
-                      kind: 'browser',
+                      kind: binding.bindCode ? 'device' : 'browser',
                       url: binding.connectUrl,
+                      ...(binding.bindCode ? { userCode: binding.bindCode } : {}),
                       expiresAt: binding.expiresAt ?? expiresAt,
                     });
                   return binding?.state === 'confirmed';

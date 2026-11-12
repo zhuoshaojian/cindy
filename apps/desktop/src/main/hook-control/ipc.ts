@@ -122,6 +122,7 @@ import { listRecentHookSessions } from './recentSessions.js';
 import { validateTelegramExternalUrl } from './telegramDeepLink.js';
 import { validateXExternalUrl } from './xDeepLink.js';
 import { validateFeishuExternalUrl } from './feishuDeepLink.js';
+import { providerActionUrlFromIpc } from './providerActionUrlIpc.js';
 import { isAppContentWindow } from '../windowFocusClassifier.js';
 import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer.js';
 import { getAgentIslandService } from '../agent-island/service.js';
@@ -754,6 +755,7 @@ function ensureInstances(): { store: SlackHookStore; manager: HookControlManager
       },
       openFeishuUrl: (url) => {
         const safeUrl = validateFeishuExternalUrl(url);
+        if (cloudAuthorizationWindows?.pending('feishu')) return cloudAuthorizationWindows.open('feishu', safeUrl);
         return shell.openExternal(safeUrl);
       },
       log,
@@ -974,17 +976,7 @@ export function registerHookControlIpc(): void {
   registerCloudDomainCall(CLOUD_HOOK_PROVIDER_ACTION_URL, (payload) => {
     requireHookControl();
     const provider = requireNeutralProvider(payload);
-    const action = requireString(requireObject(payload).action, 'action');
-    if (action !== 'connect' && action !== 'provider' && action !== 'add-to-group') {
-      throwIpcError('INVALID_PARAMS', `invalid ${providerDisplayName(provider)} open action`);
-    }
-    const url = ensureInstances().manager.providerActionUrl(provider, action);
-    if (!url) throwIpcError('INVALID_PARAMS', `${providerDisplayName(provider)} action is not available`);
-    try {
-      return { url: provider === 'telegram' ? validateTelegramExternalUrl(url) : validateXExternalUrl(url) };
-    } catch (err) {
-      throwIpcError('INVALID_PARAMS', err instanceof Error ? err.message : 'invalid link');
-    }
+    return providerActionUrlFromIpc(ensureInstances().manager, provider, requireObject(payload).action);
   });
 
   registerTrustedHookControlHandler(

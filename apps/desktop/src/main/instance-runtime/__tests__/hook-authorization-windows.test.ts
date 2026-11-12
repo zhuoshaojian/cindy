@@ -9,6 +9,7 @@ function view(state = 'pending', extra: Record<string, unknown> = {}): SlackHook
     pendingBind: null,
     telegram: { enabled: true, binding: { state: 'pending' } },
     x: { enabled: true, binding: { state: 'pending' } },
+    feishu: { enabled: true, binding: { state: 'pending' } },
     ...extra,
   } as unknown as SlackHookView;
 }
@@ -154,20 +155,22 @@ describe('cloud hook authorization lifecycle', () => {
     windows.dispose();
     await settle();
   });
-  it('keeps Telegram and X windows while awaiting the user confirmation', async () => {
+  // Unit: Feishu used the untracked shell path, leaving its cloud browser behind after
+  // confirmation/cancellation. Exercise the same ownership and cleanup as Telegram/X.
+  it.each(['telegram', 'x', 'feishu'] as const)('keeps %s windows while awaiting the user confirmation', async (provider) => {
     const close = vi.fn(async () => {}),
       windows = new HookAuthorizationWindows({ open: async () => close }, vi.fn());
     windows.update(view());
-    await windows.open('telegram', 'https://telegram.example/');
+    await windows.open(provider, 'https://auth.example.invalid/');
     windows.update(
       view('confirmed', {
-        telegram: { enabled: true, binding: { state: 'awaiting_confirmation' } },
+        [provider]: { enabled: true, binding: { state: 'awaiting_confirmation' } },
       }),
     );
     await settle();
     expect(close).not.toHaveBeenCalled();
     windows.update(
-      view('confirmed', { telegram: { enabled: true, binding: { state: 'confirmed' } } }),
+      view('confirmed', { [provider]: { enabled: true, binding: { state: 'confirmed' } } }),
     );
     await settle();
     expect(close).toHaveBeenCalledOnce();

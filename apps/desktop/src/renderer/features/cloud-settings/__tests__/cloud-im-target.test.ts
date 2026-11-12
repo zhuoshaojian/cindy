@@ -43,6 +43,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   invoke.mockClear();
   openExternal.mockClear();
 });
@@ -73,11 +74,13 @@ describe('cloud IM target', () => {
     await t.api.hookControl.addBinding();
     await t.api.hookControl.rebindTeam('T9');
     await t.api.hookControl.providerBindStart('x');
+    await t.api.hookControl.providerBindStart('feishu');
     expect(vi.mocked(authorization.start).mock.calls.map(([request]) => request)).toEqual([
       { kind: 'slack' },
       { kind: 'slack' },
       { kind: 'slack-rebind', teamId: 'T9' },
       { kind: 'provider', provider: 'x' },
+      { kind: 'provider', provider: 'feishu' },
     ]);
     expect(requests().every((request) => request.call === 'maker:hook-control:get')).toBe(true);
     invoke.mockClear();
@@ -89,15 +92,15 @@ describe('cloud IM target', () => {
     ]);
   });
 
-  it('cancels a running ticket instead of the instance attempt', async () => {
+  it.each(['telegram', 'x', 'feishu'] as const)('cancels only the running %s ticket', async (provider) => {
     const running = target({ cancel: vi.fn(async () => true) });
-    await running.target.api.hookControl.providerBindCancel('x');
+    await running.target.api.hookControl.providerBindCancel(provider);
     expect(requests()).toEqual([{ call: 'maker:hook-control:get', args: [] }]);
     invoke.mockClear();
     const idle = target();
-    await idle.target.api.hookControl.providerBindCancel('x');
+    await idle.target.api.hookControl.providerBindCancel(provider);
     expect(requests()).toEqual([
-      { call: 'maker:hook-control:provider-bind-cancel', args: [{ provider: 'x' }] },
+      { call: 'maker:hook-control:provider-bind-cancel', args: [{ provider }] },
     ]);
   });
 
@@ -109,6 +112,81 @@ describe('cloud IM target', () => {
       { call: CLOUD_HOOK_PROVIDER_ACTION_URL, args: [{ provider: 'telegram', action: 'provider' }] },
     ]);
     expect(openExternal).toHaveBeenCalledWith('https://t.me/cindy');
+  });
+
+  // Unit/jsdom: the remote adapter swallowed browser rejection and disabled native Feishu
+  // actions. Existing coverage mocked successful opening and only exercised Telegram/X.
+  it('reports a rejected browser opening instead of a successful action', async () => {
+    replies.push({ call: CLOUD_HOOK_PROVIDER_ACTION_URL, result: { url: 'https://t.me/cindy' } });
+    openExternal.mockResolvedValueOnce({ success: false });
+    await expect(target().target.api.hookControl.openProviderAction('telegram', 'provider'))
+      .rejects.toThrow('OPEN_FAILED');
+  });
+
+  it('reserves the web tab during the click, then navigates after the remote URL arrives', async () => {
+    Object.assign(window.electronAPI, { platform: 'web' });
+    const opened = { opener: window, closed: false, close: vi.fn(), location: { replace: vi.fn() } };
+    const popup = vi.spyOn(window, 'open').mockReturnValue(opened as unknown as Window);
+    let resolve!: (value: { ownerGeneration: number; result: { url: string } }) => void;
+    invoke.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+    const opening = target().target.api.hookControl.openProviderAction('feishu', 'connect');
+    expect(popup).toHaveBeenCalledWith('about:blank', '_blank');
+    expect(opened.opener).toBeNull();
+    expect(opened.location.replace).not.toHaveBeenCalled();
+    const url = 'https://accounts.feishu.cn/open-apis/authen/v1/authorize?state=fixture';
+    resolve({ ownerGeneration: 1, result: { url } });
+    await expect(opening).resolves.toEqual({ ok: true });
+    expect(opened.location.replace).toHaveBeenCalledWith(url);
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it('closes the reserved tab if the remote request fails', async () => {
+    Object.assign(window.electronAPI, { platform: 'web' });
+    const opened = { opener: window, closed: false, close: vi.fn(), location: { replace: vi.fn() } };
+    vi.spyOn(window, 'open').mockReturnValue(opened as unknown as Window);
+    invoke.mockRejectedValueOnce(new Error('[OWNER_CHANGED] changed'));
+    await expect(target().target.api.hookControl.openProviderAction('feishu', 'connect')).rejects.toThrow('OWNER_CHANGED');
+    expect(opened.close).toHaveBeenCalledOnce();
+    expect(opened.location.replace).not.toHaveBeenCalled();
+  });
+
+  it('reports a blocked web popup without issuing a remote action', async () => {
+    Object.assign(window.electronAPI, { platform: 'web' });
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    await expect(target().target.api.hookControl.openProviderAction('feishu', 'connect')).rejects.toThrow('OPEN_FAILED');
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('selects the working computer through its native handler and awaits the result', async () => {
+    const result = { hook: { feishu: { binding: { state: 'confirmed' } } } };
+    replies.push({ call: 'maker:hook-control:provider-bind-select', result });
+    await expect(target().target.api.hookControl.providerBindSelect('feishu')).resolves.toEqual(result);
+    expect(requests()).toEqual([
+      { call: 'maker:hook-control:provider-bind-select', args: [{ provider: 'feishu' }] },
+    ]);
+  });
+
+  it('starts an unbound provider switch on a ticket and preserves retained bindings', async () => {
+    const { target: t, authorization } = target();
+    replies[0]!.result = { hook: { feishu: { enabled: false, binding: null } } };
+    await t.api.hookControl.setProviderEnabled('feishu', true);
+    expect(authorization.start).toHaveBeenCalledWith({ kind: 'provider', provider: 'feishu' });
+    expect(requests().every((r) => r.call === 'maker:hook-control:get')).toBe(true);
+    vi.mocked(authorization.start).mockClear();
+    invoke.mockClear();
+    replies[0]!.result = { hook: { feishu: { enabled: false, binding: { state: 'confirmed' } } } };
+    await t.api.hookControl.setProviderEnabled('feishu', true);
+    expect(authorization.start).not.toHaveBeenCalled();
+    expect(requests()).toContainEqual({ call: 'maker:hook-control:set-provider-enabled', args: [{ provider: 'feishu', enabled: true }] });
+  });
+
+  it('keeps the existing switch path on an older Host without a provider ticket', async () => {
+    const { target: t, authorization } = target({ canAuthorizeProvider: () => false });
+    await t.api.hookControl.setProviderEnabled('feishu', true);
+    expect(authorization.start).not.toHaveBeenCalled();
+    expect(requests()).toEqual([
+      { call: 'maker:hook-control:set-provider-enabled', args: [{ provider: 'feishu', enabled: true }] },
+    ]);
   });
 
   it('picks directories in the instance browser', async () => {

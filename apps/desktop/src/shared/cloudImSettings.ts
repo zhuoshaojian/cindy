@@ -7,7 +7,7 @@ import { z } from 'zod';
  *
  * A private DeviceLink channel registered only by the cloud runtime. It forwards one call to
  * the same Main business handler the local settings page uses, from the closed list below.
- * Starting a binding (Slack on, add, rebind, Telegram/X link) stays on the cloud authorization
+ * Starting a binding (Slack on, add, rebind, Telegram/X/Feishu link) stays on the cloud authorization
  * tickets, so `set-enabled` accepts only `false` here; directory choice uses the instance's
  * directory browser, never a dialog on the instance. Ordinary desktops and older runtimes
  * answer CHANNEL_NOT_ALLOWED.
@@ -44,6 +44,8 @@ export const CLOUD_IM_SETTINGS_CALLS = [
   'maker:hook-control:cancel-pending-bind',
   'maker:hook-control:provider-bind-cancel',
   'maker:hook-control:provider-bind-revoke',
+  // Select an already linked Feishu working computer; the native handler checks select_device.
+  'maker:hook-control:provider-bind-select',
   // Effective values of directory rows and the legacy default notice.
   'maker:im-default-settings:get',
   'maker:im-default-settings:reset',

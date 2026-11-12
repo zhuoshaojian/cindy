@@ -38,7 +38,7 @@ export default {
   stubs: {
     'src/renderer/components/settings/settingsSearchCatalog': catalog,
     'src/renderer/contexts/AuthContext':
-      'export const useAuth=()=>({mode:"cloud",isAuthenticated:true,dataOwnerId:"fixture-owner",dataOwnerGeneration:1}); export const useOptionalAuthDeviceId=()=>null; export const useOptionalAuthUser=()=>null;',
+      'export const useAuth=()=>({mode:"cloud",isAuthenticated:true,dataOwnerId:"fixture-owner",dataOwnerGeneration:1}); export const useOptionalAuthDeviceId=()=>null; export const useOptionalAuthUser=()=>null; export const useOptionalDataOwnerGeneration=()=>1;',
     // Voice input is not mounted here; its worklet needs Vite's ?url asset loader.
     'src/renderer/voice-input/workletUrl':
       'export function getVoiceInputWorkletUrl(){return "http://cindy-ui.test/unused-worklet.js";}',

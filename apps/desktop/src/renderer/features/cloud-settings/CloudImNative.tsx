@@ -50,6 +50,12 @@ export function useCloudImTarget({
   const [picker, setPicker] = useState<((path: string | null) => void) | null>(null);
   const target = useMemo<CloudImTarget>(() => {
     const authorization: CloudImAuthorization = {
+      canAuthorizeProvider(provider) {
+        return latest.current.items.some(
+          (item) => item.id === `bot:official:${provider}` &&
+            item.actions.some((action) => action.intent === 'authorize'),
+        );
+      },
       async start(request) {
         const id =
           request.kind === 'provider'

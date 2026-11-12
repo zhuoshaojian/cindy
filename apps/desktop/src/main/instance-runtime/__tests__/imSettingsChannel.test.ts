@@ -51,6 +51,22 @@ describe('cloud IM settings channel', () => {
     expect(call).not.toHaveBeenCalled();
   });
 
+  // Unit: the Feishu card already declares select_device, but the cloud channel previously
+  // rejected its native handler. The reply must follow the actual acknowledged selection.
+  it('waits for the native working-computer selection and preserves its owner stamp', async () => {
+    let finish!: (value: unknown) => void;
+    const { channel } = setup(undefined, {
+      call: vi.fn(() => new Promise(resolve => { finish = resolve; })),
+    });
+    let settled = false;
+    const reply = channel.handle('mac', { call: 'maker:hook-control:provider-bind-select', args: [{ provider: 'feishu' }] });
+    void reply.then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    finish({ hook: { feishu: { binding: { state: 'confirmed' } } } });
+    await expect(reply).resolves.toEqual({ ownerGeneration: 3, result: { hook: { feishu: { binding: { state: 'confirmed' } } } } });
+  });
+
   it('rejects calls outside the closed list and malformed requests', async () => {
     const { channel, call } = setup();
     for (const request of [
