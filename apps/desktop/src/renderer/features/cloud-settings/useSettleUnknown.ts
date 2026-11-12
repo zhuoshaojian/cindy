@@ -102,3 +102,94 @@ export function useSettleUnknown<C>({
   }, []);
   return { state, context, start, reload, stop };
 }
+
+/** One keyed read-back: what it is doing and for which write. */
+export type KeyedSettle<C> = { state: SettleState; context: C };
+
+/**
+ * useSettleUnknown for writes on several items at once (a sleep on one cloud Cindy and a wake on
+ * another): each key reads back on its own, so one unknown result never holds up another item.
+ * Starting again for a key replaces that key's check only.
+ */
+export function useSettleUnknownByKey<C>({
+  keyOf,
+  check,
+  delays,
+  onSettled,
+}: {
+  keyOf(context: C): string;
+  check(context: C): Promise<SettleVerdict>;
+  delays: readonly number[];
+  onSettled(verdict: 'done' | 'notDone', context: C): void;
+}) {
+  const [entries, setEntries] = useState<ReadonlyMap<string, KeyedSettle<C>>>(() => new Map());
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  const runs = useRef(new Map<string, number>());
+  const counter = useRef(0);
+  const alive = useRef(true);
+  const latest = useRef({ keyOf, check, onSettled });
+  latest.current = { keyOf, check, onSettled };
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      runs.current.clear();
+    };
+  }, []);
+  const current = (key: string, id: number) => alive.current && runs.current.get(key) === id;
+  const put = (key: string, entry?: KeyedSettle<C>) =>
+    setEntries((before) => {
+      const next = new Map(before);
+      if (entry) next.set(key, entry);
+      else next.delete(key);
+      return next;
+    });
+  const read = async (key: string, id: number, value: C) => {
+    try {
+      const verdict = await latest.current.check(value);
+      if (!current(key, id)) return true;
+      if (verdict === 'pending') return false;
+      runs.current.delete(key);
+      put(key);
+      latest.current.onSettled(verdict, value);
+      return true;
+    } catch {
+      return !current(key, id);
+    }
+  };
+  const wait = (key: string, id: number, ms: number) =>
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(current(key, id)), ms));
+  const start = useCallback(
+    async (value: C) => {
+      const key = latest.current.keyOf(value);
+      const id = ++counter.current;
+      runs.current.set(key, id);
+      put(key, { state: 'checking', context: value });
+      for (const delay of delays) {
+        if (!(await wait(key, id, delay))) return;
+        // A hidden window waits; nothing is read until it is shown again.
+        while (document.visibilityState === 'hidden') if (!(await wait(key, id, 1_000))) return;
+        if (await read(key, id, value)) return;
+      }
+      if (current(key, id)) put(key, { state: 'unreadable', context: value });
+    },
+    [delays],
+  );
+  /** After a key's reads ran out: one more read now, still read-only. */
+  const reload = useCallback(async (key: string) => {
+    const entry = entriesRef.current.get(key);
+    if (entry?.state !== 'unreadable') return;
+    const id = ++counter.current;
+    runs.current.set(key, id);
+    put(key, { state: 'checking', context: entry.context });
+    if (!(await read(key, id, entry.context)) && current(key, id))
+      put(key, { state: 'unreadable', context: entry.context });
+  }, []);
+  /** Stops a key's check without a verdict. */
+  const stop = useCallback((key: string) => {
+    runs.current.delete(key);
+    put(key);
+  }, []);
+  return { entries, start, reload, stop };
+}

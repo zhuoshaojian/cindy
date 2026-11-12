@@ -20096,6 +20096,7 @@
       "claimUnreadable": "操作结果尚未确认，可查询原操作结果。",
       "capacity": "已用 {{used}} / {{limit}} 台",
       "capacityRemaining": "还可以再领取 {{n}} 台。新的云端 Cindy 需要单独登录，现有的不受影响。",
+      "capacityFull": "已达上限，如需更多请联系管理员调整。",
       "claimAnother": "再领取一台",
       "claimAnotherTitle": "再领取一台云端 Cindy",
       "claimAnotherBody": "将为你新建一台云端 Cindy，和现有的互不影响。新的一台需要先登录才能使用。"

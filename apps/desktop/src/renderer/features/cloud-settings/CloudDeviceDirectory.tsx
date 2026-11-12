@@ -50,7 +50,7 @@ import {
   instanceUpgrading,
   upgradeOutcome,
 } from './instanceState';
-import { cloudInstanceName } from './instanceName';
+import { byShownName, cloudBaseName, cloudDisplayName } from './instanceName';
 import { BlockReadFailure, InlineRetry, useBlockRetry } from './blockRetry';
 import {
   sleepConfirmation,
@@ -151,6 +151,7 @@ const cardDot = (view: CloudInstanceView, linkOffline: boolean, pending?: PowerP
 export function CloudDeviceDirectory({
   enabled,
   directory,
+  names,
   offline = [],
   devicesOpen,
   children,
@@ -158,6 +159,8 @@ export function CloudDeviceDirectory({
   enabled: boolean;
   /** Device ids the device directory lists; null until it has loaded once. */
   directory: readonly string[] | null;
+  /** The device list's names by device id: a cloud Cindy shows the name the list has for it. */
+  names?: ReadonlyMap<string, string>;
   /** Listed device ids DeviceLink currently has offline. */
   offline?: readonly string[];
   /** My devices is expanded; coming back from an instance's settings restores it. */
@@ -172,6 +175,7 @@ export function CloudDeviceDirectory({
     <AdmittedCloudDeviceDirectory
       key={JSON.stringify([dataOwnerId, getDataOwnerGeneration().generation])}
       directory={directory}
+      names={names}
       offline={offline}
       devicesOpen={devicesOpen}
     >
@@ -182,11 +186,13 @@ export function CloudDeviceDirectory({
 
 function AdmittedCloudDeviceDirectory({
   directory,
+  names,
   offline,
   devicesOpen,
   children,
 }: {
   directory: readonly string[] | null;
+  names?: ReadonlyMap<string, string>;
   offline: readonly string[];
   devicesOpen: boolean;
   children(cloud: MyDevicesCloudSlot): ReactNode;
@@ -250,8 +256,7 @@ function AdmittedCloudDeviceDirectory({
   );
   // The list, or a sleep or wake's read-back, could not be read for this instance.
   const unreadableFor = (view: CloudInstanceView) =>
-    statusUnreadable ||
-    (cloud.powerNote?.deviceId === view.deviceId && cloud.powerNote.kind === 'unreadable');
+    statusUnreadable || cloud.powerNote(view.deviceId)?.kind === 'unreadable';
   // One updates dialog for the list; it returns focus to whichever control opened it.
   const [maintenanceFor, setMaintenanceFor] = useState<string | null>(null);
   const maintenanceOpener = useRef<HTMLElement | null>(null);
@@ -281,12 +286,36 @@ function AdmittedCloudDeviceDirectory({
     [cloud.instances, policies],
   );
   const byDevice = new Map(live.map((view) => [view.deviceId, view]));
-  const name = (view: CloudInstanceView) => cloudInstanceName(t, view);
+  // A cloud Cindy's own name: the device list's (what its card shows and its rename changes),
+  // CIS's where the list has none yet.
+  const baseName = (view: CloudInstanceView, listedName?: string) =>
+    cloudBaseName(t, view.deviceId, names?.get(view.deviceId) ?? listedName, view);
+  // Every listed device by its own name, plus the cloud Cindys not listed yet: two with the same
+  // name get the client's usual 「(1)」「(2)」, as in the sidebar and the device pickers.
+  const nameSources = [
+    ...[...(names ?? new Map<string, string>())].map(([deviceId, listed]) => {
+      const view = byDevice.get(deviceId);
+      return { deviceId, name: view ? baseName(view, listed) : listed };
+    }),
+    ...live
+      .filter((view) => !names?.has(view.deviceId))
+      .map((view) => ({ deviceId: view.deviceId, name: baseName(view) })),
+  ];
+  // One name per cloud Cindy, the same on its card, in its menu, dialogs and toasts.
+  const name = (view: CloudInstanceView, listedName?: string) =>
+    cloudDisplayName(view.deviceId, baseName(view, listedName), nameSources);
+  // Cards in name order, so 「(1)」 comes before 「(2)」 whichever the list or CIS gives first.
+  const shownPlace = new Map(
+    [...live]
+      .sort((a, b) => byShownName(name(a), name(b)))
+      .map((view, index) => [view.deviceId, index] as const),
+  );
   // DeviceLink does not have the runtime: offline in the directory, or not listed there at all.
   const linkOffline = (deviceId: string) =>
     offline.includes(deviceId) || (directory !== null && !directory.includes(deviceId));
   // Once the read-backs of a sleep or wake ran out, the card shows CIS's last state and says so.
-  const shownPending = cloud.powerNote?.kind === 'unreadable' ? undefined : cloud.powerPending;
+  const shownPending = (deviceId: string) =>
+    cloud.powerNote(deviceId)?.kind === 'unreadable' ? undefined : cloud.powerPending(deviceId);
   // An update this page saw under way that ends while its dialog is closed is said once (direction
   // A). Not started is said only in the dialog, where it was asked for.
   const underWay = useRef(new Set<string>());
@@ -325,14 +354,13 @@ function AdmittedCloudDeviceDirectory({
     model: instanceActions(view, linkOffline(view.deviceId), {
       busy: cloud.busy,
       listError: !!cloud.error,
-      anyPowerPending: !!cloud.powerPending,
-      pending: cloud.powerPending?.deviceId === view.deviceId ? cloud.powerPending : undefined,
-      note: cloud.powerNote?.deviceId === view.deviceId ? cloud.powerNote : undefined,
+      pending: cloud.powerPending(view.deviceId),
+      note: cloud.powerNote(view.deviceId),
     }),
     onOpenSettings: () => openSettings(view.deviceId),
     onOpenMaintenance: (opener) => openMaintenance(view.deviceId, opener),
     onPower: () => void cloud.power(view, displayName),
-    onReloadPower: () => void cloud.reloadPower(),
+    onReloadPower: () => void cloud.reloadPower(view.deviceId),
     // 「休眠失败 / 唤醒失败，请重试」: the same request again, without a second confirmation (T54).
     retryingPower: powerRetrying === view.deviceId,
     onRetryPower: () => {
@@ -370,7 +398,6 @@ function AdmittedCloudDeviceDirectory({
       busy={cloud.busy}
       listError={!!cloud.error}
       waiting={cloud.waiting === view.deviceId}
-      anyPowerPending={!!cloud.powerPending}
       onLogin={() => void cloud.act(false, view.deviceId)}
       maintenanceOpen={maintenanceFor === view.deviceId}
       onMaintenanceOpenChange={(open) => setMaintenanceFor(open ? view.deviceId : null)}
@@ -386,7 +413,7 @@ function AdmittedCloudDeviceDirectory({
           const view = byDevice.get(deviceId);
           return (
             !view ||
-            (cardStatus(view, linkOffline(deviceId), shownPending) === 'running' &&
+            (cardStatus(view, linkOffline(deviceId), shownPending(deviceId)) === 'running' &&
               !view.loginRequired)
           );
         },
@@ -407,21 +434,31 @@ function AdmittedCloudDeviceDirectory({
           if (
             linkOffline(deviceId) &&
             !view.loginRequired &&
-            cardStatus(view, true, shownPending) === 'running'
+            cardStatus(view, true, shownPending(deviceId)) === 'running'
           )
             return null;
           return {
-            label: instanceStatusText(view, linkOffline(deviceId), t, shownPending),
-            ...cardDot(view, linkOffline(deviceId), shownPending),
+            label: instanceStatusText(view, linkOffline(deviceId), t, shownPending(deviceId)),
+            ...cardDot(view, linkOffline(deviceId), shownPending(deviceId)),
           };
         },
+        displayName: (device) => {
+          const view = byDevice.get(device.deviceId);
+          return view ? name(view, device.name) : null;
+        },
+        baseName: (device) => {
+          const view = byDevice.get(device.deviceId);
+          return view ? baseName(view, device.name) : null;
+        },
+        // CIS-only rows sit among the directory's cards in name order; the claim rows last.
+        order: (deviceId) => shownPlace.get(deviceId) ?? Number.MAX_SAFE_INTEGER,
         extras: (device) => {
           const view = byDevice.get(device.deviceId);
-          return view ? controls(view, device.name || name(view)) : null;
+          return view ? controls(view, name(view, device.name)) : null;
         },
         headerActions: (device: { deviceId: string; name: string }) => {
           const view = byDevice.get(device.deviceId);
-          return view ? headerActions(view, device.name || name(view)) : null;
+          return view ? headerActions(view, name(view, device.name)) : null;
         },
         // CIS instances the device directory does not list (login pending, never started,
         // relay unreachable) still get a row, after the directory's own devices.
@@ -436,7 +473,7 @@ function AdmittedCloudDeviceDirectory({
                   <div className="flex items-center gap-3">
                     <span
                       className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                        !unreadableFor(view) && cardDot(view, true, shownPending).live
+                        !unreadableFor(view) && cardDot(view, true, shownPending(view.deviceId)).live
                           ? 'bg-[var(--remote-status-ready)]'
                           : 'bg-[var(--remote-status-disconnected)]'
                       }`}
@@ -452,7 +489,7 @@ function AdmittedCloudDeviceDirectory({
                             view.version && `Linux · Cindy ${view.version}`,
                             unreadableFor(view)
                               ? t('cloudSettings.instance.statusUnreadable')
-                              : instanceStatusText(view, true, t, shownPending),
+                              : instanceStatusText(view, true, t, shownPending(view.deviceId)),
                           ]
                             .filter(Boolean)
                             .join(' · ')}
@@ -522,8 +559,11 @@ function AdmittedCloudDeviceDirectory({
                 },
               ]
             : []),
-          // Below the owner's limit another instance can be claimed, after the cards it adds to.
-          ...(live.length && cloud.capacity && cloud.capacity.used < cloud.capacity.limit
+          // Below the owner's limit another instance can be claimed, after the cards it adds to. An
+          // owner allowed several who has them all sees the count and why there is no button.
+          ...(live.length &&
+          cloud.capacity &&
+          (cloud.capacity.used < cloud.capacity.limit || cloud.capacity.limit > 1)
             ? [
                 {
                   deviceId: 'cloud-claim-another',
@@ -547,21 +587,25 @@ function AdmittedCloudDeviceDirectory({
                           >
                             {cloud.claim === 'notClaimed'
                               ? t('cloudSettings.onboarding.claimNotDone')
-                              : t('cloudSettings.onboarding.capacityRemaining', {
-                                  n: cloud.capacity.limit - cloud.capacity.used,
-                                })}
+                              : cloud.capacity.used < cloud.capacity.limit
+                                ? t('cloudSettings.onboarding.capacityRemaining', {
+                                    n: cloud.capacity.limit - cloud.capacity.used,
+                                  })
+                                : t('cloudSettings.onboarding.capacityFull')}
                           </span>
                         </div>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          loading={cloud.busy || cloud.claim === 'checking'}
-                          disabled={cloud.claim === 'unreadable' || !!cloud.error || !!cloud.powerPending}
-                          onClick={() => void cloud.claimAnother()}
-                        >
-                          <Plus size={14} />
-                          {t('cloudSettings.onboarding.claimAnother')}
-                        </Button>
+                        {cloud.capacity.used < cloud.capacity.limit && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={cloud.busy || cloud.claim === 'checking'}
+                            disabled={cloud.claim === 'unreadable' || !!cloud.error}
+                            onClick={() => void cloud.claimAnother()}
+                          >
+                            <Plus size={14} />
+                            {t('cloudSettings.onboarding.claimAnother')}
+                          </Button>
+                        )}
                       </div>
                       {cloud.claim === 'unreadable' && (
                         <BlockReadFailure
@@ -614,7 +658,6 @@ function instanceActions(
   list: {
     busy: boolean;
     listError: boolean;
-    anyPowerPending: boolean;
     pending?: PowerPending;
     note?: PowerNote;
   },
@@ -672,9 +715,9 @@ function instanceActions(
           : state === 'asleep'
             ? 'settingsWakeFirst'
             : 'settingsNotRunning',
+    // Only this instance's own sleep or wake holds it (changing); another's never does.
     powerDisabled:
       list.busy ||
-      list.anyPowerPending ||
       list.listError ||
       upgrading ||
       !canChangeInstancePower(view),
@@ -862,7 +905,6 @@ function CloudInstanceControls({
   busy,
   listError,
   waiting,
-  anyPowerPending,
   onLogin,
   onPower,
   onRetryPower,
@@ -882,7 +924,6 @@ function CloudInstanceControls({
   busy: boolean;
   listError: boolean;
   waiting: boolean;
-  anyPowerPending: boolean;
   onLogin(): void;
   maintenanceOpen: boolean;
   onMaintenanceOpenChange(open: boolean): void;
@@ -941,7 +982,7 @@ function CloudInstanceControls({
             disabled={
               busy ||
               listError ||
-              anyPowerPending ||
+              model.powerRequested ||
               !!view.upgradeOperation?.active ||
               !!view.resourceChanging ||
               view.upgradeState === 'verifying'

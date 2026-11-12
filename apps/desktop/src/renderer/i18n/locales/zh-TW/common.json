@@ -20168,6 +20168,7 @@
       "claimUnreadable": "操作結果尚未確認，可查詢原操作的結果。",
       "capacity": "已用 {{used}} / {{limit}} 台",
       "capacityRemaining": "還可以再領取 {{n}} 台。新的雲端 Cindy 需要另外登入，現有的不受影響。",
+      "capacityFull": "已達上限，如需更多請聯絡管理員調整。",
       "claimAnother": "再領取一台",
       "claimAnotherTitle": "再領取一台雲端 Cindy",
       "claimAnotherBody": "將為你新建一台雲端 Cindy，與現有的互不影響。新的這台需要先登入才能使用。"

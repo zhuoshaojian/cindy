@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { instanceStatus, canChangeInstancePower } from './instanceState';
-import { cloudInstanceName } from './instanceName';
+import { byShownName, cloudDisplayName, cloudInstanceName } from './instanceName';
 import { BlockReadFailure } from './blockRetry';
 import { useCloudInstances, type CloudInstancesApi } from './useCloudInstances';
 
@@ -64,6 +64,18 @@ export function CloudInstancesPage({
     capacity,
     claimAnother,
   } = useCloudInstances(api, onOpen);
+  // Each by its own name (CIS's), with the client's usual 「(1)」「(2)」 when two share one, as on
+  // the desktop's device cards; listed in that name order.
+  const sources = (instances ?? []).map((instance) => ({
+    deviceId: instance.deviceId,
+    name: cloudInstanceName(t, instance),
+  }));
+  const shown = (instances ?? [])
+    .map((instance) => ({
+      instance,
+      name: cloudDisplayName(instance.deviceId, cloudInstanceName(t, instance), sources),
+    }))
+    .sort((a, b) => byShownName(a.name, b.name));
   return (
     <div
       className={embedded ? 'min-w-0' : 'flex h-full min-h-0 bg-[var(--settings-bg)]'}
@@ -138,12 +150,11 @@ export function CloudInstancesPage({
             </section>
           )}
           <div className="flex flex-col gap-4">
-            {instances?.map((instance) => {
-              const name = cloudInstanceName(t, instance);
+            {shown.map(({ instance, name }) => {
               const state = instanceStatus(instance);
-              const pending =
-                powerPending?.deviceId === instance.deviceId ? powerPending : undefined;
-              const note = powerNote?.deviceId === instance.deviceId ? powerNote : undefined;
+              // Each instance sleeps and wakes on its own; another's never holds this one.
+              const pending = powerPending(instance.deviceId);
+              const note = powerNote(instance.deviceId);
               return (
                 <section key={instance.instanceId} className={card} aria-label={name}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -173,7 +184,7 @@ export function CloudInstancesPage({
                         disabled={
                           busy ||
                           !!error ||
-                          !!powerPending ||
+                          !!pending ||
                           !!instance.upgradeOperation?.active ||
                           !!instance.resourceChanging ||
                           instance.upgradeState === 'verifying'
@@ -264,7 +275,7 @@ export function CloudInstancesPage({
                           tone="quiet"
                           compact
                           disabled={
-                            busy || !!powerPending || !!error || !canChangeInstancePower(instance)
+                            busy || !!pending || !!error || !canChangeInstancePower(instance)
                           }
                           onClick={() => void power(instance, name)}
                         >
@@ -284,7 +295,7 @@ export function CloudInstancesPage({
                         <BlockReadFailure
                           title={t('cloudSettings.instance.statusUnreadable')}
                           disabled={busy}
-                          onReload={() => void reloadPower()}
+                          onReload={() => void reloadPower(instance.deviceId)}
                         />
                       </div>
                     ) : note?.kind === 'refused' && note.refusal ? (
@@ -332,28 +343,34 @@ export function CloudInstancesPage({
                 </section>
               );
             })}
-            {!!instances?.length && capacity && capacity.used < capacity.limit && (
+            {/* Below the limit another can be claimed; an owner allowed several who has them all
+                sees the count and why there is no button. */}
+            {!!instances?.length && capacity && (capacity.used < capacity.limit || capacity.limit > 1) && (
               <section
                 className={`${card} flex flex-wrap items-center justify-between gap-3`}
-                aria-label={tr('claimAnother')}
+                aria-label={tr('capacity', { used: capacity.used, limit: capacity.limit })}
               >
                 <div className="min-w-0 flex-1 basis-48">
                   <h3 className="text-14 font-medium tabular-nums text-[var(--settings-section-title)]">
                     {tr('capacity', { used: capacity.used, limit: capacity.limit })}
                   </h3>
                   <p className={`${description} mt-1`}>
-                    {tr('capacityRemaining', { n: capacity.limit - capacity.used })}
+                    {capacity.used < capacity.limit
+                      ? tr('capacityRemaining', { n: capacity.limit - capacity.used })
+                      : tr('capacityFull')}
                   </p>
                 </div>
-                <Button
-                  variant="secondary"
-                  disabled={!!error || !!powerPending || claim === 'unreadable'}
-                  loading={busy || claim === 'checking'}
-                  onClick={() => void claimAnother()}
-                >
-                  <Plus size={16} />
-                  {tr('claimAnother')}
-                </Button>
+                {capacity.used < capacity.limit && (
+                  <Button
+                    variant="secondary"
+                    disabled={!!error || claim === 'unreadable'}
+                    loading={busy || claim === 'checking'}
+                    onClick={() => void claimAnother()}
+                  >
+                    <Plus size={16} />
+                    {tr('claimAnother')}
+                  </Button>
+                )}
                 {/* An unknown result of claiming another is read back, as for the first claim. */}
                 {claim === 'notClaimed' && (
                   <p role="status" className={`${description} basis-full`}>

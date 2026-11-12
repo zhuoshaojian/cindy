@@ -20332,8 +20332,8 @@
       "emptyTitle": "Ainda não há nenhuma Cloud Cindy",
       "emptyDescription": "Depois de obtida, aparece em “Os meus dispositivos” e pode ser controlada remotamente como os seus outros dispositivos.",
       "claim": "Obter Cloud Cindy",
-      "defaultName": "Cindy na nuvem {{number}}",
-      "defaultNameSole": "Cindy na nuvem",
+      "defaultName": "Cloud Cindy {{number}}",
+      "defaultNameSole": "Cloud Cindy",
       "readFailed": "Não foi possível ler a sua Cloud Cindy. Tente novamente.",
       "loginFailed": "Não foi possível abrir a página de início de sessão. Verifique as definições do navegador do sistema",
       "needsLogin": "Início de sessão necessário",
@@ -20355,6 +20355,7 @@
       "claimUnreadable": "O resultado ainda não foi confirmado. Consulte o resultado da operação original para o verificar.",
       "capacity": "{{used}} de {{limit}} em utilização",
       "capacityRemaining": "Pode obter mais {{n}}. Cada nova Cloud Cindy precisa de um início de sessão próprio; as atuais não são afetadas.",
+      "capacityFull": "Limite atingido. Se precisar de mais, peça a um administrador.",
       "claimAnother": "Obter outra",
       "claimAnotherTitle": "Obter outra Cloud Cindy",
       "claimAnotherBody": "Será criada uma nova Cloud Cindy para si, separada das atuais. Inicie sessão nela antes de a utilizar."

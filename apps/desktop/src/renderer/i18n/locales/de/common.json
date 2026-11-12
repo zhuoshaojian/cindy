@@ -20145,8 +20145,8 @@
       "emptyTitle": "Noch keine Cloud Cindy",
       "emptyDescription": "Nach dem Anfordern erscheint sie unter „Meine Geräte“ und lässt sich wie deine anderen Geräte fernsteuern.",
       "claim": "Cloud Cindy anfordern",
-      "defaultName": "Cloud-Cindy {{number}}",
-      "defaultNameSole": "Cloud-Cindy",
+      "defaultName": "Cloud Cindy {{number}}",
+      "defaultNameSole": "Cloud Cindy",
       "readFailed": "Deine Cloud Cindy konnte nicht geladen werden. Versuche es erneut.",
       "loginFailed": "Die Anmeldeseite konnte nicht geöffnet werden. Prüfe die Einstellungen deines Systembrowsers",
       "needsLogin": "Anmeldung erforderlich",
@@ -20168,6 +20168,7 @@
       "claimUnreadable": "Das Ergebnis ist noch nicht bestätigt. Rufe das Ergebnis des ursprünglichen Vorgangs ab, um es zu prüfen.",
       "capacity": "{{used}} von {{limit}} genutzt",
       "capacityRemaining": "Du kannst noch {{n}} anfordern. Eine neue Cloud Cindy braucht eine eigene Anmeldung; deine bisherigen bleiben unverändert.",
+      "capacityFull": "Limit erreicht. Wenn du mehr brauchst, bitte die Administration darum.",
       "claimAnother": "Weitere anfordern",
       "claimAnotherTitle": "Eine weitere Cloud Cindy anfordern",
       "claimAnotherBody": "Für dich wird eine neue Cloud Cindy erstellt, getrennt von deinen bisherigen. Melde dich dort an, bevor du sie verwendest."

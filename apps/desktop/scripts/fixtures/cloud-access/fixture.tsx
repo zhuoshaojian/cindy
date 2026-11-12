@@ -47,7 +47,8 @@ mountPage({
         // The owner's instance limit, when the case gives one.
         instanceCapacity: async () => (ctx.data.capacity as { limit: number; used: number } | undefined) ?? null,
         instanceClaim: forbid('cloudSettings.instanceClaim'),
-        instancePower: forbid('cloudSettings.instancePower'),
+        // Accepted, not yet listed: the card shows its own request under way (case 'several').
+        instancePower: ctx.data.several ? async () => undefined : forbid('cloudSettings.instancePower'),
         instanceUpgrade: forbid('cloudSettings.instanceUpgrade'),
         instancePolicy: forbid('cloudSettings.instancePolicy'),
         instanceInitialize: forbid('cloudSettings.instanceInitialize'),

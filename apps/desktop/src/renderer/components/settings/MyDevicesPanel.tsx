@@ -108,6 +108,18 @@ export interface MyDevicesCloudSlot {
     /** Optional control right after the subtitle (a retry beside a read failure). */
     action?: ReactNode;
   } | null;
+  /**
+   * Optional: the name a managed cloud instance shows everywhere (its card, menu, dialogs, remote
+   * desktop), with the usual 「(n)」 when another device has the same name; null for other devices.
+   */
+  displayName?(device: { deviceId: string; name: string }): string | null;
+  /** Optional: that name without the 「(n)」, where a rename of the card starts; null for others. */
+  baseName?(device: { deviceId: string; name: string }): string | null;
+  /**
+   * Optional: where a cloud card or extra row goes among the cloud cards (name order); absent,
+   * directory cards come first and the extra rows after them.
+   */
+  order?(deviceId: string): number;
   /** The instance's rows between the card header and its access controls; null for other devices. */
   extras(device: DeviceLinkDeviceView): ReactNode;
   /** Optional instance actions in the header row, before remote desktop; absent, the row is unchanged. */
@@ -331,6 +343,9 @@ export function MyDevicesPanel({
         ?.name.trim() ?? '';
     setEditingId(null);
     if (name && name === currentName) return;
+    // A cloud card starts from its own name, which may come from CIS: unchanged, nothing to save.
+    const listed = allOthers.find((d) => d.deviceId === deviceId);
+    if (name && listed && name === cloud?.baseName?.(listed)) return;
     await s.rename(deviceId, name || null);
   };
 
@@ -369,6 +384,9 @@ export function MyDevicesPanel({
             const inbound = inboundToggleState(s.enabled, revokedControllers.has(d.deviceId));
             const isControlling = controlling.has(d.deviceId);
             const cloudStatus = cloud?.status(d.deviceId) ?? null;
+            // A cloud instance's own name (one per instance, as everywhere else it shows).
+            const title =
+              cloud?.displayName?.(d) ?? deviceDisplayName(d.deviceId, d.name, s.devices ?? []);
             const controlReason =
               control.reason === 'peer-off'
                 ? t('settings.remoteControl.myDevices.peerControlOff')
@@ -428,7 +446,7 @@ export function MyDevicesPanel({
                       </div>
                     ) : (
                       <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                        {deviceDisplayName(d.deviceId, d.name, s.devices ?? [])}
+                        {title}
                       </span>
                     )}
                     {cloudStatus?.pending ? (
@@ -465,7 +483,7 @@ export function MyDevicesPanel({
                             (cloud ? !cloud.remoteDesktopReady(d.deviceId) : false)
                           }
                           title={t('remoteDesktop.title')} aria-label={t('remoteDesktop.title')}
-                          onClick={() => void window.electronAPI.openRemoteDesktop({deviceId:d.deviceId,name:d.name}).catch(() => toast.error(t('remoteDesktop.connectionError')))}>
+                          onClick={() => void window.electronAPI.openRemoteDesktop({deviceId:d.deviceId,name:title}).catch(() => toast.error(t('remoteDesktop.connectionError')))}>
                           <Monitor size={16}/>
                         </button>
                       )}
@@ -473,7 +491,7 @@ export function MyDevicesPanel({
                         type="button"
                         onClick={() => {
                           setEditingId(d.deviceId);
-                          setEditingName(d.name);
+                          setEditingName(cloud?.baseName?.(d) ?? d.name);
                         }}
                         aria-label={t('settings.devices.rename')}
                         className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
@@ -505,7 +523,7 @@ export function MyDevicesPanel({
                     <AccessRow label={t('settings.remoteControl.myDevices.iCan')} reason={controlReason}>
                       <AccessPill
                         label={t('settings.remoteControl.myDevices.controlIt')}
-                        ariaLabel={t('settings.remoteControl.deviceControlToggleAria', { name: d.name })}
+                        ariaLabel={t('settings.remoteControl.deviceControlToggleAria', { name: title })}
                         pressed={control.checked}
                         onToggle={(v) => void s.setDeviceControlEnabled(d.deviceId, v)}
                       />
@@ -517,7 +535,7 @@ export function MyDevicesPanel({
                   >
                     <AccessPill
                       label={t('settings.remoteControl.myDevices.controlThisDevice')}
-                      ariaLabel={t('settings.remoteControl.myDevices.allowInboundAria', { name: d.name })}
+                      ariaLabel={t('settings.remoteControl.myDevices.allowInboundAria', { name: title })}
                       pressed={inbound.checked}
                       disabled={inbound.disabled}
                       onToggle={(v) => void onInboundChange(d.deviceId, v)}
@@ -526,7 +544,7 @@ export function MyDevicesPanel({
                     {canBeControlledPlatform(d.platform) && (
                       <AccessPill
                         label={t('settings.remoteControl.myDevices.useThisDeviceModels')}
-                        ariaLabel={t('settings.remoteControl.myDevices.allowModelUseAria', { name: d.name })}
+                        ariaLabel={t('settings.remoteControl.myDevices.allowModelUseAria', { name: title })}
                         pressed={inbound.checked && !modelUseRevoked.has(d.deviceId)}
                         disabled={inbound.disabled || !inbound.checked}
                         onToggle={(v) => void s.setModelUse(d.deviceId, v)}
@@ -552,17 +570,26 @@ export function MyDevicesPanel({
             {cloud.listError}
           </li>
         ) : null}
-        {cloudDevices.map(renderDevice)}
-        {cloud.extraRows.map((row) => (
-          <li
-            key={row.deviceId}
-            ref={bindRow(row.deviceId)}
-            data-device-id={row.deviceId}
-            className={cardClass}
-          >
-            {row.node}
-          </li>
-        ))}
+        {/* Directory cards and CIS-only rows together, in the slot's order (stable otherwise). */}
+        {[
+          ...cloudDevices.map((d) => ({ deviceId: d.deviceId, node: () => renderDevice(d) })),
+          ...cloud.extraRows.map((row) => ({
+            deviceId: row.deviceId,
+            node: () => (
+              <li
+                key={row.deviceId}
+                ref={bindRow(row.deviceId)}
+                data-device-id={row.deviceId}
+                className={cardClass}
+              >
+                {row.node}
+              </li>
+            ),
+          })),
+        ]
+          .map((item, index) => ({ ...item, place: cloud.order?.(item.deviceId) ?? index, index }))
+          .sort((a, b) => a.place - b.place || a.index - b.index)
+          .map((item) => item.node())}
       </ul>
     );
   }

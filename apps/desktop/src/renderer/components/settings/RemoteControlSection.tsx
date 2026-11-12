@@ -27,7 +27,7 @@ import { remoteControlSettings } from './RemoteControlSection.settings-search';
  * SSH 主机摘要由本组件自取轻量快照(list + onStatusChanged),不侵入 RemoteSection。
  */
 
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 
@@ -120,6 +120,11 @@ export function RemoteControlSection() {
     return () => window.removeEventListener('agent-net-preference-error', report);
   }, [t]);
   const deepLink = useRemoteDevicesDeepLink();
+  // The device list's names, for the cloud cards' own names (CloudDeviceDirectory).
+  const deviceNames = useMemo(
+    () => new Map((s.devices ?? []).map((device) => [device.deviceId, device.name] as const)),
+    [s.devices],
+  );
   const relay = useSelfHostedRelayState(deviceLinkAvailable);
   const location = useLocation();
   const [sshOpen, setSshOpen] = useState(
@@ -213,6 +218,7 @@ export function RemoteControlSection() {
               <CloudDeviceDirectory
                 enabled={deviceLinkAvailable}
                 directory={s.listError ? [] : (s.devices?.map((device) => device.deviceId) ?? null)}
+                names={deviceNames}
                 offline={s.devices?.filter((device) => !device.online).map((device) => device.deviceId)}
                 devicesOpen={deepLink.devicesOpen}
               >
@@ -248,6 +254,7 @@ export function RemoteControlSection() {
               <CloudDeviceDirectory
                 enabled={deviceLinkAvailable}
                 directory={s.listError ? [] : (s.devices?.map((device) => device.deviceId) ?? null)}
+                names={deviceNames}
                 offline={s.devices?.filter((device) => !device.online).map((device) => device.deviceId)}
                 devicesOpen={deepLink.devicesOpen}
               >

@@ -7,7 +7,12 @@ import type {
 } from '../../../shared/cloudSettingsClient';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { stableInstanceState, canChangeInstancePower } from './instanceState';
-import { SETTLE_DELAYS_MS, useSettleUnknown, type SettleState } from './useSettleUnknown';
+import {
+  SETTLE_DELAYS_MS,
+  useSettleUnknown,
+  useSettleUnknownByKey,
+  type SettleState,
+} from './useSettleUnknown';
 import { cloudRefusalKey } from './refusal';
 
 export type CloudInstancesApi = Pick<
@@ -54,6 +59,7 @@ const powerVerdict = (list: readonly CloudInstanceView[], pending: PowerPending)
  * every 30 s, every 5 s while an instance is changing, never while the window is hidden.
  * Membership discovery is read-only; only an explicit claim ensures a first instance.
  * A claim, sleep or wake with an unknown result is read back (S3), never submitted again.
+ * Each instance sleeps and wakes on its own: one still waking never holds up another.
  */
 export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: string) => void) {
   const { t } = useTranslation();
@@ -64,18 +70,34 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
   // Failed list reads, counted so a caller can try again after each (useBlockRetry).
   const [failures, setFailures] = useState(0);
   const [waiting, setWaiting] = useState<string>();
-  const [powerPending, setPowerPending] = useState<PowerPending>();
-  const [notTaken, setNotTaken] = useState<Omit<PowerNote, 'kind'>>();
-  const [refusedPower, setRefusedPower] = useState<PowerNote>();
+  // Per instance: the sleep or wake under way, and what one that did not happen left to say.
+  const [powerPending, setPowerPending] = useState<ReadonlyMap<string, PowerPending>>(
+    () => new Map(),
+  );
+  const [notTaken, setNotTaken] = useState<ReadonlyMap<string, PowerPending['action']>>(
+    () => new Map(),
+  );
+  const [refusedPower, setRefusedPower] = useState<ReadonlyMap<string, PowerNote>>(
+    () => new Map(),
+  );
   const [notClaimed, setNotClaimed] = useState(false);
   // How many instances the owner has and may have; another is offered only below the limit.
   // Read with the list when its length changes or on an explicit refresh, never on a timer.
   const [capacity, setCapacity] = useState<CloudInstanceCapacity | null>(null);
   const capacityCount = useRef(-1);
-  const powerRef = useRef<PowerPending | undefined>(undefined);
-  const markPower = (value: PowerPending | undefined) => {
-    powerRef.current = value;
-    setPowerPending(value);
+  const powerRef = useRef<ReadonlyMap<string, PowerPending>>(new Map());
+  const markPower = (deviceId: string, value: PowerPending | undefined) => {
+    const next = new Map(powerRef.current);
+    if (value) next.set(deviceId, value);
+    else next.delete(deviceId);
+    powerRef.current = next;
+    setPowerPending(next);
+  };
+  const without = <V,>(map: ReadonlyMap<string, V>, deviceId: string) => {
+    if (!map.has(deviceId)) return map;
+    const next = new Map(map);
+    next.delete(deviceId);
+    return next;
   };
   const live = useRef(false),
     inFlight = useRef(false),
@@ -83,10 +105,10 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
   const settlePower = (verdict: 'done' | 'notDone', pending: PowerPending) => {
     if (!live.current) return;
     // Arrived: wait for it like a confirmed request. Not arrived: say so, and allow it again.
-    if (verdict === 'done') markPower({ ...pending, uncertain: false });
+    if (verdict === 'done') markPower(pending.deviceId, { ...pending, uncertain: false });
     else {
-      markPower(undefined);
-      setNotTaken({ deviceId: pending.deviceId, action: pending.action });
+      markPower(pending.deviceId, undefined);
+      setNotTaken((notes) => new Map(notes).set(pending.deviceId, pending.action));
     }
   };
   const readList = async () => {
@@ -97,7 +119,8 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
     }
     return next;
   };
-  const powerCheck = useSettleUnknown<PowerPending>({
+  const powerCheck = useSettleUnknownByKey<PowerPending>({
+    keyOf: (pending) => pending.deviceId,
     delays: SETTLE_DELAYS_MS.power,
     check: async (pending) => powerVerdict(await readList(), pending),
     onSettled: settlePower,
@@ -130,41 +153,47 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
             capacityCount.current = next.length;
             setCapacity(counted);
           }
-          const pending = powerRef.current;
           const { power: powerState, claim } = checks.current;
-          // A list that answers after the read-backs ran out settles them as well.
-          if (pending?.uncertain && powerState.state === 'unreadable') {
-            powerState.stop();
-            settlePower(powerVerdict(next, pending), pending);
-          } else if (
-            pending &&
-            !pending.uncertain &&
-            next.some(
-              (item) =>
-                item.deviceId === pending.deviceId &&
-                powerVerdict([item], pending) === 'done' &&
-                stableInstanceState(item),
+          for (const pending of powerRef.current.values()) {
+            // A list that answers after the read-backs ran out settles them as well.
+            if (pending.uncertain && powerState.entries.get(pending.deviceId)?.state === 'unreadable') {
+              powerState.stop(pending.deviceId);
+              settlePower(powerVerdict(next, pending), pending);
+            } else if (
+              !pending.uncertain &&
+              next.some(
+                (item) =>
+                  item.deviceId === pending.deviceId &&
+                  powerVerdict([item], pending) === 'done' &&
+                  stableInstanceState(item),
+              )
             )
-          ) {
-            powerRef.current = undefined;
-            setPowerPending(undefined);
+              markPower(pending.deviceId, undefined);
           }
           // "It did not go to sleep" holds until the instance gets there some other way.
-          setNotTaken((note) =>
-            note && next.some((v) => v.deviceId === note.deviceId && powerVerdict([v], { ...note, uncertain: false }) === 'done')
-              ? undefined
-              : note,
-          );
+          const arrived = (deviceId: string, action: PowerPending['action']) =>
+            next.some(
+              (v) =>
+                v.deviceId === deviceId &&
+                powerVerdict([v], { deviceId, action, uncertain: false }) === 'done',
+            );
+          setNotTaken((notes) => {
+            let kept = notes;
+            for (const [deviceId, action] of notes)
+              if (arrived(deviceId, action)) kept = without(kept, deviceId);
+            return kept;
+          });
           if (claim.state === 'unreadable' && claim.context) {
             const known = claim.context;
             claim.stop();
             setNotClaimed(!next.some((view) => !known.includes(view.deviceId)));
           }
-          setRefusedPower((note) =>
-            note && next.some((v) => v.deviceId === note.deviceId && powerVerdict([v], { ...note, uncertain: false }) === 'done')
-              ? undefined
-              : note,
-          );
+          setRefusedPower((notes) => {
+            let kept = notes;
+            for (const note of notes.values())
+              if (arrived(note.deviceId, note.action)) kept = without(kept, note.deviceId);
+            return kept;
+          });
         }
       } catch {
         if (live.current) {
@@ -191,7 +220,9 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
       }),
     [api, load],
   );
-  const checking = powerCheck.state === 'checking' || claimCheck.state === 'checking';
+  const checking =
+    [...powerCheck.entries.values()].some((entry) => entry.state === 'checking') ||
+    claimCheck.state === 'checking';
   // An update was just requested from the card's dialog: the list is read every 2 s for 30 s, so
   // the card moves from scheduled to updating soon (T57).
   const [hurrying, setHurrying] = useState(0);
@@ -202,7 +233,7 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
   }, [hurrying]);
   useEffect(() => {
     const pending =
-      !!powerPending || instances?.some((v) => v.loginRequired || !stableInstanceState(v));
+      powerPending.size > 0 || instances?.some((v) => v.loginRequired || !stableInstanceState(v));
     const timer = setInterval(
       () => {
         // While a result is read back on its own schedule, the list waits for it.
@@ -268,9 +299,18 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
       if (live.current) setBusy(false);
     }
   };
-  /** `confirmed`: the user already confirmed this request once (its retry, T54); no second ask. */
+  /**
+   * `confirmed`: the user already confirmed this request once (its retry, T54); no second ask.
+   * Only this instance's own sleep or wake waits for it; the others stay free.
+   */
   const power = async (instance: CloudInstanceView, name: string, options?: { confirmed?: boolean }) => {
-    if (inFlight.current || powerRef.current || error || !canChangeInstancePower(instance)) return;
+    if (
+      inFlight.current ||
+      powerRef.current.has(instance.deviceId) ||
+      error ||
+      !canChangeInstancePower(instance)
+    )
+      return;
     inFlight.current = true;
     setBusy(true);
     const action = instance.desiredState === 'stopped' ? 'wake' : 'sleep';
@@ -283,20 +323,27 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
         if (openWhenReady.current === instance.deviceId) openWhenReady.current = undefined;
         setWaiting((current) => (current === instance.deviceId ? undefined : current));
       }
-      setNotTaken(undefined);
-      setRefusedPower(undefined);
-      markPower({ deviceId: instance.deviceId, action, uncertain: false });
+      setNotTaken((notes) => without(notes, instance.deviceId));
+      setRefusedPower((notes) => without(notes, instance.deviceId));
+      markPower(instance.deviceId, { deviceId: instance.deviceId, action, uncertain: false });
       await api.instancePower({ deviceId: instance.deviceId, action });
     } catch (caught) {
       const refusal = cloudRefusalKey(caught);
       if (live.current && refusal) {
         // A refusal certainly changed nothing: say why on the card, nothing to read back.
-        markPower(undefined);
-        setRefusedPower({ deviceId: instance.deviceId, action, kind: 'refused', refusal });
+        markPower(instance.deviceId, undefined);
+        setRefusedPower((notes) =>
+          new Map(notes).set(instance.deviceId, {
+            deviceId: instance.deviceId,
+            action,
+            kind: 'refused',
+            refusal,
+          }),
+        );
       } else if (live.current) {
         unknown = true;
         const pending = { deviceId: instance.deviceId, action, uncertain: true } as const;
-        markPower(pending);
+        markPower(instance.deviceId, pending);
         void powerCheck.start(pending);
       }
     } finally {
@@ -307,10 +354,18 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
       }
     }
   };
-  const powerNote: PowerNote | undefined =
-    powerCheck.state === 'unreadable' && powerCheck.context
-      ? { ...powerCheck.context, kind: 'unreadable' }
-      : (refusedPower ?? (notTaken && { ...notTaken, kind: 'notTaken' }));
+  /** What this instance's last unknown sleep or wake turned out to be, or why CIS refused it. */
+  const powerNote = (deviceId: string): PowerNote | undefined => {
+    const check = powerCheck.entries.get(deviceId);
+    if (check?.state === 'unreadable') {
+      const { deviceId: target, action } = check.context;
+      return { deviceId: target, action, kind: 'unreadable' };
+    }
+    const refused = refusedPower.get(deviceId);
+    if (refused) return refused;
+    const action = notTaken.get(deviceId);
+    return action && { deviceId, action, kind: 'notTaken' };
+  };
   /** Asks first, then claims one more instance; a new one waiting for its sign-in starts it. */
   const claimAnother = async () => {
     if (inFlight.current || claimCheck.state || error) return;
@@ -359,9 +414,10 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
     /** Reads the list more often for a while, after an update was requested (T57). */
     hurry: () => setHurrying((count) => count + 1),
     waiting,
-    powerPending,
+    /** This instance's own sleep or wake under way, its read-back included. */
+    powerPending: (deviceId: string) => powerPending.get(deviceId),
     powerNote,
-    /** After the power read-backs ran out: read the list once more. */
+    /** After this instance's power read-backs ran out: read the list once more. */
     reloadPower: powerCheck.reload,
     claim: (claimCheck.state ?? (notClaimed ? 'notClaimed' : undefined)) as ClaimState | undefined,
     /** After the claim read-backs ran out: read the list once more, never claim again. */

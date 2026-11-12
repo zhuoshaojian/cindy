@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 
 const CLOUD = 'cloud-device-0123456789abcdef01234567';
 const PENDING = 'cloud-device-89abcdef0123456789abcdef';
+// A third cloud Cindy, for the owner allowed several (case 'several').
+const THIRD = 'cloud-device-456789abcdef0123456789ab';
 const maintenance = {
   instanceId: 'fixture-running', revision: 'a'.repeat(64), defaultsRevision: 1, autoUpdate: true,
   raw: { policyMode: 'inherit', calendar: null, scheduledTaskPolicy: 'protect', pausedUntilMs: null },
@@ -15,7 +17,7 @@ const maintenance = {
   executionMode: 'scheduled', nextEligibleAtMs: 1793900000000, serverTimeMs: 1793860000000, windows: [],
 };
 const instance = (deviceId, extra) => ({
-  instanceId: deviceId, deviceId, name: null, nameSequence: 1, desiredState: 'running',
+  instanceId: deviceId, deviceId, name: null, nameSequence: 1, ordinal: null, desiredState: 'running',
   runtimeState: 'running', ready: true, version: '0.1.121-cloud.10-cn-amd64', imageId: null,
   updateAvailable: false, latestVersion: null, upgradeState: 'idle', observedAtMs: null,
   manualUpgrade: true, ...extra,
@@ -87,7 +89,7 @@ export default {
     // instance (a Linux device) and an ordinary computer.
     'src/renderer/hooks/useDeviceLinkSettings': `const d=(deviceId,name,platform,appVersion,online,isSelf=false)=>({deviceId,name,platform,appVersion,lastSeenAt:Date.now()-3600e3,online,busy:false,remoteControlEnabled:true,controlEnabled:true,isSelf,deviceInfo:null});
 const noop=async()=>{};
-export const useDeviceLinkSettings=()=>({enabled:true,linkStatus:"online",connectionIssue:null,standby:false,devices:[d("self","Studio Mac","darwin","0.1.126",true,true),d("${CLOUD}","云端 Cindy","linux","0.1.121-cloud.10",!window.__uiPage?.ctx?.data?.offline),d("mac-mini","Mac mini","darwin","0.1.125",false)],controlledBy:[],revokedControllers:[],disabledControlDeviceIds:[],listError:null,refreshing:false,refresh:noop,setEnabled:noop,rename:noop,remove:async()=>false,disconnectAll:noop,revoke:noop,restore:noop,setDeviceControlEnabled:noop});`,
+export const useDeviceLinkSettings=()=>({enabled:true,linkStatus:"online",connectionIssue:null,standby:false,devices:[d("self","Studio Mac","darwin","0.1.126",true,true),d("${CLOUD}","云端 Cindy","linux","0.1.121-cloud.10",!window.__uiPage?.ctx?.data?.offline),...(window.__uiPage?.ctx?.data?.several?[d("${THIRD}","测试机","linux","0.1.121-cloud.10",false)]:[]),d("mac-mini","Mac mini","darwin","0.1.125",false)],controlledBy:[],revokedControllers:[],disabledControlDeviceIds:[],listError:null,refreshing:false,refresh:noop,setEnabled:noop,rename:noop,remove:async()=>false,disconnectAll:noop,revoke:noop,restore:noop,setDeviceControlEnabled:noop});`,
     'src/renderer/components/settings/RemoteDesktopSetting':
       'export const RemoteDesktopSetting=()=>null;',
     'src/renderer/components/settings/RemoteSection': 'export const RemoteSection=()=>null;',
@@ -107,10 +109,10 @@ export const useDeviceLinkSettings=()=>({enabled:true,linkStatus:"online",connec
         instances: [
           instance(CLOUD, {
             instanceId: 'fixture-running', policy: maintenance, updateAvailable: true,
-            latestVersion: '0.1.126-cloud.3',
+            latestVersion: '0.1.126-cloud.3', ordinal: 1,
           }),
           instance(PENDING, {
-            instanceId: 'fixture-pending', nameSequence: 2, runtimeState: 'starting',
+            instanceId: 'fixture-pending', nameSequence: 2, ordinal: 2, runtimeState: 'starting',
             ready: false, loginRequired: true, version: null,
           }),
         ],
@@ -126,6 +128,26 @@ export const useDeviceLinkSettings=()=>({enabled:true,linkStatus:"online",connec
         access: 'allowed',
         capacity: { limit: 3, used: 1 },
         instances: [instance(CLOUD, { instanceId: 'fixture-running', policy: maintenance })],
+      },
+    },
+    several: {
+      about:
+        'Three cloud Cindys at the owner\'s limit: each by its device list name (one renamed by the user), two of the same name told apart with the client\'s usual (1)/(2), one waking while the others stay free, and the count with why there is no claim button',
+      data: {
+        access: 'allowed',
+        several: true,
+        capacity: { limit: 3, used: 3 },
+        instances: [
+          instance(THIRD, {
+            instanceId: 'fixture-third', nameSequence: 3, ordinal: 3, desiredState: 'stopped',
+            runtimeState: 'stopped', ready: false,
+          }),
+          instance(CLOUD, { instanceId: 'fixture-running', policy: maintenance, ordinal: 1 }),
+          instance(PENDING, {
+            instanceId: 'fixture-pending', nameSequence: 2, ordinal: 2, runtimeState: 'starting',
+            ready: false, loginRequired: true, version: null,
+          }),
+        ],
       },
     },
     'upgrade-offline': {
@@ -205,6 +227,44 @@ export const useDeviceLinkSettings=()=>({enabled:true,linkStatus:"online",connec
     const allowed = ui.data.access === 'allowed';
     // A release page: no dev options box takes space in the page.
     assert.equal(await page.locator('main .border-dashed').count(), 0);
+    if (ui.data.several) {
+      // Each by its own name; the two sharing one get the client's usual suffix, (1) first.
+      const title = (deviceId) =>
+        page.locator(`li[data-device-id="${deviceId}"] .truncate.font-medium`).first().innerText();
+      const sole = await ui.t('cloudSettings.onboarding.defaultNameSole');
+      assert.equal(await title(CLOUD), `${sole} (1)`);
+      assert.equal(await title(PENDING), `${sole} (2)`);
+      assert.equal(await title(THIRD), '测试机');
+      const order = await page.locator('li[data-device-id^="cloud-device-"]').evaluateAll((rows) =>
+        rows.map((row) => row.getAttribute('data-device-id')),
+      );
+      assert.ok(order.indexOf(CLOUD) < order.indexOf(PENDING), '(1) comes before (2)');
+      // All claimed: the count and why, no button.
+      await page.getByText(await ui.t('cloudSettings.onboarding.capacity', { used: 3, limit: 3 })).waitFor();
+      await page.getByText(await ui.t('cloudSettings.onboarding.capacityFull')).waitFor();
+      assert.equal(
+        await page.getByRole('button', { name: await ui.t('cloudSettings.onboarding.claimAnother') }).count(),
+        0,
+      );
+      await ui.capture('several');
+      // Waking the third leaves the first free to sleep.
+      const third = page.locator(`li[data-device-id="${THIRD}"]`);
+      await third.getByRole('button', { name: await ui.t('cloudSettings.instance.manage'), exact: true }).click();
+      await page
+        .getByRole('menu')
+        .getByRole('menuitem', { name: new RegExp(`^${await ui.t('cloudSettings.instance.wake')}`) })
+        .click();
+      await third.getByText(await ui.t('cloudSettings.instance.state.starting')).waitFor();
+      const first = page.locator(`li[data-device-id="${CLOUD}"]`);
+      await first.getByRole('button', { name: await ui.t('cloudSettings.instance.manage'), exact: true }).click();
+      const sleep = page
+        .getByRole('menu')
+        .getByRole('menuitem', { name: new RegExp(`^${await ui.t('cloudSettings.instance.sleep')}`) });
+      await sleep.waitFor();
+      assert.equal(await sleep.getAttribute('aria-disabled'), null, 'another instance waking must not hold this one');
+      await ui.capture('several-waking');
+      return;
+    }
     if (ui.data.capacity) {
       await page
         .getByRole('button', { name: await ui.t('cloudSettings.onboarding.claimAnother'), exact: true })

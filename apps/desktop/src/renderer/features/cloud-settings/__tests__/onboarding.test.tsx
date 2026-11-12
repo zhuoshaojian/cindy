@@ -404,22 +404,25 @@ it('multiple owned instances require an explicit choice and do not auto-login', 
   expect(f.api.instanceClaim).not.toHaveBeenCalled();
 });
 
-it('default names count current instances, never the lifetime claim sequence', async () => {
+it('names each by its own name, never a made-up number; two alike get the usual (1)/(2)', async () => {
   const sole = { ...target, name: null, nameSequence: 15, ordinal: null };
   await setup([sole]);
   // The instance's own heading; the page title is the same product name since 2026-11-09.
   expect(await screen.findByRole('heading', { name: '云端 Cindy', level: 3 })).toBeTruthy();
   expect(screen.queryByText(/云端 Cindy 15/)).toBeNull();
   cleanup();
+  // Listed out of order; the (1)/(2) follow the client's device-name rule and read in order.
   await setup([
-    { ...sole, ordinal: 1 },
     { ...sole, instanceId: 'b', deviceId: 'device-b', nameSequence: 22, ordinal: 2 },
+    { ...sole, ordinal: 1 },
   ]);
-  expect(await screen.findByRole('heading', { name: '云端 Cindy 1' })).toBeTruthy();
-  expect(screen.getByRole('heading', { name: '云端 Cindy 2' })).toBeTruthy();
+  const headings = await screen.findAllByRole('heading', { level: 3 });
+  expect(headings.map((heading) => heading.textContent)).toEqual(['云端 Cindy (1)', '云端 Cindy (2)']);
+  expect(screen.queryByText(/云端 Cindy [12]$/)).toBeNull();
   cleanup();
-  await setup([{ ...sole, name: '工作机' }]);
+  await setup([{ ...sole, name: '工作机' }, { ...sole, instanceId: 'b', deviceId: 'device-b' }]);
   expect(await screen.findByRole('heading', { name: '工作机' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: '云端 Cindy', level: 3 })).toBeTruthy();
 });
 
 it('maintenance shortcut opens only the selected instance without changing its policy', async () => {

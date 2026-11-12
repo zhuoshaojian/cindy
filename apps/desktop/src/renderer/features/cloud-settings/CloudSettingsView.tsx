@@ -47,7 +47,7 @@ import { createCloudSettingsSync } from './cloudSettingsSync';
 import { CloudInstanceSection } from './CloudInstanceSection';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
-import { cloudInstanceName } from './instanceName';
+import { cloudBaseName, cloudDisplayName } from './instanceName';
 import { instanceUpgrading } from './instanceState';
 import { CloudImSettings, cloudImSettingsSummary, useCloudImDisplays } from './CloudImSettings';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
@@ -59,11 +59,7 @@ import { cloudSearchEntryAllowed } from './search';
 import type { SettingsSearchEntry } from '@/components/settings/settingsSearchTypes';
 import { CloudDesktopFallback } from './CloudDesktopFallback';
 import { cloudRefusalKey } from './refusal';
-import {
-  CLOUD_INSTANCES_SETTINGS_PATH,
-  cloudInstanceDevicePath,
-  remoteControlReturnPath,
-} from './cloudInstancesLink';
+import { CLOUD_INSTANCES_SETTINGS_PATH, cloudInstanceDevicePath } from './cloudInstancesLink';
 import {
   CLOUD_SETTINGS_VISIBILITY,
   cloudLinkOpensDeviceCard,
@@ -993,10 +989,18 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
     const linkedTab = params.get('tab');
     if (cloudLinkOpensDeviceCard(visibility, linkedTab, params.get('section')))
       return <Navigate to={cloudInstanceDevicePath(selected)} replace />;
-    const name =
-      device?.name ??
-      instance?.name ??
-      (instance ? cloudInstanceName(t, instance) : t('cloudSettings.instance.title'));
+    // The name its card shows, 「(n)」 included when another device has the same name.
+    const ownName = cloudBaseName(t, selected, device?.name, instance);
+    const name = cloudDisplayName(selected, ownName, [
+      ...(devices ?? []).map((item) =>
+        item.deviceId === selected
+          ? { deviceId: item.deviceId, name: ownName }
+          : candidates.includes(item)
+            ? { deviceId: item.deviceId, name: cloudBaseName(t, item.deviceId, item.name, undefined) }
+            : item,
+      ),
+      ...(device ? [] : [{ deviceId: selected, name: ownName }]),
+    ]);
     return (
       <>
         <CloudSettingsPanel
@@ -1019,8 +1023,9 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
           upgrading={upgrading}
           initialTab={cloudTabFromLink(visibility, linkedTab)}
           visibility={visibility}
+          // To this cloud Cindy's own card, not just the list (with several, the one in question).
           onOpenDeviceCard={
-            own?.instance ? () => navigate(remoteControlReturnPath(false)) : undefined
+            own?.instance ? () => navigate(cloudInstanceDevicePath(selected)) : undefined
           }
         />
       </>

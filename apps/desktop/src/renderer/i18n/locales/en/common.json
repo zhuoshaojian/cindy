@@ -20168,6 +20168,7 @@
       "claimUnreadable": "The result is not confirmed. Query the original operation to check it.",
       "capacity": "Using {{used}} of {{limit}}",
       "capacityRemaining": "You can claim {{n}} more. A new cloud Cindy needs its own sign-in; your current ones are not affected.",
+      "capacityFull": "Limit reached. Ask an administrator if you need more.",
       "claimAnother": "Claim another",
       "claimAnotherTitle": "Claim another cloud Cindy",
       "claimAnotherBody": "A new cloud Cindy will be created for you, separate from your current ones. Sign in to it before using it."

@@ -20168,6 +20168,7 @@
       "claimUnreadable": "結果はまだ確認できていません。元の操作の結果を照会して確認してください。",
       "capacity": "{{limit}} 台中 {{used}} 台を使用中",
       "capacityRemaining": "あと {{n}} 台取得できます。新しいクラウド Cindy には個別にログインする必要があります。既存のクラウド Cindy には影響しません。",
+      "capacityFull": "上限に達しています。さらに必要な場合は管理者に依頼してください。",
       "claimAnother": "もう 1 台取得",
       "claimAnotherTitle": "クラウド Cindy をもう 1 台取得",
       "claimAnotherBody": "新しいクラウド Cindy を 1 台作成します。既存のものには影響しません。使用する前にログインが必要です。"
