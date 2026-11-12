@@ -13,6 +13,7 @@ export function CloudDesktopFallback({
   name,
   label,
   description,
+  disabled = false,
 }: {
   deviceId: string;
   /** The instance's display name. */
@@ -20,6 +21,7 @@ export function CloudDesktopFallback({
   label?: string;
   /** What to change there; defaults to a generic note. */
   description?: ReactNode;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [opening, setOpening] = useState(false);
@@ -37,13 +39,14 @@ export function CloudDesktopFallback({
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 flex-1 text-12 leading-[1.6] text-[var(--settings-section-desc)]">
-          {description ?? t('cloudSettings.desktopFallback')}
+          {/* As the client asks to finish on the other computer (D11 G2). */}
+          {description ?? t('bots.remoteSettings.finishOnHost', { device: name })}
         </p>
         <Button
           variant="secondary"
           size="md"
           loading={opening}
-          disabled={opening}
+          disabled={opening || disabled}
           onClick={() => {
             setOpening(true);
             void window.electronAPI

@@ -31,6 +31,11 @@ import { extractIpcError } from '@/utils/ipcError';
 export interface CloudSettingsClient {
   instance?(): Promise<CloudInstanceView>;
   upgrade?(): Promise<CloudUpgradeOperation>;
+  /**
+   * An upgrade with an unknown result was read back and found started: the next request is a new
+   * one. Until then a retry reuses the same request ID, so a late arrival cannot start a second.
+   */
+  upgradeSettled?(): void;
   power?(action: 'wake' | 'sleep'): Promise<void>;
   maintenance?(change: CloudMaintenanceEdit): Promise<CloudMaintenanceView>;
   manage?(command: ManagementCommand): Promise<ManagementResult>;
@@ -192,6 +197,9 @@ export function createCloudSettingsClient(
       upgradeRequestId = undefined;
       return operation;
     },
+    upgradeSettled() {
+      upgradeRequestId = undefined;
+    },
     power: (action) => call(() => bridge.instancePower({ deviceId, action })),
     maintenance: async (change) =>
       cloudMaintenanceViewSchema.parse(
@@ -225,13 +233,26 @@ export function createCloudSettingsClient(
       writing = true;
       try {
         let raw: SettingsWebResult;
+        let answered = true;
         try {
           raw = await call(() => bridge.save({ handle, change }));
         } catch (error) {
           if (!(error instanceof Error) || error.message !== 'CLOUD_SETTINGS_SAVE_UNCONFIRMED')
             throw error;
-          raw = await call(() => bridge.receipt({ handle, operationId: state.operationId! }));
+          answered = false;
+          try {
+            raw = await call(() => bridge.receipt({ handle, operationId: state.operationId! }));
+          } catch (receiptError) {
+            // The write may have landed; only the receipt lookup failed.
+            if (receiptError instanceof Error && receiptError.message.includes('SCOPE_CHANGED'))
+              throw receiptError;
+            throw new Error('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
+          }
         }
+        // The instance answered the update itself with a refusal (for example a validation error).
+        const refused = answered && settingsWebResultSchema.safeParse(raw);
+        if (refused && refused.success && !refused.data.ok && refused.data.code !== 'CONFLICT')
+          throw new Error('CLOUD_SETTINGS_REJECTED');
         const r = result(raw);
         if (!r.ok || !('receipt' in r)) throw new Error('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
         const receipt = r.receipt;
@@ -243,11 +264,17 @@ export function createCloudSettingsClient(
           receipt.status !== 'saved'
         )
           throw new Error(
-            receipt.status === 'rejected' && 'code' in receipt && receipt.code === 'CONFLICT'
-              ? 'CLOUD_SETTINGS_CONFLICT'
-              : 'CLOUD_SETTINGS_SAVE_UNCONFIRMED',
+            receipt.status !== 'rejected'
+              ? 'CLOUD_SETTINGS_SAVE_UNCONFIRMED'
+              : 'code' in receipt && receipt.code === 'CONFLICT'
+                ? 'CLOUD_SETTINGS_CONFLICT'
+                : 'CLOUD_SETTINGS_REJECTED',
           );
-        const [saved] = await read([state.domain]);
+        const [saved] = await read([state.domain]).catch((error: unknown) => {
+          if (error instanceof Error && error.message.includes('SCOPE_CHANGED')) throw error;
+          // Saved, but the new revision could not be read back.
+          throw new Error('CLOUD_SETTINGS_CHANGED');
+        });
         if (!saved || saved.status !== 'ready' || saved.revision !== receipt.revision)
           throw new Error('CLOUD_SETTINGS_CHANGED');
         return { state: saved, application: receipt.application };

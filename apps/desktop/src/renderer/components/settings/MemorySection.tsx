@@ -304,6 +304,8 @@ export function MemorySectionView({
   handleMakerReset,
   handleToggle,
   handleReset,
+  agentRows = true,
+  headingStatus,
 }: {
   settingsCustomized: boolean;
   makerEnabled: boolean;
@@ -315,6 +317,10 @@ export function MemorySectionView({
   handleMakerReset: (() => Promise<void>) | undefined;
   handleToggle: (kind: AgentKind, next: boolean, label: string) => Promise<void>;
   handleReset: ((kind: AgentKind, label: string) => Promise<void>) | undefined;
+  /** The per-agent rows under the Cindy memory switch. Their saved values are unaffected. */
+  agentRows?: boolean;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: ReactNode;
 }) {
   const { t } = useTranslation();
 
@@ -323,7 +329,7 @@ export function MemorySectionView({
       title={t('settings.memory.title')}
       description={t('settings.memory.description')}
       action={
-        <DefaultOverrideControls
+        headingStatus ?? <DefaultOverrideControls
           isCustomized={settingsCustomized}
           disabled={makerTogglePending}
           onReset={() => void handleResetSettings()}
@@ -374,7 +380,7 @@ export function MemorySectionView({
           }
         />
 
-        {AGENTS.map((agent) => {
+        {(agentRows ? AGENTS : []).map((agent) => {
           const slot = slots[agent.kind];
           const supported = slot.enabled !== null;
           const loading = slot.enabled === undefined;

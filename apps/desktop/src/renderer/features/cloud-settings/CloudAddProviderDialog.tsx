@@ -12,6 +12,7 @@ import { OAuthBrowserLink, OAuthDeviceCodeCard } from '@/components/settings/OAu
 import { SettingsTextInput } from '@/components/settings/SettingsTextInput';
 import type { ManagementItem, ManagementResult } from '../../../shared/settingsManagement';
 import type { useCloudAuthorization } from './useCloudAuthorization';
+import { CloudAuthProgress } from './CloudAuthProgress';
 
 type Action = ManagementItem['actions'][number];
 type Field = Action['fields'][number];
@@ -315,10 +316,17 @@ export function CloudAddProviderDialog({
                     />
                   ) : prompt ? (
                     <OAuthBrowserLink url={prompt.url} onOpen={auth.open} />
-                  ) : owns && auth.operation ? (
-                    <p role="status" className="text-13 text-[var(--text-secondary)]">
-                      {t(`cloudSettings.authPhase.${auth.operation.phase}`)}
-                    </p>
+                  ) : owns ? (
+                    <CloudAuthProgress
+                      // A sign-in that did not finish says so here, not only behind the dialog.
+                      text={
+                        auth.phaseText ??
+                        (auth.failure === 'authNotDone' ? t('cloudSettings.authNotDone') : undefined)
+                      }
+                      checking={auth.checking}
+                      unreadable={auth.progressUnreadable}
+                      disabled={auth.requesting}
+                    />
                   ) : null}
                 </>
               ) : (
@@ -394,10 +402,13 @@ export function CloudAddProviderDialog({
                       </FormField>
                     );
                   })}
-                  {owns && auth.operation && auth.busy && (
-                    <p role="status" className="text-13 text-[var(--text-secondary)]">
-                      {t(`cloudSettings.authPhase.${auth.operation.phase}`)}
-                    </p>
+                  {owns && (auth.busy || auth.settling) && (
+                    <CloudAuthProgress
+                      text={auth.phaseText}
+                      checking={auth.checking}
+                      unreadable={auth.progressUnreadable}
+                      disabled={auth.requesting}
+                    />
                   )}
                 </form>
               )}
@@ -415,7 +426,7 @@ export function CloudAddProviderDialog({
                 </Button>
                 {owns && auth.busy ? (
                   <Button variant="secondary" size="md" onClick={() => void auth.operate('cancel')}>
-                    {t('settings.providers.wizard.cancel')}
+                    {t('settings.providers.button.cancel')}
                   </Button>
                 ) : fields.length ? (
                   <Button

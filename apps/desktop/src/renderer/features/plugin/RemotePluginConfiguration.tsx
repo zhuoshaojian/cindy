@@ -19,6 +19,7 @@ import {
   invokePluginManagement,
   parseRemotePluginPreferences,
 } from './remotePluginManagementClient';
+import { useRemoteResourceWritable } from './remoteResourceGuard';
 
 export function RemotePluginConfiguration({
   ghost,
@@ -38,6 +39,8 @@ export function RemotePluginConfiguration({
   settingsPage: boolean;
 }) {
   const { t } = useTranslation();
+  // A plugin's own settings page writes without asking this page; it opens only while allowed.
+  const writable = useRemoteResourceWritable(device.deviceId);
   const [read, setRead] = useState<{
     ghost: InstalledGhost;
     preferences?: RemotePluginPreferenceSnapshot;
@@ -232,7 +235,7 @@ export function RemotePluginConfiguration({
             {t('settings.ghosts.remote.hostPreferencesUnavailable', { device: device.name })}
           </p>
         )}
-        {ghost.manifest.settingsHtml && settingsPage && online && active && (
+        {ghost.manifest.settingsHtml && settingsPage && online && active && writable && (
           <GhostSettingsWebview
             ghost={ghost}
             title={t('settings.ghosts.detail.settingsTitle', { name: ghost.manifest.name })}

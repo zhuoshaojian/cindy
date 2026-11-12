@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
 import { CloudInstanceSection } from '../CloudInstanceSection';
 import { CloudSettingsPanel } from '../CloudSettingsView';
+import { CLOUD_SETTINGS_ALL_SECTIONS } from '../cloudSettingsVisibility';
 import { createTrialCloudSettingsClient } from '../trial';
 import type {
   CloudInstanceView,
+  CloudMaintenanceCalendar,
   CloudMaintenanceEdit,
   CloudUpgradeOperation,
 } from '../../../../shared/cloudInstanceControl';
@@ -17,9 +19,12 @@ import en from '@/i18n/locales/en/common.json';
 import ja from '@/i18n/locales/ja/common.json';
 import ko from '@/i18n/locales/ko/common.json';
 const mock = vi.hoisted(() => ({
-  confirm: vi.fn<(input: { description?: string }) => Promise<boolean>>().mockResolvedValue(true),
+  confirm: vi.fn<(input: { title?: string; description?: string }) => Promise<boolean>>().mockResolvedValue(true),
 }));
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({ useConfirmDialog: () => mock }));
+// Save and request outcomes are toasts, as the local About page and auto-update switch (D11).
+const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), dismissAll: vi.fn() }));
+vi.mock('@/lib/toast', () => ({ toast: toasts }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('@/features/device-link/useDeviceLinkDeviceList', () => ({
   useDeviceLinkDeviceList: vi.fn(),
@@ -38,11 +43,22 @@ afterEach(() => {
   mock.confirm.mockResolvedValue(true);
 });
 const resources = { 'zh-CN': zhCN, 'zh-TW': zhTW, en, ja, ko };
+const DEFAULT_EFFECTIVE = {
+  source: 'inherit' as const,
+  calendar: {
+    timezone: 'Asia/Shanghai',
+    windows: [{ id: 'daily', weekdays: [1, 2, 3, 4, 5, 6, 7], startLocal: '03:00', endLocal: '05:00' }],
+  },
+};
+/** Waits for the automatic save in flight to finish (its toast, or its failure toast). */
+const saved = (count = 1) =>
+  waitFor(() => expect(toasts.success.mock.calls.length + toasts.error.mock.calls.length).toBe(count));
 async function setup({
   running = false,
   language = 'zh-CN',
   panel = false,
-  custom = false,
+  /** A saved custom schedule; the default otherwise. */
+  calendar = undefined as CloudMaintenanceCalendar | undefined,
   revision = false,
   focusMaintenance = false,
   manualUpgrade = false,
@@ -79,25 +95,12 @@ async function setup({
       defaultsRevision: 1,
       autoUpdate: true,
       raw: {
-        policyMode: custom ? 'custom' : 'inherit',
-        calendar: null,
+        policyMode: calendar ? 'custom' : 'inherit',
+        calendar: calendar ?? null,
         scheduledTaskPolicy: 'protect',
         pausedUntilMs: null,
       },
-      effective: {
-        source: 'inherit',
-        calendar: {
-          timezone: 'Asia/Shanghai',
-          windows: [
-            {
-              id: 'daily',
-              weekdays: [1, 2, 3, 4, 5, 6, 7],
-              startLocal: '03:00',
-              endLocal: '05:00',
-            },
-          ],
-        },
-      },
+      effective: calendar ? { source: 'custom', calendar } : DEFAULT_EFFECTIVE,
       executionMode: 'scheduled',
       nextEligibleAtMs: 10000,
       serverTimeMs: 100,
@@ -116,18 +119,32 @@ async function setup({
       return value.upgradeOperation;
     }),
     power: vi.fn<(action: 'wake' | 'sleep') => Promise<void>>().mockResolvedValue(undefined),
-    maintenance: vi.fn(async (change: CloudMaintenanceEdit) => ({
-      ...value.maintenance!,
-      autoUpdate: change.autoUpdate,
-      revision: 'b'.repeat(64),
-    })),
+    // The instance keeps what was saved, on a new revision each time (b…, c…, …).
+    maintenance: vi.fn(async (change: CloudMaintenanceEdit) => {
+      const before = value.maintenance!;
+      const custom = change.policyMode === 'custom';
+      value.maintenance = {
+        ...before,
+        autoUpdate: change.autoUpdate,
+        revision: String.fromCharCode(before.revision.charCodeAt(0) + 1).repeat(64),
+        raw: { ...before.raw, policyMode: change.policyMode, calendar: custom ? change.calendar : null },
+        effective: custom ? { source: 'custom', calendar: change.calendar } : DEFAULT_EFFECTIVE,
+      };
+      return structuredClone(value.maintenance);
+    }),
   });
   const connect = vi.spyOn(client, 'connect'),
     changed = vi.fn();
   const tree = (active = true) => (
     <I18nextProvider i18n={i18n}>
       {panel ? (
-        <CloudSettingsPanel client={client} name="Cloud A" online={false} onBack={vi.fn()} />
+        <CloudSettingsPanel
+          client={client}
+          name="Cloud A"
+          online={false}
+          onBack={vi.fn()}
+          visibility={CLOUD_SETTINGS_ALL_SECTIONS}
+        />
       ) : (
         <CloudInstanceSection
           client={client}
@@ -145,7 +162,7 @@ async function setup({
 }
 it('shows overview and explicit wake while offline without opening runtime settings', async () => {
   const f = await setup({ panel: true });
-  expect(screen.getByRole('tab', { name: '云实例' }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tab', { name: '云端 Cindy' }).getAttribute('aria-selected')).toBe('true');
   expect(f.connect).not.toHaveBeenCalled();
   expect(f.client.power).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '唤醒' }));
@@ -157,7 +174,7 @@ it('canceling sleep sends no write', async () => {
   fireEvent.click(screen.getByRole('button', { name: '休眠' }));
   await waitFor(() => expect(mock.confirm).toHaveBeenCalled());
   expect(f.client.power).not.toHaveBeenCalled();
-  expect(mock.confirm.mock.calls[0][0].description).toContain('Cloud A');
+  expect(mock.confirm.mock.calls[0][0].title).toContain('Cloud A');
 });
 it('sleep requires confirmation and double clicks send only one request', async () => {
   const f = await setup({ running: true });
@@ -174,100 +191,213 @@ it('sleep requires confirmation and double clicks send only one request', async 
   await waitFor(() => expect(f.client.power).toHaveBeenCalledTimes(1));
   expect(mock.confirm).toHaveBeenCalledTimes(1);
   finish();
-  await screen.findByText('已提交休眠，正在核对实例状态。');
+  await screen.findByText('正在进入休眠…');
 });
-it('does not retry uncertain power requests; explicit refresh is required', async () => {
-  const f = await setup();
-  f.client.power.mockRejectedValueOnce(Error('network'));
-  fireEvent.click(screen.getByRole('button', { name: '唤醒' }));
-  await screen.findByRole('alert');
-  fireEvent.click(screen.getByRole('button', { name: '唤醒' }));
-  expect(f.client.power).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
-  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+// S3: an unknown sleep or wake is read back from the instance, never sent again.
+it('reads an uncertain power request back and never resubmits it', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const f = await setup();
+    f.client.power.mockRejectedValueOnce(Error('network'));
+    fireEvent.click(screen.getByRole('button', { name: '唤醒' }));
+    await waitFor(() => expect(f.client.power).toHaveBeenCalledTimes(1));
+    // While it is read back the button only spins; another click sends nothing.
+    fireEvent.click(screen.getByRole('button', { name: '唤醒' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    // The instance is still asleep: the wake did not arrive, and it says so.
+    await screen.findByText(zhCN.cloudSettings.instance.wakeNotTaken);
+    expect(f.client.power).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });
-it('editing auto update does not write until save and does not wake the instance', async () => {
+// Direction C (owner, 2026-11-10): the switch saves as it changes, with the local switch's toast.
+it('saves auto update as it changes, without waking the instance', async () => {
   const f = await setup();
-  fireEvent.click(screen.getByRole('switch', { name: '自动更新云实例' }));
-  expect(f.client.maintenance).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('switch', { name: '自动更新' }));
+  await saved();
+  expect(f.client.maintenance).toHaveBeenCalledExactlyOnceWith({
+    revision: 'a'.repeat(64),
+    defaultsRevision: 1,
+    autoUpdate: false,
+    policyMode: 'inherit',
+  });
+  expect(toasts.success).toHaveBeenCalledWith(zhCN.cloudSettings.instance.autoUpdateOffToast);
   expect(f.client.power).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '保存维护设置' }));
+});
+it('a save that meets a newer revision shows what the instance holds, never overwrites it', async () => {
+  const f = await setup();
+  f.client.maintenance.mockRejectedValueOnce(Error('CLOUD_SETTINGS_CONFLICT'));
+  fireEvent.click(screen.getByRole('switch'));
+  await saved();
+  expect(toasts.error.mock.calls[0]![0]).toBe(zhCN.cloudSettings.instance.policyChanged);
+  // The instance still has auto update on: that is shown, and nothing is written again.
+  await waitFor(() => expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true'));
+  expect(f.client.maintenance).toHaveBeenCalledTimes(1);
+});
+// Owner, 2026-11-09 (plan A): one dropdown for the update hours, the default or every day for two
+// hours from a whole hour in this computer's time zone. A custom schedule it cannot show stays as
+// it was until another choice is saved.
+const SHANGHAI = Intl.DateTimeFormat().resolvedOptions();
+beforeEach(() => {
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    ...SHANGHAI,
+    timeZone: 'Asia/Shanghai',
+  });
+  Element.prototype.scrollIntoView = vi.fn();
+  Element.prototype.hasPointerCapture = vi.fn(() => false);
+  Element.prototype.releasePointerCapture = vi.fn();
+});
+const daily = (start: string, end: string, timezone = 'Asia/Shanghai'): CloudMaintenanceCalendar => ({
+  timezone,
+  windows: [{ id: 'w1', weekdays: [1, 2, 3, 4, 5, 6, 7], startLocal: start, endLocal: end }],
+});
+const COMPLEX: CloudMaintenanceCalendar = {
+  timezone: 'Asia/Shanghai',
+  windows: [
+    { id: 'workdays', weekdays: [1, 2, 3, 4, 5], startLocal: '01:00', endLocal: '03:00' },
+    { id: 'weekend', weekdays: [6, 7], startLocal: '13:00', endLocal: '15:00' },
+  ],
+};
+const schedule = () => screen.getByRole('combobox', { name: '更新时段' });
+const openSchedule = () => {
+  fireEvent.keyDown(schedule(), { key: 'ArrowDown' });
+  return screen.getAllByRole('option');
+};
+const pick = (name: string) => {
+  const option = openSchedule().find((item) => item.textContent === name)!;
+  option.focus();
+  fireEvent.keyDown(option, { key: 'Enter' });
+};
+it('offers the default and the other 23 daily two-hour windows in this computer\'s time zone', async () => {
+  await setup();
+  expect(schedule().textContent).toBe('每天 03:00–05:00（默认）');
+  // In this computer's time zone it goes unsaid, as local schedules do.
+  expect(screen.queryByText(/时区/)).toBeNull();
+  const options = openSchedule().map((option) => option.textContent);
+  // The default is not offered a second time as a plain daily window (owner, 2026-11-09).
+  expect(options).toHaveLength(24);
+  expect(options.filter((option) => option?.startsWith('每天 03:00–05:00'))).toEqual(['每天 03:00–05:00（默认）']);
+  expect(options.slice(0, 5)).toEqual([
+    '每天 03:00–05:00（默认）',
+    '每天 00:00–02:00',
+    '每天 01:00–03:00',
+    '每天 02:00–04:00',
+    '每天 04:00–06:00',
+  ]);
+  expect(options.at(-1)).toBe('每天 23:00–01:00');
+});
+// A custom schedule that is the default shows as the default and stays custom unless the user
+// chooses the default again after another option.
+it('shows a saved custom schedule equal to the default as the default, without rewriting it', async () => {
+  const calendar = daily('03:00', '05:00');
+  const f = await setup({ calendar });
+  expect(schedule().textContent).toBe('每天 03:00–05:00（默认）');
+  expect(f.client.maintenance).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('switch', { name: '自动更新' }));
   await waitFor(() =>
     expect(f.client.maintenance).toHaveBeenCalledWith({
       revision: 'a'.repeat(64),
       defaultsRevision: 1,
       autoUpdate: false,
+      policyMode: 'custom',
+      calendar,
+    }),
+  );
+});
+it('follows the default once the default is chosen again after another option', async () => {
+  const f = await setup({ calendar: daily('03:00', '05:00') });
+  pick('每天 04:00–06:00');
+  await saved();
+  pick('每天 03:00–05:00（默认）');
+  await saved(2);
+  await waitFor(() =>
+    expect(f.client.maintenance).toHaveBeenLastCalledWith({
+      revision: 'b'.repeat(64),
+      defaultsRevision: 1,
+      autoUpdate: true,
       policyMode: 'inherit',
     }),
   );
-  await screen.findByText('维护设置已保存。');
 });
-it('retains maintenance drafts across tab switches', async () => {
-  const f = await setup({ panel: true });
-  fireEvent.click(screen.getByRole('switch', { name: '自动更新云实例' }));
-  fireEvent.click(screen.getByRole('tab', { name: zhCN.settings.tabs.general }));
-  fireEvent.click(screen.getByRole('tab', { name: '云实例' }));
-  await waitFor(() => expect(f.client.instance.mock.calls.length).toBeGreaterThan(1));
-  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
-  expect(f.client.maintenance).not.toHaveBeenCalled();
-});
-it('conflicting saves retain edits and never silently overwrite the newer revision', async () => {
+it('saves a daily two-hour window in this computer\'s time zone, as a custom schedule was saved', async () => {
   const f = await setup();
-  f.client.maintenance.mockRejectedValueOnce(Error('CLOUD_SETTINGS_CONFLICT'));
-  fireEvent.click(screen.getByRole('switch'));
-  fireEvent.click(screen.getByRole('button', { name: '保存维护设置' }));
-  await screen.findByText('维护设置已在其他地方修改，请刷新后重新编辑。');
-  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
-  fireEvent.click(screen.getByRole('button', { name: '保存维护设置' }));
-  expect(f.client.maintenance).toHaveBeenCalledTimes(1);
-});
-it('validates custom schedules before saving', async () => {
-  const f = await setup({ custom: true });
-  fireEvent.change(screen.getByLabelText('开始'), { target: { value: '04:45' } });
-  fireEvent.click(screen.getByRole('button', { name: '保存维护设置' }));
-  await screen.findByText('请检查时区、日期和时间：每段须为 1–6 小时，且不能重叠。');
-  expect(f.client.maintenance).not.toHaveBeenCalled();
-});
-it('selects a timezone by searching its city and saves only its IANA identifier', async () => {
-  const f = await setup({ custom: true });
-  fireEvent.click(screen.getByRole('button', { name: '时区' }));
-  const search = await screen.findByRole('combobox', { name: '搜索城市或时区…' });
-  fireEvent.change(search, { target: { value: 'not-a-timezone' } });
-  expect(screen.queryAllByRole('option')).toHaveLength(0);
-  fireEvent.keyDown(search, { key: 'Enter' });
-  expect(f.client.maintenance).not.toHaveBeenCalled();
-  fireEvent.change(search, { target: { value: '东京' } });
-  expect(screen.getByRole('option').textContent).toContain('UTC+09:00');
-  fireEvent.keyDown(search, { key: 'Enter' });
-  expect(screen.getByRole('button', { name: '时区' }).textContent).toContain('东京');
-  expect(f.client.maintenance).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '保存维护设置' }));
+  pick('每天 22:00–00:00');
   await waitFor(() =>
-    expect(f.client.maintenance).toHaveBeenCalledWith(
-      expect.objectContaining({
-        policyMode: 'custom',
-        calendar: expect.objectContaining({ timezone: 'Asia/Tokyo' }),
-      }),
-    ),
+    expect(f.client.maintenance).toHaveBeenCalledWith({
+      revision: 'a'.repeat(64),
+      defaultsRevision: 1,
+      autoUpdate: true,
+      policyMode: 'custom',
+      calendar: {
+        timezone: 'Asia/Shanghai',
+        windows: [
+          { id: 'daily', weekdays: [1, 2, 3, 4, 5, 6, 7], startLocal: '22:00', endLocal: '00:00' },
+        ],
+      },
+    }),
   );
-  expect(f.client.power).not.toHaveBeenCalled();
+});
+it('shows a saved daily window as its option and saves the default as following it', async () => {
+  const f = await setup({ calendar: daily('01:00', '03:00') });
+  expect(schedule().textContent).toBe('每天 01:00–03:00');
+  // CIS gives the default only while the instance follows it.
+  expect(openSchedule()[0]!.textContent).toBe('每天 03:00–05:00（默认）');
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+  pick('每天 03:00–05:00（默认）');
+  await waitFor(() =>
+    expect(f.client.maintenance).toHaveBeenCalledWith({
+      revision: 'a'.repeat(64),
+      defaultsRevision: 1,
+      autoUpdate: true,
+      policyMode: 'inherit',
+    }),
+  );
+});
+it.each([
+  ['several windows', COMPLEX, '当前：自定义的多个时段', '工作日 01:00–03:00，周末 13:00–15:00（上海，UTC+8）'],
+  ['another time zone', daily('01:00', '03:00', 'Asia/Tokyo'), '当前：自定义时段', '每天 01:00–03:00（东京，UTC+9）'],
+  ['a half hour', daily('02:30', '04:30'), '当前：自定义时段', '每天 02:30–04:30（上海，UTC+8）'],
+  ['three hours', daily('02:00', '05:00'), '当前：自定义时段', '每天 02:00–05:00（上海，UTC+8）'],
+])('keeps a custom schedule it cannot show (%s) until another choice replaces it', async (_label, calendar, current, kept) => {
+  const f = await setup({ calendar });
+  expect(schedule().textContent).toBe(current);
+  expect(screen.getByText(`自定义时段：${kept}`)).toBeTruthy();
+  expect(f.client.maintenance).not.toHaveBeenCalled();
+  // Saving another setting leaves the schedule exactly as it was.
+  fireEvent.click(screen.getByRole('switch', { name: '自动更新' }));
+  await saved();
+  expect(f.client.maintenance).toHaveBeenCalledExactlyOnceWith({
+    revision: 'a'.repeat(64),
+    defaultsRevision: 1,
+    autoUpdate: false,
+    policyMode: 'custom',
+    calendar,
+  });
+  // Another choice asks before replacing it; declined, nothing is saved and it stays.
+  mock.confirm.mockResolvedValueOnce(false);
+  pick('每天 04:00–06:00');
+  await waitFor(() => expect(mock.confirm).toHaveBeenCalledOnce());
+  expect(mock.confirm.mock.calls[0]![0].title).toBe(zhCN.cloudSettings.instance.replaceTitle);
+  expect(f.client.maintenance).toHaveBeenCalledTimes(1);
+  expect(schedule().textContent).toBe(current);
 });
 it('distinguishes a cloud revision from an identical version number', async () => {
   await setup({ revision: true });
-  expect(screen.getByText('有新的云端修订')).toBeTruthy();
-  expect(screen.queryByText('暂无可用更新')).toBeNull();
+  expect(screen.getByText(zhCN.cloudSettings.instance.revisionAvailable)).toBeTruthy();
+  expect(screen.queryByText('暂无')).toBeNull();
 });
 it.each(['zh-CN', 'zh-TW', 'en', 'ja', 'ko'])(
   'renders management controls in %s without untranslated keys',
   async (language) => {
-    await setup({ language, custom: true });
+    await setup({ language, calendar: COMPLEX });
     const strings = resources[language as keyof typeof resources].cloudSettings.instance;
     expect(screen.getByRole('button', { name: strings.wake })).toBeTruthy();
     expect(screen.getByRole('switch', { name: strings.autoUpdate })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: strings.timezone }));
-    const search = await screen.findByRole('combobox', { name: strings.timezoneSearch });
-    fireEvent.change(search, { target: { value: strings.timezoneCities.shanghai } });
-    expect(screen.getByRole('option').textContent).toContain('Asia/Shanghai');
+    fireEvent.keyDown(screen.getByRole('combobox', { name: strings.schedule }), { key: 'ArrowDown' });
+    expect(screen.getAllByRole('option')).toHaveLength(25);
     expect(document.body.textContent).not.toContain('cloudSettings.');
   },
 );
@@ -287,7 +417,8 @@ it('maintenance shortcut scrolls to the policy after loading, without changing i
   }
 });
 
-it('requests an upgrade with auto-update disabled and preserves schedules without a modal', async () => {
+// 2026-11-09 owner decision: the upgrade asks first, once, even for a double click.
+it('requests an upgrade with auto-update disabled and preserves schedules after one confirmation', async () => {
   const f = await setup({
     running: true,
     revision: true,
@@ -301,17 +432,18 @@ it('requests an upgrade with auto-update disabled and preserves schedules withou
     expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false'),
   );
   expect(screen.getByText('0.1.108-cloud.10-cn-amd64')).toBeTruthy();
-  const button = screen.getByRole('button', { name: '立即升级' });
+  const button = screen.getByRole('button', { name: zhCN.cloudSettings.instance.upgradeNow });
   fireEvent.click(button);
   fireEvent.click(button);
-  await screen.findByText('升级已排队，等待任务空闲。');
+  await screen.findByText(zhCN.cloudSettings.instance.upgradeQueued);
   expect(f.client.upgrade).toHaveBeenCalledOnce();
   expect(f.client.power).not.toHaveBeenCalled();
   expect(f.client.maintenance).not.toHaveBeenCalled();
-  expect(mock.confirm).not.toHaveBeenCalled();
+  expect(mock.confirm).toHaveBeenCalledOnce();
+  expect(mock.confirm.mock.calls[0][0].title).toBe('更新“Cloud A”？');
   expect(screen.getByRole('button', { name: '休眠' }).hasAttribute('disabled')).toBe(true);
 });
-it.each(['stopped', 'no-release', 'old-server', 'draft', 'held', 'resource-change'])(
+it.each(['stopped', 'no-release', 'old-server', 'held', 'resource-change'])(
   'cannot submit an upgrade while %s',
   async (kind) => {
     const f = await setup({
@@ -319,7 +451,6 @@ it.each(['stopped', 'no-release', 'old-server', 'draft', 'held', 'resource-chang
       revision: kind !== 'no-release',
       manualUpgrade: kind !== 'old-server',
     });
-    if (kind === 'draft') fireEvent.click(screen.getByRole('switch'));
     if (kind === 'held' || kind === 'resource-change') {
       if (kind === 'held')
         f.value.upgradeOperation = {
@@ -334,7 +465,8 @@ it.each(['stopped', 'no-release', 'old-server', 'draft', 'held', 'resource-chang
         expect(screen.getByRole('button', { name: '休眠' }).hasAttribute('disabled')).toBe(true),
       );
     }
-    const button = screen.queryByRole('button', { name: '立即升级' });
+    const button = screen.queryByRole('button', { name: zhCN.cloudSettings.instance.upgradeNow });
+    if (kind === 'stopped') expect(button).not.toBeNull();
     if (button) {
       expect(button.hasAttribute('disabled')).toBe(true);
       fireEvent.click(button);
@@ -345,9 +477,10 @@ it.each(['stopped', 'no-release', 'old-server', 'draft', 'held', 'resource-chang
 it('does not resubmit an uncertain request and recovers persisted progress on explicit refresh', async () => {
   const f = await setup({ running: true, revision: true, manualUpgrade: true });
   f.client.upgrade.mockRejectedValueOnce(Error('CLOUD_SETTINGS_SAVE_UNCONFIRMED'));
-  fireEvent.click(screen.getByRole('button', { name: '立即升级' }));
-  await screen.findByText('尚未确认升级结果，请先刷新状态。请勿重复提交。');
-  fireEvent.click(screen.getByRole('button', { name: '立即升级' }));
+  fireEvent.click(screen.getByRole('button', { name: zhCN.cloudSettings.instance.upgradeNow }));
+  // The result is read back: the button only spins, and another click sends nothing.
+  await waitFor(() => expect(screen.getByRole('button', { name: zhCN.cloudSettings.instance.upgradeNow }).hasAttribute('disabled')).toBe(true));
+  fireEvent.click(screen.getByRole('button', { name: zhCN.cloudSettings.instance.upgradeNow }));
   expect(f.client.upgrade).toHaveBeenCalledOnce();
   f.value.upgradeOperation = {
     operationId: 'user-example',
@@ -356,7 +489,7 @@ it('does not resubmit an uncertain request and recovers persisted progress on ex
     updatedAtMs: 200,
   };
   fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
-  await screen.findByText('正在备份云实例…');
+  await screen.findByText(zhCN.cloudSettings.instance.state.upgrading);
   expect(screen.queryByRole('alert')).toBeNull();
   f.value.upgradeOperation = {
     ...f.value.upgradeOperation,
@@ -368,11 +501,11 @@ it('does not resubmit an uncertain request and recovers persisted progress on ex
   f.value.latestVersion = null;
   f.value.updateAvailable = false;
   fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
-  await screen.findByText('云实例升级完成。');
+  await screen.findByText('已更新到 0.1.108-cloud.10-cn-amd64');
   expect(screen.getByText('0.1.108-cloud.10-cn-amd64')).toBeTruthy();
-  expect(screen.getByText('暂无可用更新')).toBeTruthy();
+  expect(screen.getByText('暂无')).toBeTruthy();
   // 2026-11-04 product review: no inert upgrade button when there is nothing to install.
-  expect(screen.queryByRole('button', { name: '立即升级' })).toBeNull();
+  expect(screen.queryByRole('button', { name: zhCN.cloudSettings.instance.upgradeNow })).toBeNull();
 });
 it('stops showing an upgrade that ended long ago, but keeps a held one', async () => {
   const f = await setup({ running: true, manualUpgrade: true });
@@ -384,7 +517,7 @@ it('stops showing an upgrade that ended long ago, but keeps a held one', async (
   };
   fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
   await waitFor(() => expect(f.client.instance).toHaveBeenCalledTimes(2));
-  expect(screen.queryByText('云实例升级完成。')).toBeNull();
+  expect(screen.queryByText(/已更新到/)).toBeNull();
   expect(screen.queryByRole('status')).toBeNull();
   f.value.upgradeOperation = { ...f.value.upgradeOperation, phase: 'recovery-hold' };
   fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
@@ -401,12 +534,3 @@ it.each(['zh-CN', 'zh-TW', 'en', 'ja', 'ko'])(
     expect(f.client.upgrade).toHaveBeenCalledOnce();
   },
 );
-it('shows the maintenance save row only while something is changed', async () => {
-  await setup();
-  expect(screen.queryByRole('button', { name: '保存维护设置' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '撤销修改' })).toBeNull();
-  fireEvent.click(screen.getByRole('switch', { name: '自动更新云实例' }));
-  expect(screen.getByRole('button', { name: '保存维护设置' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '撤销修改' }));
-  expect(screen.queryByRole('button', { name: '保存维护设置' })).toBeNull();
-});

@@ -481,6 +481,7 @@ export function UnifiedModelList({
   compact,
   focusModelId,
   focusAgent,
+  visibilityControls = true,
 }: {
   provider: ProviderView;
   /** 「刷新模型」；内置供应商走各自真源，自定义供应商走 additions-only 发现。 */
@@ -500,6 +501,8 @@ export function UnifiedModelList({
   /** Settings deep link target: reveal, focus, and scroll this model row into view. */
   focusModelId?: string;
   focusAgent?: AgentKind;
+  /** Which models are offered is left to the caller: no count, hint, bulk menu or row switches. */
+  visibilityControls?: boolean;
 }) {
   const { t } = useTranslation();
   /** Another device's model settings (cloud instance page); null for this device. */
@@ -1115,10 +1118,10 @@ export function UnifiedModelList({
             1,048,576 / 1,050,000 都印成 1M)。 */}
         {rowAdvancedButton(row)}
         {/* 其余音频/向量能力行没有显示开关。语音合成、图像/视频复用显示轴。 */}
-        {capability && !rowHasVisibilitySwitch(row, provider.source === 'user') && (
+        {visibilityControls && capability && !rowHasVisibilitySwitch(row, provider.source === 'user') && (
           <span className="w-9 shrink-0" />
         )}
-        {rowHasVisibilitySwitch(row, provider.source === 'user') && (
+        {visibilityControls && rowHasVisibilitySwitch(row, provider.source === 'user') && (
           <Switch
             disabled={!state.canSelect}
             checked={anyOn}
@@ -1150,17 +1153,21 @@ export function UnifiedModelList({
                 <span className="text-13 font-medium text-[var(--text-primary)]">
                   {t('settings.providers.models.manage.title')}
                 </span>
-                <span className="text-11 text-[var(--text-tertiary)]">
-                  {t('settings.providers.models.manage.selected', { count: selectedCount })}
-                </span>
-              </div>
-              <p className="mt-0.5 text-11 text-[var(--text-tertiary)]">
-                {t(
-                  selectionAvailable
-                    ? 'settings.providers.models.manage.hint'
-                    : 'settings.providers.models.manage.connectionRequired',
+                {visibilityControls && (
+                  <span className="text-11 text-[var(--text-tertiary)]">
+                    {t('settings.providers.models.manage.selected', { count: selectedCount })}
+                  </span>
                 )}
-              </p>
+              </div>
+              {visibilityControls && (
+                <p className="mt-0.5 text-11 text-[var(--text-tertiary)]">
+                  {t(
+                    selectionAvailable
+                      ? 'settings.providers.models.manage.hint'
+                      : 'settings.providers.models.manage.connectionRequired',
+                  )}
+                </p>
+              )}
             </div>
             {onRefresh && (
               <button
@@ -1195,7 +1202,7 @@ export function UnifiedModelList({
                 ]}
               />
             )}
-            {(unionRows.length > 0 || onAddSpeechModels) && (
+            {visibilityControls && (unionRows.length > 0 || onAddSpeechModels) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="secondary" size="sm" compact type="button" className="shrink-0">
@@ -1359,7 +1366,7 @@ export function UnifiedModelList({
                     </button>
                   )}
                   {/* 能力模型组:不进对话选择器;图像/视频开关控制对应功能清单。 */}
-                  {wholeGroupCapability && !collapsed && (
+                  {visibilityControls && wholeGroupCapability && !collapsed && (
                     <span
                       className={cn('pb-1 text-11 leading-snug', showGroupHeaders && 'pl-[24px]')}
                       style={{ color: 'var(--text-tertiary)' }}

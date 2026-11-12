@@ -27,6 +27,7 @@ import type { CloudSettingsDomain, CloudSettingsState } from '../../../shared/cl
 import type { ImDefaultSettingsState } from '../../../shared/imDefaultSettings';
 import { createCloudImCaller } from './cloudImTarget';
 import { CloudDesktopFallback } from './CloudDesktopFallback';
+import { CloudRequestError } from './CloudRequestError';
 
 // Instance bots run on the instance. The cloud page reads only its catalog and cannot see the
 // computers paired with it, so agents on other computers are unavailable here.
@@ -161,26 +162,21 @@ export function CloudImSettings({
             <p role="status" className="text-13 text-[var(--text-tertiary)]">
               {t('settings.imBot.defaults.loading')}
             </p>
+          ) : !readFailed && (!supported || state?.status === 'unavailable') ? (
+            // Not offered by this instance (D11 G9).
+            <CloudRequestError message={t('bots.remoteSettings.unsupported')} />
           ) : (
-            <ErrorNotice
-              role="alert"
-              message={t('cloudSettings.imReadFailed')}
-              description={t(
-                !readFailed && (!supported || state?.status === 'unavailable')
-                  ? 'cloudSettings.imReadUnavailable'
-                  : state?.readErrorCode === 'SETTINGS_RESPONSE_TOO_LARGE' ||
-                      state?.readErrorCode === 'MODEL_CATALOG_TOO_LARGE'
-                    ? 'cloudSettings.imReadTooLarge'
-                    : 'cloudSettings.imReadFailedHint',
+            // One line and 「重新读取」, as the client's settings read failure (D11 D4, G10).
+            <CloudRequestError
+              message={t(
+                state?.readErrorCode === 'SETTINGS_RESPONSE_TOO_LARGE' ||
+                  state?.readErrorCode === 'MODEL_CATALOG_TOO_LARGE'
+                  ? 'cloudSettings.imReadTooLarge'
+                  : 'cloudSettings.imReadFailed',
               )}
-              details={state?.readErrorCode}
-              actions={
-                retry && (
-                  <Button size="sm" disabled={retryDisabled} onClick={retry}>
-                    {t('cloudSettings.reload')}
-                  </Button>
-                )
-              }
+              retryLabel={t('commonUi.retry')}
+              onRetry={retry}
+              disabled={retryDisabled}
             />
           )}
         </ImDefaultSettingsSectionFrame>
@@ -203,11 +199,11 @@ export function CloudImSettings({
                     ? 'settings.telegramBot.behavior.title'
                     : 'settings.telegramBot.groups.title',
                 )}
-                description={t(
+                description={
                   states[domain]?.status === 'unavailable'
-                    ? 'cloudSettings.imReadUnavailable'
-                    : 'cloudSettings.imReadFailedHint',
-                )}
+                    ? t('bots.remoteSettings.unsupported')
+                    : undefined
+                }
                 details={states[domain]?.readErrorCode}
                 actions={
                   retry && (

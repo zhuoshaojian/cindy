@@ -15,6 +15,7 @@ import {
 } from '../../../shared/cloudProviderSettings';
 import type { CloudProviderWrite } from './cloudProviderCatalog';
 import type { useCloudAuthorization } from './useCloudAuthorization';
+import { CloudAuthProgress } from './CloudAuthProgress';
 
 type Auth = ReturnType<typeof useCloudAuthorization>;
 type Phase = Extract<ManagementResult, { kind: 'operation' }>['phase'];
@@ -240,10 +241,17 @@ export function useCloudProviderSetup({
         throw new Error('KEY_ON_INSTANCE');
       },
       async providerOAuthLogin(providerId, options) {
-        return (await apply('oauth-login', {
-          providerId,
-          ...(options?.method ? { method: options.method } : {}),
-        })) as { ok: boolean; reason?: string };
+        try {
+          return (await apply('oauth-login', {
+            providerId,
+            ...(options?.method ? { method: options.method } : {}),
+          })) as { ok: boolean; reason?: string };
+        } catch (error) {
+          if (!(error instanceof Error) || error.message !== 'SETUP_FAILED') throw error;
+          // The sign-in did not finish: a real failure, which the shared wizard says in its own
+          // words, 「X 登录失败，请重试」 (D11 F5).
+          return { ok: false, reason: 'login_failed' };
+        }
       },
       async providerOAuthCancel() {
         cancel();
@@ -319,26 +327,15 @@ export function CloudLoginPrompt({ auth, disabled = false }: { auth: Auth; disab
         )}
       </div>
     );
-  if (auth.operation?.phase === 'unknown')
+  // Progress read back after an unknown result (S3): what it is doing, or that it cannot be read.
+  if (auth.settling)
     return (
-      <div className="flex gap-2">
-        <Button
-          variant="secondary"
-          size="md"
-          disabled={disabled}
-          onClick={() => void auth.operate('status')}
-        >
-          {t('cloudSettings.authCheck')}
-        </Button>
-        <Button
-          variant="secondary"
-          size="md"
-          disabled={disabled}
-          onClick={() => void auth.operate('cancel')}
-        >
-          {t('settings.providers.button.cancel')}
-        </Button>
-      </div>
+      <CloudAuthProgress
+        text={auth.phaseText}
+        checking={auth.checking}
+        unreadable={auth.progressUnreadable}
+        disabled={disabled}
+      />
     );
   return null;
 }

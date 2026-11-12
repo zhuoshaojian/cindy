@@ -32,13 +32,10 @@ export function timezoneOffset(zone: string, now = new Date()): string {
   }
 }
 
-export function timezoneChoices(current: string): string[] {
-  const intl = Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] };
-  return [
-    ...new Set([
-      ...Object.keys(COMMON_TIMEZONES),
-      ...(intl.supportedValuesOf?.('timeZone') ?? []),
-      current,
-    ]),
-  ].filter(Boolean);
+/** The offset as people write it, by today's rules: UTC+8, UTC+5:30, UTC−4, UTC. */
+export function shortOffset(zone: string, now = new Date()): string {
+  const match = /^UTC([+-])(\d\d):(\d\d)$/.exec(timezoneOffset(zone, now));
+  if (!match) return timezoneOffset(zone, now);
+  const minutes = match[3] === '00' ? '' : `:${match[3]}`;
+  return `UTC${match[1] === '-' ? '−' : '+'}${Number(match[2])}${minutes}`;
 }

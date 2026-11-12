@@ -6,6 +6,9 @@ import { remoteControlSettings } from './RemoteControlSection.settings-search';
  *   1. 我的设备:同账号设备一处管理 —— 本机承载被控总开关 + relay 状态,其余设备逐台管
  *      「我控制它 / 允许它控制本机」+ 重命名 / 删除(MyDevicesPanel)
  *   2. SSH:原 RemoteSection 原样嵌入(showTitle=false,标题由本页统一给)
+ * 云实例就是「我的设备」里的一台设备:白名单账号(instanceAccess.allowed)在它的设备卡上多一组
+ * 实例运维(CloudDeviceDirectory,2026-11-05),且云实例卡与本机卡一起常驻,「我的设备」收起时
+ * 也可见;其余账号的页面与请求不变。
  * (Slack 连接子块已迁至「IM 机器人」页 Cindy 栏, 见 ImBotSection.tsx + HookConnectionsSection.tsx)
  *
  * 两个子块都是无上限列表,页面默认全部收起;收起态 header 右侧带状态摘要,
@@ -29,13 +32,22 @@ import { RelayServicePanel, useSelfHostedRelayState } from './RelayServicePanel'
 import { RemoteDesktopSetting } from './RemoteDesktopSetting';
 import { RemoteSection } from './RemoteSection';
 import { useAuth } from '@/contexts/AuthContext';
+import { CloudDeviceDirectory } from '@/features/cloud-settings/CloudDeviceDirectory';
+import { REMOTE_CLOUD_INSTANCES_SECTION } from '@/features/cloud-settings/cloudInstancesLink';
+import { CloudPreviewSwitches } from '@/features/cloud-settings/CloudPreviewSwitches';
 import { useSettingsSearchNavigation } from './SettingsSearchNavigation';
 import { SETTINGS_SECTION_TITLE_CLASS, SettingsPageHeader } from '@/components/ui/settings-rows';
 
-const DEVICES_SECTION_PARAMS = ['devices', 'remoteControl.devices'];
+// 旧「云实例」分类的深链与搜索也落到「我的设备」(云实例是其中的设备卡)。
+const DEVICES_SECTION_PARAMS = ['devices', 'remoteControl.devices', REMOTE_CLOUD_INSTANCES_SECTION];
 
 function isDevicesSection(search: string): boolean {
   return DEVICES_SECTION_PARAMS.includes(new URLSearchParams(search).get('section') ?? '');
+}
+
+/** 从云实例设置返回:恢复展开态,但不滚动、不高亮(见 remoteControlReturnPath)。 */
+function restoresDevicesOpen(search: string): boolean {
+  return new URLSearchParams(search).get('devices') === 'open';
 }
 
 /**
@@ -118,9 +130,11 @@ function CollapsibleSubSection({
 function deviceSummary(
   s: DeviceLinkSettings,
   t: (k: string, o?: Record<string, unknown>) => string,
+  /** 常驻在折叠区外的云实例:收起时已经可见,不计入「其它设备」。 */
+  pinned: (deviceId: string) => boolean = () => false,
 ): string | null {
   if (s.devices === null) return null;
-  const others = s.devices.filter((d) => !d.isSelf).length;
+  const others = s.devices.filter((d) => !d.isSelf && !pinned(d.deviceId)).length;
   return others === 0
     ? t('settings.remoteControl.summary.noOtherDevices')
     : t('settings.remoteControl.summary.otherDevices', { count: others });
@@ -167,7 +181,9 @@ export function RemoteControlSection() {
 
   // 深链 ?section=devices 必须在首帧就是展开态:放到 effect 里会先画一帧收起,
   // 再把下方内容顶开一格。
-  const [devicesOpen, setDevicesOpen] = useState(() => isDevicesSection(location.search));
+  const [devicesOpen, setDevicesOpen] = useState(
+    () => isDevicesSection(location.search) || restoresDevicesOpen(location.search),
+  );
   const relay = useSelfHostedRelayState(deviceLinkAvailable);
   const [sshOpen, setSshOpen] = useState(
     () => new URLSearchParams(location.search).get('section') === 'remoteControl.ssh',
@@ -208,8 +224,9 @@ export function RemoteControlSection() {
     collapseRequestedRef.current = false;
 
     const next = new URLSearchParams(location.search);
-    if (!DEVICES_SECTION_PARAMS.includes(next.get('section') ?? '')) return;
+    if (!DEVICES_SECTION_PARAMS.includes(next.get('section') ?? '') && !next.has('devices')) return;
     next.delete('section');
+    next.delete('devices');
     // device 聚焦参数只依附于 devices 段深链,一并摘掉。
     next.delete('device');
     const search = next.toString();
@@ -257,7 +274,6 @@ export function RemoteControlSection() {
     void refreshHosts();
   }, [refreshHosts]);
 
-  const devSumText = deviceSummary(s, t);
   const sshSum = sshSummary(hosts, t);
 
   return (
@@ -270,30 +286,67 @@ export function RemoteControlSection() {
       <div className="mt-4 flex flex-col gap-6">
         {deviceLinkAvailable ? (
           <>
-            <CollapsibleSubSection
-              id={remoteControlSettings.devices.targetId}
-              title={t(remoteControlSettings.devices.titleKey)}
-              summary={devSumText}
-              dotColor={null}
-              open={devicesOpen}
-              onToggle={toggleDevices}
-              pinned={
-                <MyDevicesPanel
-                  s={s}
-                  variant="self"
-                  selfSettings={<RemoteDesktopSetting />}
-                  focusDeviceId={focusDeviceId}
-                  focusRequestKey={focusRequestKey}
-                />
-              }
+            <CloudDeviceDirectory
+              enabled={deviceLinkAvailable}
+              directory={s.listError ? [] : (s.devices?.map((device) => device.deviceId) ?? null)}
+              offline={s.devices?.filter((device) => !device.online).map((device) => device.deviceId)}
+              devicesOpen={devicesOpen}
             >
-              <MyDevicesPanel
-                s={s}
-                variant="others"
-                focusDeviceId={focusDeviceId}
-                focusRequestKey={focusRequestKey}
-              />
-            </CollapsibleSubSection>
+              {(cloud) => {
+                const cloudPanel = (
+                  <MyDevicesPanel
+                    s={s}
+                    variant="cloud"
+                    cloud={cloud}
+                    focusDeviceId={focusDeviceId}
+                    focusRequestKey={focusRequestKey}
+                  />
+                );
+                const selfPanel = (
+                  <MyDevicesPanel
+                    s={s}
+                    variant="self"
+                    selfSettings={<RemoteDesktopSetting />}
+                    focusDeviceId={focusDeviceId}
+                    focusRequestKey={focusRequestKey}
+                  />
+                );
+                const othersPanel = (
+                  <MyDevicesPanel
+                    s={s}
+                    variant="others"
+                    cloud={cloud}
+                    focusDeviceId={focusDeviceId}
+                    focusRequestKey={focusRequestKey}
+                  />
+                );
+                return (
+                  <>
+                    {cloud && <CloudPreviewSwitches />}
+                    <CollapsibleSubSection
+                      id={remoteControlSettings.devices.targetId}
+                      title={t(remoteControlSettings.devices.titleKey)}
+                      summary={deviceSummary(s, t, cloud?.isManaged)}
+                      dotColor={null}
+                      open={devicesOpen}
+                      onToggle={toggleDevices}
+                      pinned={
+                        cloud ? (
+                          <div className="flex flex-col gap-2">
+                            {selfPanel}
+                            {cloudPanel}
+                          </div>
+                        ) : (
+                          selfPanel
+                        )
+                      }
+                    >
+                      {othersPanel}
+                    </CollapsibleSubSection>
+                  </>
+                );
+              }}
+            </CloudDeviceDirectory>
             {/* 设备之间经哪条线路连接:紧跟在「我的设备」下面直接展示,当前线路一眼可见,不再单独占一个入口。 */}
             <section id={remoteControlSettings.relay.targetId} className="flex flex-col gap-3">
               <div className="flex flex-col gap-0.5">

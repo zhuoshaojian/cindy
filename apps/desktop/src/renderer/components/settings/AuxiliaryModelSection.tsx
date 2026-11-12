@@ -130,6 +130,8 @@ export interface AuxiliaryModelSectionViewProps {
   drafting: boolean;
   setDrafting: (drafting: boolean) => void;
   persistModels: (models: string[]) => Promise<boolean>;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: React.ReactNode;
 }
 
 /** Shared native view. Local and cloud controllers provide the same state/actions. */
@@ -141,6 +143,7 @@ export function AuxiliaryModelSectionView({
   drafting,
   setDrafting,
   persistModels,
+  headingStatus,
 }: AuxiliaryModelSectionViewProps) {
   const { t } = useTranslation();
   const models = Array.isArray(savedModels) ? savedModels : [];
@@ -202,6 +205,7 @@ export function AuxiliaryModelSectionView({
     <SettingsSection
       title={t(personalizationDetailsSettings.auxiliaryModelsTitle.titleKey)}
       description={t(personalizationDetailsSettings.auxiliaryModelsTitle.descriptionKey)}
+      action={headingStatus}
     >
       <SettingsCard>
         <SettingsRow

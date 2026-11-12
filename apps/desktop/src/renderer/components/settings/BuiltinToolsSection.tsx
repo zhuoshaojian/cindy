@@ -219,6 +219,7 @@ export function BuiltinToolsSectionView({
   handleToggle,
   handleClearOverride,
   scopePicker,
+  headingStatus,
 }: {
   plugins: BuiltinToolListItem[];
   pendingIds: Set<string>;
@@ -226,6 +227,8 @@ export function BuiltinToolsSectionView({
   handleToggle: (id: string, next: boolean, label: string) => void;
   handleClearOverride: (id: string, label: string) => void;
   scopePicker?: React.ReactNode;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: React.ReactNode;
 }) {
   const { t } = useTranslation();
 
@@ -234,7 +237,7 @@ export function BuiltinToolsSectionView({
       titleId={builtinToolsSettings.title.targetId}
       title={t(builtinToolsSettings.title.titleKey)}
       description={t(builtinToolsSettings.title.descriptionKey)}
-      action={scopePicker}
+      action={headingStatus ?? scopePicker}
       caption={t('settings.builtinTools.toggleHint')}
     >
       {/* 工具列表自带图标与来源标签，行样式保留 */}

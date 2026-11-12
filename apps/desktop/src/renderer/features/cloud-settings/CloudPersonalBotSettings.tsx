@@ -174,7 +174,7 @@ export function CloudPersonalBotSettings({
   };
   const configured =
     !!disconnectAction || ['connected', 'offline', 'conflict'].includes(item.status);
-  const fallback = t('cloudSettings.imConnectionDetailsUnavailable');
+  const fallback = t('cloudSettings.imConnectionDetailsUnavailable', { name: targetName });
   const details = (
     <p className="text-12 leading-[1.6] text-[var(--settings-section-desc)]">{fallback}</p>
   );

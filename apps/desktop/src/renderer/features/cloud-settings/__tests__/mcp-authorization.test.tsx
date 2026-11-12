@@ -12,7 +12,7 @@ const confirm = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({
   useConfirmDialog: () => ({ confirm }),
 }));
-vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -70,7 +70,9 @@ describe('native cloud MCP credentials', () => {
     const save = screen.getAllByRole('button', { name: 'settings.mcp.save' })[0];
     fireEvent.click(save);
     fireEvent.click(save);
-    await screen.findByText('cloudSettings.authPhase.succeeded');
+    // How it ended is a toast, as the client's MCP page says a save (D11 F4–F8).
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('settings.mcp.toast.updated'));
+    expect(toast.success).toHaveBeenCalledTimes(1);
     expect(f.manage.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1);
     expect(f.manage.mock.calls.find(([c]) => c.operation === 'run')?.[0]).toMatchObject({
       values: { bearerToken: 'synthetic-secret' },
@@ -103,11 +105,15 @@ describe('native cloud MCP credentials', () => {
     });
     fireEvent.change(f.token, { target: { value: 'synthetic-secret' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'settings.mcp.save' })[0]);
-    fireEvent.click(await screen.findByRole('button', { name: 'cloudSettings.authCheck' }));
-    await screen.findByText('cloudSettings.authPhase.succeeded');
+    // Read back on its own from the operation 2 s later (S3; no 「检查授权状态」 button any more).
+    await waitFor(
+      () => expect(spy.mock.calls.some(([c]) => c.operation === 'status')).toBe(true),
+      { timeout: 4_000 },
+    );
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('settings.mcp.toast.updated'));
     expect(spy.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1);
     expect(f.token.value).toBe('');
-  });
+  }, 10_000);
 });
 
 // 2026-11-04 product review: add, edit and delete use the local dialog and delete confirmation.

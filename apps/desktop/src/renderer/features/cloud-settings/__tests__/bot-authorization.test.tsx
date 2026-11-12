@@ -159,8 +159,9 @@ it('uses native WeChat authorization and a single unbind confirmation', async ()
   expect(confirms.confirm).toHaveBeenCalledTimes(3);
 });
 
-// An uncertain remote result must stay recoverable without re-running the action.
-it('allows checking an unknown credential operation without a second submission', async () => {
+// An uncertain remote result must stay recoverable without re-running the action: it is read
+// back on its own (S3, useSettleUnknown; the 「检查授权状态」 button was replaced by that read-back).
+it('reads an unknown credential operation back without a second submission', async () => {
   const client = createTrialCloudSettingsClient();
   const original = client.manage!;
   const manage = vi.spyOn(client, 'manage').mockImplementation(async (command) => {
@@ -172,16 +173,35 @@ it('allows checking an unknown credential operation without a second submission'
   fireEvent.click(
     await screen.findByRole('button', { name: 'settings.wechatBot.actions.connect' }),
   );
-  const retry = await screen.findByRole('button', { name: 'cloudSettings.authCheck' });
-  expect(retry.matches(':disabled')).toBe(false);
-  fireEvent.click(retry);
-  await waitFor(() => expect(manage.mock.calls.some(([c]) => c.operation === 'status')).toBe(true));
+  // The first read-back runs 2 s after the lost answer (SETTLE_DELAYS_MS.authorization).
+  await waitFor(
+    () => expect(manage.mock.calls.some(([c]) => c.operation === 'status')).toBe(true),
+    { timeout: 4_000 },
+  );
   expect(manage.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1);
-});
+}, 10_000);
 
 // Unit/jsdom: capabilities and identity details can be absent on an older Host.
 // The shared card must remain honest and must not offer successful-looking no-op actions.
 it('keeps a read-only remote connection visible without enabling unsupported actions', async () => {
+  // An older Host: no IM channel (T27: only that keeps the ticket cards; a failing channel
+  // shows its failure instead), so its IM probe is refused.
+  Object.assign(window, {
+    electronAPI: new Proxy(
+      {},
+      {
+        get(_target, key) {
+          if (key === 'deviceLink')
+            return {
+              invoke: async () => {
+                throw Error('[DEVICE_LINK_CHANNEL_NOT_ALLOWED] not allowed');
+              },
+            };
+          throw Error('LOCAL_API_FORBIDDEN');
+        },
+      },
+    ),
+  });
   const client = createTrialCloudSettingsClient();
   const manage = vi
     .spyOn(client, 'manage')
@@ -367,9 +387,12 @@ it.each([
         }}
       />,
     );
-    expect(within(section).getByRole('alert').textContent).toContain('cloudSettings.imReadFailed');
+    // One line and 「重试」, as the client's settings read failure (CloudRequestError, D11 D4; A3 row 8).
+    expect(within(section).getByText('cloudSettings.imReadFailed')).toBeTruthy();
     expect(within(section).queryByText('Target model picker')).toBeNull();
-    fireEvent.click(within(section).getByRole('button', { name: 'cloudSettings.reload' }));
+    fireEvent.click(
+      within(section).getByRole('button', { name: 'commonUi.retry' }),
+    );
     expect(retry).toHaveBeenCalledTimes(1);
     view.rerender(<CloudImSettings {...props} states={{}} />);
     expect(within(section).getByRole('status')).toBeTruthy();

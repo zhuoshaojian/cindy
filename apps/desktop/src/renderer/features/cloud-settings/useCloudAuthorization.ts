@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { errorCode, useBlockRetry } from './blockRetry';
+import { SETTLE_DELAYS_MS, useSettleUnknown } from './useSettleUnknown';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import type { ManagementItem, ManagementResult } from '../../../shared/settingsManagement';
 import type { CloudSettingsClient } from './client';
+import { cloudSimulating, useCloudStage, type StageAuthState } from './cloudFaults';
+import { toast } from '@/lib/toast';
 type Operation = Extract<ManagementResult, { kind: 'operation' }>;
 type Action = ManagementItem['actions'][number];
+/** An authorization whose progress could not be read: read back, never run or cancelled again. */
+type Unknown = { operationId: string; itemId?: string; intent?: Action['intent']; until?: number };
 const activeOperation = (op?: Operation) => !!op && ['running', 'waiting'].includes(op.phase);
 export const supportedActions = (item: ManagementItem) =>
   item.actions.filter(
@@ -22,9 +28,11 @@ export interface CloudAuthorizationProps {
   name: string;
   trial?: boolean;
   refresh?: number;
+  /** The page shows its own read failure: this block does not report one as well. */
+  pageFailed?: boolean;
 }
 export function useCloudAuthorization(
-  { client, online, active, name, trial = false, refresh = 0 }: CloudAuthorizationProps,
+  { client, online, active, name, trial = false, refresh = 0, pageFailed = false }: CloudAuthorizationProps,
   section: 'providers' | 'bots',
   /** Keep items whose actions need fields (API keys, new connections). */
   { all = false }: { all?: boolean } = {},
@@ -35,8 +43,12 @@ export function useCloudAuthorization(
   const [selected, setSelected] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [failure, setFailure] = useState<string>();
+  const [readCode, setReadCode] = useState<string>();
+  const [readFailures, setReadFailures] = useState(0);
   const [operation, setOperation] = useState<Operation>();
   const [operationItem, setOperationItem] = useState<string>();
+  const operationItemRef = useRef<string | undefined>(undefined);
+  operationItemRef.current = operationItem;
   const [callback, setCallback] = useState('');
   const [requesting, setRequesting] = useState(false);
   const scope = useRef({ client, online });
@@ -50,6 +62,20 @@ export function useCloudAuthorization(
   operationRef.current = operation;
   // Callers that need an outcome (e.g. a native toast) wait for the terminal phase.
   const settled = useRef(new Map<string, (phase: Operation['phase']) => void>());
+  const itemsRef = useRef<ManagementItem[]>([]);
+  /**
+   * How a provider sign-in ends, as the client's provider wizard says it (D11 F4–F8): 「已登录 X」,
+   * or 「X 登录失败，请重试」 for a failure or an expiry; a cancel says nothing. A caller that waits
+   * for the outcome (the shared wizard, the native login) says it itself. Bots keep their card's
+   * own line (D6).
+   */
+  const report = (phase: Operation['phase'], operationId: string, itemId?: string) => {
+    if (section !== 'providers' || settled.current.has(operationId)) return;
+    const name = itemsRef.current.find((item) => item.id === itemId)?.label ?? '';
+    if (phase === 'succeeded') toast.success(t('settings.providers.wizard.authorizedToast', { name }));
+    else if (phase === 'failed' || phase === 'expired')
+      toast.error(t('settings.providers.wizard.authorizeFailed', { name }));
+  };
   const finish = (op: Operation) => {
     if (activeOperation(op)) return;
     const resolve = settled.current.get(op.operationId);
@@ -69,11 +95,43 @@ export function useCloudAuthorization(
   const accept = (result: ManagementResult, id: string) => {
     if (result.kind !== 'operation' || result.operationId !== id) throw new Error('SCOPE_CHANGED');
     if (current()) {
+      const ended = !activeOperation(result) && result.phase !== 'unknown';
+      if (ended && operationRef.current?.operationId === id && operationRef.current.phase !== result.phase)
+        report(result.phase, id, operationItemRef.current);
       operationRef.current = result;
       setOperation(result);
     }
     finish(result);
     return result;
+  };
+  /** Every listed item; undefined once the read is superseded. Throws when it cannot read. */
+  const listAll = async (seq: number): Promise<ManagementItem[] | undefined> => {
+    const values: ManagementItem[] = [];
+    let offset = 0;
+    // Bounded pagination; never render a partial provider list as complete.
+    for (let page = 0; page < 128; page++) {
+      const result = await client.manage!({ operation: 'list', section, offset });
+      if (!current() || sequence.current !== seq) return;
+      if (result.kind !== 'page' || result.section !== section || (result.offset ?? 0) !== offset)
+        throw new Error('INVALID_PAGE');
+      values.push(...result.items);
+      if (result.nextOffset === undefined) {
+        // A connection form or a read-only state is still a real IM channel.
+        // Filtering by OAuth buttons hid every unconfigured personal bot.
+        const visible =
+          section === 'bots' || all
+            ? values
+            : values.filter((item) => supportedActions(item).length);
+        if (new Set(visible.map((item) => item.id)).size !== visible.length)
+          throw new Error('INVALID_PAGE');
+        setItems(visible);
+        setSelected((old) => (visible.some((item) => item.id === old) ? old : visible[0]?.id));
+        return visible;
+      }
+      if (result.nextOffset <= offset) throw new Error('INVALID_PAGE');
+      offset = result.nextOffset;
+    }
+    throw new Error('TOO_MANY_PAGES');
   };
   /** Resolves with the listed items, so a caller can run a fresh action right away. */
   const load = async (): Promise<ManagementItem[] | undefined> => {
@@ -81,39 +139,72 @@ export function useCloudAuthorization(
     const seq = ++sequence.current;
     setLoading(true);
     try {
-      const values: ManagementItem[] = [];
-      let offset = 0;
-      // Bounded pagination; never render a partial provider list as complete.
-      for (let page = 0; page < 128; page++) {
-        const result = await client.manage({ operation: 'list', section, offset });
-        if (!current() || sequence.current !== seq) return;
-        if (result.kind !== 'page' || result.section !== section || (result.offset ?? 0) !== offset)
-          throw new Error('INVALID_PAGE');
-        values.push(...result.items);
-        if (result.nextOffset === undefined) {
-          // A connection form or a read-only state is still a real IM channel.
-          // Filtering by OAuth buttons hid every unconfigured personal bot.
-          const visible =
-            section === 'bots' || all
-              ? values
-              : values.filter((item) => supportedActions(item).length);
-          if (new Set(visible.map((item) => item.id)).size !== visible.length)
-            throw new Error('INVALID_PAGE');
-          setItems(visible);
-          setFailure(undefined);
-          setSelected((old) => (visible.some((item) => item.id === old) ? old : visible[0]?.id));
-          return visible;
-        }
-        if (result.nextOffset <= offset) throw new Error('INVALID_PAGE');
-        offset = result.nextOffset;
+      const visible = await listAll(seq);
+      if (visible) setFailure(undefined);
+      return visible;
+    } catch (error) {
+      if (current() && sequence.current === seq) {
+        setFailure('readFailed');
+        setReadCode(errorCode(error));
+        setReadFailures((count) => count + 1);
       }
-      throw new Error('TOO_MANY_PAGES');
-    } catch {
-      if (current() && sequence.current === seq) setFailure('readFailed');
     } finally {
       if (current() && sequence.current === seq) setLoading(false);
     }
   };
+  // S3: progress that could not be read is read back with a backoff, from the operation or, if
+  // that cannot be read, from the item's own state. A sign-in opened in the browser is waited for
+  // until it expires. Nothing is run or cancelled again on the user's behalf.
+  const viaList = useRef(false);
+  const unknown = useSettleUnknown<Unknown>({
+    delays: SETTLE_DELAYS_MS.authorization,
+    until: (pending) => pending.until,
+    check: async (pending) => {
+      if (!current()) throw new Error('SCOPE_CHANGED');
+      try {
+        const result = await client.manage!({
+          operation: 'status',
+          operationId: pending.operationId,
+        });
+        if (result.kind === 'operation' && result.operationId === pending.operationId) {
+          viaList.current = false;
+          accept(result, pending.operationId);
+          return 'done';
+        }
+      } catch {
+        // Fall back to the item's state below.
+      }
+      const listed = await listAll(++sequence.current);
+      const item = listed?.find((entry) => entry.id === pending.itemId);
+      if (!item) throw new Error('UNREADABLE');
+      viaList.current = true;
+      const took =
+        pending.intent === 'disconnect' ? item.status !== 'connected' : item.status === 'connected';
+      if (took) return 'done';
+      return pending.until !== undefined && Date.now() < pending.until ? 'pending' : 'notDone';
+    },
+    onSettled: (verdict, pending) => {
+      if (!current() || operationRef.current?.operationId !== pending.operationId) return;
+      if (verdict === 'done' && !viaList.current) {
+        // The operation answered: an active one is polled as usual, a finished one reread.
+        if (!activeOperation(operationRef.current)) void load();
+        return;
+      }
+      const phase = verdict === 'done' ? 'succeeded' : 'failed';
+      operationRef.current = undefined;
+      setOperation(undefined);
+      report(phase, pending.operationId, pending.itemId);
+      if (verdict === 'notDone' && section === 'bots') setFailure('authNotDone');
+      finish({ kind: 'operation', operationId: pending.operationId, phase });
+    },
+  });
+  const settle = (pending: Unknown) => {
+    const op = { kind: 'operation', operationId: pending.operationId, phase: 'unknown' } as const;
+    operationRef.current = op;
+    setOperation(op);
+    void unknown.start(pending);
+  };
+  useEffect(() => () => unknown.stop(), [client]);
   useEffect(() => {
     if (active && online && !activeOperation(operationRef.current)) void load();
   }, [client, online, active, refresh]);
@@ -132,10 +223,19 @@ export function useCloudAuthorization(
     values: Record<string, string> = {},
     options: { confirmed?: boolean; settled?(phase: Operation['phase']): void } = {},
   ) => {
-    if (!current() || pending.current || activeOperation(operationRef.current) || !client.manage)
+    if (
+      !current() ||
+      pending.current ||
+      activeOperation(operationRef.current) ||
+      unknown.state ||
+      !client.manage
+    )
       return options.settled?.('cancelled');
     if (action.expiresAt <= Date.now()) {
-      setFailure('authExpired');
+      // A provider says it as a failed sign-in (D11 F7); a bot card keeps its line.
+      if (section === 'providers' && !options.settled)
+        toast.error(t('settings.providers.wizard.authorizeFailed', { name: item.label }));
+      else if (section === 'bots') setFailure('authExpired');
       void load();
       return options.settled?.('expired');
     }
@@ -168,27 +268,24 @@ export function useCloudAuthorization(
         );
         if (!activeOperation(next)) await load();
       } catch {
-        if (current()) {
-          // Keep the operation ID: checking its status is safe, rerunning login is not.
-          setOperation({ kind: 'operation', operationId, phase: 'unknown' });
-          setFailure('authUnknown');
-        }
-        finish({ kind: 'operation', operationId, phase: 'unknown' });
+        // Keep the operation ID: reading its status is safe, running the login again is not.
+        if (current()) settle({ operationId, itemId: item.id, intent: action.intent });
+        else finish({ kind: 'operation', operationId, phase: 'unknown' });
       }
     } finally {
       pending.current = false;
       if (alive.current) setRequesting(false);
     }
   };
-  const operate = async (kind: 'status' | 'cancel' | 'respond') => {
-    if (!current() || pending.current || !operation || !client.manage) return;
+  const operate = async (kind: 'cancel' | 'respond') => {
+    if (!current() || pending.current || !operation || unknown.state || !client.manage) return;
     pending.current = true;
     setRequesting(true);
     setFailure(undefined);
     operationVersion.current++;
     const id = operation.operationId;
     const value = callback.trim();
-    if (kind !== 'status') setCallback('');
+    setCallback('');
     try {
       const result = await client.manage(
         kind === 'respond'
@@ -197,12 +294,18 @@ export function useCloudAuthorization(
       );
       accept(result, id);
       if (kind === 'cancel' && current()) {
-        setFailure('authCancelled');
+        // A cancel says nothing on the provider page (D11 F6).
+        if (section === 'bots') setFailure('authCancelled');
         setOperation(undefined);
       }
       if (current() && !activeOperation(result as Operation)) await load();
     } catch {
-      if (current()) setFailure(kind === 'respond' ? 'authResponseFailed' : 'authUnknown');
+      if (!current()) return;
+      // A stop whose result is unknown is read back like any other.
+      if (kind === 'cancel') settle({ operationId: id, itemId: operationItem });
+      // A code that could not be sent is a failed sign-in (D11 F8).
+      else if (section === 'providers') report('failed', id, operationItem);
+      else setFailure('authResponseFailed');
     } finally {
       pending.current = false;
       if (alive.current) setRequesting(false);
@@ -231,14 +334,14 @@ export function useCloudAuthorization(
         }
       } catch {
         if (!cancelled && current() && version === operationVersion.current) {
-          const unknown = {
-            kind: 'operation',
+          // A sign-in already opened in the browser may still finish: wait for it until it expires.
+          const shown = operation!.prompt;
+          const signingIn = !!shown && opened.current.has(`${operation!.operationId}:${shown.url}`);
+          settle({
             operationId: operation!.operationId,
-            phase: 'unknown',
-          } as const;
-          setOperation(unknown);
-          setFailure('authUnknown');
-          finish(unknown);
+            itemId: operationItem,
+            until: signingIn ? shown!.expiresAt : undefined,
+          });
         }
         return;
       }
@@ -273,8 +376,63 @@ export function useCloudAuthorization(
       if (current()) setFailure('authOpenFailed');
     });
   }, [active, prompt?.url, operation?.operationId, online]);
-  return {
+  // A list that cannot be read is read again on its own before it says so.
+  const readRetry = useBlockRetry({
+    failed: failure === 'readFailed' && active && online,
+    failures: readFailures,
+    retry: () => void load(),
+    paused: pageFailed,
+  });
+  // Dev options: an authorization at the point a simulated frame shows (cloudFaults.ts).
+  const stageAuth = useCloudStage()?.world.auth;
+  const seeded =
+    stageAuth?.section === section ? stagedAuthorization(stageAuth.state, section, items, (key) => t(key)) : null;
+  // A provider's progress that could not be read: a warning toast whose button reads it once
+  // more (D11 F9, as the client's remote page when a result is not confirmed).
+  const stageKey = useCloudStage()?.key;
+  const stagedUnreadable = stageAuth?.section === section && stageAuth.state === 'unreadable';
+  const unreadableNow = section === 'providers' && (unknown.state === 'unreadable' || stagedUnreadable);
+  useEffect(() => {
+    if (!unreadableNow || (stagedUnreadable && !firstForStage(`${stageKey}:${section}:unknown`))) return;
+    toast.warning(t('settings.ghosts.remote.unknown'), {
+      action: { label: t('cloudSettings.authCheck'), onClick: () => void unknown.reload() },
+      ...(cloudSimulating() ? { duration: 0 } : {}),
+    });
+  }, [unreadableNow]);
+  // Dev options: a frame showing how a provider sign-in ended says it as the page would.
+  useEffect(() => {
+    if (section !== 'providers' || stageAuth?.section !== section || !items[0]) return;
+    // Once per frame, however many lists of the page read it.
+    if (!firstForStage(`${stageKey}:${section}:outcome`)) return;
+    const name = items[0].label;
+    const state = stageAuth.state;
+    if (state === 'connected')
+      toast.success(t('settings.providers.wizard.authorizedToast', { name }), { duration: 0 });
+    else if (state === 'failed' || state === 'expired' || state === 'submitFailed')
+      toast.error(t('settings.providers.wizard.authorizeFailed', { name }), { duration: 0 });
+  }, [stageAuth?.state, items[0]?.label]);
+  itemsRef.current = items;
+  const own = {
     t,
+    /**
+     * What the authorization is doing, for the line under its buttons. While an unknown result is
+     * read back nothing is said (2026-11-11), except that a sign-in opened in the browser is
+     * waited for, which the owner has to finish there.
+     */
+    // As the client (D11 F1–F3, D6): no line while it runs, waits or is read back; a provider's end
+    // is a toast (report). A bot card says only how a binding failed, in the card's own words.
+    phaseText:
+      section === 'bots' && !unknown.state && (operation?.phase === 'failed' || operation?.phase === 'expired')
+        ? t(`settings.remoteControl.hook.binding.state.${operation.phase}`)
+        : undefined,
+    /** Its progress could not be read: a reload reads it once more, it never signs in again. */
+    progressUnreadable:
+      section === 'bots' && unknown.state === 'unreadable' ? { reload: unknown.reload } : undefined,
+    /** Progress is being read back or could not be read: nothing else runs meanwhile. */
+    settling: !!unknown.state,
+    /** An unknown result is being read back: only a spinner shows it. */
+    checking: unknown.state === 'checking',
+    readFailure: readRetry.exhausted ? { code: readCode, reload: readRetry.reload } : undefined,
     items,
     selected,
     setSelected,
@@ -292,5 +450,81 @@ export function useCloudAuthorization(
     prompt,
     open,
     busy: activeOperation(operation),
+  };
+  return seeded ? ({ ...own, ...seeded } as typeof own) : own;
+}
+
+// Dev options: a frame's notice is said once, though several lists of the page share it.
+const announced = new Set<string>();
+const firstForStage = (key: string) => {
+  if (announced.has(key)) return false;
+  announced.add(key);
+  return true;
+};
+
+/**
+ * Dev options: one item of the list (the first provider, or the Telegram bot) at the point the
+ * frame shows. Nothing runs: its buttons do nothing and no browser page opens.
+ */
+function stagedAuthorization(
+  state: StageAuthState,
+  section: 'providers' | 'bots',
+  items: ManagementItem[],
+  t: (key: string) => string,
+) {
+  const target =
+    (section === 'bots' ? items.find((item) => item.id === 'bot:official:telegram') : undefined) ??
+    items[0];
+  const prompt = {
+    kind: 'device' as const,
+    url: 'https://github.com/login/device',
+    userCode: 'WDJB-MJHT',
+    expiresAt: Date.now() + 365 * 24 * 3_600_000,
+  };
+  // A typed-back code that could not be sent, or a page that could not open, leaves the sign-in
+  // waiting with its prompt; the failure is said above it.
+  const prompting = state === 'waiting' || state === 'submitFailed' || state === 'openFailed';
+  const phase: Operation['phase'] =
+    state === 'running'
+      ? 'running'
+      : prompting
+        ? 'waiting'
+        : state === 'connected'
+          ? 'succeeded'
+          : state === 'failed' || state === 'cancelled' || state === 'expired'
+            ? state
+            : 'unknown';
+  const unknown = state === 'checking' || state === 'unreadable' || state === 'waitingDone';
+  const nothing = async () => {};
+  return {
+    items: items.map((item) =>
+      state === 'connected' && item.id === target?.id
+        ? ({ ...item, status: 'connected' } as ManagementItem)
+        : item,
+    ),
+    operation: { kind: 'operation' as const, operationId: 'stage', phase, ...(prompting ? { prompt } : {}) },
+    operationItem: target?.id,
+    // As the page without the stage: a bot card says how a binding failed; a provider's outcome
+    // is a toast (the hook's effect), nothing in the page.
+    phaseText:
+      section === 'bots' && (phase === 'failed' || phase === 'expired')
+        ? t(`settings.remoteControl.hook.binding.state.${phase}`)
+        : undefined,
+    progressUnreadable: section === 'bots' && state === 'unreadable' ? { reload() {} } : undefined,
+    settling: unknown,
+    checking: state === 'checking' || state === 'waitingDone',
+    prompt: prompting ? prompt : undefined,
+    busy: state === 'running' || prompting,
+    failure:
+      state === 'openFailed'
+        ? 'authOpenFailed'
+        : section === 'bots' && state === 'submitFailed'
+          ? 'authResponseFailed'
+          : undefined,
+    setFailure: () => {},
+    requesting: false,
+    run: nothing,
+    operate: nothing,
+    open: nothing,
   };
 }

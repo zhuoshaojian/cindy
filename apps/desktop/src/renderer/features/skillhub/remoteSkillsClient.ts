@@ -4,12 +4,13 @@ import {
   REMOTE_RESOURCE_PROTOCOL_VERSION,
 } from '@cindy/device-link';
 import { boundedPluginResponse } from '@/features/plugin/remotePluginManagementClient';
+import { invokeRemoteResource } from '@/features/plugin/remoteResourceGuard';
 import type { RemoteSkillItem, RemoteSkillsSnapshot } from '../../../shared/remoteSkills';
 import { isRemoteSkillMarketItem } from '../../../shared/remoteSkills';
 
 const client = { protocolVersion: REMOTE_RESOURCE_PROTOCOL_VERSION, primitives: [] };
 export async function remoteSkillsCapabilities(deviceId: string) {
-  const manifest = (await window.electronAPI.deviceLink.invoke(
+  const manifest = (await invokeRemoteResource(
     deviceId,
     REMOTE_RESOURCE_MANIFEST_CHANNEL,
     [{ client }],
@@ -27,7 +28,7 @@ export async function invokeRemoteSkills(
   input?: Record<string, unknown>,
   item?: RemoteSkillItem,
 ) {
-  const response = (await window.electronAPI.deviceLink.invoke(
+  const response = (await invokeRemoteResource(
     deviceId,
     REMOTE_RESOURCE_INVOKE_CHANNEL,
     [

@@ -1,0 +1,998 @@
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
+import {
+  ArrowUpCircle,
+  Clock3,
+  Cloud,
+  ExternalLink,
+  Moon,
+  Settings,
+  SlidersHorizontal,
+  Sun,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tip } from '@/components/ui/tooltip';
+import { Spinner } from '@/components/ui/spinner';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
+import { useAuth } from '@/contexts/AuthContext';
+import { getDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
+import { cn } from '@/lib/utils';
+import { toast } from '@/lib/toast';
+import type { MyDevicesCloudSlot } from '@/components/settings/MyDevicesPanel';
+import { SETTINGS_HINT, SETTINGS_ROW_LABEL_CLASS } from '@/components/ui/settings-rows';
+import type { CloudInstanceView, CloudMaintenanceView } from '../../../shared/cloudInstanceControl';
+import { useCloudInstanceAccess } from './CloudInstanceAccess';
+import type { CloudInstanceFeed } from './CloudInstanceSection';
+import { CloudMaintenanceDialog } from './CloudMaintenanceDialog';
+import {
+  cloudSimulating,
+  gatedCloudSettings,
+  never,
+  refuseWhileSimulating,
+  stageSignal,
+  useCloudStage,
+  useCloudStageKey,
+  type StageCard,
+} from './cloudFaults';
+import { remoteControlReturnPath } from './cloudInstancesLink';
+import {
+  canChangeInstancePower,
+  instanceStatus,
+  instanceUpgrading,
+  upgradeOutcome,
+} from './instanceState';
+import { cloudInstanceName } from './instanceName';
+import { BlockReadFailure, InlineRetry, useBlockRetry } from './blockRetry';
+import {
+  sleepConfirmation,
+  useCloudInstances,
+  type CloudInstancesApi,
+  type PowerNote,
+  type PowerPending,
+} from './useCloudInstances';
+
+export const isCloudDeviceId = (deviceId: string | null | undefined): deviceId is string =>
+  !!deviceId && /^cloud-device-[a-f0-9]{24}$/.test(deviceId);
+
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+const muted = 'text-11 leading-[1.5] text-[var(--text-tertiary)]';
+// Standard settings rows (DESIGN.md "Desktop settings rows"). The device card already has the
+// row's 16px side padding, so rows and dividers run the width of its content.
+// A settings row without side padding: the dialog's own padding lines it up.
+const row = 'flex items-center justify-between gap-3 py-4';
+
+function RowText({ label, hint }: { label: string; hint: string }) {
+  return (
+    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span className={SETTINGS_ROW_LABEL_CLASS}>{label}</span>
+      {hint && <span className={SETTINGS_HINT}>{hint}</span>}
+    </span>
+  );
+}
+
+// From confirming sleep or clicking wake until CIS lists the request, the card shows it under way
+// at once, also while an unknown result is read back. Once those reads run out, it shows CIS's
+// last state with a notice instead.
+const requestedState = (view: CloudInstanceView, pending: PowerPending | undefined) =>
+  pending?.deviceId === view.deviceId &&
+  view.desiredState !== (pending.action === 'wake' ? 'running' : 'stopped')
+    ? pending.action === 'wake'
+      ? 'starting'
+      : 'stopping'
+    : undefined;
+
+/**
+ * An update scheduled behind the running tasks (phase requested): the instance is still usable, so
+ * the card keeps its lifecycle state (green dot, 「运行中」); only the Updates item says so (T57).
+ */
+const upgradeQueued = (view: CloudInstanceView, linkOffline: boolean) =>
+  upgradeOutcome(view, linkOffline)?.kind === 'queued';
+/** The lifecycle state without the upgrade record (what a scheduled update leaves as it is). */
+const lifecycleStatus = (view: CloudInstanceView) =>
+  instanceStatus({ ...view, upgradeOperation: null, upgradeState: null } as CloudInstanceView);
+
+// The lifecycle state the card shows: CIS's, except while an upgrade has the runtime down.
+const cardStatus = (view: CloudInstanceView, linkOffline: boolean, pending?: PowerPending) =>
+  requestedState(view, pending) ??
+  (upgradeQueued(view, linkOffline)
+    ? lifecycleStatus(view)
+    : instanceUpgrading(view, linkOffline)
+      ? 'upgrading'
+      : instanceStatus(view));
+
+// The subtitle carries the lifecycle state; while an upgrade runs, how far it has got instead.
+const instanceStatusText = (
+  view: CloudInstanceView,
+  linkOffline: boolean,
+  t: Translate,
+  pending?: PowerPending,
+) => {
+  const requested = requestedState(view, pending);
+  if (requested) return t(`cloudSettings.instance.state.${requested}`);
+  if (view.loginRequired)
+    return t(
+      `cloudSettings.onboarding.${view.desiredState === 'stopped' ? 'asleepNeedsLogin' : 'needsLogin'}`,
+    );
+  const state = cardStatus(view, linkOffline);
+  // Updating, also while it restarts and DeviceLink does not have it: the same words (T57).
+  if (state === 'upgrading') return t('cloudSettings.instance.cardUpdating');
+  return t(`cloudSettings.instance.state.${state}`);
+};
+/**
+ * The card's dot: ready, updating (progress), or neither (grey), only as the subtitle says
+ * (MyDevicesPanel). A failed update is said on the Updates mark and in its dialog (A2 #17).
+ */
+const cardDot = (view: CloudInstanceView, linkOffline: boolean, pending?: PowerPending) => {
+  const state = cardStatus(view, linkOffline, pending);
+  return {
+    live: state === 'running' && !view.loginRequired,
+    // Updating shows its progress dot also while it restarts (T57: no grey dot).
+    progress: state === 'upgrading',
+  };
+};
+
+/**
+ * Cloud instance operations for Settings → Remote connections → My devices (2026-11-05):
+ * a cloud instance is one of the account's devices, so its lifecycle lives on that card.
+ * Only an admitted account (CloudInstanceAccess) gets the slot; everyone else sees the
+ * device list exactly as before and no CIS request is made. The device directory decides
+ * remote control (presence, toggles, remote desktop availability); CIS decides lifecycle.
+ */
+export function CloudDeviceDirectory({
+  enabled,
+  directory,
+  offline = [],
+  devicesOpen,
+  children,
+}: {
+  enabled: boolean;
+  /** Device ids the device directory lists; null until it has loaded once. */
+  directory: readonly string[] | null;
+  /** Listed device ids DeviceLink currently has offline. */
+  offline?: readonly string[];
+  /** My devices is expanded; coming back from an instance's settings restores it. */
+  devicesOpen: boolean;
+  children(cloud: MyDevicesCloudSlot | undefined): ReactNode;
+}) {
+  const access = useCloudInstanceAccess();
+  const { mode, dataOwnerId } = useAuth();
+  // Dev options: each simulated frame, and its end, starts the card afresh (cloudFaults.ts).
+  const stageKey = useCloudStageKey();
+  if (!enabled || mode !== 'cloud' || access !== 'allowed') return <>{children(undefined)}</>;
+  // A new account or owner generation starts from an empty list and drops any draft.
+  return (
+    <AdmittedCloudDeviceDirectory
+      key={JSON.stringify([dataOwnerId, getDataOwnerGeneration().generation, stageKey])}
+      directory={directory}
+      offline={offline}
+      devicesOpen={devicesOpen}
+    >
+      {children}
+    </AdmittedCloudDeviceDirectory>
+  );
+}
+
+function AdmittedCloudDeviceDirectory({
+  directory,
+  offline,
+  devicesOpen,
+  children,
+}: {
+  directory: readonly string[] | null;
+  offline: readonly string[];
+  devicesOpen: boolean;
+  children(cloud: MyDevicesCloudSlot): ReactNode;
+}) {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { confirm } = useConfirmDialog();
+  const api = useMemo<
+    CloudInstancesApi & Pick<typeof window.electronAPI.cloudSettings, 'instanceRead'>
+  >(
+    () => {
+      // Every request below goes out through the simulation gate (cloudFaults.ts, T28).
+      const bridge = gatedCloudSettings();
+      return {
+        ...bridge,
+        instanceInitialize: async ({ deviceId }: { deviceId: string }) => {
+          refuseWhileSimulating();
+          await window.electronAPI.cloudLoginWindow.open({ deviceId });
+        },
+        onLoginCompleted: (cb: () => void) => window.electronAPI.cloudLoginWindow.onCompleted(cb),
+      };
+    },
+    [],
+  );
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const openSettings = useCallback(
+    (deviceId: string) =>
+      navigate(`/cloud-settings?${new URLSearchParams({ deviceId })}`, {
+        state: { returnTo: remoteControlReturnPath(devicesOpen) },
+      }),
+    [devicesOpen, navigate],
+  );
+  const own = useCloudInstances(api, openSettings);
+  // A failed list read is tried again at once, after 2 s and after 5 s before the card says so.
+  const listRetry = useBlockRetry({
+    failed: own.error === 'readFailed',
+    failures: own.failures,
+    retry: () => void own.load(),
+  });
+  // Dev options: a simulated frame pins what the card shows (cloudFaults.ts). The live list still
+  // reads underneath; nothing it reads reaches the card until the simulation ends.
+  const stage = useCloudStage()?.world.card;
+  const cloud = stage ? stagedInstances(own, stage) : own;
+  /**
+   * The instance's status could not be read (the device list itself did load): the card keeps its
+   * last-known info with a grey dot and 「状态加载失败」 in place of the state, no button in the meta
+   * line, as the local per-device quota (GroupMemberQuota.tsx). The list keeps polling, and its
+   * 「刷新」 reads the instances too (owner, 2026-11-11, 32F).
+   */
+  const statusUnreadable = cloud.error === 'readFailed' && (!!stage || listRetry.exhausted);
+  // What the list's 「刷新」 does, also beside each 「请重试」 (T52). A simulated frame's list is the
+  // frame's: nothing to read.
+  // While that read runs, the retry beside the failure spins (T54, as the list's 「刷新」).
+  const [listReading, setListReading] = useState(false);
+  const [powerRetrying, setPowerRetrying] = useState<string | null>(null);
+  const rereadList = () => {
+    if (stage || listReading) return;
+    setListReading(true);
+    void cloud.load().finally(() => {
+      if (mounted.current) setListReading(false);
+    });
+  };
+  const statusRetry = (
+    <InlineRetry onRetry={rereadList} disabled={cloud.busy} loading={listReading} />
+  );
+  // The list, or a sleep or wake's read-back, could not be read for this instance.
+  const unreadableFor = (view: CloudInstanceView) =>
+    statusUnreadable ||
+    (cloud.powerNote?.deviceId === view.deviceId && cloud.powerNote.kind === 'unreadable');
+  // One updates dialog for the list; it returns focus to whichever control opened it.
+  const [maintenanceFor, setMaintenanceFor] = useState<string | null>(
+    stage?.dialog ? (stage.instances[0]?.deviceId ?? null) : null,
+  );
+  const maintenanceOpener = useRef<HTMLElement | null>(null);
+  const openMaintenance = useCallback((deviceId: string, opener: HTMLElement | null) => {
+    maintenanceOpener.current = opener;
+    setMaintenanceFor(deviceId);
+  }, []);
+  // The list carries no maintenance policy; CIS serves it per instance. Read it only when the
+  // maintenance dialog opens (and after its explicit refresh), never on the list's polling timer.
+  const [policies, setPolicies] = useState<ReadonlyMap<string, CloudMaintenanceView | null>>(
+    new Map(),
+  );
+  const storePolicy = useCallback((deviceId: string, policy: CloudMaintenanceView | null) => {
+    if (mounted.current) setPolicies((before) => new Map(before).set(deviceId, policy));
+  }, []);
+  const readPolicy = useCallback(
+    async (deviceId: string) => {
+      storePolicy(deviceId, (await api.instanceRead({ deviceId })).maintenance);
+    },
+    [api, storePolicy],
+  );
+  const live = useMemo(
+    () =>
+      (cloud.instances ?? [])
+        .filter((view) => view.desiredState !== 'deleted')
+        // A simulated frame carries its own policy.
+        .map((view) => (stage ? view : { ...view, maintenance: policies.get(view.deviceId) ?? null })),
+    [cloud.instances, policies],
+  );
+  // Dev options: a frame showing the sleep confirmation; another frame closes it, and confirming
+  // it starts nothing.
+  useEffect(() => {
+    const view = live[0];
+    if (stage?.confirmSleep && view) void confirm(sleepConfirmation(t, name(view)), stageSignal());
+  }, []);
+  const byDevice = new Map(live.map((view) => [view.deviceId, view]));
+  const name = (view: CloudInstanceView) => cloudInstanceName(t, view);
+  // DeviceLink does not have the runtime: offline in the directory, or not listed there at all.
+  // A simulated frame says it itself.
+  const linkOffline = (deviceId: string) =>
+    stage
+      ? !!stage.linkOffline
+      : offline.includes(deviceId) || (directory !== null && !directory.includes(deviceId));
+  // Once the read-backs of a sleep or wake ran out, the card shows CIS's last state and says so.
+  const shownPending = cloud.powerNote?.kind === 'unreadable' ? undefined : cloud.powerPending;
+  // An update this page saw under way that ends while its dialog is closed is said once (direction
+  // A). Not started is said only in the dialog, where it was asked for.
+  const underWay = useRef(new Set<string>());
+  const announceEnded = (view: CloudInstanceView, ended: string | undefined) => {
+    const shown = name(view);
+    if (ended === 'done')
+      toast.success(
+        t('cloudSettings.instance.toastUpgraded', {
+          name: shown,
+          version: view.version ?? view.latestVersion ?? '',
+        }),
+        // A simulated frame keeps it up until another frame is chosen.
+        { duration: cloudSimulating() ? 0 : 5000 },
+      );
+    else if (ended === 'failed')
+      toast.error(t('cloudSettings.instance.toastUpgradeFailed', { name: shown }), {
+        action: {
+          label: t('cloudSettings.instance.viewUpdate'),
+          onClick: () => setMaintenanceFor(view.deviceId),
+        },
+        ...(cloudSimulating() ? { duration: 0 } : {}),
+      });
+  };
+  const openDialog = useRef(maintenanceFor);
+  openDialog.current = maintenanceFor;
+  useEffect(() => {
+    for (const view of live) {
+      const outcome = upgradeOutcome(view, linkOffline(view.deviceId));
+      if (outcome?.kind === 'queued' || outcome?.kind === 'updating') {
+        underWay.current.add(view.deviceId);
+        continue;
+      }
+      if (!underWay.current.delete(view.deviceId) || openDialog.current === view.deviceId) continue;
+      announceEnded(view, outcome?.kind);
+    }
+  }, [live, offline, directory]);
+  // Dev options: a frame showing that notice, as it appears when the update ends (29E, 29F).
+  useEffect(() => {
+    const view = live[0];
+    if (stage?.toast && view) announceEnded(view, stage.toast === 'upgraded' ? 'done' : 'failed');
+  }, []);
+  const actionsOf = (view: CloudInstanceView, displayName: string): InstanceActionHandlers => ({
+    model: instanceActions(view, linkOffline(view.deviceId), {
+      busy: cloud.busy,
+      listError: !!cloud.error,
+      anyPowerPending: !!cloud.powerPending,
+      pending: cloud.powerPending?.deviceId === view.deviceId ? cloud.powerPending : undefined,
+      note: cloud.powerNote?.deviceId === view.deviceId ? cloud.powerNote : undefined,
+    }),
+    onOpenSettings: () => openSettings(view.deviceId),
+    onOpenMaintenance: (opener) => openMaintenance(view.deviceId, opener),
+    onPower: () => void cloud.power(view, displayName),
+    onReloadPower: () => void cloud.reloadPower(),
+    // 「休眠失败 / 唤醒失败，请重试」: the same request again, without a second confirmation (T54).
+    retryingPower: powerRetrying === view.deviceId,
+    onRetryPower: () => {
+      if (powerRetrying) return;
+      setPowerRetrying(view.deviceId);
+      void cloud.power(view, displayName, { confirmed: true }).finally(() => {
+        if (mounted.current) setPowerRetrying(null);
+      });
+    },
+  });
+  const headerActions = (view: CloudInstanceView, displayName: string) => (
+    <CloudHeaderActions deviceId={view.deviceId} {...actionsOf(view, displayName)} />
+  );
+  // Focus returns to the control that opened the dialog, or, if that control is gone since (the
+  // card re-rendered), to the one that opens it now.
+  const openerOf = (deviceId: string): RefObject<HTMLElement | null> => ({
+    get current() {
+      const opener = maintenanceOpener.current;
+      return opener?.isConnected
+        ? opener
+        : document.querySelector<HTMLElement>(`[data-cloud-updates-opener="${deviceId}"]`);
+    },
+  });
+  const controls = (view: CloudInstanceView, displayName: string) => (
+    <CloudInstanceControls
+      key={view.instanceId}
+      view={view}
+      name={displayName}
+      {...actionsOf(view, displayName)}
+      reload={async () => {
+        // A simulated frame's instance and policy are the frame's: nothing to read, unless the
+        // frame shows the dialog's own read still under way or failed.
+        if (stage?.reload === 'pending') await never();
+        if (stage?.reload === 'fail') throw new Error('CLOUD_SETTINGS_UNAVAILABLE');
+        if (!stage) await Promise.all([readPolicy(view.deviceId), cloud.load()]);
+      }}
+      onPolicySaved={(policy) => storePolicy(view.deviceId, policy)}
+      onHurry={() => (stage ? undefined : cloud.hurry())}
+      busy={cloud.busy}
+      listError={!!cloud.error}
+      waiting={cloud.waiting === view.deviceId}
+      anyPowerPending={!!cloud.powerPending}
+      onLogin={() => void cloud.act(false, view.deviceId)}
+      maintenanceOpen={maintenanceFor === view.deviceId}
+      onMaintenanceOpenChange={(open) => setMaintenanceFor(open ? view.deviceId : null)}
+      opener={openerOf(view.deviceId)}
+    />
+  );
+  return (
+    <>
+      {children({
+        isManaged: (deviceId) =>
+          isCloudDeviceId(deviceId) && (cloud.instances === null || byDevice.has(deviceId)),
+        remoteDesktopReady: (deviceId) => {
+          const view = byDevice.get(deviceId);
+          return (
+            !view ||
+            (cardStatus(view, linkOffline(deviceId), shownPending) === 'running' &&
+              !view.loginRequired)
+          );
+        },
+        status: (deviceId) => {
+          // 32O: until the list answers, the state is being read, not the directory's online
+          // state (the local version row's pending status: a spinner and what it is reading).
+          if (cloud.instances === null && isCloudDeviceId(deviceId))
+            return statusUnreadable
+              ? { label: t('cloudSettings.instance.statusUnreadable'), live: false, action: statusRetry }
+              : { label: t('cloudSettings.instance.statusLoading'), live: false, pending: true };
+          const view = byDevice.get(deviceId);
+          if (!view) return null;
+          // 32F, 30C: one neutral line in the state's own place; 「刷新」 reads it again (A2 #15).
+          if (unreadableFor(view))
+            return { label: t('cloudSettings.instance.statusUnreadable'), live: false, action: statusRetry };
+          // 32P: DeviceLink does not have a running instance, and no update explains it: the
+          // directory's own offline state (grey dot, last seen), as for any other device.
+          if (
+            linkOffline(deviceId) &&
+            !view.loginRequired &&
+            cardStatus(view, true, shownPending) === 'running'
+          )
+            return stage
+              ? // A simulated frame has the live directory under it: say what it would say.
+                { label: t('settings.devices.lastSeen', { time: '—' }), live: false }
+              : null;
+          return {
+            label: instanceStatusText(view, linkOffline(deviceId), t, shownPending),
+            ...cardDot(view, linkOffline(deviceId), shownPending),
+          };
+        },
+        extras: (device) => {
+          const view = byDevice.get(device.deviceId);
+          return view ? controls(view, device.name || name(view)) : null;
+        },
+        headerActions: (device: { deviceId: string; name: string }) => {
+          const view = byDevice.get(device.deviceId);
+          return view ? headerActions(view, device.name || name(view)) : null;
+        },
+        // CIS instances the device directory does not list (login pending, never started,
+        // relay unreachable) still get a row, after the directory's own devices.
+        extraRows: [
+          ...live
+            .filter((view) => directory !== null && !directory.includes(view.deviceId))
+            .map((view) => ({
+              deviceId: view.deviceId,
+              // Same card as a directory device: header, then the instance rows.
+              node: (
+                <>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        !unreadableFor(view) && cardDot(view, true, shownPending).live
+                          ? 'bg-[var(--remote-status-ready)]'
+                          : 'bg-[var(--remote-status-disconnected)]'
+                      }`}
+                      aria-hidden
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate text-13 font-medium text-[var(--text-primary)]">
+                        {name(view)}
+                      </span>
+                      <span className="flex flex-wrap items-center gap-x-1">
+                        <span className="break-words text-11 text-[var(--text-tertiary)]">
+                          {[
+                            view.version && `Linux · Cindy ${view.version}`,
+                            unreadableFor(view)
+                              ? t('cloudSettings.instance.statusUnreadable')
+                              : instanceStatusText(view, true, t, shownPending),
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                        {unreadableFor(view) && statusRetry}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {headerActions(view, name(view))}
+                    </div>
+                  </div>
+                  {controls(view, name(view))}
+                </>
+              ),
+            })),
+          ...(cloud.instances !== null && !live.length
+            ? [
+                {
+                  deviceId: 'cloud-claim',
+                  node: (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
+                          <span className="text-13 font-medium text-[var(--text-primary)]">
+                            {t('cloudSettings.onboarding.emptyTitle')}
+                          </span>
+                          {/* While claiming and while an unknown claim is read back, only the button
+                              spins; the description changes only for what was found (2026-11-11). */}
+                          {/* A failure in a card is an 11px red line, as MyDevicesPanel's connectionIssue. */}
+                          <span
+                            className={
+                              cloud.claim === 'notClaimed'
+                                ? 'text-11 leading-[1.5] text-[var(--error-fg)]'
+                                : muted
+                            }
+                            role={cloud.claim ? 'status' : undefined}
+                          >
+                            {t(
+                              `cloudSettings.onboarding.${
+                                cloud.claim === 'notClaimed' ? 'claimNotDone' : 'emptyDescription'
+                              }`,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            loading={cloud.busy || cloud.claim === 'checking'}
+                            disabled={cloud.claim === 'unreadable' || !!cloud.error}
+                            onClick={() => void cloud.act(true)}
+                          >
+                            <Cloud size={14} />
+                            {t('cloudSettings.onboarding.claim')}
+                          </Button>
+                        </div>
+                      </div>
+                      {cloud.claim === 'unreadable' && (
+                        <BlockReadFailure
+                          bare
+                          title={t('cloudSettings.onboarding.claimUnreadable')}
+                          disabled={cloud.busy}
+                          onReload={() => void cloud.reloadClaim()}
+                        />
+                      )}
+                    </div>
+                  ),
+                },
+              ]
+            : []),
+        ],
+        // A list that failed to read is said on the card (statusUnreadable); with no card, in the
+        // device list's own error line (A2 #15, 28D).
+        notice:
+          cloud.error && cloud.error !== 'readFailed' ? t(`cloudSettings.onboarding.${cloud.error}`) : null,
+        // A line with room: the text and a small 「重试」, as the client's read-failure notices.
+        listError:
+          statusUnreadable && !live.length ? (
+            <span className="inline-flex flex-wrap items-center justify-center gap-2">
+              {t('cloudSettings.onboarding.readFailed')}
+              <Button
+                variant="secondary"
+                size="sm"
+                compact
+                disabled={cloud.busy}
+                loading={listReading}
+                onClick={rereadList}
+              >
+                {t('commonUi.retry')}
+              </Button>
+            </span>
+          ) : null,
+        refresh: rereadList,
+      })}
+    </>
+  );
+}
+
+/**
+ * Dev options: the card as a simulated frame pins it (cloudFaults.ts). Its own actions do nothing;
+ * menus and the updates dialog still open, as they are this page's own.
+ */
+function stagedInstances(
+  own: ReturnType<typeof useCloudInstances>,
+  stage: StageCard,
+): ReturnType<typeof useCloudInstances> {
+  const deviceId = stage.instances[0]?.deviceId ?? '';
+  const nothing = async () => {};
+  return {
+    ...own,
+    instances: stage.notLoaded ? null : stage.instances,
+    busy: !!stage.busy,
+    error: stage.listError ? 'readFailed' : stage.error,
+    failures: 0,
+    hurry: () => {},
+    waiting: stage.waiting ? deviceId : undefined,
+    powerPending: stage.powerPending && { ...stage.powerPending, deviceId },
+    powerNote: stage.powerNote && { ...stage.powerNote, deviceId },
+    claim: stage.claim,
+    reloadPower: nothing,
+    reloadClaim: nothing,
+    load: nothing,
+    act: nothing,
+    power: nothing,
+  };
+}
+
+/** What the card's actions show and allow, the same whichever layout presents them. */
+function instanceActions(
+  view: CloudInstanceView,
+  /** DeviceLink does not have the instance (an update restarts it). */
+  linkOffline: boolean,
+  list: {
+    busy: boolean;
+    listError: boolean;
+    anyPowerPending: boolean;
+    pending?: PowerPending;
+    note?: PowerNote;
+  },
+) {
+  // An upgrade has the runtime down, whatever CIS's last observation says (instanceUpgrading).
+  const upgrading = instanceUpgrading(view, linkOffline);
+  const outcome = upgradeOutcome(view, linkOffline);
+  // Scheduled behind the running tasks: still usable, as before the request (T57).
+  const queued = outcome?.kind === 'queued';
+  const state = queued ? lifecycleStatus(view) : upgrading ? 'upgrading' : instanceStatus(view);
+  const running = state === 'running';
+  const asleep = view.desiredState === 'stopped';
+  const loginWake = !!(view.loginRequired && asleep && view.loginWakeSupported);
+  return {
+    upgrading: state === 'upgrading',
+    queued,
+    running,
+    asleep,
+    loginWake,
+    /**
+     * The user's own sleep or wake is under way, its read-back included: only this spins the power
+     * item. A start or stop CIS reports on its own only disables it (owner, 2026-11-11, 32B).
+     */
+    powerRequested: !!list.pending && list.note?.kind !== 'unreadable',
+    /** Sleeping and then waking restarts a runtime in error (32C); power is allowed there. */
+    recoveryHint: state === 'error' && !view.loginRequired,
+    // A runtime waiting for sign-in stays 'starting' indefinitely: nothing to spin for.
+    changing:
+      (!!list.pending && list.note?.kind !== 'unreadable') ||
+      (!view.loginRequired && ['starting', 'stopping', 'upgrading'].includes(state)),
+    updateAvailable: view.updateAvailable && !view.upgradeOperation?.active,
+    /** The Updates item's mark: an update to take, one under way, or one that failed. */
+    updateMark: queued
+      ? 'badgeScheduled'
+      : upgrading
+      ? 'badgeUpdating'
+      : outcome?.kind === 'failed'
+        ? 'upgradeFailed'
+        : view.updateAvailable && !view.upgradeOperation?.active
+          ? 'updateBadge'
+          : null,
+    linkOffline,
+    /** Settings and updates; a runtime waiting for sign-in offers neither. */
+    showInstance: !view.loginRequired,
+    /** Sleep or wake; signing in already wakes an asleep instance that supports it. */
+    showPower: !loginWake,
+    /** Why sleep or wake waits: an update scheduled or running (T58), as settingsReasonKey says. */
+    powerReasonKey:
+      queued || upgrading ? (asleep ? 'wakeAfterUpdate' : 'sleepAfterUpdate') : null,
+    settingsReasonKey:
+      view.loginRequired || running
+        ? null
+        : state === 'upgrading'
+          ? 'settingsUpgrading'
+          : state === 'asleep'
+            ? 'settingsWakeFirst'
+            : 'settingsNotRunning',
+    powerDisabled:
+      list.busy ||
+      list.anyPowerPending ||
+      list.listError ||
+      upgrading ||
+      !canChangeInstancePower(view),
+    /** What an unknown sleep or wake turned out to be, or that it could not be read. */
+    note: list.note,
+  };
+}
+type InstanceActions = ReturnType<typeof instanceActions>;
+type InstanceActionHandlers = {
+  model: InstanceActions;
+  onOpenSettings(): void;
+  onOpenMaintenance(opener: HTMLElement | null): void;
+  onPower(): void;
+  onReloadPower(): void;
+  onRetryPower(): void;
+  retryingPower: boolean;
+};
+
+// The header row's remote desktop glyph (MyDevicesPanel.tsx: 16px, --text-primary, round hover),
+// in a 32px box (DESIGN.md desktop icon buttons), with aria-disabled so a disabled action still
+// shows why in its tooltip.
+const headerIcon =
+  'relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--text-primary)] hover:bg-[var(--surface-chip)] aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent';
+// The menu entry (5B): 26 × 44, a 26px hover circle, also while its menu is open.
+const menuEntry =
+  'relative inline-flex h-11 w-[26px] shrink-0 items-center justify-center text-[var(--text-primary)] before:pointer-events-none before:absolute before:left-1/2 before:top-1/2 before:h-[26px] before:w-[26px] before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:content-[""] hover:before:bg-[var(--surface-chip)] aria-expanded:before:bg-[var(--surface-chip)]';
+// "Update available" on the glyph's top right: the client's one registered button-corner reminder
+// dot (FilterReminderDot, features/cc-agent/sidebar: size-1.5, --status-bar-accent; T57). Its own
+// corner offset sits on the 16px glyph itself here, so the dot is placed as before.
+const glyph = (icon: ReactNode, marked = false) => (
+  <span className="relative inline-flex">
+    {icon}
+    {marked && (
+      <span
+        aria-hidden
+        className="absolute -right-[3px] -top-[3px] size-1.5 rounded-full bg-[var(--status-bar-accent)]"
+      />
+    )}
+  </span>
+);
+
+const HeaderIcon = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & { label: string; reason?: string | null; inactive?: boolean }
+>(function HeaderIcon({ label, reason, inactive, onClick, children, ...rest }, ref) {
+  const reasonId = useId();
+  return (
+    <Tip text={reason ? `${label} · ${reason}` : label}>
+      <button
+        ref={ref}
+        type="button"
+        aria-label={label}
+        aria-disabled={inactive || undefined}
+        aria-describedby={reason ? reasonId : undefined}
+        className={headerIcon}
+        onClick={(event) => {
+          if (!inactive) onClick?.(event);
+        }}
+        {...rest}
+      >
+        {children}
+        {reason && (
+          <span id={reasonId} className="sr-only">
+            {reason}
+          </span>
+        )}
+      </button>
+    </Tip>
+  );
+});
+
+/**
+ * The card's actions: one "⋯" menu in the header row, before remote desktop (owner, 2026-11-12:
+ * the card shows by default, with this menu; the other layouts were removed).
+ */
+function CloudHeaderActions({
+  deviceId,
+  model,
+  onOpenSettings,
+  onOpenMaintenance,
+  onPower,
+}: InstanceActionHandlers & { deviceId: string }) {
+  const { t } = useTranslation();
+  // Dev options: a frame showing the Manage menu open (cloudFaults.ts).
+  const menuShown = !!useCloudStage()?.world.card?.menu;
+  const trInstance = (key: string) => t(`cloudSettings.instance.${key}`);
+  const settingsReason = model.settingsReasonKey && trInstance(model.settingsReasonKey);
+  const powerReason = model.powerReasonKey && trInstance(model.powerReasonKey);
+  const powerLabel = trInstance(model.asleep ? 'wake' : 'sleep');
+  const PowerIcon = model.asleep ? Sun : Moon;
+  const menuButton = useRef<HTMLButtonElement>(null);
+  // The updates dialog takes focus as the menu closes; the menu must not take it back.
+  const dialogOpening = useRef(false);
+  // The user's own sleep or wake in progress; an upgrade spins on Updates instead.
+  const powerChanging = model.powerRequested;
+  const manage = trInstance('manage');
+  // Never a spinner (owner, 2026-11-09): what is in progress spins on its own item, inside.
+  return (
+    <span data-cloud-header-actions="menu" className="inline-flex shrink-0 items-center">
+      <DropdownMenu defaultOpen={menuShown}>
+        <DropdownMenuTrigger asChild>
+          <HeaderIcon
+            ref={menuButton}
+            className={menuEntry}
+            data-cloud-updates-opener={deviceId}
+            // Just 「管理」, as its sibling 「远程桌面」: the dot is decoration and the menu's
+            // 「更新」 row says the state (FilterReminderDot; T59).
+            label={manage}
+          >
+            {glyph(<SlidersHorizontal size={16} className="relative" />, model.updateAvailable)}
+          </HeaderIcon>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          onCloseAutoFocus={(event) => {
+            if (dialogOpening.current) event.preventDefault();
+            dialogOpening.current = false;
+          }}
+        >
+          {model.showInstance && (
+            <>
+              <DropdownMenuItem disabled={!model.running} onSelect={onOpenSettings}>
+                <Settings size={14} className="mr-2.5 shrink-0" aria-hidden />
+                <span className="flex min-w-0 flex-col">
+                  {t('cloudSettings.onboarding.openSettings')}
+                  {settingsReason && <span className={muted}>{settingsReason}</span>}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  dialogOpening.current = true;
+                  onOpenMaintenance(menuButton.current);
+                }}
+              >
+                {model.upgrading ? (
+                  <Spinner size={14} className="mr-2.5 shrink-0" />
+                ) : model.queued ? (
+                  // Scheduled: the clock the dialog's status row uses (T57).
+                  <Clock3 size={14} className="mr-2.5 shrink-0" aria-hidden />
+                ) : (
+                  <ArrowUpCircle size={14} className="mr-2.5 shrink-0" aria-hidden />
+                )}
+                {trInstance('updates')}
+                {model.updateMark && (
+                  // The mark's text stays neutral, as the client's version row status (HarnessVersionMenuRow)
+                  // and its rule that semantic colour goes on an icon only (DESIGN.md: Toast, ErrorNotice).
+                  // The trigger's dot is the one coloured element (T59).
+                  <span className="ml-auto pl-3 text-12 text-[var(--text-secondary)]">
+                    {trInstance(model.updateMark)}
+                  </span>
+                )}
+              </DropdownMenuItem>
+            </>
+          )}
+          {model.showPower && (
+            <DropdownMenuItem disabled={model.powerDisabled || model.changing} onSelect={onPower}>
+              {powerChanging ? (
+                <Spinner size={14} className="mr-2.5 shrink-0" />
+              ) : (
+                <PowerIcon size={14} className="mr-2.5 shrink-0" aria-hidden />
+              )}
+              <span className="flex min-w-0 flex-col">
+                {powerLabel}
+                {powerReason && <span className={muted}>{powerReason}</span>}
+              </span>
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
+  );
+}
+
+/**
+ * The instance's part of its card: the sign-in row, the recovery hint and an unconfirmed sleep or
+ * wake under the header, and updates and maintenance in a dialog (2026-11-09 owner decision). The
+ * lifecycle state is in the card's subtitle (status()); the actions are in the header's menu
+ * (CloudHeaderActions). Shared by directory and CIS-only rows.
+ */
+function CloudInstanceControls({
+  view,
+  name,
+  model,
+  reload,
+  onPolicySaved,
+  onHurry,
+  busy,
+  listError,
+  waiting,
+  anyPowerPending,
+  onLogin,
+  onPower,
+  onRetryPower,
+  retryingPower,
+  onOpenSettings,
+  onOpenMaintenance,
+  maintenanceOpen,
+  onMaintenanceOpenChange,
+  opener,
+}: InstanceActionHandlers & {
+  view: CloudInstanceView;
+  name: string;
+  reload(): Promise<void>;
+  onPolicySaved(policy: CloudMaintenanceView): void;
+  /** An update was just requested in the dialog: read the list more often for a while. */
+  onHurry(): void;
+  busy: boolean;
+  listError: boolean;
+  waiting: boolean;
+  anyPowerPending: boolean;
+  onLogin(): void;
+  maintenanceOpen: boolean;
+  onMaintenanceOpenChange(open: boolean): void;
+  opener: RefObject<HTMLElement | null>;
+}) {
+  const { t } = useTranslation();
+  const tr = (key: string, values?: Record<string, string | number>) =>
+    t(`cloudSettings.onboarding.${key}`, values);
+  const trInstance = (key: string) => t(`cloudSettings.instance.${key}`);
+  const feed: CloudInstanceFeed = {
+    view,
+    reload,
+    onPolicySaved,
+    linkOffline: model.linkOffline,
+    hurry: onHurry,
+  };
+  const dialog = (
+    <CloudMaintenanceDialog
+      open={maintenanceOpen}
+      onOpenChange={onMaintenanceOpenChange}
+      deviceId={view.deviceId}
+      name={name}
+      feed={feed}
+      opener={opener}
+    />
+  );
+  if (!view.loginRequired && model.note?.kind !== 'notTaken' && !model.recoveryHint)
+    return dialog;
+  return (
+    <div
+      className="mt-3 flex flex-col gap-2 border-t border-[var(--border-default)] pt-3"
+      data-cloud-instance={view.deviceId}
+    >
+      {view.loginRequired && (
+        <div className={cn(row, 'flex-wrap pt-0')}>
+          <span className="flex min-w-0 flex-1 basis-48">
+            <RowText
+              label={tr('identity')}
+              hint={tr(
+                waiting
+                  ? 'waitingLogin'
+                  : view.loginWakeSupported
+                    ? 'recoveryDescription'
+                    : 'loginDescription',
+                { name },
+              )}
+            />
+          </span>
+          <Button
+            size="sm"
+            disabled={
+              busy ||
+              listError ||
+              anyPowerPending ||
+              !!view.upgradeOperation?.active ||
+              !!view.resourceChanging ||
+              view.upgradeState === 'verifying'
+            }
+            onClick={onLogin}
+          >
+            <ExternalLink size={14} />
+            {tr(model.loginWake ? 'wakeAndLogin' : waiting ? 'reopenLogin' : 'initialize')}
+          </Button>
+        </div>
+      )}
+      {/* What the user can do, no button (32C), as the local card's standby hint: 11px tertiary. */}
+      {model.recoveryHint && <p className={muted}>{trInstance('errorRecovery')}</p>}
+      {/* No client line puts a retry beside an action failure; the closest re-labels the action
+          button itself (LocalModelDownloadUI: 「重试下载」). The action here is in the menu, so a
+          small 「重试」 goes right after the red line, as the device list's error line (T54). */}
+      {model.note?.kind === 'notTaken' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p role="status" className="text-11 leading-[1.5] text-[var(--error-fg)]">
+            {trInstance(`${model.note.action}NotTaken`)}
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            compact
+            loading={retryingPower}
+            disabled={busy || model.powerDisabled}
+            onClick={onRetryPower}
+          >
+            {t('commonUi.retry')}
+          </Button>
+        </div>
+      )}
+      {dialog}
+    </div>
+  );
+}

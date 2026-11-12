@@ -6,6 +6,7 @@ import {
   type CloudImSettingsCall,
 } from '../../../shared/cloudImSettings';
 import type { SlackHookView } from '../../../shared/hookControlIpc';
+import { invokeCloudChannel } from './cloudFaults';
 
 const FEISHU_ON_INSTANCE = '[UNSUPPORTED] Feishu is connected on the cloud instance';
 
@@ -31,9 +32,7 @@ export interface CloudImAuthorization {
 export function createCloudImCaller(deviceId: string) {
   let generation: number | null = null;
   return async function call<T = unknown>(name: CloudImSettingsCall, ...args: unknown[]): Promise<T> {
-    const raw = await window.electronAPI.deviceLink.invoke(deviceId, CLOUD_IM_SETTINGS_CHANNEL, [
-      { call: name, args },
-    ]);
+    const raw = await invokeCloudChannel(deviceId, CLOUD_IM_SETTINGS_CHANNEL, [{ call: name, args }]);
     const reply = cloudImSettingsReplySchema.parse(raw);
     if (generation !== null && reply.ownerGeneration !== generation)
       throw new Error('[OWNER_CHANGED] the instance account changed');

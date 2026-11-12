@@ -7,6 +7,7 @@ import {
   type CloudPersonalizationRequest,
   type CloudPersonalizationState,
 } from '../../../shared/cloudPersonalization';
+import { invokeCloudChannel } from './cloudFaults';
 
 type Status = 'loading' | 'ready' | 'unsupported' | 'unavailable';
 type Ready = Extract<CloudPersonalizationState, { status: 'ready' }>;
@@ -23,7 +24,7 @@ export function useCloudUserPrompt(deviceId: string, active: boolean) {
   const invoke = useCallback(
     async (request: CloudPersonalizationRequest): Promise<CloudPersonalizationState> =>
       cloudPersonalizationStateSchema.parse(
-        await window.electronAPI.deviceLink.invoke(deviceId, CLOUD_PERSONALIZATION_CHANNEL, [request]),
+        await invokeCloudChannel(deviceId, CLOUD_PERSONALIZATION_CHANNEL, [request]),
       ),
     [deviceId],
   );

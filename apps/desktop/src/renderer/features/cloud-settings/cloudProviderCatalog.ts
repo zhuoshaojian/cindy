@@ -1,3 +1,4 @@
+import { invokeCloudChannel } from './cloudFaults';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isModelVisible, type Effort, type ProviderView } from '@cindy/model-providers';
 
@@ -67,9 +68,7 @@ export function useCloudProviderCatalog({
   scope.current = deviceId;
   const invoke = useCallback(
     async <T>(request: CloudProviderSettingsRequest): Promise<T> =>
-      (await window.electronAPI.deviceLink.invoke(deviceId, CLOUD_PROVIDER_SETTINGS_CHANNEL, [
-        request,
-      ])) as T,
+      invokeCloudChannel<T>(deviceId, CLOUD_PROVIDER_SETTINGS_CHANNEL, [request]),
     [deviceId],
   );
   const accept = (next: CloudProviderSettingsList | null) => {

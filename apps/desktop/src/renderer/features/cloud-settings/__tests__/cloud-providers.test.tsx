@@ -8,7 +8,11 @@ import { visibilityPreferenceKey } from '../../../../shared/modelPresentationPre
 import type { ManagementItem } from '../../../../shared/settingsManagement';
 import type { CloudSettingsClient } from '../client';
 import { cloudAddChoices } from '../CloudAddProviderDialog';
-import { CloudProvidersSettings, cloudRailProviders } from '../CloudProvidersSettings';
+import {
+  cloudConnectedRail,
+  CloudProvidersSettings,
+  cloudRailProviders,
+} from '../CloudProvidersSettings';
 
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
@@ -191,6 +195,9 @@ function setup(
     withoutShare?: boolean;
     extraItems?: ManagementItem[];
     extraProviders?: ProviderView[];
+    management?: boolean;
+    /** The list cannot be read until this returns false. */
+    listFails?: () => boolean;
   } = {},
 ) {
   let visibility = {
@@ -201,6 +208,7 @@ function setup(
   const invoke = vi.fn(async (_deviceId: string, channel: string, [request]: [{ op: string }]) => {
     if (channel !== CLOUD_PROVIDER_SETTINGS_CHANNEL) throw Error(`UNEXPECTED ${channel}`);
     if (options.unsupported) throw Error('[DEVICE_LINK_CHANNEL_NOT_ALLOWED] not allowed');
+    if (request.op === 'list' && options.listFails?.()) throw Error('[DEVICE_LINK_TIMEOUT] timeout');
     if (request.op === 'list')
       return {
         version: 1,
@@ -308,6 +316,7 @@ function setup(
       active
       name="Cloud one"
       deviceId="cloud-device-000000000000000000000001"
+      management={options.management}
     />,
   );
   return { invoke, manage };
@@ -386,6 +395,27 @@ describe('cloud instance providers page', () => {
         }),
       ),
     );
+  });
+});
+
+// 2026-11-09 (C4): an unreadable list says so with its own reload. D11 C3: the notice is the
+// local model catalog's (LocalModelCatalogNotice), its retry reloads only the list.
+describe('a provider list that cannot be read', () => {
+  it('says so under the title and reloads only the list', async () => {
+    let fails = true;
+    const { invoke, manage } = setup({ listFails: () => fails });
+    const notice = (await screen.findByText('settings.providers.catalogRecovery.catalog')).closest('[role="status"]')!;
+    const lists = () => invoke.mock.calls.filter((call) => call[2][0].op === 'list').length;
+    const before = lists();
+    const manages = manage.mock.calls.length;
+    fails = false;
+    fireEvent.click(
+      within(notice as HTMLElement).getByRole('button', { name: 'settings.providers.catalogRecovery.retry' }),
+    );
+    expect(await screen.findByText('settings.providers.models.modelCount:2')).toBeTruthy();
+    expect(lists()).toBe(before + 1);
+    expect(manage.mock.calls.length).toBe(manages);
+    expect(screen.queryByText('settings.providers.catalogRecovery.catalog')).toBeNull();
   });
 });
 
@@ -539,14 +569,105 @@ describe('cloud model panel', () => {
 describe('instance CLI suggestions', () => {
   it('suggests the instance CLI provider and starts its sign-in on the instance', async () => {
     const { manage } = setup();
-    fireEvent.click(
-      await screen.findByRole('button', { name: /settings.providers.detect.action/ }),
-    );
+    // 2026-11-09: the local page's "CLI on this computer" copy named the wrong computer here.
+    const suggestion = await screen.findByRole('button', { name: /cloudSettings\.cliDetect\.action/ });
+    expect(screen.getByText('cloudSettings.cliDetect.groupLabel')).toBeTruthy();
+    expect(screen.queryByText('settings.providers.detect.groupLabel')).toBeNull();
+    expect(suggestion.title).toMatch(/^cloudSettings\.cliDetect\.hint(LoggedIn|Installed)/);
+    fireEvent.click(suggestion);
     await waitFor(() =>
       expect(manage).toHaveBeenCalledWith(
         expect.objectContaining({ operation: 'run', actionId: 'a0' }),
       ),
     );
+  });
+});
+
+// 2026-11-06 plan B preview. Local-page parity is covered by the tests above, which use the default.
+describe('without provider management', () => {
+  it('shows the management controls by default', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: /OpenAI/ }));
+    expect(await screen.findByTestId('provider-remote-access')).toBeTruthy();
+    expect(screen.getByText('settings.providers.models.manage.menu')).toBeTruthy();
+    expect(screen.getByText('providerShare.received.enterLink')).toBeTruthy();
+    expect(await screen.findByText('cloudSettings.cliDetect.groupLabel')).toBeTruthy();
+  });
+  it('keeps models, sign-ins and shares but leaves out sharing, suggestions and visibility', async () => {
+    const { invoke } = setup({ management: false });
+    expect(await screen.findByText('settings.providers.models.modelCount:2')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /OpenAI/ }));
+    expect(await screen.findByText('gpt-a')).toBeTruthy();
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.queryByTestId('provider-remote-access')).toBeNull();
+    for (const hidden of [
+      'settings.providers.models.manage.menu',
+      'settings.providers.models.manage.hint',
+      'cloudSettings.cliDetect.groupLabel',
+      'providerShare.received.enterLink',
+    ])
+      expect(screen.queryByText(hidden), hidden).toBeNull();
+    expect(await screen.findByRole('button', { name: /Shared Claude/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'settings.providers.addProvider' })).toBeTruthy();
+    expect(invoke.mock.calls.some((call) => call[2][0].op === 'cli-scan')).toBe(false);
+  });
+});
+
+// cloud-test, 2026-11-09: with plan B's management hidden, a model's display switch turned off and
+// back on stayed an explicit override ({…: true} where it started as {}), and nothing restored it.
+// The model panel's own restore-default control must reset it through the same channel.
+describe('model panel without provider management', () => {
+  it('restores a customized model display to the instance default from the panel', async () => {
+    const { invoke } = setup({ management: false });
+    fireEvent.click(await screen.findByRole('button', { name: /My gateway/ }));
+    await screen.findByText('m-2');
+    const open = screen.getAllByRole('button', { name: 'settings.providers.models.advanced.openAria' });
+    fireEvent.click(open[1]!);
+    const panel = await screen.findByRole('dialog');
+    fireEvent.click(
+      await within(panel).findByRole('button', { name: 'settings.providers.models.advanced.restoreDefault' }),
+    );
+    await waitFor(() =>
+      expect(invoke.mock.calls.map((call) => call[2][0])).toContainEqual(
+        expect.objectContaining({
+          op: 'visibility-reset',
+          providerId: 'web-1',
+          targets: [{ agent: 'codex', modelId: 'm-2' }],
+        }),
+      ),
+    );
+  });  it('offers the restore right after the switch is turned off and back on', async () => {
+    const { invoke } = setup({ management: false });
+    const key = visibilityPreferenceKey('codex', 'web-1', 'm-1');
+    const original = invoke.getMockImplementation()!;
+    // As the instance answers: turning it back on leaves an explicit override.
+    invoke.mockImplementation(async (deviceId, channel, [request]) =>
+      request.op === 'visibility-set'
+        ? {
+            ok: true,
+            ownerGeneration: 3,
+            catalogChanged: false,
+            visibility: {
+              status: 'ready',
+              revision: 'r3',
+              overrides: { [key]: (request as unknown as { enabled: boolean }).enabled },
+            },
+          }
+        : original(deviceId, channel, [request]),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /My gateway/ }));
+    await screen.findByText('m-1');
+    fireEvent.click(screen.getAllByRole('button', { name: 'settings.providers.models.advanced.openAria' })[0]!);
+    const panel = await screen.findByRole('dialog');
+    const restore = () =>
+      within(panel).queryByRole('button', { name: 'settings.providers.models.advanced.restoreDefault' });
+    expect(restore()).toBeNull();
+    const toggle = await within(panel).findByRole('switch', { name: /m-1/ });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    await waitFor(() => expect(restore()).toBeTruthy());
   });
 });
 
@@ -606,6 +727,19 @@ describe('shares on an older runtime', () => {
 describe('cloud provider helpers', () => {
   it('uses the local rail rule', () => {
     expect(cloudRailProviders(providers).map((p) => p.id)).toEqual(['openai', 'web-1']);
+  });
+  it('drops only the unconnected built-ins the add flow can still reach', () => {
+    const builtin = (id: string, extra: object) =>
+      ({ id, source: 'builtin', connected: false, ...extra }) as unknown as ProviderView;
+    const rail = [
+      builtin('openai', { imageModels: [{}] }),
+      builtin('anthropic', { removed: false }),
+      builtin('xai', { connected: true }),
+      builtin('openai', { openAiAccount: { reconnectRequired: true } }),
+      builtin('xd', {}),
+      builtin('gemini', { removed: false }),
+    ];
+    expect(cloudConnectedRail(rail)).toEqual(rail.slice(2));
   });
   it('offers a built-in sign-in only when that provider is not in the rail', () => {
     expect(cloudAddChoices(items).some((c) => c.key === 'provider:anthropic')).toBe(false);
