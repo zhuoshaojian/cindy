@@ -116,6 +116,12 @@ export interface MyDevicesCloudSlot {
   /** Optional: that name without the 「(n)」, where a rename of the card starts; null for others. */
   baseName?(device: { deviceId: string; name: string }): string | null;
   /**
+   * Optional: renames a managed cloud instance where its name is kept (so the web shows it too).
+   * Resolves whether its device list entry has that name now; false: rename the entry here as
+   * well; null: not renamed (the slot said why).
+   */
+  rename?(device: { deviceId: string; name: string }, name: string | null): Promise<boolean | null>;
+  /**
    * Optional: where a cloud card or extra row goes among the cloud cards (name order); absent,
    * directory cards come first and the extra rows after them.
    */
@@ -342,10 +348,16 @@ export function MyDevicesPanel({
       (self?.deviceId === deviceId ? self : allOthers.find((d) => d.deviceId === deviceId))
         ?.name.trim() ?? '';
     setEditingId(null);
-    if (name && name === currentName) return;
-    // A cloud card starts from its own name, which may come from CIS: unchanged, nothing to save.
+    // A cloud instance is renamed where its name is kept, so the web shows the same name; its
+    // device list entry follows, here if CIS could not give it the name.
     const listed = allOthers.find((d) => d.deviceId === deviceId);
-    if (name && listed && name === cloud?.baseName?.(listed)) return;
+    if (listed && cloud?.rename && cloud.isManaged(deviceId)) {
+      const synced = await cloud.rename(listed, name || null);
+      if (synced === false) await s.rename(deviceId, name || null);
+      else if (synced) void s.refresh(true);
+      return;
+    }
+    if (name && name === currentName) return;
     await s.rename(deviceId, name || null);
   };
 

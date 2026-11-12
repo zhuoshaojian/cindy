@@ -3,6 +3,7 @@ import { cloudLoginHandleSchema, cloudLoginDispatchSchema } from '../../shared/c
 import {
   cloudInstanceTargetSchema,
   cloudInstancePowerSchema,
+  cloudInstanceRenameSchema,
   cloudInstancePolicySchema,
   cloudInstanceUpgradeSchema,
 } from '../../shared/cloudInstanceControl';
@@ -57,6 +58,9 @@ export function cloudSettingsClientHandlers(
     ),
     instancePower: handler(cloudInstancePowerSchema, (c, v) =>
       service.instancePower(c, v.deviceId, v.action),
+    ),
+    instanceRename: handler(cloudInstanceRenameSchema, (c, v) =>
+      service.instanceRename(c, v.deviceId, v.name),
     ),
     instancePolicy: handler(cloudInstancePolicySchema, (c, v) =>
       service.instancePolicy(c, v.deviceId, v.change),

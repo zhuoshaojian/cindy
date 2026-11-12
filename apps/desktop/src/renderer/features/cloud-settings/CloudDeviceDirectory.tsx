@@ -52,6 +52,7 @@ import {
 } from './instanceState';
 import { byShownName, cloudBaseName, cloudDisplayName } from './instanceName';
 import { BlockReadFailure, InlineRetry, useBlockRetry } from './blockRetry';
+import { cloudRefusalKey } from './refusal';
 import {
   sleepConfirmation,
   useCloudInstances,
@@ -201,7 +202,7 @@ function AdmittedCloudDeviceDirectory({
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   const api = useMemo<
-    CloudInstancesApi & Pick<typeof window.electronAPI.cloudSettings, 'instanceRead'>
+    CloudInstancesApi & Pick<typeof window.electronAPI.cloudSettings, 'instanceRead' | 'instanceRename'>
   >(
     () => ({
       ...window.electronAPI.cloudSettings,
@@ -449,6 +450,30 @@ function AdmittedCloudDeviceDirectory({
         baseName: (device) => {
           const view = byDevice.get(device.deviceId);
           return view ? baseName(view, device.name) : null;
+        },
+        // The card's rename sets the name CIS keeps for the client and the web alike.
+        rename: async (device, next) => {
+          const view = byDevice.get(device.deviceId);
+          if (!view) return false;
+          const listed = (names?.get(device.deviceId) ?? device.name).trim();
+          // Saved as shown: a name CIS keeps, or the plain default, changes nothing there (only a
+          // device list entry left apart follows). A name only the device list had goes to CIS.
+          if (
+            next !== null &&
+            next === baseName(view, device.name) &&
+            (view.name !== null || next === t('cloudSettings.onboarding.defaultNameSole'))
+          )
+            return view.name === null || listed === next;
+          // Back to the default with nothing kept in CIS: only the device list entry has a name.
+          if (next === null && view.name === null) return false;
+          try {
+            const { deviceListSynced } = await api.instanceRename({ deviceId: view.deviceId, name: next });
+            void cloud.load(true);
+            return deviceListSynced;
+          } catch (error) {
+            toast.error(t(cloudRefusalKey(error) ?? 'settings.devices.toast.renameFailed'));
+            return null;
+          }
         },
         // CIS-only rows sit among the directory's cards in name order; the claim rows last.
         order: (deviceId) => shownPlace.get(deviceId) ?? Number.MAX_SAFE_INTEGER,

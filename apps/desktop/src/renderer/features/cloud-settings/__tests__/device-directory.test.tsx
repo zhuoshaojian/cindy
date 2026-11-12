@@ -608,3 +608,41 @@ describe('claiming another cloud Cindy and refusals on the card', () => {
     expect(api.instancePower).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('renaming a cloud Cindy from its card', () => {
+  const renameTo = async (name: string) => {
+    renderDevices();
+    await within(row(CLOUD)).findByRole('button', { name: 'cloudSettings.instance.manage' });
+    fireEvent.click(within(row(CLOUD)).getByRole('button', { name: 'settings.devices.rename' }));
+    const input = within(row(CLOUD)).getByRole('textbox');
+    fireEvent.change(input, { target: { value: name } });
+    fireEvent.click(within(row(CLOUD)).getByRole('button', { name: 'settings.devices.renameConfirm' }));
+  };
+
+  it('keeps the name in CIS, which also gives it to the device list, so the web shows it too', async () => {
+    api.instanceRename = vi.fn().mockResolvedValue({ deviceListSynced: true });
+    await renameTo('测试机');
+    await waitFor(() => expect(api.instanceRename).toHaveBeenCalledExactlyOnceWith({ deviceId: CLOUD, name: '测试机' }));
+    await waitFor(() => expect(s.refresh).toHaveBeenCalled());
+    expect(s.rename).not.toHaveBeenCalled();
+  });
+
+  it('renames the device list entry here when CIS could not', async () => {
+    api.instanceRename = vi.fn().mockResolvedValue({ deviceListSynced: false });
+    await renameTo('测试机');
+    await waitFor(() => expect(s.rename).toHaveBeenCalledExactlyOnceWith(CLOUD, '测试机'));
+  });
+
+  it('a failed rename changes nothing and says so', async () => {
+    api.instanceRename = vi.fn().mockRejectedValue(new Error('network'));
+    await renameTo('测试机');
+    await waitFor(() => expect(api.instanceRename).toHaveBeenCalledTimes(1));
+    expect(s.rename).not.toHaveBeenCalled();
+  });
+
+  it('the card shows the name CIS keeps, as the web does', async () => {
+    api.instanceList = vi.fn().mockResolvedValue([view(CLOUD, { name: '工作机' })]);
+    renderDevices();
+    await within(row(CLOUD)).findByText('工作机');
+  });
+});

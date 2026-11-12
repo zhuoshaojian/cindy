@@ -10,9 +10,9 @@ export function cloudInstanceName(t: TFunction, instance: { name: string | null 
 const DEVICE_NAME_MARKER = /^__cindy_cloud_device_name__:\d+$/u;
 
 /**
- * A cloud Cindy's own name, before any 「(n)」: the name the device list has for it, which is what
- * the user sees on its card and changes with its rename; CIS's name where the list has none yet
- * (claimed, not signed in) or only the runtime's marker.
+ * A cloud Cindy's own name, before any 「(n)」: the name the user gave it, which CIS keeps for the
+ * client and the web alike (its card's rename sets it there); otherwise the name the device list
+ * has for it; otherwise the default.
  */
 export function cloudBaseName(
   t: TFunction,
@@ -20,9 +20,10 @@ export function cloudBaseName(
   listedName: string | null | undefined,
   instance: { name: string | null } | undefined,
 ): string {
+  if (instance?.name) return instance.name;
   const listed = listedName?.trim();
   if (listed && listed !== deviceId && !DEVICE_NAME_MARKER.test(listed)) return listed;
-  return instance ? cloudInstanceName(t, instance) : t('cloudSettings.onboarding.defaultNameSole');
+  return t('cloudSettings.onboarding.defaultNameSole');
 }
 
 /**

@@ -102,6 +102,12 @@ export interface CloudSettingsRendererApi {
     requestId: string;
   }): Promise<import('./cloudInstanceControl').CloudUpgradeOperation>;
   instancePower(input: { deviceId: string; action: 'wake' | 'sleep' }): Promise<void>;
+  /**
+   * The owner's own name for one cloud Cindy (null: the default), kept by CIS for the client and
+   * the web. `deviceListSynced`: CIS gave its device list entry the same name; otherwise the
+   * client renames that entry itself.
+   */
+  instanceRename(input: { deviceId: string; name: string | null }): Promise<{ deviceListSynced: boolean }>;
   instancePolicy(input: {
     deviceId: string;
     change: import('./cloudInstanceControl').CloudMaintenanceEdit;
@@ -129,6 +135,7 @@ export const CLOUD_CLIENT_CHANNELS = {
   instanceLoginClose: 'cloud-settings-client:instance-login-close',
   instanceRead: 'cloud-settings-client:instance-read',
   instancePower: 'cloud-settings-client:instance-power',
+  instanceRename: 'cloud-settings-client:instance-rename',
   instanceUpgrade: 'cloud-settings-client:instance-upgrade',
   instancePolicy: 'cloud-settings-client:instance-policy',
   open: 'cloud-settings-client:open',

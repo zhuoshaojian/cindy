@@ -9,6 +9,7 @@ import {
   cloudUpgradeStatusSchema,
   cloudUpgradeReceiptSchema,
   cloudMaintenanceViewSchema,
+  cloudInstanceRenameReceiptSchema,
   type CloudMaintenanceEdit,
   type CloudInstanceView,
 } from '../../shared/cloudInstanceControl';
@@ -158,6 +159,26 @@ export function createCloudInstanceControl(deps: {
             throw error;
           throw new CloudClientError('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
         }
+      });
+    },
+    /**
+     * The owner's own name (null: the default). CIS keeps it for the client and the web, and gives
+     * the device list entry the same name with this client's token when it can.
+     */
+    rename(caller: CloudClientCaller, deviceId: string, name: string | null) {
+      return perform(caller, deviceId, true, async (call, target) => {
+        if (target.customLabel === name) return { deviceListSynced: false };
+        const receipt = parse(
+          cloudInstanceRenameReceiptSchema,
+          await call(
+            `/instance-login/api/manage/instances/${encodeURIComponent(target.instanceId)}`,
+            'PATCH',
+            { customLabel: name },
+          ),
+        );
+        if (receipt.instanceId !== target.instanceId)
+          throw new CloudClientError('CLOUD_SETTINGS_SCOPE_CHANGED');
+        return { deviceListSynced: receipt.renameSync?.status === 'synced' };
       });
     },
     policy(caller: CloudClientCaller, deviceId: string, raw: CloudMaintenanceEdit) {

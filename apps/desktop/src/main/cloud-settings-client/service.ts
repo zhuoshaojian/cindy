@@ -332,6 +332,7 @@ export function createCloudSettingsService(deps: {
     instanceLoginClose: login.close,
     instanceRead: instances.read,
     instancePower: instances.power,
+    instanceRename: instances.rename,
     instanceUpgrade: instances.upgrade,
     instancePolicy: instances.policy,
     async open(caller: CloudClientCaller, deviceId: string): Promise<CloudClientOpen> {
