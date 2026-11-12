@@ -55,6 +55,71 @@ function setup() {
   return { view, manager, execution, action, cancel: () => cancel() };
 }
 describe('official cloud bot native binding branches', () => {
+  // Unit regression: a retained multi-workspace connection restores the same team,
+  // so waiting exclusively for a new team leaves the remote authorization running forever.
+  it('finishes when enabling a retained Slack connection without another authorization', async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    s.view.enabled = false;
+    s.view.status = 'disabled';
+    s.view.bindings[0].displaced = false;
+    const addBinding = vi.fn();
+    Object.assign(s.manager, { armAutoBind: vi.fn(), addBinding, setProviderEnabled: () => { s.view.enabled = true; s.view.status = 'connected'; } });
+    const action = listOfficialBotManagement(caller)[0]!.actions.find(a => a.intent === 'authorize')!;
+    let settled = false;
+    const run = action.run({}, s.execution).then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
+    await run;
+    expect(addBinding).not.toHaveBeenCalled();
+    expect(s.execution.prompt).not.toHaveBeenCalled();
+  });
+
+  // Restoring Slack communications may need OAuth but must not take over the workspace bot.
+  it('projects and completes communications authorization for only the chosen Slack team', async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    s.view.serverSlackCommunications = true;
+    s.view.bindings[0].communicationsEnabled = false;
+    const communications = vi.fn(async () => {
+      s.view.pendingBind = { state: 'pending', purpose: 'communications', teamId: 'team-a', intent: 'rebind', authorizeUrl: 'https://auth.example.invalid/slack?state=communications' };
+      return { ok: true, result: { authorizing: true } };
+    });
+    Object.assign(s.manager, { setSlackCommunications: communications });
+    const action = listOfficialBotManagement(caller).find(e => e.id.endsWith(':team-a'))!.actions.find(a => a.intent === 'connect');
+    expect(action).toBeDefined();
+    const run = action!.run({}, s.execution);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.execution.prompt).toHaveBeenCalledWith(expect.objectContaining({ kind: 'browser', url: s.view.pendingBind.authorizeUrl }));
+    expect(communications).toHaveBeenCalledWith('team-a', true);
+    expect(s.manager.rebindTeam).not.toHaveBeenCalled();
+    s.view.bindings[0].communicationsEnabled = true;
+    s.view.pendingBind = null;
+    await vi.advanceTimersByTimeAsync(1000);
+    await run;
+    expect(s.view.bindings[0].displaced).toBe(true);
+  });
+
+  it('does not cancel another Slack authorization that replaces a communications attempt', async () => {
+    vi.useFakeTimers();
+    const s = setup();
+    s.view.serverSlackCommunications = true;
+    Object.assign(s.manager, { setSlackCommunications: async () => {
+      s.view.pendingBind = { state: 'pending', purpose: 'communications', teamId: 'team-a', authorizeUrl: 'https://auth.example.invalid/slack?state=first' };
+      return { ok: true, result: {} };
+    } });
+    const action = listOfficialBotManagement(caller).find(e => e.id.endsWith(':team-a'))!.actions.find(a => a.intent === 'connect');
+    expect(action).toBeDefined();
+    const run = action!.run({}, s.execution);
+    const rejected = expect(run).rejects.toThrow('CHANGED');
+    await vi.advanceTimersByTimeAsync(0);
+    s.view.pendingBind = { state: 'pending', purpose: 'communications', teamId: 'team-a', authorizeUrl: 'https://auth.example.invalid/slack?state=second' };
+    s.cancel();
+    expect(s.manager.cancelPendingBind).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    await rejected;
+  });
+
   it('rebinds only the selected displaced workspace and waits for its active result', async () => {
     vi.useFakeTimers();
     const s = setup();

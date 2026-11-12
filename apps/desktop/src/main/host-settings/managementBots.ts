@@ -81,7 +81,6 @@ export function listOfficialBotManagement(caller: ManagementCaller): ManagementE
   const entries: ManagementEntry[] = [];
   if (snapshot.url) {
     const resource = 'bot:official:slack';
-    const originalTeams = new Set(snapshot.bindings.map((binding) => binding.teamId));
     const connected =
       snapshot.bindings.some((binding) => !binding.displaced) ||
       snapshot.binding?.state === 'confirmed';
@@ -97,14 +96,17 @@ export function listOfficialBotManagement(caller: ManagementCaller): ManagementE
           label: connected ? 'management.actions.create' : 'management.actions.authorize',
           async run(_values, execution) {
             execution.assertCurrent();
+            const before = manager.snapshot();
+            const enabling = !before.enabled;
+            const originalTeams = new Set(before.bindings.map((binding) => binding.teamId));
             if (
-              manager.snapshot().pendingBind?.state === 'pending' ||
-              manager.snapshot().binding?.state === 'pending'
+              before.pendingBind?.state === 'pending' ||
+              before.binding?.state === 'pending'
             )
               throw new Error('MANAGEMENT_BUSY');
             let authorizationUrl: string | null = null;
             const expiresAt = Date.now() + 5 * 60_000;
-            if (!manager.snapshot().enabled) {
+            if (enabling) {
               manager.armAutoBind();
               manager.setProviderEnabled('slack', true);
             } else if (manager.snapshot().serverMultiTeam) {
@@ -131,9 +133,13 @@ export function listOfficialBotManagement(caller: ManagementCaller): ManagementE
                 authorizationUrl = pending.authorizeUrl;
                 execution.prompt({ kind: 'browser', url: pending.authorizeUrl, expiresAt });
               }
+              if (!view.enabled || view.status !== 'connected') return false;
               return view.serverMultiTeam
                 ? view.bindings.some(
-                    (binding) => !binding.displaced && !originalTeams.has(binding.teamId),
+                    (binding) =>
+                      (!binding.displaced || (enabling && view.serverSlackCommunications &&
+                        binding.communicationsEnabled !== undefined)) &&
+                      (enabling || !originalTeams.has(binding.teamId)),
                   )
                 : view.binding?.state === 'confirmed';
             }, execution);
@@ -166,6 +172,50 @@ export function listOfficialBotManagement(caller: ManagementCaller): ManagementE
         group: 'management.officialBots',
         status: binding.displaced ? 'offline' : 'connected',
         actions: [
+          ...(snapshot.serverSlackCommunications ? [{
+            resource,
+            intent: 'connect' as const,
+            label: 'management.actions.connect',
+            async run(_values: Record<string, string>, execution: ManagementExecution) {
+              execution.assertCurrent();
+              const fresh = manager.snapshot();
+              if (!fresh.serverSlackCommunications || !fresh.bindings.some(
+                (row) => row.teamId === binding.teamId && row.slackUserId === binding.slackUserId,
+              )) throw new Error('MANAGEMENT_CHANGED');
+              if (fresh.pendingBind?.state === 'pending') throw new Error('MANAGEMENT_BUSY');
+              const result = await manager.setSlackCommunications(binding.teamId, true);
+              execution.assertCurrent();
+              if (!result.ok) throw new Error('MANAGEMENT_AUTH_FAILED');
+              let authorizationUrl: string | null = null;
+              const expiresAt = Date.now() + 5 * 60_000;
+              execution.onCancel(() => {
+                const pending = manager.snapshot().pendingBind;
+                if (authorizationUrl && pending?.state === 'pending' &&
+                  pending.purpose === 'communications' && pending.teamId === binding.teamId &&
+                  pending.authorizeUrl === authorizationUrl) manager.cancelPendingBind();
+              });
+              await managementWait(async () => {
+                const view = manager.snapshot(), pending = view.pendingBind;
+                const current = view.bindings.find((row) => row.teamId === binding.teamId &&
+                  row.slackUserId === binding.slackUserId);
+                if (!current) throw new Error('MANAGEMENT_CHANGED');
+                if (pending) {
+                  if (pending.purpose !== 'communications' || pending.teamId !== binding.teamId)
+                    throw new Error('MANAGEMENT_CHANGED');
+                  if (pending.state !== 'pending') throw new Error('MANAGEMENT_AUTH_FAILED');
+                  if (pending.authorizeUrl) {
+                    if (authorizationUrl && authorizationUrl !== pending.authorizeUrl)
+                      throw new Error('MANAGEMENT_CHANGED');
+                    authorizationUrl = pending.authorizeUrl;
+                    execution.prompt({ kind: 'browser', url: authorizationUrl, expiresAt });
+                  }
+                }
+                if (!pending && current.communicationsEnabled === true) return true;
+                if (!pending && authorizationUrl) throw new Error('MANAGEMENT_AUTH_FAILED');
+                return false;
+              }, execution);
+            },
+          }] : []),
           ...(binding.displaced && snapshot.serverMultiTeam
             ? [
                 {

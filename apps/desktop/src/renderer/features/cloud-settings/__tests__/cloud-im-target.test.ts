@@ -104,6 +104,16 @@ describe('cloud IM target', () => {
     ]);
   });
 
+  it('enables Slack communications through its own ticket while disabling stays a native write', async () => {
+    const { target: t, authorization } = target();
+    await t.api.hookControl.setSlackCommunications('team-a', true);
+    expect(authorization.start).toHaveBeenCalledWith({ kind: 'slack-communications', teamId: 'team-a' });
+    expect(requests()).toEqual([{ call: 'maker:hook-control:get', args: [] }]);
+    invoke.mockClear();
+    await t.api.hookControl.setSlackCommunications('team-a', false);
+    expect(requests()).toEqual([{ call: 'maker:hook-control:set-slack-communications', args: [{ teamId: 'team-a', enabled: false }] }]);
+  });
+
   it('opens provider links on this computer', async () => {
     replies.push({ call: CLOUD_HOOK_PROVIDER_ACTION_URL, result: { url: 'https://t.me/cindy' } });
     const { target: t } = target();

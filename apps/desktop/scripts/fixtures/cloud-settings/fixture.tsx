@@ -100,8 +100,10 @@ mountPage({
       onPresenceChanged: () => () => undefined,
       onStatusChanged: () => () => undefined,
       onControlTargetChanged: () => () => undefined,
-      invoke: async (deviceId: string, channel: string) => {
+      invoke: async (deviceId: string, channel: string, args: unknown[] = []) => {
         if (deviceId !== 'cloud-settings-trial') throw Error('Wrong fixture target');
+        if (channel === 'maker:model-catalog:read' && (args[0] as { op?: string })?.op === 'locations')
+          return { status: 'ready', locations: [] };
         if (channel === 'maker:provider:list') return { providers: [targetProvider] };
         if (channel === 'maker:get-capabilities')
           return {

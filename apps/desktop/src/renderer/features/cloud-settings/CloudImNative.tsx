@@ -56,15 +56,20 @@ export function useCloudImTarget({
             item.actions.some((action) => action.intent === 'authorize'),
         );
       },
+      canAuthorizeSlackCommunications(teamId) {
+        return latest.current.items.some((item) => item.id === `bot:official:slack:${teamId}` &&
+          item.actions.some((action) => action.intent === 'connect'));
+      },
       async start(request) {
         const id =
           request.kind === 'provider'
             ? `bot:official:${request.provider}`
-            : request.kind === 'slack-rebind'
+            : request.kind === 'slack-rebind' || request.kind === 'slack-communications'
               ? `bot:official:slack:${request.teamId}`
               : 'bot:official:slack';
         const item = latest.current.items.find((entry) => entry.id === id);
-        const action = item?.actions.find((entry) => entry.intent === 'authorize');
+        const intent = request.kind === 'slack-communications' ? 'connect' : 'authorize';
+        const action = item?.actions.find((entry) => entry.intent === intent);
         if (!item || !action) throw new Error('[UNAVAILABLE] this connection cannot start now');
         await latest.current.run(item, action);
       },

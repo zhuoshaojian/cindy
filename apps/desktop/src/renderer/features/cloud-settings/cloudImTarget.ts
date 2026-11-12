@@ -20,12 +20,14 @@ export interface CloudImAuthorization {
     request:
       | { kind: 'slack' }
       | { kind: 'slack-rebind'; teamId: string }
+      | { kind: 'slack-communications'; teamId: string }
       | { kind: 'provider'; provider: NeutralHookProvider },
   ): Promise<void>;
   /** Cancels the running ticket of this card; false when none is running. */
   cancel(card: 'slack' | NeutralHookProvider): Promise<boolean>;
   /** Older Hosts do not list every provider's authorization action. */
   canAuthorizeProvider?(provider: NeutralHookProvider): boolean;
+  canAuthorizeSlackCommunications?(teamId: string): boolean;
 }
 
 /** One call over the instance's private IM channel; the reply must belong to the same account. */
@@ -147,7 +149,9 @@ export function createCloudImTarget(
     addBinding: () => after(() => deps.authorization.start({ kind: 'slack' })),
     rebindTeam: (teamId) => after(() => deps.authorization.start({ kind: 'slack-rebind', teamId })),
     setSlackCommunications: (teamId, enabled) =>
-      call('maker:hook-control:set-slack-communications', { teamId, enabled }),
+      enabled && deps.authorization.canAuthorizeSlackCommunications?.(teamId) !== false
+        ? after(() => deps.authorization.start({ kind: 'slack-communications', teamId }))
+        : call('maker:hook-control:set-slack-communications', { teamId, enabled }),
     revokeTeam: (teamId) => call('maker:hook-control:revoke-team', { teamId }),
     cancelPendingBind: async () =>
       (await deps.authorization.cancel('slack')) ? get() : call('maker:hook-control:cancel-pending-bind'),

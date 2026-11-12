@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The local Telegram, WeChat directory and prompt editors on the cloud page talk only to the
 // instance: every read and write is a DeviceLink call, never this computer's own API.
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CLOUD_IM_SETTINGS_CHANNEL,
@@ -9,7 +9,8 @@ import {
 } from '../../../../shared/cloudImSettings';
 import { CLOUD_PERSONALIZATION_CHANNEL } from '../../../../shared/cloudPersonalization';
 import { createCloudImTarget } from '../cloudImTarget';
-import { CloudTelegramSettings, CloudWechatWorkingDirectory } from '../CloudImNative';
+import { CloudTelegramSettings, CloudWechatWorkingDirectory, useCloudImTarget } from '../CloudImNative';
+import type { ManagementItem } from '../../../../shared/settingsManagement';
 import { CloudUserPromptSection } from '../CloudUserPromptSection';
 
 vi.mock('react-i18next', async (original) => ({
@@ -65,6 +66,24 @@ const target = (pickDirectory = vi.fn(async () => '/home/cindy/wechat')) =>
   });
 
 describe('cloud IM native sections', () => {
+  // Unit/jsdom: communications authorization must use the target's connect ticket, not
+  // the same workspace's authorize/rebind ticket (which would take over its bot).
+  it('selects the declared Slack communications ticket instead of the rebind action', async () => {
+    im['maker:hook-control:get'] = () => ({ hook: { enabled: true } });
+    const actions = ['authorize', 'connect'].map((intent, i) => ({
+      id: `00000000-0000-4000-8000-00000000000${i}`, intent, label: intent, fields: [], expiresAt: Date.now() + 60_000,
+    })) as ManagementItem['actions'];
+    const item: ManagementItem = { id: 'bot:official:slack:team-a', label: 'Workspace A', status: 'connected', actions };
+    const run = vi.fn(async () => {});
+    const hook = renderHook(() => useCloudImTarget({
+      deviceId: DEVICE, deviceName: 'Cloud', enabled: false, items: [item], run,
+      cancelOperation: vi.fn(), operationActive: false,
+    }));
+    await hook.result.current.target.api.hookControl.setSlackCommunications('team-a', true);
+    expect(run).toHaveBeenCalledWith(item, actions[1]);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it('edits the instance Telegram persona, behaviour and groups', async () => {
     const setPersona = vi.fn((args: unknown[]) => ({ persona: args[0] }));
     const setGroup = vi.fn(() => ({}));
