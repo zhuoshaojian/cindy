@@ -33,18 +33,6 @@ import { createLogger } from '../logger';
 
 import { inspectSettingsFile, isSettingBoolean, isSettingStringList, isSettingsObject, validateOptionalSettingsFields } from '../maker-host/settings-inspection.js';
 
-
-/** 只读持久偏好，不探测设备、relay、powerSaveBlocker 或系统授权。 */
-export function inspectDeviceLinkSettings() {
-  return inspectSettingsFile({ filePath: settingsFilePath, defaults: DEFAULTS, normalize, savedSource: 'unknown',
-    validate: (raw) => validateOptionalSettingsFields(raw, {
-      remoteDesktopEnabled: isSettingBoolean, remoteControlEnabled: isSettingBoolean, keepAwake: isSettingBoolean,
-      revokedControllers: isSettingStringList, disabledControlDeviceIds: isSettingStringList,
-      lastKnownDeviceNames: (value) => isSettingsObject(value) && Object.values(value).every((name) => typeof name === 'string'),
-    }),
-  });
-}
-
 export interface DeviceLinkSettings {
   /** Device-local V2 preference; absent in existing files means V1. */
   agentNetEnabled?: boolean;
@@ -76,6 +64,17 @@ const { getUserDataDir, withAvailabilityPolicyMutation } = ports;
 
 
 const log = createLogger('device-link-settings');
+
+/** 只读持久偏好，不探测设备、relay、powerSaveBlocker 或系统授权。 */
+function inspectDeviceLinkSettings() {
+  return inspectSettingsFile({ filePath: settingsFilePath, defaults: DEFAULTS, normalize, savedSource: 'unknown',
+    validate: (raw) => validateOptionalSettingsFields(raw, {
+      remoteDesktopEnabled: isSettingBoolean, remoteControlEnabled: isSettingBoolean, keepAwake: isSettingBoolean,
+      revokedControllers: isSettingStringList, disabledControlDeviceIds: isSettingStringList,
+      lastKnownDeviceNames: (value) => isSettingsObject(value) && Object.values(value).every((name) => typeof name === 'string'),
+    }),
+  });
+}
 
 const DEFAULTS: DeviceLinkSettings = {
   agentNetEnabled: false,
@@ -448,5 +447,5 @@ function isPlaceholderDeviceName(name: string): boolean {
 }
 
 const __testing = { normalize };
-return { readDeviceLinkSettings, onDeviceLinkSettingChanged, updateDeviceLinkSetting, writeDeviceLinkSetting, readLastKnownDeviceNames, writeLastKnownDeviceNames, setDeviceControlEnabled, rememberLastKnownDeviceName, forgetLastKnownDeviceName, normalizeCachedDeviceName, isPlaceholderDeviceName, __testing };
+return { inspectDeviceLinkSettings, readDeviceLinkSettings, onDeviceLinkSettingChanged, updateDeviceLinkSetting, writeDeviceLinkSetting, readLastKnownDeviceNames, writeLastKnownDeviceNames, setDeviceControlEnabled, rememberLastKnownDeviceName, forgetLastKnownDeviceName, normalizeCachedDeviceName, isPlaceholderDeviceName, __testing };
 }

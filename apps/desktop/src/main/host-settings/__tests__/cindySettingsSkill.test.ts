@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reconcileSettingsSkill, settingsSkillPaths, isOwnedSettingsSkill, type SettingsSkillLayout } from '../settings-skill-files.js';
 import content from '../skills/cindy-settings/SKILL.md?raw';
+import { configureAppDataDir, configureUserDataDir } from '../../userDataPath.js';
 
 const host = vi.hoisted(() => ({ home: '', userData: '', appData: '', pilot: false, packaged: true }));
 vi.mock('electron', () => ({ app: {
@@ -26,6 +27,8 @@ beforeEach(() => {
   host.home = path.join(root, 'home'); host.userData = path.join(root, 'profile'); host.appData = path.join(root, 'appData');
   host.pilot = false; host.packaged = true;
   fs.mkdirSync(host.home); fs.mkdirSync(host.userData); fs.mkdirSync(host.appData);
+  // Upstream injects both roots at startup instead of reading Electron.
+  configureUserDataDir(host.userData); configureAppDataDir(host.appData);
   vi.stubEnv('CLAUDE_CONFIG_DIR', ''); vi.stubEnv('XDT_USER_DATA_DIR', '');
   layout = { profileDir: host.userData, homeDir: host.home, claudeConfigDir: path.join(host.home, '.claude') };
 });
@@ -215,6 +218,7 @@ it('resolves profile and managed home after import; isolated Claude uses its act
   host.pilot = true;
   host.userData = path.join(root, 'pilot'); fs.mkdirSync(host.userData);
   host.home = path.join(host.userData, 'managed-home'); fs.mkdirSync(host.home);
+  configureUserDataDir(host.userData); // startup injects the switched profile root
   const result = await prepareHostSettingsSkill();
   expect(result.status).toBe('ready');
   expect(result.source).toContain(host.userData);

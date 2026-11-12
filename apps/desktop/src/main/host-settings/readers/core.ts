@@ -34,7 +34,7 @@ export interface CoreSettingsStores {
   visionBridge: typeof import('../../vision-bridge/vision-bridge-settings-store.js').inspectVisionBridgeSettings;
   terminal: typeof import('../../terminal/terminalPrefsStore.js').inspectTerminalPrefs;
   windowBehavior: typeof import('../../window-behavior-settings-store.js').inspectWindowBehaviorSettings;
-  deviceLink: typeof import('../../device-link/settings-store.js').inspectDeviceLinkSettings;
+  deviceLink: typeof import('../../device-link/settings-store.desktop.js').inspectDeviceLinkSettings;
   updateChannel: typeof import('../../updateChannelStore.js').inspectUpdateChannelSettings;
   autoUpdate: typeof import('../../auto-update-settings-store.js').inspectAutoUpdateSettings;
   analytics: typeof import('../../analytics-settings-store.js').inspectAnalyticsSettings;

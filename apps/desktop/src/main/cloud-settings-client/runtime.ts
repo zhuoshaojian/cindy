@@ -9,7 +9,7 @@ import {
 } from 'electron';
 import { z } from 'zod';
 import { CindyAuthClient } from '@cindy/auth-client';
-import { getResolvedMainLocale } from '../i18n';
+import { getResolvedMainLocale } from '../i18n.desktop';
 import * as auth from '../authManager';
 import { getClientEndpointForRealm } from '../clientEndpointsService';
 import { isAppSessionBoundaryPending, peekCommittedAppSession } from '../appSessionState';

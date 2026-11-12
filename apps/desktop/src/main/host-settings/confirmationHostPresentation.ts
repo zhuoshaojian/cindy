@@ -1,4 +1,4 @@
-import { t } from '../i18n.js';
+import { t } from '../i18n.desktop.js';
 import { buildSettingsConfirmationPreview } from './confirmationPresentation.js';
 
 /** Main's translator supplies the locale text; it does not interpolate values. */

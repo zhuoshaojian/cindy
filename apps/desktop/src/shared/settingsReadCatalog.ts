@@ -327,6 +327,8 @@ export const SETTINGS_READ_EXTERNAL_CATALOG = [
   { id: 'account.logout', tab: 'general', control: 'LogoutSection', kind: 'action', entry: 'account' },
   // The new-task default permission is renderer-local and not part of the deployed v2 snapshot.
   { id: 'general.newChatDefaultPermission', tab: 'general', control: 'NewChatDefaultPermissionSection', kind: 'external', entry: 'newTask' },
+  // Upstream v0.1.133's default new-task folder is renderer-local per data owner; not a v2 snapshot field.
+  { id: 'general.defaultNewTaskWorkingDir', tab: 'general', control: 'DefaultNewTaskWorkingDirSection', kind: 'external', entry: 'newTask' },
   // Setup migration from another computer is an action on that computer's own window, not a v2 snapshot field.
   { id: 'general.setupMigration', tab: 'general', control: 'SetupMigrationSection', kind: 'action', entry: 'setupMigration' },
   { id: 'billing.account', tab: 'billing', control: 'BillingSettingsSection', kind: 'external', entry: 'billing' },

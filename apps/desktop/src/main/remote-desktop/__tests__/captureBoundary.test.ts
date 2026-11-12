@@ -1107,7 +1107,7 @@ it.each([
   vi.spyOn(screen, 'getAllDisplays').mockReturnValue([
     { id: 1, size: { width: 1280, height: 800 } },
   ] as any);
-  const settings = await import('../../device-link/settings-store');
+  const settings = await import('../../device-link/settings-store.desktop');
   vi.spyOn(settings, 'readDeviceLinkSettings').mockReturnValue({
     remoteDesktopEnabled: true,
     remoteControlEnabled: true,

@@ -12,7 +12,7 @@ import { inspectBotModelChainSettings } from '../../maker-host/bot-model-chain-s
 import { inspectVisionBridgeSettings } from '../../vision-bridge/vision-bridge-settings-store.js';
 import { inspectTerminalPrefs } from '../../terminal/terminalPrefsStore.js';
 import { inspectWindowBehaviorSettings } from '../../window-behavior-settings-store.js';
-import { inspectDeviceLinkSettings } from '../../device-link/settings-store.js';
+import { inspectDeviceLinkSettings } from '../../device-link/settings-store.desktop.js';
 import { inspectUpdateChannelSettings } from '../../updateChannelStore.js';
 import { inspectAutoUpdateSettings } from '../../auto-update-settings-store.js';
 import { inspectAnalyticsSettings } from '../../analytics-settings-store.js';

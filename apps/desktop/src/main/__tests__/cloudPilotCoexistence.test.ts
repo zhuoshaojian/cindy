@@ -41,6 +41,9 @@ async function activate() {
   const resolved = module.resolveCloudPilotDistribution({ resourcesPath, appData: h.appData,
     packaged: true, region: 'cn', version: '0.0.0' })!;
   h.userData = resolved.userData;
+  // Startup injects the pilot roots after Electron's paths are switched (main/index.ts).
+  const dirs = await import('../userDataPath.js');
+  dirs.configureUserDataDir(resolved.userData); dirs.configureAppDataDir(resolved.appData);
   return { ...module, ...resolved };
 }
 

@@ -23,8 +23,8 @@ vi.mock('electron', () => ({
 vi.mock('../../logger', () => ({
   createLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
-vi.mock('../settings-store', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../settings-store')>()),
+vi.mock('../settings-store.desktop', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../settings-store.desktop')>()),
   readDeviceLinkSettings: () => ({
     remoteControlEnabled: true,
     keepAwake: false,
@@ -38,7 +38,7 @@ import {
   runInvoke,
   setCloudPrivateInvokeHandler,
   setProviderShareAccess,
-} from '../dispatch';
+} from '../dispatch.desktop';
 
 const CHANNEL = 'cloud:provider-settings:v1';
 const GUEST = providerShareGuestPeer('share-1', 'member-1', 'laptop');

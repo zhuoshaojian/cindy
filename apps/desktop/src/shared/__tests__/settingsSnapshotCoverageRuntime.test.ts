@@ -19,7 +19,7 @@ vi.mock('electron-store', () => ({ default: state.forbidden }));
 // Model presentation collections exist only in a managed cloud instance's Host file.
 vi.mock('../../main/instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../main/logger.js', () => ({ createLogger: () => state.log }));
-vi.mock('../../main/maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => state.log } }));
+vi.mock('../../main/maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => state.log }, createMakerLogger: () => state.log }));
 vi.mock('../../main/appSessionState.js', () => ({
   getActiveAppSession: state.forbidden, ownerScopedUserDataPath: state.forbidden, activeOwnerScopeKey: state.forbidden,
   getActiveDataOwnerPushStamp: state.forbidden, isAppSessionBoundaryPending: state.forbidden, dataOwnerStorageKey: (v: string) => `test-${v}`,

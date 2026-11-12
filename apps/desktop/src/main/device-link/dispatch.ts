@@ -474,6 +474,15 @@ export interface InboundDispatchPorts {
   remoteWorkingDirRejectionToIpcError: typeof remoteWorkingDirRejectionToIpcError;
 }
 
+/**
+ * Cloud fork: private same-account channels registered only by a managed cloud runtime.
+ * Unregistered (every ordinary desktop), a channel keeps upstream's CHANNEL_NOT_ALLOWED.
+ */
+export interface CloudPrivateInvokeHandler {
+  channel: string;
+  handle(controller: string, raw: unknown): Promise<unknown>;
+}
+
 export function createInboundDispatch(ports: InboundDispatchPorts) {
   const unavailable = (feature: string) => (..._args: unknown[]): never => {
     throw new Error(`[NOT_SUPPORTED] ${feature} is not available on this Host`);
@@ -799,7 +808,7 @@ function setProviderGroupRemoteHandler(handler: ProviderGroupRemoteHandler | nul
 }
 
 /** Cloud fork: the owner's browser reaches provider management through the settings relay. */
-export function getProviderGroupRemoteHandler(): ProviderGroupRemoteHandler | null {
+function getProviderGroupRemoteHandler(): ProviderGroupRemoteHandler | null {
   return providerGroupRemoteHandler;
 }
 let setupSnapshotRemoteHandler: SetupSnapshotRemoteHandler | null = null;
@@ -813,22 +822,14 @@ function setSetupTransferRemoteHandler(handler: SetupTransferRemoteHandler | nul
   setupTransferRemoteHandler = handler;
 }
 
-/**
- * Cloud fork: private same-account channels registered only by a managed cloud runtime.
- * Unregistered (every ordinary desktop), a channel keeps upstream's CHANNEL_NOT_ALLOWED.
- */
-export interface CloudPrivateInvokeHandler {
-  channel: string;
-  handle(controller: string, raw: unknown): Promise<unknown>;
-}
 const cloudPrivateInvokeHandlers = new Map<string, CloudPrivateInvokeHandler>();
 /** Registers one channel; null removes them all (runtime teardown). */
-export function setCloudPrivateInvokeHandler(handler: CloudPrivateInvokeHandler | null): void {
+function setCloudPrivateInvokeHandler(handler: CloudPrivateInvokeHandler | null): void {
   if (handler) cloudPrivateInvokeHandlers.set(handler.channel, handler);
   else cloudPrivateInvokeHandlers.clear();
 }
 /** The same handler for the owner's browser, which CIS relays instead of DeviceLink. */
-export function getCloudPrivateInvokeHandler(channel: string): CloudPrivateInvokeHandler | undefined {
+function getCloudPrivateInvokeHandler(channel: string): CloudPrivateInvokeHandler | undefined {
   return cloudPrivateInvokeHandlers.get(channel);
 }
 
@@ -958,7 +959,7 @@ async function persistRemoteSetting(channel: string, args: unknown[], result: un
   await settingsPersist(sessionId, { [field]: args[1] });
 }
 
-export function projectRoutingForDisplay(
+function projectRoutingForDisplay(
   routing: unknown,
 ): Record<string, { wireProtocol?: DisplayWireProtocol; disabled?: true }> | undefined {
   if (!routing || typeof routing !== 'object' || Array.isArray(routing)) return undefined;
@@ -5494,6 +5495,10 @@ return {
   revalidateRemoteModelAccess,
   setRemoteAgentHandler,
   setProviderGroupRemoteHandler,
+  getProviderGroupRemoteHandler,
+  setCloudPrivateInvokeHandler,
+  getCloudPrivateInvokeHandler,
+  projectRoutingForDisplay,
   setSetupSnapshotRemoteHandler,
   setSetupTransferRemoteHandler,
   setRemoteTurnChangeAction,

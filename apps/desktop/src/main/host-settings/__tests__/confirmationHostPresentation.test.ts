@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { setMainLocale } from '../../i18n.js';
+import { setMainLocale } from '../../i18n.desktop.js';
 import { buildHostSettingsConfirmationPreview } from '../confirmationHostPresentation.js';
 
 afterEach(() => setMainLocale('en'));

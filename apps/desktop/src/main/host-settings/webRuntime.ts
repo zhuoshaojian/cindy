@@ -17,10 +17,10 @@ import { runDeviceLinkInvokeContext } from '../device-link/invoke-context.js';
 
 // Loaded on first use: DeviceLink dispatch and the desktop host are large and import Host settings.
 const webHostCallDeps: WebHostCallDeps = {
-  privateHandler: async channel => (await import('../device-link/dispatch.js')).getCloudPrivateInvokeHandler(channel),
+  privateHandler: async channel => (await import('../device-link/dispatch.desktop.js')).getCloudPrivateInvokeHandler(channel),
   invoke: (channel, args) => dispatchLocalInvoke(channel, args),
   providerGroup: async (controller, raw) => {
-    const handler = (await import('../device-link/dispatch.js')).getProviderGroupRemoteHandler();
+    const handler = (await import('../device-link/dispatch.desktop.js')).getProviderGroupRemoteHandler();
     if (!handler) throw new Error('[UNAVAILABLE] provider groups are not ready yet');
     return handler.handle(controller, raw);
   },

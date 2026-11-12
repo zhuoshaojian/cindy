@@ -4,7 +4,7 @@ import { storedCustomProviderId } from '@cindy/model-providers';
 import { resolveProviderLogoKind, type ProviderLogoRouting } from '@cindy/model-providers/branding';
 import { applyCustomModelEdit } from '../../shared/customModelEdit.js';
 import * as authManager from '../authManager.js';
-import { projectRoutingForDisplay, setCloudPrivateInvokeHandler } from '../device-link/dispatch.js';
+import { projectRoutingForDisplay, setCloudPrivateInvokeHandler } from '../device-link/dispatch.desktop.js';
 import { callCloudManagement } from '../host-settings/managementCalls.js';
 import {
   inspectModelPresentationPreferences,

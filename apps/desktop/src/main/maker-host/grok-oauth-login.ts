@@ -768,7 +768,7 @@ function createGrokAccount(providerId: string) {
         opts?.onProgress?.('opening-browser');
         opts?.onAuthorizationUrl?.(authUrl);
         log.info('opening browser for xai oauth', { port: REDIRECT_PORT });
-        await openManagementAuthorization(authUrl, (url) => openExternal(url));
+        await openManagementAuthorization(authUrl, async (url) => { await openExternal(url); });
 
         const code = await codePromise;
 
