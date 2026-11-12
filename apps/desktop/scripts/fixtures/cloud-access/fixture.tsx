@@ -49,6 +49,8 @@ mountPage({
         instanceClaim: forbid('cloudSettings.instanceClaim'),
         // Accepted, not yet listed: the card shows its own request under way (case 'several').
         instancePower: ctx.data.several ? async () => undefined : forbid('cloudSettings.instancePower'),
+        // A name only the device list has is taken over by CIS (case 'several': 「测试机」).
+        instanceRename: async () => ({ deviceListSynced: true }),
         instanceUpgrade: forbid('cloudSettings.instanceUpgrade'),
         instancePolicy: forbid('cloudSettings.instancePolicy'),
         instanceInitialize: forbid('cloudSettings.instanceInitialize'),

@@ -311,6 +311,31 @@ function AdmittedCloudDeviceDirectory({
       .sort((a, b) => byShownName(name(a), name(b)))
       .map((view, index) => [view.deviceId, index] as const),
   );
+  // A name given before CIS kept names lives only in the device list, and the web could not show
+  // it. CIS takes it over once (with this client's token, the device list keeps the same name):
+  // only a name the user gave, never the plain default, the runtime's marker or a device id.
+  const adopted = useRef(new Set<string>());
+  useEffect(() => {
+    const sole = t('cloudSettings.onboarding.defaultNameSole');
+    for (const view of live) {
+      if (view.name !== null) continue;
+      const listed = names?.get(view.deviceId)?.trim();
+      if (!listed || listed === sole || listed === view.deviceId || cloudBaseName(t, view.deviceId, listed, undefined) !== listed)
+        continue;
+      const key = `${view.deviceId}\n${listed}`;
+      if (adopted.current.has(key)) continue;
+      adopted.current.add(key);
+      // Once while the cards show; not taken now, it is tried again the next time they open.
+      void Promise.resolve()
+        .then(() => api.instanceRename({ deviceId: view.deviceId, name: listed }))
+        .then(
+          () => {
+            if (mounted.current) void cloud.load(true);
+          },
+          () => undefined,
+        );
+    }
+  }, [live, names]);
   // DeviceLink does not have the runtime: offline in the directory, or not listed there at all.
   const linkOffline = (deviceId: string) =>
     offline.includes(deviceId) || (directory !== null && !directory.includes(deviceId));
