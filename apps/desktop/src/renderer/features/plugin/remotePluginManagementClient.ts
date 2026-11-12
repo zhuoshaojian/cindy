@@ -20,6 +20,7 @@ import type {
 import type { PluginMarketDetail, PluginMarketPage, PluginMarketItem } from '../../../shared/pluginMarket';
 import { extractIpcError } from '@/utils/ipcError';
 import type { RemotePluginPreferenceSnapshot } from '../../../shared/pluginPreferences';
+import { invokeRemoteResource } from './remoteResourceGuard';
 
 const pluginManagementClient = {
   protocolVersion: REMOTE_RESOURCE_PROTOCOL_VERSION,
@@ -46,7 +47,7 @@ export async function hasPluginManagement(deviceId: string): Promise<boolean> {
   return (await pluginManagementActions(deviceId)).includes('management:snapshot');
 }
 export async function pluginManagementActions(deviceId: string): Promise<string[]> {
-  const manifest = await window.electronAPI.deviceLink.invoke(
+  const manifest = await invokeRemoteResource(
     deviceId,
     REMOTE_RESOURCE_MANIFEST_CHANNEL,
     [{ client: pluginManagementClient }],
@@ -62,7 +63,7 @@ export async function invokePluginManagement(
   input: Record<string, unknown> = {},
   instance?: string,
 ): Promise<unknown> {
-  const response = (await window.electronAPI.deviceLink.invoke(
+  const response = (await invokeRemoteResource(
     deviceId,
     REMOTE_RESOURCE_INVOKE_CHANNEL,
     [
@@ -322,7 +323,7 @@ export async function readLegacyManagedPlugins(
   deviceId: string,
   locale?: string,
 ): Promise<LegacyManagedPlugin[]> {
-  const response = (await window.electronAPI.deviceLink.invoke(
+  const response = (await invokeRemoteResource(
     deviceId,
     REMOTE_RESOURCE_LIST_CHANNEL,
     [{ collectionId: 'plugins', client: { ...pluginManagementClient, locale } }],
@@ -339,7 +340,7 @@ async function readManagedPluginResource(
   id: string,
   locale?: string,
 ): Promise<RemoteResource & { blocks: NonNullable<RemoteResource['blocks']> }> {
-  const response = (await window.electronAPI.deviceLink.invoke(
+  const response = (await invokeRemoteResource(
     deviceId,
     REMOTE_RESOURCE_GET_CHANNEL,
     [

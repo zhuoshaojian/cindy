@@ -8,6 +8,7 @@ import {
   cloudStorageUsageSchema,
   type CloudStorageUsage as Usage,
 } from '../../../shared/cloudStorageUsage';
+import { invokeCloudChannel } from './cloudFaults';
 
 /** Below this share of free disk the instance may stop working. */
 const LOW_DISK_RATIO = 0.1;
@@ -37,9 +38,7 @@ export function CloudStorageUsage({
     setStatus((current) => (current === 'unsupported' ? current : 'loading'));
     try {
       const next = cloudStorageUsageSchema.parse(
-        await window.electronAPI.deviceLink.invoke(deviceId, CLOUD_STORAGE_USAGE_CHANNEL, [
-          { op: 'read' },
-        ]),
+        await invokeCloudChannel(deviceId, CLOUD_STORAGE_USAGE_CHANNEL, [{ op: 'read' }]),
       );
       if (seq !== sequence.current) return;
       setUsage(next);

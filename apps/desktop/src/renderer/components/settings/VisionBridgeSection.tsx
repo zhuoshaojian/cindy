@@ -256,6 +256,8 @@ export interface VisionBridgeSectionViewProps {
   resetTargetModels: () => Promise<void>;
   /** 勾/取消目标模型时在 persistPatch 前乐观标记「已自定义」(本机行为)。 */
   markTargetModelsCustomized?: () => void;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: React.ReactNode;
 }
 
 /** 视觉桥卡片的展示部分;本机与云实例设置传入各自的值、操作与模型目录。 */
@@ -273,6 +275,7 @@ export function VisionBridgeSectionView({
   persistPatch,
   resetTargetModels,
   markTargetModelsCustomized,
+  headingStatus,
 }: VisionBridgeSectionViewProps) {
   const { t } = useTranslation();
 
@@ -403,7 +406,7 @@ export function VisionBridgeSectionView({
   };
 
   return (
-    <SettingsSection title={t('settings.visionBridge.title')} description={t('settings.visionBridge.description')}>
+    <SettingsSection title={t('settings.visionBridge.title')} description={t('settings.visionBridge.description')} action={headingStatus}>
       {/* ── 总开关 ────────────────────────────────────────────────────── */}
       <SettingsCard>
         <SettingsRow

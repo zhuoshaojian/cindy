@@ -82,6 +82,7 @@ export function BotsGlobalSettingsSectionView({
   onRestoreDefault,
   deviceId,
   replyTarget,
+  headingStatus,
 }: {
   modelChain: BotModelRoute[];
   pending: boolean;
@@ -90,12 +91,14 @@ export function BotsGlobalSettingsSectionView({
   onRestoreDefault?: () => void;
   deviceId?: string;
   replyTarget?: { enabled: boolean; setEnabled: (next: boolean) => void };
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: React.ReactNode;
 }) {
   const { t } = useBotTranslation();
   const modelSetting = useSettingDefinition(additionalSettings.botModel, t);
   const replySetting = useSettingDefinition(additionalSettings.botReplyTarget, t);
   return (
-    <SettingsSection title={t('bots.globalSettings.title')}>
+    <SettingsSection title={t('bots.globalSettings.title')} action={headingStatus}>
       <SettingsCard>
         <fieldset {...modelSetting.anchorProps} disabled={pending} aria-busy={pending} className="min-w-0">
           <BotModelChainEditor {...modelSetting.controlProps}

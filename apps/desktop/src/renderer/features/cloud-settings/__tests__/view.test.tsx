@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CloudSettingsView } from '../CloudSettingsView';
 import { createTrialCloudSettingsClient } from '../trial';
 import { createCloudSettingsClient } from '../client';
 import { CloudInstancesSection } from '../CloudInstancesSection';
+import { CloudPreviewSwitches } from '../CloudPreviewSwitches';
 const state = vi.hoisted(() => ({
   online: true,
   access: 'allowed',
@@ -90,7 +91,7 @@ it('uses the Main bridge even if device-link remote control is disabled', async 
     bridge,
     expect.any(Function),
   );
-  expect(screen.queryByText('cloudSettings.offline')).toBeNull();
+  expect(screen.queryByText('settings.ghosts.remote.offlineNotice')).toBeNull();
 });
 it('loads the plugin page for the selected instance only once its category is opened', async () => {
   Object.assign(window, { electronAPI: { cloudSettings: {} } });
@@ -111,6 +112,44 @@ it('loads the plugin page for the selected instance only once its category is op
   fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.general' }));
   await waitFor(() =>
     expect(screen.getByTestId('plugins').textContent).toBe(`${state.deviceId} Cloud A false`),
+  );
+});
+it.each([['tab=instance'], ['tab=cloud-instances'], ['section=maintenance']])(
+  'sends the old overview link %s to the device card',
+  async (query) => {
+    const client = createTrialCloudSettingsClient();
+    Object.assign(window, { electronAPI: { cloudSettings: {} } });
+    vi.mocked(createCloudSettingsClient).mockReturnValue(client);
+    const connect = vi.spyOn(client, 'connect');
+    const Where = () => <p>{useLocation().search}</p>;
+    render(
+      <MemoryRouter initialEntries={[`/cloud-settings?deviceId=${state.deviceId}&${query}`]}>
+        <Routes>
+          <Route path="/cloud-settings" element={<CloudSettingsView />} />
+          <Route path="/settings" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(new RegExp(`device=${state.deviceId}`))).toBeTruthy();
+    expect(connect).not.toHaveBeenCalled();
+  },
+);
+// Plan C (2026-11-09): General is shown again, so its links stay there; Plugins is shown again
+// (2026-11-11), so its links stay there too.
+it.each([
+  ['ghosts', 'settings.tabs.ghosts'],
+  ['general', 'settings.tabs.general'],
+])('opens an old tab=%s link on the closest shown category', async (tab, landing) => {
+  const client = createTrialCloudSettingsClient();
+  Object.assign(window, { electronAPI: { cloudSettings: {} } });
+  vi.mocked(createCloudSettingsClient).mockReturnValue(client);
+  render(
+    <MemoryRouter initialEntries={[`/cloud-settings?deviceId=${state.deviceId}&tab=${tab}`]}>
+      <CloudSettingsView />
+    </MemoryRouter>,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('tab', { name: landing }).getAttribute('aria-selected')).toBe('true'),
   );
 });
 it('does not connect or wake an offline instance', async () => {
@@ -230,10 +269,10 @@ it('loads CIS settings without a local relay and disables them when CIS becomes 
     </MemoryRouter>,
   );
   await waitFor(() => expect(connect).toHaveBeenCalled());
-  expect(screen.queryByText('cloudSettings.offline')).toBeNull();
+  expect(screen.queryByText('settings.ghosts.remote.offlineNotice')).toBeNull();
   instance.mockRejectedValue(new Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
   await act(async () => window.dispatchEvent(new Event('focus')));
-  await waitFor(() => expect(screen.getByText('cloudSettings.offline')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('settings.ghosts.remote.offlineNotice')).toBeTruthy());
 });
 it.each(['stopped', 'login-required', 'unready', 'wrong-target'])(
   'does not use stale DeviceLink presence to open a CIS %s target',
@@ -260,7 +299,55 @@ it.each(['stopped', 'login-required', 'unready', 'wrong-target'])(
       </MemoryRouter>,
     );
     await act(async () => {});
-    expect(screen.getByText('cloudSettings.offline')).toBeTruthy();
+    expect(screen.getByText('settings.ghosts.remote.offlineNotice')).toBeTruthy();
     expect(connect).not.toHaveBeenCalled();
   },
 );
+// cloud-test, 2026-11-09: during an upgrade CIS still reported running/ready while the runtime was
+// down, so the page connected, Main answered CLOUD_SETTINGS_SCOPE_CHANGED and the page showed a
+// generic read failure. It must say the instance is upgrading and not try to connect.
+it.each([
+  ['an active operation', true, { upgradeOperation: { operationId: 'op', phase: 'backup-running', active: true, updatedAtMs: 2_000 } }],
+  ['a finished operation newer than the last observation, with DeviceLink offline', false, { observedAtMs: 1_000, upgradeOperation: { operationId: 'op', phase: 'completed', active: false, updatedAtMs: 2_000 } }],
+] as const)('says the instance is upgrading during %s instead of a read failure', async (_label, linkOnline, patch) => {
+  state.online = linkOnline;
+  const client = createTrialCloudSettingsClient();
+  client.instance = vi.fn().mockResolvedValue(cisView(patch));
+  Object.assign(window, { electronAPI: { cloudSettings: {} } });
+  vi.mocked(createCloudSettingsClient).mockReturnValue(client);
+  const connect = vi.spyOn(client, 'connect');
+  render(
+    <MemoryRouter initialEntries={[`/cloud-settings?deviceId=${state.deviceId}`]}>
+      <CloudSettingsView />
+    </MemoryRouter>,
+  );
+  expect(await screen.findByText('cloudSettings.upgradingNotice')).toBeTruthy();
+  expect(screen.queryByText('cloudSettings.targetUnavailable')).toBeNull();
+  expect(connect).not.toHaveBeenCalled();
+});
+// Plan C settled the settings scope (2026-11-09): a scope a dev build stored earlier no longer
+// changes the page, and the dev options offer no scope switch (since 2026-11-12 no switch at all:
+// only the entry to the scenario panel). Plugins is a category again since 2026-11-11, when the
+// native client began managing the instance's plugins. Through the real route.
+it('shows the released categories whatever scope a dev build stored, and offers no scope switch', async () => {
+  localStorage.setItem('cloud-preview:settings-scope', 'all');
+  Object.assign(window, { electronAPI: { cloudSettings: {} } });
+  vi.mocked(createCloudSettingsClient).mockImplementation(() => createTrialCloudSettingsClient());
+  render(
+    <MemoryRouter initialEntries={[`/cloud-settings?deviceId=${state.deviceId}`]}>
+      <CloudSettingsView />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(screen.getAllByRole('tab').length).toBeGreaterThan(0));
+  const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent);
+  expect(tabs.at(-1)).toBe('cloudSettings.moreSettings');
+  expect(tabs).toContain('settings.tabs.ghosts');
+  expect(screen.queryByRole('button', { name: 'cloudSettings.instance.title' })).toBeNull();
+  cleanup();
+  render(<CloudPreviewSwitches />);
+  fireEvent.click(screen.getByRole('button', { name: '开发选项' }));
+  const options = await screen.findByRole('dialog', { name: '开发选项' });
+  expect(within(options).queryAllByRole('radiogroup')).toEqual([]);
+  expect(within(options).getByRole('button', { name: '打开异常场景面板' })).toBeTruthy();
+  localStorage.clear();
+});

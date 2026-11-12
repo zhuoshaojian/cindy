@@ -77,8 +77,10 @@ describe('cloud-native authorization UI', () => {
       return result;
     });
     await authorize();
-    fireEvent.click(await screen.findByRole('button', { name: 'cloudSettings.authCheck' }));
-    expect(await screen.findByText('DEMO-2026')).toBeTruthy();
+    // Read back on its own from the operation 2 s later (S3; no 「检查授权状态」 button any more):
+    // the device code it already started shows, and the login is not started again.
+    expect(await screen.findByText('DEMO-2026', undefined, { timeout: 4_000 })).toBeTruthy();
+    expect(spy.mock.calls.some(([c]) => c.operation === 'status')).toBe(true);
     expect(spy.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1);
-  });
+  }, 10_000);
 });

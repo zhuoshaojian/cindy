@@ -216,6 +216,7 @@ export function AgentResourceSectionView({
   setMaxDraft,
   persist,
   reset,
+  headingStatus,
 }: {
   settings: Wire;
   activePreset: PresetId | null;
@@ -225,6 +226,8 @@ export function AgentResourceSectionView({
   setMaxDraft: (value: string | null) => void;
   persist: (key: SettingKey, value: number | string | boolean) => void;
   reset: () => void;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const maxInputId = useId();
@@ -233,6 +236,7 @@ export function AgentResourceSectionView({
     <SettingsSection
       title={t('settings.agentResource.title')}
       action={
+        headingStatus ??
         // min-h 锁住标题行高度:DefaultOverrideControls 未自定义时返回 null,若不预留
         // 高度,首次改动让「已自定义」+ 恢复按钮(30px)出现会把整段往下顶,列表抖一下。
         <div className="flex min-h-[30px] items-center">

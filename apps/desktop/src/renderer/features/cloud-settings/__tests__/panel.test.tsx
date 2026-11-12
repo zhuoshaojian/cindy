@@ -1,16 +1,38 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { CloudSettingsPanel } from '../CloudSettingsView';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi, type MockInstance } from 'vitest';
+import { CLOUD_SYNC_DEBOUNCE_MS } from '../cloudSettingsSync';
+import { CLOUD_RECONNECT_DELAYS_MS, CloudSettingsPanel } from '../CloudSettingsView';
+import { toast } from '@/lib/toast';
 import { createTrialCloudSettingsClient } from '../trial';
 import { SETTINGS_SEARCH_ENTRIES } from '@/components/settings/settingsSearchCatalog';
 import { cloudSearchEntryAllowed } from '../search';
 import type { CloudSettingsClient } from '../client';
-import { CLOUD_SETTINGS_DOMAINS } from '../../../../shared/cloudSettings';
+import {
+  CLOUD_SETTINGS_DOMAINS,
+  CLOUD_SETTINGS_GROUPS,
+  type CloudSettingsDomain,
+} from '../../../../shared/cloudSettings';
 import { SETTINGS_DISPLAY_LOCALES } from '../../../../shared/settingsReadCatalog';
+import {
+  CLOUD_SETTINGS_ALL_SECTIONS,
+  CLOUD_SETTINGS_VISIBILITY,
+  cloudLinkOpensDeviceCard,
+  cloudTabFromLink,
+  type CloudSettingsVisibility,
+} from '../cloudSettingsVisibility';
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
-  useTranslation: () => ({ t: (key: string) => key }),
+  // Search reads its text with an empty default and skips anything that is still a key.
+  useTranslation: () => ({
+    t: (key: string, options?: { defaultValue?: string; names?: string }) =>
+      options?.defaultValue === ''
+        ? `text ${key}`
+        : options?.names
+          ? `${key} ${options.names}`
+          : key,
+  }),
 }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }));
@@ -36,7 +58,12 @@ vi.stubGlobal(
   },
 );
 afterEach(cleanup);
-function setup(configure?: (client: CloudSettingsClient) => void) {
+function setup(
+  configure?: (client: CloudSettingsClient) => void,
+  visibility: CloudSettingsVisibility = CLOUD_SETTINGS_ALL_SECTIONS,
+  /** The trial page names itself in the page notice; a read failure shows only outside it. */
+  trial = true,
+) {
   Object.assign(window, {
     electronAPI: new Proxy(
       {},
@@ -49,10 +76,20 @@ function setup(configure?: (client: CloudSettingsClient) => void) {
   });
   const client = createTrialCloudSettingsClient();
   configure?.(client);
+  const original = client.save.bind(client);
   const save = vi.spyOn(client, 'save');
-  render(<CloudSettingsPanel name="Cloud trial" client={client} online trial onBack={vi.fn()} />);
+  render(
+    <CloudSettingsPanel
+      name="Cloud trial"
+      client={client}
+      online
+      trial={trial}
+      onBack={vi.fn()}
+      visibility={visibility}
+    />,
+  );
   fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.personalization' }));
-  return { client, save };
+  return { client, save, original };
 }
 const ready = async (input: HTMLElement) =>
   waitFor(() => expect(input.matches(':disabled')).toBe(false));
@@ -86,12 +123,15 @@ describe('shared native cloud settings', () => {
     await waitFor(() => expect((input as HTMLInputElement).value).toBe('4'));
   });
   it('applies the native balanced preset using target CPU count, in one cloud write', async () => {
-    const { save } = setup();
+    const { client, save } = setup();
     const input = await general();
     fireEvent.click(screen.getByRole('radio', { name: 'settings.agentResource.presets.balanced' }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     await ready(input);
-    expect(save.mock.calls[0][1]).toEqual({
+    // Keys the instance already holds are not written again (cloud-test R3); the result is the preset.
+    expect(save.mock.calls[0][1]).toEqual({ processPriority: 'low' });
+    const [stored] = await client.read(['agentResource']);
+    expect(stored?.value).toEqual({
       maxConcurrentCommands: 4,
       processPriority: 'low',
       capToolchainThreads: true,
@@ -116,6 +156,22 @@ describe('shared native cloud settings', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.personalization' }));
     await waitFor(() => expect(read!.mock.calls.length).toBe(before + 1));
   });
+  // T23 (merge onto 44e575ec44): the prompt's explicit save holds the page while it writes; when it
+  // finishes, only its own group is current again, and the category is not read again for it.
+  it('confirms a prompt save without rereading the category', async () => {
+    let read: MockInstance<CloudSettingsClient['read']>;
+    const { save } = setup((client) => {
+      read = vi.spyOn(client, 'read');
+    });
+    const input = await screen.findByRole('textbox', { name: 'settings.personalization.ariaLabel' });
+    await ready(input);
+    const before = read!.mock.calls.length;
+    fireEvent.change(input, { target: { value: 'saved once' } });
+    fireEvent.click(screen.getByRole('button', { name: 'settings.personalization.save' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    await ready(input);
+    expect(read!.mock.calls.length).toBe(before);
+  });
   it('retains the native prompt editor draft across categories without a write', async () => {
     const { save } = setup();
     const input = await screen.findByRole('textbox', {
@@ -128,21 +184,59 @@ describe('shared native cloud settings', () => {
     expect((input as HTMLTextAreaElement).value).toBe('cloud-only draft');
     expect(save).not.toHaveBeenCalled();
   });
-  it('saves the prompt with the original button and retains uncertain edits without replay', async () => {
-    const { save } = setup();
-    const input = await screen.findByRole('textbox', {
-      name: 'settings.personalization.ariaLabel',
+  // 2026-11-09 (C9): a prompt save with an unknown outcome is read back once, never sent again,
+  // and the page keeps reading instead of waiting for a reload.
+  describe('a prompt save with an unknown outcome', () => {
+    beforeEach(() => {
+      vi.mocked(toast.error).mockClear();
+      vi.mocked(toast.success).mockClear();
     });
-    save.mockRejectedValueOnce(Error('UNKNOWN'));
-    fireEvent.change(input, { target: { value: 'unsure' } });
-    fireEvent.click(screen.getByRole('button', { name: 'settings.personalization.save' }));
-    await screen.findByText('cloudSettings.saveUnconfirmed');
-    expect((input as HTMLTextAreaElement).value).toBe('unsure');
-    expect(input.matches(':disabled')).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'cloudSettings.reload' }));
-    await ready(input);
-    expect(save).toHaveBeenCalledTimes(1);
-    expect((input as HTMLTextAreaElement).value).toBe('unsure');
+    const prompt = async () => {
+      const input = await screen.findByRole('textbox', { name: 'settings.personalization.ariaLabel' });
+      await ready(input);
+      return input as HTMLTextAreaElement;
+    };
+    it('says nothing when the save did arrive', async () => {
+      const { save, original } = setup();
+      const input = await prompt();
+      save.mockImplementationOnce(async (...args) => {
+        await original(...args);
+        throw Error('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
+      });
+      fireEvent.change(input, { target: { value: 'arrived' } });
+      fireEvent.click(screen.getByRole('button', { name: 'settings.personalization.save' }));
+      await waitFor(() => expect(toast.success).toHaveBeenCalled());
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('alert')).toBeNull();
+      await ready(input);
+      expect(input.value).toBe('arrived');
+    });
+    it('reports a save that did not arrive, keeps the text and does not send it again', async () => {
+      const { save } = setup();
+      const input = await prompt();
+      save.mockRejectedValueOnce(Error('CLOUD_SETTINGS_SAVE_UNCONFIRMED'));
+      fireEvent.change(input, { target: { value: 'lost' } });
+      fireEvent.click(screen.getByRole('button', { name: 'settings.personalization.save' }));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('hostSettings.saveFailed'));
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('bots.remoteSettings.loadFailed')).toBeNull();
+      await ready(input);
+      expect(input.value).toBe('lost');
+    });
+    it('shows the read failure notice when the check cannot read', async () => {
+      const { client, save } = setup(undefined, undefined, false);
+      const input = await prompt();
+      save.mockRejectedValueOnce(Error('CLOUD_SETTINGS_SAVE_UNCONFIRMED'));
+      // Reading stays broken: the notice stays until it works again.
+      vi.spyOn(client, 'read').mockRejectedValue(Error('CLOUD_SETTINGS_UNAVAILABLE'));
+      fireEvent.change(input, { target: { value: 'unknown' } });
+      fireEvent.click(screen.getByRole('button', { name: 'settings.personalization.save' }));
+      // The page's 「正在管理」 notice says so, with its retry (D11 A3–A7).
+      await screen.findByText('bots.remoteSettings.loadFailed');
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'settings.ghosts.remote.retry' })).toBeTruthy();
+    });
   });
   it('preserves the native memory dependency between Cindy and agent memory', async () => {
     const { save } = setup();
@@ -164,8 +258,9 @@ describe('shared native cloud settings', () => {
     await ready(switches[0]);
     fireEvent.click(switches[0]);
     await waitFor(() => expect(save).toHaveBeenCalledTimes(3));
-    expect(save.mock.calls[2][1]).toEqual({ maker: true });
-    expect(save.mock.calls[2][2]).toBeUndefined();
+    // Back to the default it had before this page wrote it: the override is cleared, not rewritten.
+    expect(save.mock.calls[2][1]).toEqual({});
+    expect(save.mock.calls[2][2]).toEqual(['maker']);
     await ready(switches[0]);
     expect(switches[1].getAttribute('aria-checked')).toBe('false');
   });
@@ -264,7 +359,9 @@ describe('shared native cloud settings', () => {
         );
     });
     expect((await menu()).slice(6)).toEqual(
-      ['es', 'fr', 'de', 'pt-PT', 'pt-BR', 'classical'].map((l) => `settings.language.options.${l}`),
+      ['es', 'fr', 'de', 'pt-PT', 'pt-BR', 'classical'].map(
+        (l) => `settings.language.options.${l}`,
+      ),
     );
   });
   // The instance may use a display language outside the cloud wire.
@@ -280,7 +377,9 @@ describe('shared native cloud settings', () => {
     });
     await screen.findByText('settings.memory.title');
     await general();
-    const language = document.querySelector<HTMLElement>('#settings-search-target-general-language')!;
+    const language = document.querySelector<HTMLElement>(
+      '#settings-search-target-general-language',
+    )!;
     expect(within(language).getByText('settings.language.title')).toBeTruthy();
     expect(
       within(language).getByRole('button', { name: 'cloudSettings.openInCloudDesktop' }),
@@ -314,6 +413,7 @@ describe('shared native cloud settings', () => {
         trial
         version="0.1.120-cloud.1-cn-amd64"
         onBack={vi.fn()}
+        visibility={CLOUD_SETTINGS_ALL_SECTIONS}
       />,
     );
     fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.about' }));
@@ -332,7 +432,8 @@ describe('shared native cloud settings', () => {
     });
     await screen.findByText('settings.terminalShell.title');
     supported = false;
-    fireEvent.click(screen.getByRole('button', { name: 'cloudSettings.reload' }));
+    // Coming back to the window reads again.
+    document.dispatchEvent(new Event('visibilitychange'));
     await waitFor(() => expect(screen.queryByText('settings.terminalShell.title')).toBeNull());
     expect(save).not.toHaveBeenCalled();
   });
@@ -382,6 +483,17 @@ describe('shared native cloud settings', () => {
       ).toBe(false);
     }
   });
+  // cloud-test, 2026-11-09: searching 提示词 found nothing. A real instance answers the prompt over
+  // DeviceLink, so its open never lists the personalization domain; the entry needs no domain there.
+  it('finds the personal instructions on a real instance, where the prompt has no CIS domain', () => {
+    for (const id of ['personalization.userPrompt', 'personalization.instructions']) {
+      const entry = SETTINGS_SEARCH_ENTRIES.find((e) => e.id === id)!;
+      expect(cloudSearchEntryAllowed(entry, ['memory', 'botModelChain'], false), id).toBe(true);
+      // The trial reports the prompt as a CIS group, and shows it only when it does.
+      expect(cloudSearchEntryAllowed(entry, ['memory'], true), id).toBe(false);
+      expect(cloudSearchEntryAllowed(entry, ['personalization'], true), id).toBe(true);
+    }
+  });
   it('uses native search and filters unsupported local-only entries without removing navigation', async () => {
     setup();
     await screen.findByRole('textbox', { name: 'settings.personalization.ariaLabel' });
@@ -417,14 +529,17 @@ describe('shared native cloud settings', () => {
       'settings.appearance.font.terminalFamily.label',
       'settings.about.storage.cleanupLabel',
     ])
-      expect(allowed.some((e) => e.id === denied), denied).toBe(false);
+      expect(
+        allowed.some((e) => e.id === denied),
+        denied,
+      ).toBe(false);
   });
   it('does not write any settings just by opening every supported category', async () => {
     const { save } = setup();
     await screen.findByRole('textbox', { name: 'settings.personalization.ariaLabel' });
     for (const tab of screen.getAllByRole('tab')) {
       fireEvent.click(tab);
-      await waitFor(() => expect(screen.queryByText('cloudSettings.loading')).toBeNull());
+      await waitFor(() => expect(screen.queryByText('settings.ghosts.remote.configurationLoading')).toBeNull());
     }
     expect(save).not.toHaveBeenCalled();
   });
@@ -438,16 +553,15 @@ describe('cloud settings page chrome', () => {
     delete (client as Partial<CloudSettingsClient>).instance;
     return client;
   };
+  // The page's 「正在管理」 notice says what it is doing (D11 A3–A7).
   it('says it is loading until the instance has been read, and offline only after that', () => {
     const first = panel({ online: false, connecting: true });
-    expect(screen.getAllByText('cloudSettings.loading').length).toBeGreaterThan(0);
-    expect(screen.queryByText('cloudSettings.offline')).toBeNull();
-    expect(screen.queryByText('cloudSettings.noFields')).toBeNull();
+    expect(screen.getByText('settings.ghosts.remote.configurationLoading')).toBeTruthy();
+    expect(screen.queryByText('settings.ghosts.remote.offlineNotice')).toBeNull();
     first.unmount();
     panel({ online: false });
-    expect(screen.getAllByText('cloudSettings.offline').length).toBeGreaterThan(0);
-    expect(screen.queryByText('cloudSettings.loading')).toBeNull();
-    expect(screen.queryByText('cloudSettings.noFields')).toBeNull();
+    expect(screen.getByText('settings.ghosts.remote.offlineNotice')).toBeTruthy();
+    expect(screen.queryByText('settings.ghosts.remote.configurationLoading')).toBeNull();
   });
   it('keeps the provider and IM categories in place before the instance answers', () => {
     panel({ online: false, connecting: true });
@@ -469,10 +583,672 @@ describe('cloud settings page chrome', () => {
     );
     expect(screen.queryByRole('tab', { name: 'settings.tabs.imBot' })).toBeNull();
   });
-  it('offers one reload for the open category', async () => {
-    panel({ online: true });
-    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.builtinTools' }));
-    await screen.findByRole('heading', { level: 2, name: 'settings.tabs.builtinTools' });
-    expect(screen.getAllByRole('button', { name: 'cloudSettings.reload' })).toHaveLength(1);
+});
+// Owner, 2026-11-09 (plan C): every supported category, in the local page's order, then More
+// settings. The overview lives on the device card; Plugins only opened the remote desktop.
+describe('the shown cloud settings', () => {
+  const SHOWN = [
+    'settings.tabs.general',
+    'settings.tabs.personalization',
+    'settings.tabs.providers',
+    'settings.tabs.imBot',
+    'settings.tabs.ghosts',
+    'settings.tabs.builtinTools',
+    'settings.tabs.computerUse',
+    'settings.tabs.storage',
+    'settings.tabs.about',
+  ];
+  const tabNames = () => screen.getAllByRole('tab').map((tab) => tab.textContent);
+  const selected = (name: string) =>
+    screen.getByRole('tab', { name }).getAttribute('aria-selected');
+  const readDomains = (client: CloudSettingsClient) => {
+    const read = vi.spyOn(client, 'read');
+    return () => read.mock.calls.flatMap(([domains]) => domains);
+  };
+  const renderShown = (client = createTrialCloudSettingsClient(), initialTab?: 'providers') => {
+    Object.assign(window, { electronAPI: {} });
+    render(
+      <CloudSettingsPanel
+        name="Cloud trial"
+        client={client}
+        online
+        trial
+        onBack={vi.fn()}
+        initialTab={initialTab}
+      />,
+    );
+  };
+  it('lists every supported category in the local order, then More settings, and opens General', async () => {
+    renderShown();
+    expect(tabNames()).toEqual([...SHOWN, 'cloudSettings.moreSettings']);
+    expect(screen.queryByRole('button', { name: 'cloudSettings.instance.title' })).toBeNull();
+    expect(selected('settings.tabs.general')).toBe('true');
+    await waitFor(() => expect(screen.queryByText('settings.ghosts.remote.configurationLoading')).toBeNull());
+  });
+  it('moves off model providers when the instance does not offer them', async () => {
+    const client = createTrialCloudSettingsClient();
+    const connect = client.connect;
+    client.connect = async () => ({ ...(await connect()), providerAuthorization: undefined });
+    renderShown(client, 'providers');
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'settings.tabs.providers' })).toBeNull());
+    await waitFor(() => expect(selected('settings.tabs.general')).toBe('true'));
+  });
+  it('shows each category whole and reads only the open one: the bot model chain is in General again', async () => {
+    const client = createTrialCloudSettingsClient();
+    const domains = readDomains(client);
+    const save = vi.spyOn(client, 'save');
+    renderShown(client);
+    for (const id of ['settings-bots', 'settings-collaboration', 'settings-agent-resource'])
+      await waitFor(() => expect(document.querySelector(`#settings-panel-general #${id}`), id).toBeTruthy());
+    expect(new Set(domains())).toEqual(new Set(CLOUD_SETTINGS_GROUPS.general));
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.personalization' }));
+    await screen.findByText('settings.memory.title');
+    for (const shown of [
+      'settings-search-target-personalization-subagents',
+      'settings-search-target-personalization-auxiliary-models',
+      'settings-search-target-personalization-vision-bridge',
+      'settings-search-target-personalization-terminal-shell',
+      'settings-search-target-personalization-tips',
+    ])
+      expect(document.querySelector(`#settings-panel-personalization #${shown}`), shown).toBeTruthy();
+    expect(document.querySelector('#settings-panel-personalization #settings-bots')).toBeNull();
+    expect(new Set(domains())).toEqual(
+      new Set([...CLOUD_SETTINGS_GROUPS.general, ...CLOUD_SETTINGS_GROUPS.personalization]),
+    );
+    expect(save).not.toHaveBeenCalled();
+  });
+  it('hides the agent memory rows without touching their saved values', async () => {
+    const { save } = setup(undefined, { ...CLOUD_SETTINGS_VISIBILITY, memoryAgentRows: false });
+    await screen.findByText('settings.memory.title');
+    const memory = document.querySelector<HTMLElement>(
+      '#settings-search-target-personalization-memory',
+    )!;
+    const [maker, ...agents] = within(memory).getAllByRole('switch');
+    expect(agents).toHaveLength(0);
+    await ready(maker);
+    fireEvent.click(maker);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][1]).toEqual({ maker: false });
+    expect(save.mock.calls[0][2]).toBeUndefined();
+  });
+  it('sends everything else to the cloud desktop from More settings', async () => {
+    const openRemoteDesktop = vi.fn(async () => undefined);
+    Object.assign(window, { electronAPI: { openRemoteDesktop } });
+    render(
+      <CloudSettingsPanel
+        name="Cloud trial"
+        client={createTrialCloudSettingsClient()}
+        online
+        trial
+        onBack={vi.fn()}
+        initialTab="more"
+      />,
+    );
+    const open = await screen.findByRole('button', { name: 'cloudSettings.openInCloudDesktop' });
+    await ready(open);
+    expect(screen.getByText('cloudSettings.moreSettingsFallback')).toBeTruthy();
+    fireEvent.click(open);
+    expect(openRemoteDesktop).toHaveBeenCalledWith({
+      deviceId: 'cloud-settings-trial',
+      name: 'Cloud trial',
+    });
+  });
+  it('points an unreachable instance at its device card instead of an empty page', async () => {
+    const onOpenDeviceCard = vi.fn();
+    Object.assign(window, { electronAPI: {} });
+    const client = createTrialCloudSettingsClient();
+    const connect = vi.spyOn(client, 'connect');
+    render(
+      <CloudSettingsPanel
+        name="Cloud trial"
+        client={client}
+        online={false}
+        onBack={vi.fn()}
+        onOpenDeviceCard={onOpenDeviceCard}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'settings.tabs.remoteControl' }));
+    await waitFor(() => expect(onOpenDeviceCard).toHaveBeenCalledOnce());
+    expect(screen.getByText('settings.ghosts.remote.offlineNotice')).toBeTruthy();
+    expect(connect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('tab', { name: 'cloudSettings.moreSettings' }));
+    expect(
+      screen.getByRole('button', { name: 'cloudSettings.openInCloudDesktop' }).matches(':disabled'),
+    ).toBe(true);
+  });
+  it('lands old links on the closest shown category', () => {
+    const land = (tab: string | null) => cloudTabFromLink(CLOUD_SETTINGS_VISIBILITY, tab);
+    expect(land(null)).toBeUndefined();
+    // General is shown again: its links stay there instead of going to personalization.
+    for (const tab of ['general', 'personalization', 'providers', 'im-bot', 'builtin-tools', 'computer-use', 'storage', 'about'])
+      expect(land(tab), tab).toBe(tab);
+    for (const tab of ['appearance', 'shortcuts', 'remote-control']) expect(land(tab), tab).toBe('more');
+    expect(land('ghosts')).toBe('ghosts');
+    expect(land('not-a-category')).toBeUndefined();
+    const toCard = (tab: string | null, section: string | null = null) =>
+      cloudLinkOpensDeviceCard(CLOUD_SETTINGS_VISIBILITY, tab, section);
+    expect(toCard('instance')).toBe(true);
+    expect(toCard('cloud-instances')).toBe(true);
+    expect(toCard(null, 'maintenance')).toBe(true);
+    expect(toCard('general', 'maintenance')).toBe(true);
+    expect(toCard('general')).toBe(false);
+  });
+  it('searches only what is shown and finds the bot model chain under General', async () => {
+    setup(undefined, CLOUD_SETTINGS_VISIBILITY);
+    // The section target scrolls to and marks the setting once its category is open.
+    Object.assign(window, { matchMedia: () => ({ matches: true }) });
+    HTMLElement.prototype.scrollTo = vi.fn();
+    // Search lands only on a target that is laid out (useSettingsSectionTarget); jsdom lays out
+    // nothing, so a shown element gets a box, as in settingsSearchNavigation.test.tsx.
+    const rects = vi
+      .spyOn(HTMLElement.prototype, 'getClientRects')
+      .mockImplementation(function (this: HTMLElement) {
+        const list = this.closest('[hidden]') ? [] : [{} as DOMRect];
+        return Object.assign(list, { item: (index: number) => list[index] ?? null }) as DOMRectList;
+      });
+    onTestFinished(() => rects.mockRestore());
+    await screen.findByText('settings.memory.title');
+    fireEvent.click(screen.getByRole('tab', { name: 'cloudSettings.moreSettings' }));
+    const search = screen.getByRole('combobox', { name: 'settings.search.ariaLabel' });
+    const options = (titleKey: string) => {
+      expect(
+        SETTINGS_SEARCH_ENTRIES.some((entry) => entry.titleKey === titleKey),
+        titleKey,
+      ).toBe(true);
+      fireEvent.change(search, { target: { value: `text ${titleKey}` } });
+      return screen.queryAllByRole('option');
+    };
+    for (const hidden of [
+      'settings.appearance.font.title',
+      'settings.remoteControl.sections.ssh',
+    ])
+      expect(options(hidden), hidden).toHaveLength(0);
+    // Categories plan B left out are found again.
+    for (const shown of [
+      'settings.sections.collaboration',
+      'settings.about.analyticsLabel',
+      'settings.computerUse.browser.title',
+    ])
+      expect(options(shown).length, shown).toBeGreaterThan(0);
+    const results = options('settings.sections.bots');
+    expect(results).toHaveLength(1);
+    fireEvent.click(results[0]);
+    await waitFor(() => expect(selected('settings.tabs.general')).toBe('true'));
+    await waitFor(() =>
+      expect(
+        document.querySelector('#settings-bots.settings-search-target-highlight'),
+      ).toBeTruthy(),
+    );
   });
 });
+
+// User report 2026-11-09: every cloud change locked the page for 1–3 s ("每次+1都会卡一会").
+// Each change shows at once and syncs in the background; failures fall back to the instance.
+// cloud-test R2, 2026-11-09: a setting changed and changed back stays an explicit value, as on this
+// computer, so every cloud group that can be customized needs the local reset. Through the real
+// page: change → "customized" → reset → the instance stores no key for it again.
+describe('restoring defaults on the instance', () => {
+  const restore = 'settings.defaults.restore';
+  // The control's own row: the nearest ancestor that holds a reset button.
+  const rowOf = (control: HTMLElement) => {
+    let row: HTMLElement | null = control;
+    while (row && !within(row).queryByRole('button', { name: restore })) row = row.parentElement;
+    return row!;
+  };
+  const cases: Array<
+    [string, string, CloudSettingsDomain, () => Promise<HTMLElement>, (control: HTMLElement) => void]
+  > = [
+    ['LSP', 'settings.tabs.general', 'lsp', () => screen.findByRole('switch', { name: 'settings.lspMode.toggleAria' }), fireEvent.click],
+    ['Worker hard limit', 'settings.tabs.general', 'collaboration',
+      async () => (await screen.findAllByRole('spinbutton')).find((input) => input.closest('#settings-collaboration'))!,
+      (input) => fireEvent.change(input, { target: { value: '9' } })],
+    ['browser automation', 'settings.tabs.computerUse', 'browserTools', () => screen.findByRole('switch', { name: 'settings.computerUse.browser.toggleAria' }), fireEvent.click],
+    ['browser target', 'settings.tabs.computerUse', 'browserBackend',
+      async () => within(await screen.findByRole('radiogroup', { name: 'settings.computerUse.browserBackend.title' })).getAllByRole('radio').find((radio) => radio.getAttribute('aria-checked') === 'false')!,
+      fireEvent.click],
+    ['direct control', 'settings.tabs.computerUse', 'computerTools', () => screen.findByRole('switch', { name: 'settings.computerUse.directControl.toggleAria' }), fireEvent.click],
+    ['document tools', 'settings.tabs.builtinTools', 'builtinTools',
+      // Rows follow the page's order: browser first, then the instance's built-in tools.
+      async () => (await screen.findAllByRole('switch', { name: 'settings.builtinTools.toggleAria' }))[
+        ['browser', 'feishu_bot', 'wechat', 'slack', 'ssh', 'docs'].indexOf('docs')
+      ]!,
+      fireEvent.click],
+    // "Do not remind" (databaseWarning) already had its reset; the trial instance cannot save that group.
+    ['usage statistics', 'settings.tabs.about', 'privacy', () => screen.findByRole('switch', { name: 'settings.about.analyticsLabel' }), fireEvent.click],
+    ['debug log', 'settings.tabs.about', 'desktopNotifications', () => screen.findByRole('switch', { name: 'settings.about.debugLogLabel' }), fireEvent.click],
+    ['crash upload', 'settings.tabs.about', 'diagnostics', () => screen.findByRole('switch', { name: 'settings.about.logUpload.crashAutoLabel' }), fireEvent.click],
+    ['memory', 'settings.tabs.personalization', 'memory',
+      async () => {
+        await screen.findByText('settings.memory.title');
+        return within(document.querySelector<HTMLElement>('#settings-search-target-personalization-memory')!).getAllByRole('switch')[0]!;
+      },
+      fireEvent.click],
+  ];
+  it.each(cases)('%s', async (_name, tab, domain, find, change) => {
+    const { client, save } = setup();
+    fireEvent.click(screen.getByRole('tab', { name: tab }));
+    const control = await find();
+    await ready(control);
+    change(control);
+    if (control.matches('input')) fireEvent.blur(control);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    const row = await waitFor(() => rowOf(control));
+    await waitFor(() => expect(within(row).getByRole<HTMLButtonElement>('button', { name: restore }).disabled).toBe(false));
+    fireEvent.click(within(row).getByRole('button', { name: restore }));
+    await waitFor(async () => {
+      const [stored] = await client.read([domain]);
+      expect(stored?.customizedKeys).toEqual([]);
+    });
+  });
+});
+
+describe('optimistic cloud writes', () => {
+  beforeEach(() => vi.mocked(toast.error).mockClear());
+  const memory = async () => {
+    await screen.findByText('settings.memory.title');
+    const section = document.querySelector<HTMLElement>(
+      '#settings-search-target-personalization-memory',
+    )!;
+    const maker = within(section).getAllByRole('switch')[0];
+    await ready(maker);
+    return maker;
+  };
+  const failure = () => vi.mocked(toast.error).mock.calls.at(-1);
+  it('shows the new value at once and keeps the control usable while the instance confirms', async () => {
+    const { save, original } = setup();
+    const maker = await memory();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    save.mockImplementationOnce((...args) => gate.then(() => original(...args)));
+    fireEvent.click(maker);
+    expect(maker.getAttribute('aria-checked')).toBe('false');
+    expect(maker.matches(':disabled')).toBe(false);
+    release();
+    await waitFor(() => expect(save.mock.results[0]?.type).toBe('return'));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(maker.getAttribute('aria-checked')).toBe('false');
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+  // D11 B2, B3 (as the client's settings): a change that did not save says so in a toast without a
+  // button, and the control shows what the instance holds.
+  it('reverts a refused change and shows the latest value, without a retry', async () => {
+    const { save } = setup();
+    const maker = await memory();
+    save.mockRejectedValueOnce(Error('CLOUD_SETTINGS_REJECTED'));
+    fireEvent.click(maker);
+    await waitFor(() => expect(failure()?.[0]).toBe('cloudSettings.sync.rejected'));
+    expect(failure()?.[1]).toBeUndefined();
+    expect(maker.getAttribute('aria-checked')).toBe('true');
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+  it('reverts a change that did not reach the instance, without sending it again or a retry', async () => {
+    const { save } = setup();
+    const maker = await memory();
+    save.mockRejectedValueOnce(Error('CLOUD_SETTINGS_BUSY'));
+    fireEvent.click(maker);
+    await waitFor(() => expect(failure()?.[0]).toBe('cloudSettings.sync.unavailable'));
+    expect(failure()?.[1]?.action).toBeUndefined();
+    expect(maker.getAttribute('aria-checked')).toBe('true');
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+  it('rereads an unconfirmed write instead of sending it again', async () => {
+    let read!: MockInstance<CloudSettingsClient['read']>;
+    const { save, original } = setup((client) => {
+      read = vi.spyOn(client, 'read');
+    });
+    const maker = await memory();
+    save.mockRejectedValueOnce(Error('CLOUD_SETTINGS_SAVE_UNCONFIRMED'));
+    read.mockClear();
+    fireEvent.click(maker);
+    await waitFor(() => expect(failure()?.[0]).toBe('cloudSettings.sync.notSaved'));
+    expect(read).toHaveBeenCalledWith(['memory']);
+    expect(maker.getAttribute('aria-checked')).toBe('true');
+    // The same outcome after the write did land: the instance value is kept, nothing to say.
+    vi.mocked(toast.error).mockClear();
+    save.mockImplementationOnce(async (...args) => {
+      await original(...args);
+      throw Error('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
+    });
+    fireEvent.click(maker);
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(maker.getAttribute('aria-checked')).toBe('false'));
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+  // 2026-11-09 owner decision: a number changed just before leaving is saved, not dropped:
+  // one write with the latest value, sent at once, and the session closes after it.
+  it('saves a stepper change made right before leaving the page, once, with the latest value', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => void vi.useRealTimers());
+    const { client, save } = setup();
+    const close = vi.spyOn(client, 'close');
+    const input = await general();
+    for (const value of ['6', '7']) {
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+    }
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'settings.back' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][1]).toEqual({ maxConcurrentCommands: 7 });
+    await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+    expect(close.mock.invocationCallOrder[0]).toBeGreaterThan(save.mock.invocationCallOrder[0]);
+    // The debounce that was waiting does not send it a second time.
+    await vi.advanceTimersByTimeAsync(CLOUD_SYNC_DEBOUNCE_MS * 2);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+  // cloud-test, 2026-11-09: three ↑ presses on the Worker hard limit only added 1. Each save
+  // used to disable the page, so the focused field lost focus and the next presses went nowhere.
+  it('keeps a stepper focused and mounted through quick ↑ presses, in at most two writes', async () => {
+    const user = userEvent.setup();
+    const { save } = setup();
+    await general();
+    const field = () =>
+      document.querySelector<HTMLInputElement>(
+        '[data-setting-id="settings.collaboration.workerHardLimit"] input, input[data-setting-id="settings.collaboration.workerHardLimit"]',
+      )!;
+    await waitFor(() => expect(field()).toBeTruthy());
+    const input = field();
+    const before = Number(input.value);
+    await user.click(input);
+    for (let press = 1; press <= 3; press++) {
+      // jsdom does not step number fields on ↑; do what the browser does: step, then input.
+      fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+      (document.activeElement as HTMLInputElement).stepUp();
+      fireEvent.change(document.activeElement!, {
+        target: { value: (document.activeElement as HTMLInputElement).value },
+      });
+      // Shown at once, before the instance answers.
+      expect(field().value).toBe(String(before + press));
+    }
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    await waitFor(() => expect(save.mock.results.every((r) => r.type === 'return')).toBe(true));
+    expect(save.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(save.mock.calls.at(-1)![1]).toEqual({ workerHardLimit: before + 3 });
+    // The same element, still focused: nothing was remounted or disabled on the way.
+    expect(field()).toBe(input);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe(String(before + 3));
+  });
+  it('shows the instance value after a revision conflict', async () => {
+    const { client, save, original } = setup();
+    const maker = await memory();
+    // Someone else changed the group after this page read it.
+    const [stale] = await client.read(['memory']);
+    await original(stale, { pi: false });
+    fireEvent.click(maker);
+    await waitFor(() => expect(failure()?.[0]).toBe('cloudSettings.sync.conflict'));
+    // A retry would write over the other change.
+    expect(failure()?.[1]).toBeUndefined();
+    expect(save).toHaveBeenCalledTimes(1);
+    const section = maker.closest('section')!;
+    await waitFor(() =>
+      expect(within(section).getAllByRole('switch')[3].getAttribute('aria-checked')).toBe('false'),
+    );
+    expect(maker.getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+// 2026-11-09 (C1): no reload button on the page. A failed read rebuilds the session on its own;
+// only when that keeps failing does a notice with a reload appear.
+describe('reading after the session broke', () => {
+  // A test above leaves a matchMedia without listeners; model providers subscribe to it.
+  beforeEach(() => {
+    Object.assign(window, {
+      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    });
+  });
+  const allTabs = async () => {
+    for (const tab of screen.getAllByRole('tab')) {
+      fireEvent.click(tab);
+      await waitFor(() => expect(screen.queryByText('settings.ghosts.remote.configurationLoading')).toBeNull());
+    }
+  };
+  it('shows no reload button anywhere while reading works', async () => {
+    setup();
+    await screen.findByText('settings.memory.title');
+    await allTabs();
+    expect(screen.queryByRole('button', { name: 'settings.ghosts.remote.retry' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'commonUi.retry' })).toBeNull();
+  });
+  it('reconnects on its own and reads again, with nothing to press', async () => {
+    let read!: MockInstance<CloudSettingsClient['read']>;
+    let reconnect!: MockInstance<CloudSettingsClient['reconnect']>;
+    setup((client) => {
+      read = vi.spyOn(client, 'read');
+      reconnect = vi.spyOn(client, 'reconnect');
+    });
+    await screen.findByText('settings.memory.title');
+    read.mockRejectedValueOnce(Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.general' }));
+    await waitFor(() => expect(reconnect).toHaveBeenCalledTimes(1));
+    await screen.findByText('settings.agentResource.title');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'settings.ghosts.remote.retry' })).toBeNull();
+  });
+  it('shows the read failure notice once three reconnects have failed, and reloads from it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => void vi.useRealTimers());
+    let read!: MockInstance<CloudSettingsClient['read']>;
+    let reconnect!: MockInstance<CloudSettingsClient['reconnect']>;
+    setup((client) => {
+      read = vi.spyOn(client, 'read');
+      reconnect = vi.spyOn(client, 'reconnect');
+    }, undefined, false);
+    await screen.findByText('settings.memory.title');
+    read.mockRejectedValue(Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.general' }));
+    // In the page's 「正在管理」 notice, with its retry (D11 A3–A7).
+    const notice = () => screen.queryByText('bots.remoteSettings.loadFailed');
+    for (let second = 0; second < 30 && !notice(); second++) {
+      // Not before the last reconnect has failed too.
+      expect(reconnect.mock.calls.length).toBeLessThanOrEqual(CLOUD_RECONNECT_DELAYS_MS.length);
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    expect(notice()).toBeTruthy();
+    expect(reconnect).toHaveBeenCalledTimes(CLOUD_RECONNECT_DELAYS_MS.length);
+    // The code is in the details, folded.
+    expect(screen.queryByText('CLOUD_SETTINGS_SCOPE_CHANGED')).toBeNull();
+    read.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'settings.ghosts.remote.retry' }));
+    await waitFor(() => expect(reconnect).toHaveBeenCalledTimes(CLOUD_RECONNECT_DELAYS_MS.length + 1));
+    await waitFor(() => expect(screen.queryByText('bots.remoteSettings.loadFailed')).toBeNull());
+    await screen.findByText('settings.agentResource.title');
+  });
+  it('does not reconnect while a write is in flight', async () => {
+    let read!: MockInstance<CloudSettingsClient['read']>;
+    let reconnect!: MockInstance<CloudSettingsClient['reconnect']>;
+    const { save, original } = setup((client) => {
+      read = vi.spyOn(client, 'read');
+      reconnect = vi.spyOn(client, 'reconnect');
+    });
+    await screen.findByText('settings.memory.title');
+    const section = document.querySelector<HTMLElement>('#settings-search-target-personalization-memory')!;
+    const maker = within(section).getAllByRole('switch')[0]!;
+    await ready(maker);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    save.mockImplementationOnce((...args) => gate.then(() => original(...args)));
+    fireEvent.click(maker);
+    read.mockRejectedValueOnce(Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
+    const reads = read.mock.calls.length;
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(reads));
+    await expect(read.mock.results[reads]!.value).rejects.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(reconnect).not.toHaveBeenCalled();
+    release();
+    await waitFor(() => expect(reconnect).toHaveBeenCalledTimes(1));
+    expect(reconnect.mock.invocationCallOrder[0]).toBeGreaterThan(save.mock.invocationCallOrder[0]!);
+  });
+  // 2026-11-09: "Reading…" stayed on top of content already shown.
+  it('says it is reading only before anything has been shown', async () => {
+    setup();
+    await screen.findByText('settings.memory.title');
+    for (const tab of ['settings.tabs.general', 'settings.tabs.about', 'settings.tabs.personalization']) {
+      fireEvent.click(screen.getByRole('tab', { name: tab }));
+      expect(screen.queryByText('settings.ghosts.remote.configurationLoading')).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByText('settings.ghosts.remote.configurationLoading')).toBeNull();
+    }
+  });
+});
+
+// 2026-11-09 (T17b): a group or list the instance does not answer is read again on its own, three
+// times; only then does it say so. Reading only, never writing. A settings group says so in its
+// heading row (T39, D10 position 1); a list keeps its notice.
+describe('a part of the page that cannot be read', () => {
+  beforeEach(() => {
+    Object.assign(window, {
+      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => void vi.useRealTimers());
+  });
+  // In the group's heading row, named as on the page (owner, 2026-11-09).
+  const NOTICE = 'cloudSettings.groupReadFailed settings.agentResource.title';
+  /** Runs the automatic tries until the notice shows (or 30 s), checking it waits for all three. */
+  const untilNotice = async (title: string, tries: () => number) => {
+    for (let second = 0; second < 30 && !screen.queryByText(title); second++) {
+      expect(tries()).toBeLessThanOrEqual(CLOUD_RECONNECT_DELAYS_MS.length);
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    expect(screen.getByText(title)).toBeTruthy();
+    expect(tries()).toBe(CLOUD_RECONNECT_DELAYS_MS.length);
+  };
+  // agentResource answers "unreadable" while `broken` says so; reads of it alone are counted.
+  const unreadableGroup = (broken: () => boolean, trial = true) => {
+    let alone = 0;
+    const { client, save } = setup((c) => {
+      const read = c.read.bind(c);
+      c.read = async (domains) => {
+        if (domains.length === 1 && domains[0] === 'agentResource') alone++;
+        return (await read(domains)).map((state) =>
+          state.domain === 'agentResource' && broken()
+            ? {
+                domain: 'agentResource',
+                status: 'unreadable',
+                revision: null,
+                readErrorCode: 'SETTINGS_REQUEST_FAILED',
+              }
+            : state,
+        );
+      };
+    }, undefined, trial);
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.general' }));
+    return { client, save, alone: () => alone };
+  };
+  it('reads a group again on its own and says nothing once it comes back', async () => {
+    let failures = 2;
+    const { save, alone } = unreadableGroup(() => failures-- > 0);
+    await screen.findByText('settings.agentResource.title', undefined, { timeout: 10_000 });
+    expect(alone()).toBeGreaterThan(0);
+    expect(screen.queryByText(NOTICE)).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+  });
+  it('says so in its heading row once three reads failed, and reloads only that group', async () => {
+    let broken = true;
+    const { save, alone } = unreadableGroup(() => broken);
+    await untilNotice(NOTICE, alone);
+    const status = screen.getByText(NOTICE).closest<HTMLElement>('[data-cloud-group-status]')!;
+    // Only the failure and the retry: no explanation line falls back in.
+    expect(within(status).queryByText(/Body$|ReloadReadsOnly$/)).toBeNull();
+    // Where the group would be: after Collaboration, only its heading row and none of its controls.
+    const place = status.closest<HTMLElement>('#settings-agent-resource-unreadable')!;
+    expect(place.previousElementSibling?.id).toBe('settings-collaboration');
+    expect(within(place).getByText('settings.agentResource.title')).toBeTruthy();
+    expect(within(place).queryByRole('spinbutton')).toBeNull();
+    expect(document.getElementById('settings-agent-resource')).toBeNull();
+    broken = false;
+    fireEvent.click(within(status).getByRole('button', { name: 'commonUi.retry' }));
+    await screen.findByText('settings.agentResource.title');
+    expect(alone()).toBe(CLOUD_RECONNECT_DELAYS_MS.length + 1);
+    expect(screen.queryByText(NOTICE)).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+  });
+  it('leaves the notice to the page while the page itself cannot read', async () => {
+    const { client, alone } = unreadableGroup(() => true, false);
+    await untilNotice(NOTICE, alone);
+    vi.spyOn(client, 'read').mockRejectedValue(Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    for (let second = 0; second < 30 && !screen.queryByText('bots.remoteSettings.loadFailed'); second++)
+      await vi.advanceTimersByTimeAsync(1_000);
+    expect(screen.getByText('bots.remoteSettings.loadFailed')).toBeTruthy();
+    expect(screen.queryByText(NOTICE)).toBeNull();
+  });
+  it('names every group of a shared card in one notice above it', async () => {
+    const broken = new Set(['privacy', 'diagnostics']);
+    let alone = 0;
+    setup((c) => {
+      const read = c.read.bind(c);
+      c.read = async (domains) => {
+        if (domains.every((d) => broken.has(d))) alone++;
+        return (await read(domains)).map((state) =>
+          broken.has(state.domain)
+            ? { domain: state.domain, status: 'unreadable', revision: null, readErrorCode: 'SETTINGS_REQUEST_FAILED' }
+            : state,
+        );
+      };
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.about' }));
+    const title =
+      'cloudSettings.groupReadFailed settings.about.analyticsLabelcloudSettings.groupNameSeparatorsettings.about.logUpload.crashAutoLabel';
+    await untilNotice(title, () => alone);
+    // The readable row stays; the unreadable rows are not shown with stale or default values.
+    expect(screen.getByRole('switch', { name: 'settings.about.debugLogLabel' })).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: 'settings.about.analyticsLabel' })).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'settings.about.logUpload.crashAutoLabel' })).toBeNull();
+  });
+  it('gives two unreadable groups a notice each, in their own places', async () => {
+    const broken = new Set(['collaboration', 'agentResource']);
+    let alone = 0;
+    setup((c) => {
+      const read = c.read.bind(c);
+      c.read = async (domains) => {
+        if (domains.every((d) => broken.has(d))) alone++;
+        return (await read(domains)).map((state) =>
+          broken.has(state.domain)
+            ? { domain: state.domain, status: 'unreadable', revision: null, readErrorCode: 'SETTINGS_REQUEST_FAILED' }
+            : state,
+        );
+      };
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.general' }));
+    await untilNotice(NOTICE, () => alone);
+    expect(screen.getByText('cloudSettings.groupReadFailed settings.sections.collaboration')).toBeTruthy();
+    expect(document.getElementById('settings-collaboration')).toBeNull();
+    expect(document.getElementById('settings-agent-resource')).toBeNull();
+    expect(document.getElementById('settings-collaboration-unreadable')?.nextElementSibling?.id).toBe(
+      'settings-agent-resource-unreadable',
+    );
+  });
+  it.each([
+    ['the IM bot authorization list', 'settings.tabs.imBot', 'cloudSettings.botsReadFailed', 'manage'],
+  ] as const)('does the same for %s', async (_label, tab, title, method) => {
+    let broken = true;
+    let lists = 0;
+    setup((c) => {
+      const call = (c[method] as (command: { operation: string }) => Promise<unknown>).bind(c);
+      Object.assign(c, {
+        [method]: async (command: { operation: string; section?: string }) => {
+          if (command.operation === 'list' && (method === 'plugins' || command.section === 'bots')) {
+            lists++;
+            if (broken) throw Error('CLOUD_SETTINGS_UNAVAILABLE');
+          }
+          return call(command);
+        },
+      });
+    });
+    fireEvent.click(screen.getByRole('tab', { name: tab }));
+    // The first read, then the automatic tries.
+    const first = 1;
+    await untilNotice(title, () => lists - first);
+    const notice = screen.getByText(title).closest<HTMLElement>('[role="alert"]')!;
+    broken = false;
+    fireEvent.click(within(notice).getByRole('button', { name: 'cloudSettings.reload' }));
+    await waitFor(() => expect(screen.queryByText(title)).toBeNull());
+    expect(lists - first).toBe(CLOUD_RECONNECT_DELAYS_MS.length + 1);
+  });
+});
+
+

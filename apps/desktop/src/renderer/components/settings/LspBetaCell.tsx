@@ -25,6 +25,7 @@ import { SettingsRow } from '@/components/ui/settings-rows';
 import { toast } from '@/lib/toast';
 import { createLogger } from '@/lib/logger';
 import { useLspMode } from '@/hooks/useLspMode';
+import { withDefaultOverride, type DefaultOverrideReset } from './DefaultOverrideControls';
 
 const log = createLogger('LspBetaCell');
 
@@ -62,10 +63,13 @@ export function LspBetaCellView({
   enabled,
   pending,
   handleToggle,
+  reset,
 }: {
   enabled: boolean;
   pending: boolean;
   handleToggle: (next: boolean) => Promise<void>;
+  /** Optional: a saved override and how to clear it (the cloud page). */
+  reset?: DefaultOverrideReset;
 }) {
   const { t } = useTranslation();
   const setting = useSettingDefinition(additionalSettings.lsp);
@@ -77,15 +81,16 @@ export function LspBetaCellView({
       {...setting.anchorProps}
       title={title}
       hint={description}
-      trailing={
+      trailing={withDefaultOverride(
         <Switch
           {...setting.controlProps}
           checked={enabled}
           disabled={pending}
           onCheckedChange={(v) => void handleToggle(v)}
           aria-label={t('settings.lspMode.toggleAria')}
-        />
-      }
+        />,
+        reset,
+      )}
     />
   );
 }

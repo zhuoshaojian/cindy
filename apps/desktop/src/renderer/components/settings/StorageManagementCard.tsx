@@ -634,15 +634,25 @@ export function StorageSectionFrame({
 export const STORAGE_DATABASE_BODY_CLASS = 'flex flex-col gap-3 px-4 py-4';
 
 /** 「数据库」分区:标题、占用(可选)与卡片。 */
-export function StorageDatabaseSection({ usage, children }: { usage?: string; children: ReactNode }) {
+export function StorageDatabaseSection({
+  usage,
+  children,
+  headingStatus,
+}: {
+  usage?: string;
+  children: ReactNode;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: ReactNode;
+}) {
   const { t } = useTranslation();
   return (
     <SettingsSection
       title={t(storageManagementCardSettings.aboutStorageDatabaseSectionTitle.titleKey)}
       action={
-        usage !== undefined ? (
+        headingStatus ??
+        (usage !== undefined ? (
           <span className="text-11 text-[var(--settings-section-sublabel)]">{usage}</span>
-        ) : undefined
+        ) : undefined)
       }
     >
       <SettingsCard>{children}</SettingsCard>

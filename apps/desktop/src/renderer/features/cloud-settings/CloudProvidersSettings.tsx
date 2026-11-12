@@ -20,6 +20,7 @@ import {
 import type { MobileCodexRateLimitsResult } from '@cindy/maker-shared/device-link-contract';
 
 import { Button } from '@/components/ui/button';
+import { LocalModelCatalogNotice } from '@/components/new-chat/LocalModelCatalogNotice';
 import { Switch } from '@/components/ui/switch';
 import { SettingsPageHeader } from '@/components/ui/settings-rows';
 import { Tip } from '@/components/ui/tooltip';
@@ -99,6 +100,7 @@ import { CloudXdQuota } from './CloudXdQuota';
 import { useCloudProviderCatalog, type CloudProviderWrite } from './cloudProviderCatalog';
 import { CloudLoginPrompt, useCloudProviderSetup } from './cloudProviderSetup';
 import { useCloudAuthorization, type CloudAuthorizationProps } from './useCloudAuthorization';
+import { useCloudSimulating } from './cloudFaults';
 
 type Action = ManagementItem['actions'][number];
 type ShareCommand = Extract<CloudProviderSettingsRequest, { op: 'share' }>['command'];
@@ -180,6 +182,25 @@ function isManagedLocalProvider(id: string): boolean {
   return id === MANAGED_OLLAMA_PROVIDER_ID || id === MANAGED_LLAMACPP_PROVIDER_ID;
 }
 
+/** Native sign-ins the add flow always offers, so an unconnected one needs no row of its own. */
+const ADD_FLOW_BUILTINS = ['openai', 'anthropic', 'xai'];
+
+/**
+ * The rail without unconnected built-ins that "Add provider" can still reach. The others
+ * (xd, a kept disconnected connection) are not offered there, so they keep their row.
+ */
+export function cloudConnectedRail(rail: readonly ProviderView[]): ProviderView[] {
+  return rail.filter(
+    (p) =>
+      !(
+        p.source === 'builtin' &&
+        ADD_FLOW_BUILTINS.includes(p.id) &&
+        !p.connected &&
+        p.openAiAccount?.reconnectRequired !== true
+      ),
+  );
+}
+
 /** The local rule for built-in connections that can be removed from the list. */
 function supportsConnectionManagement(p: ProviderView): boolean {
   return (
@@ -222,7 +243,14 @@ function CloudSubscriptionTag({
  * keys and new connections stay on the CIS management tickets. An older runtime, or a
  * viewer who does not own the instance, keeps the ticket-only list.
  */
-export function CloudProvidersSettings(props: CloudAuthorizationProps & { deviceId: string }) {
+export function CloudProvidersSettings({
+  management = true,
+  ...props
+}: CloudAuthorizationProps & {
+  deviceId: string;
+  /** Sharing, joining by link, CLI suggestions and model visibility, as on the local page. */
+  management?: boolean;
+}) {
   const catalog = useCloudProviderCatalog({
     deviceId: props.deviceId,
     online: props.online,
@@ -235,21 +263,26 @@ export function CloudProvidersSettings(props: CloudAuthorizationProps & { device
         <CloudProviderAuthorization {...props} />
       </div>
     );
-  return <CloudProviderCatalogPage {...props} catalog={catalog} />;
+  return <CloudProviderCatalogPage {...props} catalog={catalog} management={management} />;
 }
 
 function CloudProviderCatalogPage({
   catalog,
+  management,
   ...props
 }: CloudAuthorizationProps & {
   deviceId: string;
   catalog: ReturnType<typeof useCloudProviderCatalog>;
+  management: boolean;
 }) {
   const { name, online, deviceId } = props;
   const auth = useCloudAuthorization(props, 'providers', { all: true });
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   const reducedMotion = useReducedMotion();
+  // Sharing and the fast policy write through the shared provider-group bridge, outside the
+  // simulation gate (cloudFaults.ts): while a fault is simulated they are not offered (T28).
+  const simulating = useCloudSimulating();
   const pending = useProviderSharePendingRequests();
   const remote = useDeviceProviders(deviceId);
   const [pendingOrder, setPendingOrder] = useState<string[] | null>(null);
@@ -303,7 +336,7 @@ function CloudProviderCatalogPage({
   );
   const selectedShare = shares.received.find((share) => share.shareId === selectedShareId) ?? null;
   const [detections, setDetections] = useState<LocalCliDetection[]>([]);
-  const scanSupported = catalog.supportedOps.includes('cli-scan');
+  const scanSupported = management && catalog.supportedOps.includes('cli-scan');
   // The instance's own CLIs, scanned once like the local page; suggestions are optional.
   useEffect(() => {
     if (!scanSupported) return;
@@ -319,10 +352,13 @@ function CloudProviderCatalogPage({
       cancelled = true;
     };
   }, [scanSupported, deviceId]);
-  const rail = useMemo(
-    () => applyProviderOrder(cloudRailProviders(catalog.providers), catalog.providerOrder),
-    [catalog.providers, catalog.providerOrder],
-  );
+  const rail = useMemo(() => {
+    const listed = cloudRailProviders(catalog.providers);
+    return applyProviderOrder(
+      management ? listed : cloudConnectedRail(listed),
+      catalog.providerOrder,
+    );
+  }, [catalog.providers, catalog.providerOrder, management]);
   const list = pendingOrder ? applyProviderOrder(rail, pendingOrder) : rail;
   useEffect(() => setPendingOrder(null), [catalog.providerOrder]);
   const selected = list.find((p) => p.id === selectedId) ?? list[0] ?? null;
@@ -530,7 +566,7 @@ function CloudProviderCatalogPage({
     }
   };
 
-  if (shareProviderId) {
+  if (shareProviderId && !simulating) {
     const provider = catalog.providers.find((p) => p.id === shareProviderId);
     return (
       <ProviderShareManagePage
@@ -799,7 +835,7 @@ function CloudProviderCatalogPage({
                         : providerSubtitleForDisplay(p, '');
     const prompt = owns ? <CloudLoginPrompt auth={auth} disabled={disabled} /> : null;
     const detail =
-      owns && (auth.prompt || auth.operation?.phase === 'unknown') ? (
+      owns && (auth.prompt || auth.settling) ? (
         prompt
       ) : keyFormFor === p.id && connectKey && item ? (
         <KeyForm
@@ -975,13 +1011,13 @@ function CloudProviderCatalogPage({
           data-testid="provider-detail-scroll"
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain [&>*]:shrink-0"
         >
-          {owns && auth.operation && auth.busy && !auth.prompt && (
+          {owns && auth.busy && !auth.prompt && auth.phaseText && (
             <p role="status" className="px-5 pb-2 text-13 text-[var(--text-secondary)]">
-              {t(`cloudSettings.authPhase.${auth.operation.phase}`)}
+              {auth.phaseText}
             </p>
           )}
           {detail && <div className="px-5 pb-4">{detail}</div>}
-          {p.subscriptionFastPolicy && (
+          {p.subscriptionFastPolicy && !simulating && (
             <div className="px-5 pb-4">
               <SubscriptionFastSetting key={p.id} provider={p} deviceId={deviceId} />
             </div>
@@ -1046,30 +1082,25 @@ function CloudProviderCatalogPage({
             <SettingsPageHeader
               title={t('settings.providers.title')}
               description={t('settings.providers.subtitle')}
-              action={<ProviderSharePasteButton />}
+              action={management ? <ProviderSharePasteButton /> : undefined}
             />
           </div>
-          {auth.failure && (
+          {auth.failure && auth.failure !== 'readFailed' && (
             <p role="alert" className="text-13 text-[var(--text-secondary)]">
               {t(`cloudSettings.${auth.failure}`)}
             </p>
           )}
-          {catalog.status === 'loading' && <p role="status">{t('cloudSettings.loading')}</p>}
-          {catalog.status === 'unavailable' && (
-            <div className="flex items-center gap-3">
-              <p role="alert" className="text-13 text-[var(--text-secondary)]">
-                {t('cloudSettings.readFailed')}
-              </p>
-              <Button
-                variant="secondary"
-                size="md"
-                disabled={!online}
-                onClick={() => void catalog.load()}
-              >
-                <RefreshCw size={14} />
-                {t('cloudSettings.reload')}
-              </Button>
-            </div>
+          {/* The provider list or its sign-ins could not be read: the client's one notice for a
+              model list it cannot update (D11 C3). While reading, nothing (C2). */}
+          {(catalog.status === 'unavailable' || auth.readFailure) && (
+            <LocalModelCatalogNotice
+              failure={{ reason: 'catalog-unavailable' }}
+              onRetry={async () => {
+                if (auth.readFailure) auth.readFailure.reload();
+                if (catalog.status === 'unavailable') await catalog.load();
+                return true;
+              }}
+            />
           )}
           {catalog.status === 'ready' && (
             <div
@@ -1124,11 +1155,12 @@ function CloudProviderCatalogPage({
                   )}
                   {suggestions.length > 0 && (
                     <>
+                      {/* Not uppercased like the local label: this one carries the product name. */}
                       <span
-                        className="px-2.5 pb-1 pt-3 text-11 font-medium uppercase"
+                        className="px-2.5 pb-1 pt-3 text-11 font-medium"
                         style={{ color: 'var(--text-tertiary)', letterSpacing: '0.5px' }}
                       >
-                        {t('settings.providers.detect.groupLabel')}
+                        {t('cloudSettings.cliDetect.groupLabel')}
                       </span>
                       {suggestions.map((s) => (
                         <SuggestionRow
@@ -1196,7 +1228,8 @@ function CloudProviderCatalogPage({
                           </Button>
                         </div>
                       )}
-                      {!selected.suspended &&
+                      {management &&
+                        !selected.suspended &&
                         selected.connected &&
                         selected.agents.length > 0 &&
                         selected.remoteInvocationEnabled !== undefined && (
@@ -1238,6 +1271,7 @@ function CloudProviderCatalogPage({
                             />
                             <UnifiedModelList
                               provider={selected}
+                              visibilityControls={management}
                               emptyMessage={
                                 selected.source === 'user' && selected.modelDiscoveryFailure
                                   ? t(
@@ -1392,7 +1426,8 @@ function KeyForm({
   );
 }
 
-/** The local detection row: the instance's CLI is installed and its provider is not connected. */
+/** The detection row: the instance's CLI is installed and its provider is not connected. The local
+ * page's copy says "this computer", which here would mean the wrong one. */
 function SuggestionRow({
   detection,
   provider,
@@ -1413,8 +1448,8 @@ function SuggestionRow({
       disabled={disabled}
       title={t(
         detection.loggedIn
-          ? 'settings.providers.detect.hintLoggedIn'
-          : 'settings.providers.detect.hintInstalled',
+          ? 'cloudSettings.cliDetect.hintLoggedIn'
+          : 'cloudSettings.cliDetect.hintInstalled',
         { cli: cliName },
       )}
       className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[var(--settings-menu-bg-hover)]"
@@ -1439,7 +1474,7 @@ function SuggestionRow({
           color: 'var(--text-secondary)',
         }}
       >
-        {t('settings.providers.detect.action')}
+        {t('cloudSettings.cliDetect.action')}
       </span>
     </button>
   );
@@ -1581,6 +1616,7 @@ function CloudRemoteAccessRow({
   const { t } = useTranslation();
   const [enabled, setEnabled] = useState(provider.remoteInvocationEnabled === true);
   const [busy, setBusy] = useState(false);
+  const simulating = useCloudSimulating();
   useEffect(
     () => setEnabled(provider.remoteInvocationEnabled === true),
     [provider.remoteInvocationEnabled],
@@ -1606,11 +1642,13 @@ function CloudRemoteAccessRow({
         </span>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-3">
-        <ProviderShareEntryButton
-          groupSize={groupSize}
-          pendingCount={pendingShareRequests}
-          onOpen={onManageShare}
-        />
+        {!simulating && (
+          <ProviderShareEntryButton
+            groupSize={groupSize}
+            pendingCount={pendingShareRequests}
+            onOpen={onManageShare}
+          />
+        )}
         <Switch
           checked={enabled}
           disabled={busy || disabled}

@@ -78,6 +78,7 @@ import {
   isComputerPermissionReady,
   shouldStartComputerPermissionGuide,
 } from './computerPermissionFlow';
+import { withDefaultOverride, type DefaultOverrideReset } from './DefaultOverrideControls';
 import {
   confirmEnableRealProfile,
   guideFullDiskAccessAfterReadDenied,
@@ -2151,10 +2152,16 @@ export function BrowserAutomationHeader({
   checked,
   disabled,
   onChange,
+  reset,
+  headingStatus,
 }: {
   checked: boolean;
   disabled: boolean;
   onChange: (next: boolean) => void;
+  /** Optional: a saved override and how to clear it (the cloud page). */
+  reset?: DefaultOverrideReset;
+  /** Cloud settings: the card could not be read; this says so in place of the switch. */
+  headingStatus?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -2175,14 +2182,15 @@ export function BrowserAutomationHeader({
         </span>
       }
       hint={t(computerUseSettings.browserTitle.descriptionKey)}
-      trailing={
+      trailing={headingStatus ?? withDefaultOverride(
         <Switch data-setting-id={computerUseSettings.browserTitle.id}
           checked={checked}
           disabled={disabled}
           onCheckedChange={onChange}
           aria-label={t('settings.computerUse.browser.toggleAria')}
-        />
-      }
+        />,
+        reset,
+      )}
     />
   );
 }
@@ -2191,10 +2199,16 @@ export function ComputerAutomationHeader({
   checked,
   disabled,
   onChange,
+  reset,
+  headingStatus,
 }: {
   checked: boolean;
   disabled: boolean;
   onChange: (next: boolean) => void;
+  /** Optional: a saved override and how to clear it (the cloud page). */
+  reset?: DefaultOverrideReset;
+  /** Cloud settings: the card could not be read; this says so in place of the switch. */
+  headingStatus?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -2215,14 +2229,15 @@ export function ComputerAutomationHeader({
         </span>
       }
       hint={t(computerUseSettings.directControlTitle.descriptionKey)}
-      trailing={
+      trailing={headingStatus ?? withDefaultOverride(
         <Switch data-setting-id={computerUseSettings.directControlTitle.id}
           checked={checked}
           disabled={disabled}
           onCheckedChange={onChange}
           aria-label={t('settings.computerUse.directControl.toggleAria')}
-        />
-      }
+        />,
+        reset,
+      )}
     />
   );
 }

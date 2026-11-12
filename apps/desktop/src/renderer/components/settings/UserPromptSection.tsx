@@ -34,9 +34,16 @@ export function PersonalizationPageTitle() {
 }
 
 /** The personalization page as the settings page frames it; another computer's page wraps its editor in it. */
-export function PersonalizationPage({ children }: { children: ReactNode }) {
+export function PersonalizationPage({
+  children,
+  headingStatus,
+}: {
+  children: ReactNode;
+  /** Cloud settings: the prompt could not be read; this says so in the page heading. */
+  headingStatus?: ReactNode;
+}) {
   const { t } = useTranslation();
-  return <SettingsSection variant="page" title={t('settings.personalization.title')}>{children}</SettingsSection>;
+  return <SettingsSection variant="page" title={t('settings.personalization.title')} action={headingStatus}>{children}</SettingsSection>;
 }
 
 export interface UserPromptEditorProps {

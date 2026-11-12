@@ -15,11 +15,16 @@ import {
   useOutletContext,
 } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Cloud, RefreshCw } from 'lucide-react';
+import { Cloud, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CatalogManagementNotice } from '@/features/plugin/PluginManagementLayout';
 import { SettingsSection } from '@/components/ui/settings-rows';
+import {
+  CLOUD_RETRY_DELAYS_MS,
+  errorCode,
+  useBlockRetry,
+} from './blockRetry';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
-import { TAB_IDS } from '@/lib/tabLabels';
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar';
 import { SettingsSidebarNav } from '@/components/settings/SettingsSidebarNav';
 import { resolveSettingsSearchEntry } from '@/components/settings/settingsSearchCatalog';
@@ -32,36 +37,71 @@ import {
 } from '@/contexts/dataOwnerGeneration';
 import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDeviceList';
 import {
-  CLOUD_SETTINGS_GROUPS,
   type CloudSettingsDomain,
   type CloudSettingsState,
   type CloudSettingsTab,
 } from '../../../shared/cloudSettings';
 import { createCloudSettingsClient, type CloudSettingsClient } from './client';
+import { toast } from '@/lib/toast';
+import { createCloudSettingsSync } from './cloudSettingsSync';
 import { CloudInstanceSection } from './CloudInstanceSection';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
 import { cloudInstanceName } from './instanceName';
+import { instanceUpgrading } from './instanceState';
 import { CloudImSettings, cloudImSettingsSummary, useCloudImDisplays } from './CloudImSettings';
 import { CloudBotAuthorization } from './CloudBotAuthorization';
 import { CloudMcpAuthorization } from './CloudMcpAuthorization';
 import { CloudProvidersSettings } from './CloudProvidersSettings';
-import { NativeCloudSections } from './NativeCloudSections';
+import { CLOUD_GROUP_TITLE_KEYS, NativeCloudSections } from './NativeCloudSections';
+import { cloudSimulating, gatedCloudSettings, useCloudStage } from './cloudFaults';
+import { CloudFaultBeacon } from './CloudFaultBeacon';
 import type { CloudBotNotificationPreferences } from './CloudBotNotificationSettings';
 import { cloudSearchEntryAllowed } from './search';
 import type { SettingsSearchEntry } from '@/components/settings/settingsSearchTypes';
 import { CloudDesktopFallback } from './CloudDesktopFallback';
-const groups = TAB_IDS.filter((tab): tab is CloudSettingsTab => tab in CLOUD_SETTINGS_GROUPS);
+import {
+  CLOUD_INSTANCES_SETTINGS_PATH,
+  cloudInstanceDevicePath,
+  remoteControlReturnPath,
+} from './cloudInstancesLink';
+import {
+  CLOUD_SETTINGS_VISIBILITY,
+  cloudLinkOpensDeviceCard,
+  cloudSearchEntryTab,
+  cloudTabDomains,
+  cloudTabFromLink,
+  type CloudSettingsPageTab,
+  type CloudSettingsVisibility,
+} from './cloudSettingsVisibility';
+// The trial's prompt editor keeps its explicit save button and waits for the receipt.
+const CONFIRMED_DOMAINS = new Set<CloudSettingsDomain>(['personalization']);
+/**
+ * A failed read rebuilds the settings session on its own, as the former sidebar "Reload" did
+ * (owner, 2026-11-09): a restarted instance, an expired or discarded session
+ * (CLOUD_SETTINGS_SCOPE_CHANGED) or a network failure. Three tries over about seven seconds, never
+ * while a write is in flight; only then does the page say it cannot read and offer a reload.
+ */
+export const CLOUD_RECONNECT_DELAYS_MS = CLOUD_RETRY_DELAYS_MS;
+// Steppers and number fields send once the user pauses; switches and choices send at once.
+const debounced = (set: Record<string, unknown>, clear?: string[]) =>
+  !clear?.length &&
+  Object.keys(set).length > 0 &&
+  Object.values(set).every((value) => typeof value === 'number');
 const card =
   'rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
 export function CloudSettingsPanel({
   name,
-  client,
+  client: ownClient,
   online,
   onBack,
   trial = false,
   focusMaintenance = false,
   version,
+  initialTab,
+  visibility = CLOUD_SETTINGS_VISIBILITY,
+  onOpenDeviceCard,
+  upgrading = false,
   plugins,
   connecting = false,
 }: {
@@ -75,15 +115,27 @@ export function CloudSettingsPanel({
   focusMaintenance?: boolean;
   /** Runtime version CIS reports for the instance; shown in About like the local app version. */
   version?: string;
+  initialTab?: CloudSettingsPageTab;
+  visibility?: CloudSettingsVisibility;
+  /** Status and waking live on the device card; shown when the page cannot reach the instance. */
+  onOpenDeviceCard?(): void;
+  /** Offline because an upgrade has the runtime down: say so rather than "unavailable". */
+  upgrading?: boolean;
   /** The native client's plugin page for this instance. Absent in a browser, which opens the desktop. */
   plugins?: (active: boolean) => ReactNode;
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
-  const [tab, setTab] = useState<CloudSettingsTab | 'instance'>(
-    client.instance ? 'instance' : 'general',
+  const client = ownClient;
+  // Dev options: what a simulated frame pins on this page (cloudFaults.ts). The page remounts
+  // for every frame, so this is read as it opens.
+  const stage = useCloudStage()?.world.settings;
+  const groups = visibility.tabs;
+  const showInstance = visibility.instance && !!client.instance;
+  const [tab, setTab] = useState<CloudSettingsPageTab>(
+    initialTab ?? (showInstance ? 'instance' : (groups[0] ?? 'more')),
   );
-  const activeDomains = tab === 'instance' ? [] : CLOUD_SETTINGS_GROUPS[tab];
+  const activeDomains = cloudTabDomains(visibility, tab);
   const outlet = useOutletContext<{ sidebarWidth?: number } | null>();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [searchNavigation, setSearchNavigation] = useState<{
@@ -91,27 +143,67 @@ export function CloudSettingsPanel({
     activation: number;
   }>({ entry: null, activation: 0 });
   const [mcpAuthorization, setMcpAuthorization] = useState(false);
-  // Unknown until the instance answers: the category keeps its place in the sidebar meanwhile.
-  const [botAuthorization, setBotAuthorization] = useState<boolean>();
-  const [providerAuthorization, setProviderAuthorization] = useState<boolean>();
+  const [botAuthorization, setBotAuthorization] = useState(false);
+  const [providerAuthorization, setProviderAuthorization] = useState(false);
   // Like the local Plugins tab, the plugin page fills the panel and scrolls inside itself.
   const pluginPage = tab === 'ghosts' && !!plugins;
   const fills = tab === 'providers' || pluginPage;
-  // The instance page has its own status refresh; the plugin page follows the instance live.
-  const reloadable = tab !== 'instance' && !pluginPage;
-  const pendingCapability =
-    (tab === 'providers' && providerAuthorization === undefined) ||
-    (tab === 'im-bot' && botAuthorization === undefined);
   const [deviceId, setDeviceId] = useState('');
   const [cpuCount, setCpuCount] = useState<number | undefined>();
   const [states, setStates] = useState<Partial<Record<CloudSettingsDomain, CloudSettingsState>>>(
     {},
   );
   const [domains, setDomains] = useState<CloudSettingsDomain[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const copy = useRef({ t, trial });
+  copy.current = { t, trial };
+  const alive = useRef(true);
+  const dirty = useRef(new Set<string>());
+  // The page's own notice already says it cannot reach the instance.
+  const unreachableShown = useRef(false);
+  const sync = useMemo(() => {
+    const next = createCloudSettingsSync({
+      client,
+      onChange: () => {
+        if (!alive.current) return;
+        setStates(next.view());
+        setSyncing(next.busy());
+      },
+      onSaved: (domain, application) => {
+        dirty.current.delete(domain);
+        // Saved but not applied everywhere on the instance: a warning toast (D11 B4).
+        if (application === 'failed') toast.warning(copy.current.t('hostSettings.savedApplyFailed'));
+        setResult(copy.current.trial ? 'cloudSettings.trialSaved' : 'cloudSettings.saved');
+      },
+      onFailure: ({ reason }) => {
+        if (reason === 'unreachable' && unreachableShown.current) return;
+        // As the client's settings (D11 B2, B3): a toast with no button; the control shows the
+        // instance's value again. Dev options: shown for a simulated frame, it stays.
+        toast.error(
+          copy.current.t(`cloudSettings.sync.${reason}`),
+          cloudSimulating() ? { duration: 0 } : undefined,
+        );
+      },
+    });
+    return next;
+  }, [client]);
+  // Leaving by any route: waiting changes are sent, not dropped (2026-11-09 owner decision).
+  useEffect(() => () => void sync.dispose(), [sync]);
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: 0 });
   }, [tab]);
   const [loading, setLoading] = useState(false);
+  // "Reading…" only before the page has shown anything; later reads refresh in place.
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [failure, setFailure] = useState<'readFailed' | 'unsupported'>();
+  unreachableShown.current = failure === 'readFailed' && tab !== 'instance';
+  // The code stays for diagnostics; the client does not show it (D11 A5).
+  const [, setFailureCode] = useState<string>();
+  const connectedOnce = useRef(false);
+  const recovery = useRef({ attempts: 0, running: false });
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
   // Read after the category has loaded, so the settings come first in the instance's queue,
   // and again for a channel whose saved settings change, so the automatic route follows them.
   const [loadedTab, setLoadedTab] = useState<string>();
@@ -120,13 +212,11 @@ export function CloudSettingsPanel({
     online && !trial && tab === 'im-bot' && loadedTab === tab && !loading,
     states,
   );
-  const [failure, setFailure] = useState<string>();
   const [result, setResult] = useState<string>();
   const [epoch, setEpoch] = useState(0);
-  const dirty = useRef(new Set<string>());
+  // Only the explicit-save path waits; it keeps the page still until the receipt arrives.
   const pending = useRef(false);
   const [writing, setWriting] = useState(false);
-  const alive = useRef(true);
   const fresh = useRef(false);
   const changed = useMemo(
     () => (domain: string, value: boolean) => {
@@ -147,45 +237,44 @@ export function CloudSettingsPanel({
   // categories); a load it interrupted, a new tab or an explicit refresh still does.
   const loadedFor = useRef<readonly unknown[] | null>(null);
   useEffect(() => {
-    if (!online || writing || failure === 'saveUnconfirmed') return;
+    if (!online || writing) return;
     const key = [client, online, tab, epoch];
     if (fresh.current && loadedFor.current?.every((value, index) => value === key[index])) return;
     let current = true;
     fresh.current = false;
     loadedFor.current = null;
     setLoading(true);
-    setFailure(undefined);
     void client
       .connect()
       .then(async (cap) => {
         const wanted = activeDomains.filter((domain) => cap.domains.includes(domain));
+        const stamp = sync.stamp();
         const values = wanted.length ? await client.read(wanted) : [];
         if (!current) return;
         fresh.current = true;
         loadedFor.current = key;
         setLoadedTab(tab);
+        connectedOnce.current = true;
+        recovery.current.attempts = 0;
+        setFailure(undefined);
+        setFailureCode(undefined);
+        setLoadedOnce(true);
         setDomains(cap.domains);
         setCpuCount(cap.cpuCount);
         setDeviceId(cap.deviceId);
         setProviderAuthorization(cap.providerAuthorization === 1);
         setMcpAuthorization(cap.mcpAuthorization === 1);
         setBotAuthorization(cap.botAuthorization === 1);
-        setStates((before) => ({
-          ...Object.fromEntries(
-            Object.entries(before).filter(([domain]) =>
-              cap.domains.includes(domain as CloudSettingsDomain),
-            ),
-          ),
-          ...Object.fromEntries(values.map((state) => [state.domain, state])),
-        }));
+        // A read that started before a local change or a confirmed write never overwrites it.
+        sync.retain(cap.domains);
+        sync.ingest(values, stamp);
       })
       .catch((error) => {
-        if (current)
-          setFailure(
-            error instanceof Error && error.message === 'CLOUD_SETTINGS_UNSUPPORTED'
-              ? 'unsupported'
-              : 'readFailed',
-          );
+        if (!current) return;
+        // An instance without settings sessions answers the first open this way.
+        if (!connectedOnce.current && errorCode(error) === 'CLOUD_SETTINGS_UNSUPPORTED')
+          setFailure('unsupported');
+        else void recover(errorCode(error));
       })
       .finally(() => {
         if (current) setLoading(false);
@@ -194,7 +283,19 @@ export function CloudSettingsPanel({
       current = false;
       fresh.current = false;
     };
-  }, [client, online, tab, epoch, writing]);
+  }, [client, sync, online, tab, epoch, writing]);
+  // Dev options: a frame whose save came back with this outcome shows the page's own notice.
+  useEffect(() => {
+    const reason = stage?.saveFailure;
+    if (!reason) return;
+    // As onFailure: once the page itself says it cannot read, an unreachable save says nothing (19E).
+    if (reason === 'unreachable' && stage?.page === 'failed') return;
+    toast.error(t(`cloudSettings.sync.${reason}`), { duration: 0 });
+  }, []);
+  // Dev options: a frame whose save arrived but was not applied everywhere (19D).
+  useEffect(() => {
+    if (stage?.saveApplyFailed) toast.warning(t('hostSettings.savedApplyFailed'), { duration: 0 });
+  }, []);
   useEffect(() => {
     const visibility = () => {
       fresh.current = false;
@@ -203,38 +304,127 @@ export function CloudSettingsPanel({
     document.addEventListener('visibilitychange', visibility);
     return () => document.removeEventListener('visibilitychange', visibility);
   }, []);
-  const leave = async () => {
+  const leave = async (destination: () => void = onBack) => {
     if (pending.current) return;
     if (
       dirty.current.size &&
       !(await confirm({
         presentation: 'standard',
-        title: t('cloudSettings.discardTitle'),
-        description: t('cloudSettings.discardBody'),
-        confirmText: t('cloudSettings.discard'),
+        // As leaving another device's settings on this computer (D11 B6, RemoteBotSettings).
+        title: t('bots.memory.unsavedTitle'),
+        description: t('bots.remoteSettings.leaveDescription'),
+        confirmText: t('bots.memory.discard'),
+        cancelText: t('bots.memory.continueEditing'),
       }))
     )
       return;
-    client.close();
-    onBack();
+    // Close the session only after the flushed writes have gone out.
+    void sync.dispose().then(() => client.close());
+    destination();
   };
-  const reload = async () => {
-    if (pending.current || loading || !online) return;
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  // A new session, then the open category again (the read effect, through epoch).
+  const reconnect = async () => {
+    // Reconnecting would cut off a write in flight; it waits for the write instead.
+    while (alive.current && (pending.current || sync.busy())) await wait(500);
+    if (!alive.current || !onlineRef.current) throw new Error('CLOUD_SETTINGS_NOT_READY');
     fresh.current = false;
-    setLoading(true);
+    await client.reconnect();
+    if (alive.current) setEpoch((value) => value + 1);
+  };
+  const recover = async (code: string) => {
+    const state = recovery.current;
+    if (state.running) return;
+    state.running = true;
+    setReconnecting(true);
     try {
-      await client.reconnect();
-      if (alive.current) {
-        setFailure(undefined);
-        setEpoch((value) => value + 1);
+      while (alive.current && onlineRef.current) {
+        // Dev options: a simulated frame answers every try the same way, so it fails at once.
+        if (state.attempts >= CLOUD_RECONNECT_DELAYS_MS.length || cloudSimulating()) {
+          setFailure('readFailed');
+          setFailureCode(code);
+          return;
+        }
+        await wait(CLOUD_RECONNECT_DELAYS_MS[state.attempts]!);
+        state.attempts += 1;
+        try {
+          await reconnect();
+          return;
+        } catch (error) {
+          code = errorCode(error);
+          if (code === 'CLOUD_SETTINGS_UNSUPPORTED' && !connectedOnce.current) {
+            setFailure('unsupported');
+            return;
+          }
+        }
       }
-    } catch {
-      if (alive.current) setFailure('readFailed');
     } finally {
-      if (alive.current) setLoading(false);
+      state.running = false;
+      if (alive.current) setReconnecting(false);
     }
   };
+  // Groups of the open category the instance answered without a value: read them again, alone.
+  // A group read before keeps its last value meanwhile, not editable (sync.stale).
+  const unreadable = activeDomains.filter(
+    (domain) => states[domain]?.status === 'unreadable' || sync.stale(domain),
+  );
+  const [blockLoading, setBlockLoading] = useState(false);
+  const [blockFailures, setBlockFailures] = useState(0);
+  const rereadBlock = async () => {
+    if (!unreadable.length || !alive.current) return;
+    setBlockLoading(true);
+    try {
+      const stamp = sync.stamp();
+      const values = await client.read(unreadable);
+      if (!alive.current) return;
+      sync.ingest(values, stamp);
+      if (values.some((value) => value.status === 'unreadable'))
+        setBlockFailures((count) => count + 1);
+    } catch (error) {
+      // The session itself: the page reconnects on its own.
+      if (alive.current) void recover(errorCode(error));
+    } finally {
+      if (alive.current) setBlockLoading(false);
+    }
+  };
+  const blockRetry = useBlockRetry({
+    failed: online && !loading && unreadable.length > 0,
+    failures: blockFailures,
+    retry: () => void rereadBlock(),
+    paused: !!failure,
+  });
+  // The reload in the read-failure notice (and an IM card's): one new session now.
+  const reload = async () => {
+    if (pending.current || loading || reconnecting || !online || sync.busy()) return;
+    setLoading(true);
+    setReconnecting(true);
+    try {
+      await reconnect();
+    } catch (error) {
+      if (alive.current) {
+        setFailure('readFailed');
+        setFailureCode(errorCode(error));
+      }
+    } finally {
+      if (alive.current) {
+        setLoading(false);
+        setReconnecting(false);
+      }
+    }
+  };
+  // Shows the change at once and writes it in the background; failures are reported by the sync.
   const save = async (
+    state: CloudSettingsState,
+    set: Record<string, unknown>,
+    clear?: string[],
+  ) => {
+    if (CONFIRMED_DOMAINS.has(state.domain)) return confirmedSave(state, set, clear);
+    if (!alive.current || !online || reconnecting || document.visibilityState === 'hidden')
+      throw new Error('NOT_READY');
+    setResult(undefined);
+    return sync.change(state.domain, set, clear, debounced(set, clear));
+  };
+  const confirmedSave = async (
     state: CloudSettingsState,
     set: Record<string, unknown>,
     clear?: string[],
@@ -251,23 +441,43 @@ export function CloudSettingsPanel({
     setWriting(true);
     setResult(undefined);
     try {
-      const saved = await client.save(state, set, clear);
+      const saved = await sync.commit(state, set, clear);
       if (!alive.current) throw new Error('CLOUD_SETTINGS_SCOPE_CHANGED');
-      setStates((before) => ({ ...before, [state.domain]: saved.state }));
+      setStates(sync.view());
       // The saved domain was just read back; the others are as current as before the save.
       fresh.current = true;
       dirty.current.delete(state.domain);
-      setResult(
-        saved.application === 'failed'
-          ? 'hostSettings.savedApplyFailed'
-          : trial
-            ? 'cloudSettings.trialSaved'
-            : 'cloudSettings.saved',
-      );
+      if (saved.application === 'failed') toast.warning(t('hostSettings.savedApplyFailed'));
+      setResult(trial ? 'cloudSettings.trialSaved' : 'cloudSettings.saved');
       return saved.state;
     } catch (error) {
       fresh.current = false;
-      setFailure('saveUnconfirmed');
+      // The outcome may be unknown: read once and take the instance's value. Never write again.
+      let latest: CloudSettingsState | undefined;
+      try {
+        [latest] = await client.read([state.domain]);
+      } catch (readError) {
+        if (alive.current) {
+          setFailure('readFailed');
+          setFailureCode(errorCode(readError));
+        }
+        throw error;
+      }
+      if (!alive.current || latest?.status !== 'ready') throw error;
+      sync.ingest([latest], sync.stamp());
+      setStates(sync.view());
+      fresh.current = true;
+      if (
+        Object.entries(set).every(
+          ([key, value]) => JSON.stringify(latest.value?.[key]) === JSON.stringify(value),
+        ) &&
+        (clear ?? []).every((key) => !latest.customizedKeys?.includes(key))
+      ) {
+        // It did arrive: nothing to report.
+        dirty.current.delete(state.domain);
+        return latest;
+      }
+      // It did not: the editor keeps the text and reports that it was not saved.
       throw error;
     } finally {
       pending.current = false;
@@ -276,7 +486,7 @@ export function CloudSettingsPanel({
   };
   // Target values shown in the native notification sections of the IM cards.
   const ready = (domain: CloudSettingsDomain) =>
-    states[domain]?.status === 'ready' ? states[domain] : undefined;
+    states[domain]?.status === 'ready' && !sync.stale(domain) ? states[domain] : undefined;
   const wecomNotifications = ready('wecomNotifications');
   const desktopNotifications = ready('desktopNotifications');
   const notificationPreferences: CloudBotNotificationPreferences = {
@@ -293,32 +503,106 @@ export function CloudSettingsPanel({
     },
     refresh: () => setEpoch((value) => value + 1),
   };
-  const tabs = groups.filter((group) =>
-    group === 'providers'
-      ? providerAuthorization !== false
-      : group === 'im-bot'
-        ? botAuthorization !== false
-        : group === 'ghosts'
-          ? true
-          : !domains.length || CLOUD_SETTINGS_GROUPS[group].some((d) => domains.includes(d)),
+  // Until the instance has answered every category stays listed, so the default one is not a
+  // jump; an answer that rules the open category out moves to the first one it supports.
+  const capabilitiesKnown = !!deviceId;
+
+  // The page's one notice (D11 A3–A7, B8, client: RemoteSkillsPage / RemotePluginPage): who is
+  // managed, and in its text what the page is doing: reading, could not read, offline, updating,
+  // not supported. Until the instance has been read it is not known to be offline.
+  const retryButton = (onClick: () => void, disabled: boolean) => (
+    <Button size="sm" variant="secondary" disabled={disabled} onClick={onClick}>
+      {t('settings.ghosts.remote.retry')}
+    </Button>
   );
-  // A category the instance turns out not to offer is left for the first one it does.
-  const tabKey = tabs.join();
+  const notice: { text: string; warning?: boolean; action?: ReactNode } = trial
+    ? { text: t('cloudSettings.trial') }
+    : connecting
+      ? { text: t('settings.ghosts.remote.configurationLoading') }
+      : !online
+        ? {
+            text: upgrading
+              ? t('cloudSettings.upgradingNotice', { name })
+              : t('settings.ghosts.remote.offlineNotice', { device: name }),
+            warning: true,
+            // Waking and the instance's state live on its card (cloud only).
+            action: onOpenDeviceCard && (
+              <Button size="sm" variant="secondary" onClick={() => void leave(onOpenDeviceCard)}>
+                {t('settings.tabs.remoteControl')}
+              </Button>
+            ),
+          }
+        : failure === 'unsupported'
+          ? { text: t('bots.remoteSettings.unsupported'), warning: true }
+          : failure === 'readFailed' ||
+              (blockRetry.exhausted &&
+                tab !== 'im-bot' &&
+                unreadable.some((domain) => !CLOUD_GROUP_TITLE_KEYS[domain]))
+            ? {
+                text: t('bots.remoteSettings.loadFailed'),
+                warning: true,
+                action:
+                  failure === 'readFailed'
+                    ? retryButton(
+                        () => void reload(),
+                        loading || reconnecting || writing || syncing,
+                      )
+                    : retryButton(blockRetry.reload, loading || blockLoading || reconnecting),
+              }
+            : (loading || reconnecting) && !loadedOnce
+              ? { text: t('settings.ghosts.remote.configurationLoading') }
+              : { text: t('settings.ghosts.remote.managingDescription') };
+  const pageNotice = (
+    <CatalogManagementNotice
+      className="shrink-0"
+      title={t('settings.ghosts.remote.managingTarget', { device: name })}
+      warning={notice.warning}
+      action={notice.action}
+    >
+      {notice.text}
+    </CatalogManagementNotice>
+  );
+  const tabs = groups.filter((group) =>
+    !capabilitiesKnown
+      ? true
+      : group === 'providers'
+        ? providerAuthorization
+        : group === 'im-bot'
+          ? botAuthorization
+          : group === 'ghosts'
+            ? true
+            : !domains.length ||
+              cloudTabDomains(visibility, group).some((d) => domains.includes(d)),
+  );
+  const tabAvailable =
+    tab === 'instance' || tab === 'more' || !capabilitiesKnown || tabs.includes(tab);
   useEffect(() => {
-    if (tab !== 'instance' && !tabs.includes(tab)) setTab(tabs[0] ?? 'general');
-  }, [tabKey, tab]);
+    if (!tabAvailable) setTab(tabs[0] ?? 'more');
+  }, [tabAvailable]);
+  const visibleDomains = new Set(groups.flatMap((group) => cloudTabDomains(visibility, group)));
   const allowSearchEntry = (entry: SettingsSearchEntry) =>
-    entry.tab === 'providers'
-      ? providerAuthorization === true && entry.id === 'providers'
+    cloudSearchEntryTab(visibility, entry) !== null &&
+    (visibility.memoryAgentRows || !entry.id.startsWith('settings.memory.agents.')) &&
+    (entry.tab === 'providers'
+      ? providerAuthorization && entry.id === 'providers'
       : entry.tab === 'im-bot'
-        ? botAuthorization === true && entry.id === 'im-bot'
+        ? botAuthorization && entry.id === 'im-bot'
         : entry.tab === 'ghosts'
           ? entry.id === 'ghosts'
           : cloudSearchEntryAllowed(
               entry,
-              domains.filter((domain) => !states[domain] || states[domain]?.status === 'ready'),
+              domains.filter(
+                (domain) =>
+                  visibleDomains.has(domain) &&
+                  (!states[domain] || states[domain]?.status === 'ready'),
+              ),
               trial,
-            );
+            ));
+  // A category's panel reads only what the list gives it.
+  const statesOf = (group: CloudSettingsTab) =>
+    Object.fromEntries(
+      cloudTabDomains(visibility, group).map((domain) => [domain, states[domain]]),
+    ) as typeof states;
   useSettingsSectionTarget(
     searchNavigation.entry?.targetId ?? null,
     scrollRef,
@@ -341,9 +625,11 @@ export function CloudSettingsPanel({
           >
             <SettingsSidebarNav
               tabIds={tabs}
-              activeTab={tab === 'instance' ? null : tab}
+              // A moved setting is found under its original category, then opens where it is.
+              searchTabIds={visibility.tabs.includes('general') ? tabs : [...tabs, 'general']}
+              activeTab={tab === 'instance' || tab === 'more' ? null : tab}
               leadingTab={
-                client.instance
+                showInstance
                   ? {
                       id: 'instance',
                       label: t('cloudSettings.instance.title'),
@@ -353,6 +639,23 @@ export function CloudSettingsPanel({
                         if (!pending.current) {
                           setTab('instance');
                           setSearchNavigation({ entry: null, activation: 0 });
+                        }
+                      },
+                    }
+                  : undefined
+              }
+              trailingTab={
+                visibility.more
+                  ? {
+                      id: 'more',
+                      label: t('cloudSettings.moreSettings'),
+                      icon: MoreHorizontal,
+                      selected: tab === 'more',
+                      onSelect: () => {
+                        if (!pending.current) {
+                          setTab('more');
+                          setSearchNavigation({ entry: null, activation: 0 });
+                          setResult(undefined);
                         }
                       },
                     }
@@ -368,9 +671,12 @@ export function CloudSettingsPanel({
               }}
               onSelectSearchResult={({ tab: next, sectionId }) => {
                 if (!pending.current) {
-                  setTab(next as CloudSettingsTab);
+                  const entry = resolveSettingsSearchEntry(next, sectionId);
+                  setTab(
+                    (entry && cloudSearchEntryTab(visibility, entry)) ?? (next as CloudSettingsTab),
+                  );
                   setSearchNavigation((previous) => ({
-                    entry: resolveSettingsSearchEntry(next, sectionId),
+                    entry,
                     activation: previous.activation + 1,
                   }));
                 }
@@ -378,52 +684,6 @@ export function CloudSettingsPanel({
             />
           </SettingsSidebar>
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col pl-4 pr-6">
-            <header
-              data-cloud-settings-context
-              className="mx-auto mb-4 flex w-full max-w-[920px] shrink-0 items-center gap-3 border-b border-[var(--settings-theme-card-border)] px-1 py-5"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--settings-input-bg)] text-[var(--settings-section-title)]">
-                <Cloud size={22} aria-hidden />
-              </div>
-              <div className="flex min-w-0 flex-col gap-1">
-                <h2 className="text-20 font-medium leading-[1.2] text-[var(--settings-section-title)]">
-                  {t('cloudSettings.title')}
-                </h2>
-                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-13 leading-[1.5]">
-                  <span
-                    className="break-words font-medium text-[var(--settings-section-title)]"
-                    title={name}
-                  >
-                    {name}
-                  </span>
-                  <span className="text-[var(--settings-section-desc)]">
-                    {t(
-                      trial
-                        ? 'cloudSettings.trial'
-                        : online
-                          ? 'cloudSettings.onlyTarget'
-                          : connecting
-                            ? 'cloudSettings.loading'
-                            : 'cloudSettings.offline',
-                    )}
-                  </span>
-                </div>
-              </div>
-              {/* One reload for the open category, in place of a button per section. */}
-              {reloadable && (
-                <Button
-                  className="ml-auto shrink-0"
-                  variant="secondary"
-                  tone="quiet"
-                  compact
-                  disabled={loading || !online || writing}
-                  onClick={() => void reload()}
-                >
-                  <RefreshCw size={14} />
-                  {t('cloudSettings.reload')}
-                </Button>
-              )}
-            </header>
             {/* Providers scroll inside their card, as on the local settings page. */}
             <div
               ref={scrollRef}
@@ -432,66 +692,28 @@ export function CloudSettingsPanel({
               <div
                 className={`mx-auto w-full min-w-0 animate-fade-in ${pluginPage ? 'max-w-none' : 'max-w-[920px] px-1'} ${fills ? 'flex h-full min-h-0 flex-col' : 'pb-32'}`}
               >
-                {failure && tab !== 'instance' && (
-                  <div role="alert" className={card}>
-                    {t(`cloudSettings.${failure}`)}
-                  </div>
-                )}
-                {!failure &&
-                  !loading &&
-                  activeDomains.some((d) => states[d]?.status === 'unreadable') && (
-                    <p
-                      role="alert"
-                      className="py-[18px] text-13 text-[var(--settings-section-desc)]"
-                    >
-                      {t('cloudSettings.readFailed')}
-                    </p>
-                  )}
-                <span
-                  className={
-                    result === 'hostSettings.savedApplyFailed'
-                      ? 'text-13 text-[var(--text-secondary)]'
-                      : 'sr-only'
-                  }
-                  role="status"
-                >
+                {/* As the client shows another computer it manages (D11 A3–A7, B8): one notice
+                    at the top, whose text says what the page is doing. The plugin page shows its
+                    own (A10). */}
+                {!pluginPage && pageNotice}
+                {/* Read by screen readers only: a save says nothing on screen, as on this computer. */}
+                <span className="sr-only" role="status">
                   {result ? t(result) : ''}
                 </span>
-                {activeDomains.length > 0 && loading && !activeDomains.some((d) => states[d]) && (
-                  <p
-                    role="status"
-                    className="py-[18px] text-13 text-[var(--settings-section-desc)]"
-                  >
-                    {t('cloudSettings.loading')}
-                  </p>
-                )}
-                {!online && tab !== 'instance' && !pluginPage ? (
-                  // Not read yet, or not reachable: say which, not that the category is empty.
-                  <p
-                    role="status"
-                    className="py-[18px] text-13 text-[var(--settings-section-desc)]"
-                  >
-                    {t(connecting ? 'cloudSettings.loading' : 'cloudSettings.offline')}
-                  </p>
-                ) : (
-                  activeDomains.length > 0 &&
+                {/* A category the instance does not offer at all (B7). Groups it offers but could
+                    not read say so in their own heading row. */}
+                {activeDomains.length > 0 &&
+                  online &&
+                  loadedOnce &&
                   !loading &&
+                  !reconnecting &&
                   !failure &&
-                  !activeDomains.some((d) => states[d]?.status === 'ready') && (
-                    <p className="py-[18px] text-13 text-[var(--settings-section-desc)]">
-                      {t('cloudSettings.noFields')}
+                  !activeDomains.some((d) => states[d]?.status === 'ready' || states[d]?.status === 'unreadable') && (
+                    <p className="py-3 text-13 text-[var(--text-secondary)]">
+                      {t('bots.remoteSettings.unsupported')}
                     </p>
-                  )
-                )}
-                {online && loading && pendingCapability && (
-                  <p
-                    role="status"
-                    className="py-[18px] text-13 text-[var(--settings-section-desc)]"
-                  >
-                    {t('cloudSettings.loading')}
-                  </p>
-                )}
-                {client.instance && (
+                  )}
+                {showInstance && (
                   <div
                     hidden={tab !== 'instance'}
                     role="tabpanel"
@@ -542,8 +764,12 @@ export function CloudSettingsPanel({
                               loading={loading}
                               readFailed={!!failure || !online}
                               retry={() => void reload()}
-                              retryDisabled={!online || loading || writing || tab !== group}
-                              disabled={!online || loading || writing || !!failure || tab !== group}
+                              retryDisabled={
+                                !online || loading || writing || syncing || tab !== group
+                              }
+                              disabled={
+                                !online || reconnecting || writing || !!failure || tab !== group
+                              }
                               save={save}
                             />
                           )}
@@ -554,6 +780,7 @@ export function CloudSettingsPanel({
                           active={tab === group}
                           trial={trial}
                           refresh={epoch}
+                          pageFailed={!!failure}
                         />
                       )
                     ) : group === 'ghosts' ? (
@@ -564,7 +791,7 @@ export function CloudSettingsPanel({
                         <CloudDesktopFallback
                           deviceId={deviceId}
                           name={name}
-                          description={t('cloudSettings.pluginsDesktopFallback')}
+                          description={t('bots.remoteSettings.finishOnHost', { device: name })}
                         />
                       )
                     ) : group === 'providers' ? (
@@ -576,23 +803,35 @@ export function CloudSettingsPanel({
                           active={tab === group}
                           trial={trial}
                           refresh={epoch}
+                          pageFailed={!!failure}
                           deviceId={deviceId}
+                          management={visibility.providerManagement}
                         />
                       )
                     ) : (
                       (() => {
                         const sections = (
                           <fieldset
-                            disabled={!online || loading || writing || !!failure || tab !== group}
+                            disabled={!online || reconnecting || writing || !!failure || tab !== group}
                             className="m-0 min-w-0 border-0 p-0"
                           >
                             <NativeCloudSections
                               tab={group}
                               deviceId={deviceId}
                               name={name}
-                              states={states}
+                              states={statesOf(group)}
+                              memoryAgentRows={visibility.memoryAgentRows}
+                              unreadableNotice={
+                                blockRetry.exhausted && tab === group
+                                  ? {
+                                      reload: blockRetry.reload,
+                                      disabled: loading || blockLoading || reconnecting,
+                                    }
+                                  : undefined
+                              }
+                              stale={sync.stale}
                               // Hidden categories do not read (e.g. the instance prompt) on every save.
-                              disabled={!online || loading || writing || !!failure || tab !== group}
+                              disabled={!online || reconnecting || writing || !!failure || tab !== group}
                               cpuCount={cpuCount}
                               appVersion={version}
                               trial={trial}
@@ -614,6 +853,7 @@ export function CloudSettingsPanel({
                                 active={tab === group}
                                 trial={trial}
                                 refresh={epoch}
+                                pageFailed={!!failure}
                               />
                             )}
                           </SettingsSection>
@@ -622,6 +862,26 @@ export function CloudSettingsPanel({
                     )}
                   </div>
                 ))}
+                {visibility.more && (
+                  <div
+                    hidden={tab !== 'more'}
+                    role="tabpanel"
+                    id="settings-panel-more"
+                    aria-labelledby="settings-tab-more"
+                  >
+                    {/* A page title as on this computer's pages (D11 A9). */}
+                    <SettingsSection variant="page" title={t('cloudSettings.moreSettings')}>
+                      <div className={card}>
+                        <CloudDesktopFallback
+                          deviceId={deviceId}
+                          name={name}
+                          description={t('cloudSettings.moreSettingsFallback', { name })}
+                          disabled={!online || !deviceId}
+                        />
+                      </div>
+                    </SettingsSection>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -655,6 +915,7 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
+  const visibility = CLOUD_SETTINGS_VISIBILITY;
   const { dataOwnerId } = useAuth();
   const devices = useDeviceLinkDeviceList();
   const candidates =
@@ -668,10 +929,10 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
   const current = useRef({ scope });
   current.current = { scope };
   const [availability, setAvailability] = useState<{ scope: string; view?: CloudInstanceView }>();
-  const client = useMemo(
+  const own = useMemo(
     () =>
       selected
-        ? createCloudSettingsClient(selected, window.electronAPI.cloudSettings, () => {
+        ? createCloudSettingsClient(selected, gatedCloudSettings(), () => {
             if (!isDataOwnerGenerationCurrent(owner) || current.current.scope !== scope)
               throw new Error('CLOUD_SETTINGS_SCOPE_CHANGED');
           })
@@ -679,14 +940,14 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
     [scope],
   );
   useEffect(() => {
-    if (!client?.instance) return;
+    if (!own?.instance) return;
     let disposed = false;
     let inFlight = false;
     const refresh = async () => {
       if (disposed || inFlight || document.visibilityState === 'hidden') return;
       inFlight = true;
       try {
-        const view = await client.instance!();
+        const view = await own.instance!();
         if (!disposed && current.current.scope === scope)
           setAvailability({ scope, view: view.deviceId === selected ? view : undefined });
       } catch {
@@ -707,16 +968,31 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
       window.removeEventListener('online', refresh);
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [client, scope, selected, device?.online]);
+  }, [own, scope, selected, device?.online]);
+  // Dev options: a simulated frame pins the page (cloudFaults.ts); the instance's settings are
+  // the frame's, and its availability is what the frame says.
+  const stage = useCloudStage();
+  const staged = stage?.world.settings;
+  const client = staged?.client ?? own;
   const instance = availability?.scope === scope ? availability.view : undefined;
   // Settings use CIS, not the local relay. A stopped/revoked relay can have an
   // empty device directory even while the owned cloud runtime is healthy.
   // Reads and writes still pass Main/CIS ownership and runtime checks.
-  const online = client?.instance
-    ? !!instance?.ready && instance.desiredState === 'running' && !instance.loginRequired
+  // CIS can still report running/ready while an upgrade has the runtime down (instanceUpgrading);
+  // connecting then fails with a scope change, so the page says it is upgrading instead.
+  const upgrading = staged
+    ? staged.offline === 'upgrading'
+    : !!instance && instanceUpgrading(instance, !device?.online);
+  const online = staged
+    ? !staged.offline
+    : own?.instance
+    ? !!instance?.ready &&
+      instance.desiredState === 'running' &&
+      !instance.loginRequired &&
+      !upgrading
     : !!device?.online;
   // Until CIS has answered for this instance its state is unknown, which is not offline.
-  const connecting = !!client?.instance && availability?.scope !== scope;
+  const connecting = !staged && !!own?.instance && availability?.scope !== scope;
   const returnTo: unknown = location.state?.returnTo;
   const back = () =>
     navigate(
@@ -728,30 +1004,42 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
         : '/cc-agent',
     );
   if (selected && /^cloud-device-[a-f0-9]{24}$/.test(selected) && client) {
+    const linkedTab = params.get('tab');
+    if (cloudLinkOpensDeviceCard(visibility, linkedTab, params.get('section')))
+      return <Navigate to={cloudInstanceDevicePath(selected)} replace />;
     const name =
       device?.name ??
       instance?.name ??
       (instance ? cloudInstanceName(t, instance) : t('cloudSettings.instance.title'));
     return (
-      <CloudSettingsPanel
-        key={scope}
-        name={name}
-        plugins={
-          Plugins &&
-          ((active) => (
-            <PluginPageGate active={active}>
-              <Plugins deviceId={selected} name={name} active={active} />
-            </PluginPageGate>
-          ))
-        }
-        client={client}
-        online={online}
-        connecting={connecting}
-        onBack={back}
-        focusMaintenance={params.get('section') === 'maintenance'}
-        version={instance?.version ?? undefined}
-      />
+      <>
+        {import.meta.env.DEV && <CloudFaultBeacon />}
+        <CloudSettingsPanel
+          key={`${scope}#${stage?.key ?? 'live'}`}
+          name={name}
+          plugins={
+            Plugins &&
+            ((active) => (
+              <PluginPageGate active={active}>
+                <Plugins deviceId={selected} name={name} active={active} />
+              </PluginPageGate>
+            ))
+          }
+          client={client}
+          online={online}
+          connecting={connecting}
+          onBack={back}
+          focusMaintenance={params.get('section') === 'maintenance'}
+          version={instance?.version ?? undefined}
+          upgrading={upgrading}
+          initialTab={staged?.tab ?? cloudTabFromLink(visibility, linkedTab)}
+          visibility={visibility}
+          onOpenDeviceCard={
+            own?.instance ? () => navigate(remoteControlReturnPath(false)) : undefined
+          }
+        />
+      </>
     );
   }
-  return <Navigate to="/settings?tab=cloud-instances" replace />;
+  return <Navigate to={CLOUD_INSTANCES_SETTINGS_PATH} replace />;
 }

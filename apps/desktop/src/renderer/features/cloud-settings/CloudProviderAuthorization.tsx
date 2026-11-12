@@ -1,6 +1,8 @@
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SettingsPageHeader } from '@/components/ui/settings-rows';
+import { LocalModelCatalogNotice } from '@/components/new-chat/LocalModelCatalogNotice';
+import { CloudAuthProgress } from './CloudAuthProgress';
 import { ProviderListEntry } from '@/components/settings/ProviderListEntry';
 import { ProviderAccountHeader, ConnectedPill } from '@/components/settings/ProviderAccountHeader';
 import { OAuthBrowserLink, OAuthDeviceCodeCard } from '@/components/settings/OAuthDeviceCodeCard';
@@ -22,18 +24,21 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
     setSelected,
     loading,
     failure,
+    readFailure,
     setFailure,
-    operation,
     operationItem,
     callback,
     setCallback,
     requesting,
-    load,
     run,
     operate,
     prompt,
     open,
     busy,
+    phaseText,
+    progressUnreadable,
+    settling,
+    checking,
   } = useCloudAuthorization(props, 'providers');
   const item = items.find((value) => value.id === selected);
   const ownsOperation = item?.id === operationItem;
@@ -51,29 +56,27 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
       className="flex min-h-0 flex-col gap-[14px]"
       aria-label={t('settings.providers.title')}
     >
-      {/* The page title of the local providers page; the page header reloads the category. */}
+      {/* The page title of the local providers page. A failed read shows its own reload, below. */}
       <SettingsPageHeader
         title={t('settings.providers.title')}
         description={t('cloudSettings.authScope', { name })}
       />
-      {failure && (
-        <div className="flex flex-wrap items-center gap-3">
-          <p role="alert" className="text-13 text-[var(--text-secondary)]">
-            {t(`cloudSettings.${failure}`)}
-          </p>
-          <Button
-            size="sm"
-            disabled={buttonDisabled || busy}
-            onClick={() => {
-              setFailure(undefined);
-              void load();
-            }}
-          >
-            {t('cloudSettings.reload')}
-          </Button>
-        </div>
+      {failure && failure !== 'readFailed' && (
+        <p role="alert" className="text-13 text-[var(--text-secondary)]">
+          {t(`cloudSettings.${failure}`)}
+        </p>
       )}
-      {loading && !items.length && <p role="status">{t('cloudSettings.loading')}</p>}
+      {/* The client's one notice for a model list it cannot update (D11 C3); while reading,
+          nothing (C2). */}
+      {readFailure && (
+        <LocalModelCatalogNotice
+          failure={{ reason: 'catalog-unavailable' }}
+          onRetry={async () => {
+            readFailure.reload();
+            return true;
+          }}
+        />
+      )}
       {!!items.length && (
         <div className="flex min-h-[340px] overflow-hidden rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)]">
           <div className="flex w-[224px] shrink-0 flex-col gap-0.5 border-r border-[var(--settings-theme-card-border)] p-2">
@@ -129,10 +132,12 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
                             key={action.id}
                             variant="secondary"
                             size="md"
+                            // While an unknown result is read back, only this button spins.
+                            loading={ownsOperation && checking}
                             disabled={
                               buttonDisabled ||
                               busy ||
-                              (ownsOperation && operation?.phase === 'unknown')
+                              (ownsOperation && settling)
                             }
                             onClick={() => void run(item, action)}
                           >
@@ -148,10 +153,12 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
                   }
                 />
                 <div className="flex flex-col gap-3 px-5 pb-4">
-                  {ownsOperation && operation && (
-                    <p role="status" className="text-13 text-[var(--text-secondary)]">
-                      {t(`cloudSettings.authPhase.${operation.phase}`)}
-                    </p>
+                  {ownsOperation && (
+                    <CloudAuthProgress
+                      text={phaseText}
+                      unreadable={progressUnreadable}
+                      disabled={buttonDisabled}
+                    />
                   )}
                   {ownsOperation && prompt && (
                     <>
@@ -201,26 +208,6 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
                       )}
                     </>
                   )}
-                  {ownsOperation && operation?.phase === 'unknown' && (
-                    <div className="flex gap-2">
-                      <Button
-                        variant="secondary"
-                        size="md"
-                        disabled={buttonDisabled}
-                        onClick={() => void operate('status')}
-                      >
-                        {t('cloudSettings.authCheck')}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="md"
-                        disabled={buttonDisabled}
-                        onClick={() => void operate('cancel')}
-                      >
-                        {t('settings.providers.button.cancel')}
-                      </Button>
-                    </div>
-                  )}
                   {ownsOperation && trial && prompt && (
                     <Button
                       variant="secondary"
@@ -243,8 +230,9 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
           </div>
         </div>
       )}
+      {/* Nothing to sign in to, and no 「添加供应商」 on this list (D11 C4, as RemoteBotSettings). */}
       {!loading && !failure && !items.length && (
-        <p className="text-13 text-[var(--text-secondary)]">{t('cloudSettings.noFields')}</p>
+        <p className="py-3 text-13 text-[var(--text-secondary)]">{t('bots.remoteSettings.unsupported')}</p>
       )}
     </section>
   );

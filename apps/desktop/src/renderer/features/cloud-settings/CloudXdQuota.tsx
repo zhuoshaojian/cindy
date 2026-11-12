@@ -6,6 +6,7 @@ import { resolveXdAssetModuleState } from '@/components/settings/providerAssetMo
 import type { ClaudeAccountUsageSnapshot } from '@/hooks/useClaudeAccountUsage';
 import { formatBillingAmount } from '@/features/billing/money';
 import { CLAUDE_QUOTA_STATE_READ, isClaudeQuotaClear } from '../../../shared/claudeQuotaState';
+import { invokeCloudChannel } from './cloudFaults';
 
 function isSnapshot(value: unknown): value is ClaudeAccountUsageSnapshot {
   const usage = value as Partial<ClaudeAccountUsageSnapshot> | null;
@@ -35,8 +36,7 @@ export function CloudXdQuota({ deviceId, online }: { deviceId: string; online: b
     if (!online) return;
     let cancelled = false;
     setState((previous) => ({ ...previous, loading: true }));
-    void window.electronAPI.deviceLink
-      .invoke(deviceId, 'maker:usage:account', ['claude-code', CLAUDE_QUOTA_STATE_READ])
+    void invokeCloudChannel(deviceId, 'maker:usage:account', ['claude-code', CLAUDE_QUOTA_STATE_READ])
       .then((result) => {
         if (cancelled) return;
         if (isClaudeQuotaClear(result))

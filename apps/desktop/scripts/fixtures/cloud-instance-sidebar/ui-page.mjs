@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 export default {
   name: 'cloud-instance-sidebar',
   entry: './fixture.tsx',
-  cases: { default: { about: 'CIS management stays reachable with the local relay stopped' } },
-  viewport: { width: 320, height: 200 },
-  real: 'CloudInstanceSidebarEntries, access provider, DeviceSectionHeader and CloudSettingsShortcut',
+  cases: {
+    default: {
+      about: 'Project area lists no separate cloud instance entries; an online instance header is any device header, with no cloud settings shortcut (T63)',
+    },
+  },
+  viewport: { width: 320, height: 240 },
+  real: 'ProjectsSection with device grouping, DeviceSectionHeader and the access provider',
   notCovered:
-    'Synthetic CIS list and unavailable remote desktop; no production credentials, task targets or cloud writes.',
+    'Synthetic device index; no sessions, projects, remote desktop, production credentials or cloud writes. Settings → Remote connections → Cloud instances is covered by the cloud-access page.',
   stubs: {
     'src/renderer/contexts/AuthContext':
       'export const useAuth=()=>({mode:"cloud",isAuthenticated:true,isInitializing:false,canEnterApp:true,dataOwnerId:"fixture-owner",dataOwnerGeneration:1});',
@@ -14,23 +18,16 @@ export default {
       'export const useRemoteDesktopAvailability=()=>({available:false,checking:false,reason:"remoteDesktop.shortcut.offline"});',
   },
   async ready(page) {
-    await page.getByRole('link').first().waitFor();
+    await page.getByText('我的云端 Cindy').first().waitFor();
   },
   async check(page, ui) {
-    const name = await ui.t('cloudSettings.onboarding.defaultName', { number: 1 });
-    const settings = page.getByRole('link', {
-      name: await ui.t('cloudSettings.openFor', { name }),
-      exact: true,
-    });
-    assert.equal(await settings.evaluate((el) => getComputedStyle(el.parentElement).opacity), '0');
+    const name = '我的云端 Cindy';
+    // Owner, 2026-11-12: cloud settings are opened from My devices, not the task sidebar. The header
+    // renders as for any remote device: no settings link, at rest or on hover.
+    assert.equal(await page.getByRole('link').count(), 0);
     await ui.capture('resting');
-    await page.getByRole('link', { name, exact: true }).hover();
-    await settings.waitFor({ state: 'visible' });
+    await page.getByText(name).first().hover();
+    assert.equal(await page.getByRole('link').count(), 0);
     await ui.capture('hover');
-    await settings.click();
-    assert.equal(
-      await page.getByRole('status').textContent(),
-      '/cloud-settings?deviceId=cloud-device-0123456789abcdef01234567',
-    );
   },
 };

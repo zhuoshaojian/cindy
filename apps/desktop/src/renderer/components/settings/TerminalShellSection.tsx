@@ -126,6 +126,7 @@ export function TerminalShellSectionView({
   onReset,
   autoLabel,
   unavailablePref,
+  headingStatus,
 }: {
   pref: ShellId;
   shells: AvailableShell[];
@@ -135,11 +136,13 @@ export function TerminalShellSectionView({
   onReset: () => Promise<void>;
   autoLabel: string;
   unavailablePref: ShellId | null;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: React.ReactNode;
 }) {
   const { t } = useTranslation();
 
   return (
-    <SettingsSection title={t('settings.terminalShell.title')} description={t('settings.terminalShell.description')}>
+    <SettingsSection title={t('settings.terminalShell.title')} description={t('settings.terminalShell.description')} action={headingStatus}>
       <SettingsCard>
         {/* 下拉框占满整行放在名称/说明下方, 名称与下拉框同属一项 */}
         <SettingsField

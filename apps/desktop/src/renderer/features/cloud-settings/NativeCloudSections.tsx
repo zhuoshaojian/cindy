@@ -1,5 +1,9 @@
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AlertCircle, RefreshCw } from 'lucide-react';
+import { Tip } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
+import { SettingsSection } from '@/components/ui/settings-rows';
 import { toast } from '@/lib/toast';
 import { AgentResourceSectionView } from '@/components/settings/AgentResourceSection';
 import { CollaborationSectionView } from '@/components/settings/CollaborationSection';
@@ -69,6 +73,15 @@ type Props = {
   /** Instance runtime version from CIS; About shows it like the local app version. */
   appVersion?: string;
   trial: boolean;
+  /** The Claude Code, Codex and Pi rows under the Cindy memory switch. */
+  memoryAgentRows?: boolean;
+  /**
+   * Groups the instance still does not answer after the page's automatic reads: each shows a
+   * notice where it would be, named as on the page (owner, 2026-11-09).
+   */
+  unreadableNotice?: { reload(): void; disabled: boolean };
+  /** Groups showing their last value read because the latest read failed: not editable. */
+  stale?: (domain: CloudSettingsDomain) => boolean;
   save(
     state: CloudSettingsState,
     set: Record<string, unknown>,
@@ -85,6 +98,73 @@ const section = (id: string, content: ReactNode, className = 'pb-[18px]') => (
   </section>
 );
 const generalSection = (id: string, content: ReactNode) => section(id, content, 'py-[18px]');
+/**
+ * A group whose latest read failed keeps its last values in place, faded and not editable (owner,
+ * 2026-11-11). Its heading row stays as it is and carries the failure on its right, where the
+ * group's own action would be (D10 position 1), so 「重试」 stays usable. The shared views have no
+ * faded state, so the rest of the group is marked from outside: everything beside the heading row
+ * (and the description right under it) is faded and inert.
+ */
+function StaleFade({ target }: { target: string }) {
+  const marker = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const group = marker.current?.parentElement?.querySelector<HTMLElement>(`#${CSS.escape(target)}`);
+    const heading = group?.querySelector<HTMLElement>('h1, h2, h3, h4');
+    const status = group?.querySelector<HTMLElement>('[data-cloud-group-status]');
+    if (!group || !(heading || status)) return;
+    // The heading row: what holds both the heading and the failure on its right (a card whose
+    // first row is its heading: that row).
+    let row = (status ?? heading!.parentElement ?? heading)!;
+    if (status)
+      while (row.parentElement && row.parentElement !== group && !(heading && row.contains(heading)))
+        row = row.parentElement;
+    const marked: HTMLElement[] = [];
+    for (let node = row; node !== group && node.parentElement; node = node.parentElement)
+      for (const sibling of node.parentElement.children) {
+        if (sibling === node || !(sibling instanceof HTMLElement)) continue;
+        // The group's description, when it follows the heading row instead of sitting in it.
+        if (node === row && sibling.tagName === 'P' && sibling.previousElementSibling === row) continue;
+        sibling.inert = true;
+        sibling.style.opacity = '0.5';
+        marked.push(sibling);
+      }
+    return () => {
+      for (const element of marked) {
+        element.inert = false;
+        element.style.opacity = '';
+      }
+    };
+  }, [target]);
+  return <span ref={marker} hidden />;
+}
+/**
+ * The heading each group has on this page, for the notice that takes its place when the instance
+ * does not answer it. Groups sharing one card (tips, About) name the card's rows.
+ */
+export const CLOUD_GROUP_TITLE_KEYS: Partial<Record<CloudSettingsDomain, string>> = {
+  desktopGeneral: 'settings.language.title',
+  botModelChain: 'settings.sections.bots',
+  collaboration: 'settings.sections.collaboration',
+  agentResource: 'settings.agentResource.title',
+  gitSafety: 'settings.sections.gitSafety',
+  lsp: 'settings.sections.experimental',
+  personalization: 'settings.personalization.subtitle',
+  memory: 'settings.memory.title',
+  subagentModel: 'settings.subagentModels.title',
+  auxiliaryModel: 'settings.sections.auxiliaryModels',
+  visionBridge: 'settings.visionBridge.title',
+  terminal: 'settings.terminalShell.title',
+  silentEncryptedRetry: 'settings.compatMode.title',
+  chatEmbedding: 'settings.compatMode.title',
+  builtinTools: 'settings.builtinTools.title',
+  browserTools: 'settings.computerUse.browser.title',
+  browserBackend: 'settings.computerUse.browserBackend.title',
+  computerTools: 'settings.computerUse.directControl.title',
+  databaseWarning: 'settings.about.storage.databaseSectionTitle',
+  privacy: 'settings.about.analyticsLabel',
+  desktopNotifications: 'settings.about.debugLogLabel',
+  diagnostics: 'settings.about.logUpload.crashAutoLabel',
+};
 /** Languages the instance listed; an instance that lists none accepts only the original six. */
 const displayLocales = (state: CloudSettingsState): readonly LocalePreference[] => {
   const listed = state.choices?.locale?.map((choice) => choice.value);
@@ -99,7 +179,11 @@ function Resource({
   changed,
   cpuCount,
   disabled,
-}: Pick<Props, 'save' | 'changed' | 'cpuCount' | 'disabled'> & { state: CloudSettingsState }) {
+  headingStatus,
+}: Pick<Props, 'save' | 'changed' | 'cpuCount' | 'disabled'> & {
+  state: CloudSettingsState;
+  headingStatus?: ReactNode;
+}) {
   const { t } = useTranslation();
   const [maxDraft, setMaxDraft] = useState<string | null>(null);
   useEffect(() => {
@@ -135,6 +219,7 @@ function Resource({
   };
   return (
     <AgentResourceSectionView
+      headingStatus={headingStatus}
       settings={settings}
       activePreset={activePreset}
       applyingPreset={disabled}
@@ -209,8 +294,92 @@ function Storage({
 }
 
 export function NativeCloudSections(props: Props) {
-  const { tab, states, save, disabled, changed, trial, deviceId, name, appVersion } = props;
-  const { t } = useTranslation();
+  const {
+    tab,
+    states,
+    save,
+    disabled,
+    changed,
+    trial,
+    deviceId,
+    name,
+    appVersion,
+    memoryAgentRows,
+    unreadableNotice,
+    stale,
+  } = props;
+  const { t, i18n } = useTranslation();
+  // In Chinese a Latin word next to Chinese text gets a space (「读不到 Agent 资源占用设置」).
+  const spaced = (text: string) =>
+    i18n?.language?.startsWith('zh')
+      ? `${/^[A-Za-z0-9]/.test(text) ? ' ' : ''}${text}${/[A-Za-z0-9]$/.test(text) ? ' ' : ''}`
+      : text;
+  /**
+   * The failure in the group's heading row, on the right where its own action would be (owner,
+   * 2026-11-11, D10 position 1, D9 style 1): a red icon, 「加载失败」 and an icon-only 「重试」.
+   */
+  const groupStatus = (names: string[]) =>
+    unreadableNotice && (
+      <div data-cloud-group-status className="flex shrink-0 items-center gap-1">
+        <span className="flex items-center gap-1.5 text-12 text-[var(--text-secondary)]">
+          <AlertCircle size={14} aria-hidden className="shrink-0 text-[var(--error-fg)]" />
+          {t('cloudSettings.groupReadFailed', {
+            names: spaced(names.join(t('cloudSettings.groupNameSeparator'))),
+          })}
+        </span>
+        {/* The local restore control in this slot (DefaultOverrideControls.tsx): an icon-only
+            quiet button with a tooltip, the list's 「刷新」 icon. */}
+        <Tip text={t('commonUi.retry')} side="top">
+          <Button
+            variant="secondary"
+            tone="quiet"
+            size="sm"
+            className="w-7 px-0"
+            type="button"
+            disabled={unreadableNotice.disabled}
+            onClick={unreadableNotice.reload}
+            aria-label={t('commonUi.retry')}
+          >
+            <RefreshCw size={15} aria-hidden />
+          </Button>
+        </Tip>
+      </div>
+    );
+  const namesOf = (domains: CloudSettingsDomain[]) => [
+    ...new Set(domains.map((d) => t(CLOUD_GROUP_TITLE_KEYS[d]!))),
+  ];
+  /** Of these groups, the ones showing values from an earlier read: their status for the heading row. */
+  const keptStatus = (domains: CloudSettingsDomain[]) => {
+    const kept = domains.filter((d) => states[d]?.status === 'ready' && stale?.(d));
+    return kept.length ? groupStatus(namesOf(kept)) || undefined : undefined;
+  };
+  /**
+   * These groups when the instance did not answer them. Read before: the last values stay, faded
+   * and not editable, and the heading row says so (keptStatus, passed to the group's view). Never
+   * read: only the heading row, the group's name on the left and the failure on the right.
+   */
+  const unreadableHere = (domains: CloudSettingsDomain[], id: string, className?: string) => {
+    const missing = domains.filter((d) => states[d]?.status === 'unreadable');
+    const kept = domains.filter((d) => states[d]?.status === 'ready' && stale?.(d));
+    return (
+      <>
+        {/* Marked again once the failure shows in the heading row: its slot is no longer faded. */}
+        {kept.length > 0 && <StaleFade key={`${id}-stale-${!!unreadableNotice}`} target={id} />}
+        {unreadableNotice &&
+          missing.length > 0 &&
+          section(
+            `${id}-unreadable`,
+            <SettingsSection
+              title={namesOf(missing).join(t('cloudSettings.groupNameSeparator'))}
+              action={groupStatus(namesOf(missing))}
+            >
+              {null}
+            </SettingsSection>,
+            className,
+          )}
+      </>
+    );
+  };
   // The three-mode Git control requires the native mode wire field. The legacy
   // boolean cloud field cannot distinguish existing repositories from all projects.
   // The trial can demonstrate the native control; production does not guess a mode.
@@ -220,7 +389,7 @@ export function NativeCloudSections(props: Props) {
   const ready = (d: CloudSettingsDomain) => (states[d]?.status === 'ready' ? states[d] : undefined);
   const update = async (d: CloudSettingsDomain, set: Record<string, unknown>, clear?: string[]) => {
     const s = ready(d);
-    if (!s) throw Error('NOT_READY');
+    if (!s || stale?.(d)) throw Error('NOT_READY');
     return save(s, set, clear);
   };
   // Resolves true once the target confirmed the write; failures are reported here.
@@ -247,6 +416,13 @@ export function NativeCloudSections(props: Props) {
   const reset = (d: CloudSettingsDomain) => attempt(d, {}, Object.keys(states[d]?.defaults ?? {}));
   const s = (d: CloudSettingsDomain) => states[d]!;
   const c = (d: CloudSettingsDomain) => !!s(d).isCustomized;
+  // One saved key's "customized" mark and reset, for rows the local page shows without one: the
+  // instance stores the value even when it equals the default, as this computer does.
+  const keyReset = (d: CloudSettingsDomain, key: string) => ({
+    customized: !!s(d).customizedKeys?.includes(key),
+    disabled,
+    onReset: () => void attempt(d, {}, [key]),
+  });
   if (tab === 'general')
     return (
       <>
@@ -254,6 +430,7 @@ export function NativeCloudSections(props: Props) {
           generalSection(
             'settings-search-target-general-language',
             <LanguageSectionView
+              headingStatus={keptStatus(['desktopGeneral'])}
               locale={s('desktopGeneral').value?.locale as LocalePreference}
               locales={displayLocales(s('desktopGeneral'))}
               disabled={disabled}
@@ -271,20 +448,24 @@ export function NativeCloudSections(props: Props) {
               <CloudDesktopFallback deviceId={deviceId} name={name} />
             </div>,
           )}
+        {unreadableHere(['desktopGeneral'], 'settings-search-target-general-language', 'py-[18px]')}
         {ready('botModelChain') &&
           generalSection(
             'settings-bots',
             <CloudBotsSettings
+              headingStatus={keptStatus(['botModelChain'])}
               state={s('botModelChain')}
               deviceId={deviceId}
               disabled={disabled}
               attempt={confirmSave}
             />,
           )}
+        {unreadableHere(['botModelChain'], 'settings-bots', 'py-[18px]')}
         {ready('collaboration') &&
           generalSection(
             'settings-collaboration',
             <CollaborationSectionView
+              headingStatus={keptStatus(['collaboration'])}
               settings={{
                 workerSoftLimit: num(s('collaboration'), 'workerSoftLimit'),
                 workerHardLimit: num(s('collaboration'), 'workerHardLimit'),
@@ -295,13 +476,21 @@ export function NativeCloudSections(props: Props) {
               reset={() => void reset('collaboration')}
             />,
           )}
+        {unreadableHere(['collaboration'], 'settings-collaboration', 'py-[18px]')}
         {ready('agentResource') &&
-          generalSection('settings-agent-resource', <Resource {...props} state={s('agentResource')} />)}
+          generalSection('settings-agent-resource', <Resource
+              {...props}
+              state={s('agentResource')}
+              headingStatus={keptStatus(['agentResource'])}
+            />)}
+        {unreadableHere(['agentResource'], 'settings-agent-resource', 'py-[18px]')}
+        {trial && unreadableHere(['gitSafety'], 'settings-search-target-general-git-safety', 'py-[18px]')}
         {trial &&
           ready('gitSafety') &&
           generalSection(
             'settings-search-target-general-git-safety',
             <GitSafetySectionView
+              headingStatus={keptStatus(['gitSafety'])}
               mode={trialGitMode}
               saving={disabled}
               isCustomized={trialGitMode !== 'all-projects'}
@@ -309,11 +498,13 @@ export function NativeCloudSections(props: Props) {
               handleReset={() => setTrialGitMode('all-projects')}
             />,
           )}
+        {unreadableHere(['lsp'], 'settings-search-target-general-experimental', 'py-[18px]')}
         {ready('lsp') &&
           generalSection(
             'settings-search-target-general-experimental',
             // The Beta update channel is not shown: CIS updates the instance image.
             <ExperimentalSectionView
+              headingStatus={keptStatus(['lsp'])}
               rows={[
                 {
                   key: 'lsp',
@@ -322,6 +513,7 @@ export function NativeCloudSections(props: Props) {
                       enabled={bool(s('lsp'), 'enabled')}
                       pending={disabled}
                       handleToggle={(next) => attempt('lsp', { enabled: next })}
+                      reset={keyReset('lsp', 'enabled')}
                     />
                   ),
                 },
@@ -337,7 +529,7 @@ export function NativeCloudSections(props: Props) {
         {ready('personalization') ? (
           section(
             'settings-search-target-personalization-user-prompt',
-            <PersonalizationPage>
+            <PersonalizationPage headingStatus={keptStatus(['personalization'])}>
             <UserPromptEditor
               value={String(s('personalization').value?.userPrompt ?? '')}
               ready={!disabled}
@@ -371,10 +563,13 @@ export function NativeCloudSections(props: Props) {
             }
           />
         )}
+        {unreadableHere(['personalization'], 'settings-search-target-personalization-user-prompt')}
+        {unreadableHere(['memory'], 'settings-search-target-personalization-memory')}
         {ready('memory') &&
           section(
             'settings-search-target-personalization-memory',
             <MemorySectionView
+              headingStatus={keptStatus(['memory'])}
               settingsCustomized={c('memory')}
               makerEnabled={bool(s('memory'), 'maker')}
               makerTogglePending={disabled}
@@ -399,41 +594,61 @@ export function NativeCloudSections(props: Props) {
               handleToggle={(kind, next) =>
                 attempt('memory', { [kind === 'claude-code' ? 'claudeCode' : kind]: next })
               }
+              agentRows={memoryAgentRows}
             />,
           )}
+        {ready('botModelChain') &&
+          section(
+            'settings-bots',
+            <CloudBotsSettings
+              headingStatus={keptStatus(['botModelChain'])}
+              state={s('botModelChain')}
+              deviceId={deviceId}
+              disabled={disabled}
+              attempt={confirmSave}
+            />,
+          )}
+        {unreadableHere(['subagentModel'], 'settings-search-target-personalization-subagents')}
         {ready('subagentModel') &&
           section(
             'settings-search-target-personalization-subagents',
             <CloudSubagentSettings
+              headingStatus={keptStatus(['subagentModel'])}
               state={s('subagentModel')}
               deviceId={deviceId}
               disabled={disabled}
               attempt={confirmSave}
             />,
           )}
+        {unreadableHere(['auxiliaryModel'], 'settings-search-target-personalization-auxiliary-models')}
         {ready('auxiliaryModel') &&
           section(
             'settings-search-target-personalization-auxiliary-models',
             <CloudAuxiliarySettings
+              headingStatus={keptStatus(['auxiliaryModel'])}
               state={s('auxiliaryModel')}
               disabled={disabled}
               attempt={confirmSave}
             />,
           )}
+        {unreadableHere(['visionBridge'], 'settings-search-target-personalization-vision-bridge')}
         {ready('visionBridge') &&
           section(
             'settings-search-target-personalization-vision-bridge',
             <CloudVisionBridgeSettings
+              headingStatus={keptStatus(['visionBridge'])}
               state={s('visionBridge')}
               deviceId={deviceId}
               disabled={disabled}
               attempt={confirmSave}
             />,
           )}
+        {unreadableHere(['terminal'], 'settings-search-target-personalization-terminal-shell')}
         {ready('terminal') &&
           section(
             'settings-search-target-personalization-terminal-shell',
             <TerminalShellSectionView
+              headingStatus={keptStatus(['terminal'])}
               pref={String(s('terminal').value?.defaultShellPref) as ShellId}
               shells={(s('terminal').choices?.defaultShellPref ?? [])
                 .filter((x) => x.value !== 'auto')
@@ -461,10 +676,11 @@ export function NativeCloudSections(props: Props) {
               }
             />,
           )}
+        {unreadableHere(['silentEncryptedRetry', 'chatEmbedding'], 'settings-search-target-personalization-tips')}
         {(ready('silentEncryptedRetry') || ready('chatEmbedding')) &&
           section(
             'settings-search-target-personalization-tips',
-            <TipsSectionView>
+            <TipsSectionView headingStatus={keptStatus(['silentEncryptedRetry', 'chatEmbedding'])}>
               {ready('silentEncryptedRetry') && (
                 <SilentEncryptedRetryCellView
                   enabled={bool(s('silentEncryptedRetry'), 'enabled')}
@@ -487,9 +703,16 @@ export function NativeCloudSections(props: Props) {
           )}
       </>
     );
-  if (tab === 'builtin-tools' && ready('builtinTools'))
+  if (tab === 'builtin-tools' && !ready('builtinTools'))
+    return unreadableHere(['builtinTools', 'browserTools'], 'settings-builtin-tools');
+  if (tab === 'builtin-tools')
     return (
+      <>
+      {unreadableHere(['builtinTools', 'browserTools'], 'settings-builtin-tools')}
+      {/* The group the failure fades: the shared view has no id of its own here. */}
+      <div id="settings-builtin-tools">
       <BuiltinToolsSectionView
+        headingStatus={keptStatus(['builtinTools', 'browserTools'])}
         plugins={[
           // The browser tool is the same switch as browser automation; local lists it first.
           ...(ready('browserTools')
@@ -531,18 +754,23 @@ export function NativeCloudSections(props: Props) {
             : attempt('builtinTools', {}, [id]))
         }
       />
+      </div>
+      </>
     );
   if (tab === 'computer-use')
     return (
       <div className="flex flex-col gap-[14px]">
         <ComputerUseSectionHeader />
+        {unreadableHere(['browserTools', 'browserBackend'], 'automation-browser', '')}
         {ready('browserTools') && (
           <>
             <AutomationCard id="automation-browser">
               <BrowserAutomationHeader
+                headingStatus={keptStatus(['browserTools', 'browserBackend'])}
                 checked={bool(s('browserTools'), 'browser')}
                 disabled={disabled}
                 onChange={(next) => void attempt('browserTools', { browser: next })}
+                reset={keyReset('browserTools', 'browser')}
               />
               {/* Real-profile reuse, Chrome detection and the login window act on the
                   target computer's browser; they are not settings and stay local-only. */}
@@ -554,6 +782,7 @@ export function NativeCloudSections(props: Props) {
                   health={null}
                   onSelect={(kind) => void attempt('browserBackend', { kind })}
                   onRecover={() => undefined}
+                  reset={keyReset('browserBackend', 'kind')}
                 />
               )}
             </AutomationCard>
@@ -562,21 +791,26 @@ export function NativeCloudSections(props: Props) {
             </p>
           </>
         )}
+        {unreadableHere(['computerTools'], 'automation-computer', '')}
         {ready('computerTools') && (
           <>
             <div aria-hidden="true" className="h-px bg-[var(--settings-theme-card-border)]" />
             <AutomationCard id="automation-computer">
               <ComputerAutomationHeader
+                headingStatus={keptStatus(['computerTools'])}
                 checked={bool(s('computerTools'), 'computer')}
                 disabled={disabled}
                 onChange={(next) => void attempt('computerTools', { computer: next })}
+                reset={keyReset('computerTools', 'computer')}
               />
             </AutomationCard>
           </>
         )}
       </div>
     );
-  if (tab === 'storage' && ready('databaseWarning'))
+  if (tab === 'storage' && !ready('databaseWarning'))
+    return unreadableHere(['databaseWarning'], 'settings-storage-database');
+  if (tab === 'storage')
     return (
       <StorageSectionFrame description={t('cloudSettings.storageDescription')}>
         {/* The instance disk is fixed in size (2026-11-04 product review); the preview has none. */}
@@ -588,25 +822,32 @@ export function NativeCloudSections(props: Props) {
             active
           />
         )}
-        <StorageDatabaseSection>
-          <div className={STORAGE_DATABASE_BODY_CLASS}>
-            <Storage {...props} state={s('databaseWarning')} />
-          </div>
-        </StorageDatabaseSection>
+        {unreadableHere(['databaseWarning'], 'settings-storage-database')}
+        <div id="settings-storage-database">
+          <StorageDatabaseSection headingStatus={keptStatus(['databaseWarning'])}>
+            <div className={STORAGE_DATABASE_BODY_CLASS}>
+              <Storage {...props} state={s('databaseWarning')} />
+            </div>
+          </StorageDatabaseSection>
+        </div>
         <CloudDesktopFallback
           deviceId={deviceId}
           name={name}
           label={t('cloudSettings.storageCleanupTitle')}
-          description={t('cloudSettings.storageCleanupFallback')}
+          description={t('bots.remoteSettings.finishOnHost', { device: name })}
         />
       </StorageSectionFrame>
     );
-  if (
-    tab === 'about' &&
-    (appVersion || ready('privacy') || ready('desktopNotifications') || ready('diagnostics'))
-  )
+  if (tab === 'about' && !(appVersion || ready('privacy') || ready('desktopNotifications') || ready('diagnostics')))
+    return unreadableHere(['privacy', 'desktopNotifications', 'diagnostics'], 'settings-about');
+  if (tab === 'about')
     return (
+      <>
+      {/* The rows share one card: its failure goes in the page heading, and the card fades. */}
+      {unreadableHere(['privacy', 'desktopNotifications', 'diagnostics'], 'settings-about')}
+      <div id="settings-about">
       <AboutSectionView
+        headingStatus={keptStatus(['privacy', 'desktopNotifications', 'diagnostics'])}
         card={
           <>
             {appVersion && (
@@ -631,6 +872,7 @@ export function NativeCloudSections(props: Props) {
                   onChange={(next) =>
                     void attempt('desktopNotifications', { networkDebugEnabled: next })
                   }
+                  reset={keyReset('desktopNotifications', 'networkDebugEnabled')}
                 />
               </>
             )}
@@ -647,6 +889,8 @@ export function NativeCloudSections(props: Props) {
           </>
         }
       />
+      </div>
+      </>
     );
   return null;
 }
