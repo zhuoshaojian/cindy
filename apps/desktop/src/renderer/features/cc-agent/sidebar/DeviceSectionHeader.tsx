@@ -6,7 +6,6 @@ import { Tip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { useRemoteDesktopAvailability } from '@/features/remote-desktop/useRemoteDesktopAvailability';
-import { CloudSettingsShortcut } from '@/features/cloud-settings/CloudSettingsShortcut';
 
 function RemoteDesktopShortcut({
   deviceId,
@@ -122,7 +121,6 @@ export function DeviceSectionHeader({
       onFocus={reveal}
     >
       {children}
-      {deviceId && /^cloud-device-[a-f0-9]{24}$/.test(deviceId) && <CloudSettingsShortcut deviceId={deviceId} name={name} />}
       {deviceId && <RemoteDesktopShortcut deviceId={deviceId} name={name} revealRef={revealRef} />}
     </div>
   );

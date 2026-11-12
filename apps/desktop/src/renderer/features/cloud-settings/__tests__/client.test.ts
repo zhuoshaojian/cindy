@@ -27,7 +27,12 @@ describe('native CIS settings client using existing settingsWeb commands', () =>
     const f = setup();
     f.bridge.read = vi.fn().mockResolvedValue([{ ok: false, code: 'MODEL_CATALOG_TOO_LARGE' }]);
     expect(await f.client.read(['memory'])).toEqual([
-      { domain: 'memory', status: 'unreadable', revision: null, readErrorCode: 'MODEL_CATALOG_TOO_LARGE' },
+      {
+        domain: 'memory',
+        status: 'unreadable',
+        revision: null,
+        readErrorCode: 'MODEL_CATALOG_TOO_LARGE',
+      },
     ]);
     f.bridge.read = vi
       .fn()
@@ -79,6 +84,19 @@ describe('native CIS settings client using existing settingsWeb commands', () =>
       [s] = await f.client.read(['memory']);
     f.externalChange();
     await expect(f.client.save(s, { maker: false })).rejects.toThrow('CONFLICT');
+  });
+  // The optimistic page reverts on a refusal but only rereads when the outcome is unknown.
+  it('tells a refused update apart from a receipt that could not be read', async () => {
+    const f = setup(),
+      [s] = await f.client.read(['memory']);
+    f.bridge.save = vi.fn().mockResolvedValue({ ok: false, code: 'VALIDATION' });
+    await expect(f.client.save(s, { maker: false })).rejects.toThrow('CLOUD_SETTINGS_REJECTED');
+    f.bridge.save = vi.fn().mockRejectedValue(Error('[CLOUD_SETTINGS_SAVE_UNCONFIRMED] lost'));
+    f.bridge.receipt = vi.fn().mockRejectedValue(Error('[CLOUD_SETTINGS_UNAVAILABLE] offline'));
+    await expect(f.client.save(s, { maker: false })).rejects.toThrow(
+      'CLOUD_SETTINGS_SAVE_UNCONFIRMED',
+    );
+    expect(f.bridge.save).toHaveBeenCalledTimes(1);
   });
   it.each(['owner', 'region', 'signout', 'ui'] as const)(
     'rejects stale access after %s changes',

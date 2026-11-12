@@ -87,7 +87,7 @@ it('saves, tests and removes the WeCom group webhook through target tickets', as
     />,
   );
   const section = await panel('wecom');
-  expect(within(section).queryByText('cloudSettings.desktopFallback')).toBeNull();
+  expect(within(section).queryByText('bots.remoteSettings.finishOnHost')).toBeNull();
   const input = within(section).getByLabelText('settings.notifications.wecomGroupLabel');
   expect(input.getAttribute('type')).toBe('password');
   fireEvent.change(input, { target: { value: 'https://example.invalid/hook' } });
@@ -208,7 +208,8 @@ it('opens the cloud desktop for notifications on a target without notification i
   });
   render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" trial />);
   const section = await panel('wecom');
-  expect(within(section).getByText('cloudSettings.desktopFallback')).toBeTruthy();
+  // The client's 「请在「X」上完成此设置。」 (D11 D3; was cloudSettings.desktopFallback).
+  expect(within(section).getByText('bots.remoteSettings.finishOnHost')).toBeTruthy();
   const openRemoteDesktop = vi.fn(async () => {});
   Object.assign(window, { electronAPI: { openRemoteDesktop } });
   fireEvent.click(

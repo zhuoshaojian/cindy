@@ -48,6 +48,7 @@ export function LanguageSectionView({
   onClassicalStyleChange: setClassicalStyle,
   disabled = false,
   locales,
+  headingStatus,
 }: {
   locale: LocalePreference;
   effectiveLocale?: string;
@@ -57,6 +58,8 @@ export function LanguageSectionView({
   disabled?: boolean;
   /** Languages the target can save; the menu offers only these. */
   locales?: readonly LocalePreference[];
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const classical = isClassicalLocale(locale) ? locale : null;
@@ -75,7 +78,7 @@ export function LanguageSectionView({
   };
 
   return (
-    <SettingsSection title={t(languageSettings.language.sectionKey)}>
+    <SettingsSection title={t(languageSettings.language.sectionKey)} action={headingStatus}>
       <SettingsCard>
         <SettingsRow
           id={languageSettings.language.targetId}

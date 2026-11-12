@@ -49,6 +49,20 @@ export default {
       data: { bots: true, webNarrow: true },
       viewport: { width: 320, height: 740 },
     },
+    shown: {
+      about:
+        'Every supported category in the local order, then More settings (plan C), against the instance catalog',
+      data: { shown: true },
+    },
+    'shown-narrow': {
+      about: 'The shown categories at a narrow desktop window',
+      data: { shown: true },
+      viewport: { width: 760, height: 850 },
+    },
+    offline: {
+      about: 'An unreachable instance points at its device card',
+      data: { shown: true, offline: true },
+    },
     'im-read-failure': {
       about:
         'Native new-conversation section remains visible on failed cloud reads and recovers after retry',
@@ -63,7 +77,8 @@ export default {
       data: { bots: true, imPreferences: true },
     },
     appearance: {
-      about: 'Cloud reply animation override and per-field reset',
+      about:
+        'Window-only appearance stays with the remote desktop (2026-11-04 review); per-field override and reset on a built-in tool',
       data: { appearance: true },
     },
     pages: {
@@ -72,14 +87,38 @@ export default {
       viewport: { width: 1040, height: 900 },
     },
     bots: { about: 'All six personal bot channels and credential forms', data: { bots: true } },
-    default: { about: 'Cloud language and Linux send shortcut reuse native settings' },
+    default: {
+      about:
+        'Cloud language reuses native settings; the send shortcut stays with the remote desktop (2026-11-04 review); LSP override and reset',
+    },
     personalization: {
-      about: 'Cloud links, tips and reset controls reuse native settings',
+      about: 'Cloud shell, tips and reset controls reuse native settings; link opening stays with the remote desktop',
       data: { personalization: true },
     },
     unavailable: {
-      about: 'Contacts work without sync; missing saved shell remains visible',
+      about: 'An unavailable group leaves its neighbour usable; a missing saved shell remains visible',
       data: { personalization: true, unavailable: true },
+    },
+    'read-failed': {
+      about: 'Reading keeps failing after three automatic reconnects: an error notice with a reload',
+      data: { readBroken: true, live: true },
+    },
+    'domain-unreadable': {
+      about: 'One group the instance does not answer: read again three times, then a notice named after it, in its place',
+      data: { domainUnreadable: true, live: true },
+    },
+    'providers-unreadable': {
+      about: 'The model provider list cannot be read: the local catalog notice under the title with a retry',
+      data: { shown: true, providersUnreadable: true },
+    },
+    'header-default-name': {
+      about: 'An instance with the default name: the page notice names it once',
+      data: { defaultName: true },
+    },
+    'search-prompt': {
+      about:
+        'Searching the custom prompt opens Personalization with the local page offset and highlight',
+      data: { searchPrompt: true },
     },
     narrow: {
       about: 'Cloud controls and dropdowns at a narrow desktop window',
@@ -87,19 +126,173 @@ export default {
     },
   },
   async ready(page) {
-    await page.locator('#settings-search-target-general-language [role="combobox"]').waitFor();
+    await page
+      .locator('#settings-search-target-general-language [role="combobox"], #settings-tab-more')
+      .first()
+      .waitFor();
   },
   async check(page, ui) {
     if (ui.data.webNarrow) {
       const layout = await page.locator('[data-testid="cloud-settings"]').evaluate((root) => {
         const sidebar = root.querySelector('aside').getBoundingClientRect();
-        const context = root.querySelector('[data-cloud-settings-context]').getBoundingClientRect();
+        // The content column beside (on a phone: below) the navigation.
+        const context = root.querySelector(':scope > div > aside + div').getBoundingClientRect();
         return { width: innerWidth, sidebarBottom: sidebar.bottom, contextTop: context.top,
           contextWidth: context.width, pageWidth: document.documentElement.scrollWidth };
       });
       assert.ok(layout.sidebarBottom <= layout.contextTop + 1, 'phone navigation must be above the content');
       assert.ok(layout.contextWidth >= layout.width * 0.8, 'the settings content must retain usable width');
       assert.ok(layout.pageWidth <= layout.width, 'the phone page must not overflow horizontally');
+    }
+    if (ui.data.offline) {
+      await page
+        .getByRole('button', { name: await ui.t('settings.tabs.remoteControl'), exact: true })
+        .waitFor();
+      await ui.capture('providers');
+      await page
+        .getByRole('tab', { name: await ui.t('cloudSettings.moreSettings'), exact: true })
+        .click();
+      await ui.capture('more');
+      return;
+    }
+    if (ui.data.providersUnreadable) {
+      await page.getByRole('tab', { name: await ui.t('settings.tabs.providers'), exact: true }).click();
+      // The local page's notice for a model list it cannot update (D11 C3).
+      const notice = page.getByRole('status').filter({
+        hasText: await ui.t('settings.providers.catalogRecovery.catalog'),
+      });
+      await notice.waitFor();
+      await notice
+        .getByRole('button', { name: await ui.t('settings.providers.catalogRecovery.retry'), exact: true })
+        .waitFor();
+      assert.equal(await page.getByText('DEVICE_LINK_TIMEOUT').count(), 0);
+      await ui.capture('providers-unreadable');
+      return;
+    }
+    if (ui.data.shown) {
+      // Plan C (owner, 2026-11-09): no overview (it is the device card's Update dialog). Plugins
+      // shows the upstream remote plugin page (2026-11-10).
+      assert.deepEqual(
+        await page.getByRole('tab').allInnerTexts(),
+        await Promise.all(
+          [
+            'settings.tabs.general',
+            'settings.tabs.personalization',
+            'settings.tabs.providers',
+            'settings.tabs.imBot',
+            'settings.tabs.ghosts',
+            'settings.tabs.builtinTools',
+            'settings.tabs.computerUse',
+            'settings.tabs.storage',
+            'settings.tabs.about',
+            'cloudSettings.moreSettings',
+          ].map((key) => ui.t(key)),
+        ),
+      );
+      const general = page.getByRole('tab', { name: await ui.t('settings.tabs.general'), exact: true });
+      assert.equal(await general.getAttribute('aria-selected'), 'true');
+      // The bot model chain is back in General with the rest of its group.
+      await page.locator('#settings-panel-general #settings-bots').waitFor();
+      await page.locator('#settings-panel-general #settings-collaboration').waitFor();
+      await ui.capture('sidebar');
+      await page.locator('#settings-bots').scrollIntoViewIfNeeded();
+      await ui.capture('bot-model-chain');
+      await page.getByRole('tab', { name: await ui.t('settings.tabs.providers'), exact: true }).click();
+      await page.getByText('Cloud model', { exact: true }).waitFor();
+      await page.getByText('Shared Claude', { exact: true }).waitFor();
+      // Sharing, joining by link and the instance's CLI suggestions are shown, as on this computer.
+      await page.getByTestId('provider-share-paste-button').waitFor();
+      await page.getByText(await ui.t('cloudSettings.cliDetect.groupLabel'), { exact: true }).waitFor();
+      assert.equal(
+        await page.getByText(await ui.t('settings.providers.detect.groupLabel'), { exact: true }).count(),
+        0,
+      );
+      await ui.capture('providers');
+      await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
+      await page.getByText(await ui.t('settings.feishuBot.title'), { exact: true }).waitFor();
+      await ui.capture('im-bot');
+      await page
+        .getByRole('tab', { name: await ui.t('settings.tabs.personalization'), exact: true })
+        .click();
+      await page.locator('#settings-search-target-personalization-memory').waitFor();
+      assert.equal(await page.locator('#settings-panel-personalization #settings-bots').count(), 0);
+      await ui.capture('personalization');
+      await page
+        .getByRole('tab', { name: await ui.t('cloudSettings.moreSettings'), exact: true })
+        .click();
+      await page
+        .getByRole('button', { name: await ui.t('cloudSettings.openInCloudDesktop'), exact: true })
+        .waitFor();
+      await ui.capture('more');
+      return;
+    }
+    if (ui.data.domainUnreadable) {
+      // In place of the group, named as on the page: 「读不到 Agent 资源占用设置」.
+      const title = await ui.t('cloudSettings.groupReadFailed', {
+        names: ` ${await ui.t('settings.agentResource.title')}`,
+      });
+      const place = page.locator('#settings-agent-resource-unreadable');
+      // The failure sits in the group's heading row, with an icon-only retry (D10, D9).
+      const notice = place.locator('[data-cloud-group-status]');
+      // Not before the three automatic reads (about seven seconds).
+      await page.waitForTimeout(1_000);
+      assert.equal(await place.count(), 0);
+      await notice.waitFor({ timeout: 15_000 });
+      assert.equal((await notice.textContent()).trim(), title.trim());
+      await notice.getByRole('button', { name: await ui.t('commonUi.retry'), exact: true }).waitFor();
+      assert.equal(await place.getByText('SETTINGS_REQUEST_FAILED').count(), 0);
+      // Right after Collaboration, where Agent resources would be; none of its controls show.
+      assert.equal(await place.evaluate((el) => el.previousElementSibling?.id), 'settings-collaboration');
+      assert.equal(await page.locator('#settings-agent-resource').count(), 0);
+      // The rest of the category reads; no page-wide or generic notice.
+      await page.locator('#settings-search-target-general-language [role="combobox"]').waitFor();
+      // Only that group says so: the page notice stays as it is.
+      assert.equal(await page.getByText(await ui.t('bots.remoteSettings.loadFailed')).count(), 0);
+      await place.scrollIntoViewIfNeeded();
+      await ui.capture('domain-unreadable');
+      return;
+    }
+    if (ui.data.readBroken) {
+      // Three reconnects (about seven seconds) before the page says it cannot read.
+      // The page's one notice says so (rule 4: each state in one place), with its retry.
+      const notice = page.getByRole('status').filter({ hasText: await ui.t('bots.remoteSettings.loadFailed') });
+      await notice.waitFor({ timeout: 15_000 });
+      const retry = await ui.t('settings.ghosts.remote.retry');
+      await notice.getByRole('button', { name: retry, exact: true }).waitFor();
+      assert.equal(await page.getByText('CLOUD_SETTINGS_SCOPE_CHANGED').count(), 0);
+      // No retry in the sidebar.
+      assert.equal(await page.locator('aside').getByRole('button', { name: retry, exact: true }).count(), 0);
+      await ui.capture('read-failed');
+      return;
+    }
+    if (ui.data.defaultName) {
+      const name = await ui.t('cloudSettings.onboarding.defaultNameSole');
+      const notice = page.getByRole('status').filter({
+        hasText: await ui.t('settings.ghosts.remote.managingTarget', { device: name }),
+      });
+      await notice.waitFor();
+      // Named once, in the title; the line below says what the page is doing.
+      assert.equal((await notice.innerText()).split(name).length - 1, 1);
+      await notice.getByText(await ui.t('cloudSettings.trial'), { exact: true }).waitFor();
+      await ui.capture('header');
+      return;
+    }
+    if (ui.data.searchPrompt) {
+      const search = page.getByRole('combobox', { name: await ui.t('settings.search.ariaLabel') });
+      await search.fill(await ui.t('settings.personalization.subtitle'));
+      await page.locator('[id="settings-search-result-personalization.instructions"]').click();
+      // As on the local settings page (cloud-test R5, 2026-11-09): the shared section hook marks the
+      // prompt field and scrolls it to 8 px below the top of the scroll area, which lies under the
+      // page header rather than behind it.
+      await page.waitForFunction(() => {
+        const field = document.getElementById('settings-user-instructions');
+        const scroller = field?.closest('.overflow-y-auto');
+        if (!field?.classList.contains('settings-search-target-highlight') || !scroller) return false;
+        const offset = field.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        return Math.abs(offset - 8) < 2;
+      });
+      await ui.capture('search-prompt');
+      return;
     }
     if (ui.data.pages) {
       // Bot model chain and Subagent pickers read the target catalog over DeviceLink.
@@ -136,48 +329,44 @@ export default {
       return;
     }
     if (ui.data.appearance) {
-      await page
-        .getByRole('tab', { name: await ui.t('settings.tabs.appearance'), exact: true })
-        .click();
-      // Target theme, display mode, fonts and sidebar styles reuse the local appearance view.
-      await page
-        .getByRole('combobox', { name: await ui.t('settings.appearance.themeAriaLabel') })
-        .waitFor();
-      await page
-        .getByRole('radio', { name: await ui.t('settings.appearance.themeAria.dark') })
-        .click();
+      // Theme, fonts and reply animation only change the instance's own window: no tab here.
       assert.equal(
-        await page
-          .getByRole('radio', { name: await ui.t('settings.appearance.themeAria.dark') })
-          .getAttribute('aria-checked'),
-        'true',
+        await page.getByRole('tab', { name: await ui.t('settings.tabs.appearance'), exact: true }).count(),
+        0,
       );
-      await ui.capture('theme');
-      const fade = page.locator('#settings-search-target-appearance-stream-fade');
-      const toggle = fade.getByRole('switch', {
-        name: await ui.t('settings.streamFade.toggleAria'),
-      });
-      await toggle.click();
-      assert.equal(await toggle.getAttribute('aria-checked'), 'false');
-      await ui.capture('fade-disabled');
-      await fade
-        .getByRole('button', { name: await ui.t('settings.defaults.restore'), exact: true })
+      await page
+        .getByRole('tab', { name: await ui.t('settings.tabs.builtinTools'), exact: true })
         .click();
-      assert.equal(await toggle.getAttribute('aria-checked'), 'true');
-      await ui.capture('fade-default');
+      const name = await ui.t('settings.builtinTools.plugins.docs.name');
+      const toggle = page.getByRole('switch', {
+        name: await ui.t('settings.builtinTools.toggleAria', { name }),
+      });
+      const before = await toggle.getAttribute('aria-checked');
+      await toggle.click();
+      assert.notEqual(await toggle.getAttribute('aria-checked'), before);
+      const row = page.locator('li, [role="listitem"], div').filter({ has: toggle }).last();
+      const reset = row.getByRole('button', { name: await ui.t('settings.defaults.restore'), exact: true });
+      await reset.waitFor();
+      await ui.capture('tool-customized');
+      await reset.click();
+      await reset.waitFor({ state: 'hidden' });
+      assert.equal(await toggle.getAttribute('aria-checked'), before);
+      await ui.capture('tool-default');
     } else if (ui.data.imReadFailure) {
       await page.getByRole('tab', { name: await ui.t('settings.tabs.imBot'), exact: true }).click();
       await page.getByText(await ui.t('settings.wechatBot.title'), { exact: true }).click();
       const defaults = page.getByRole('region', {
         name: await ui.t('settings.imBot.defaults.title'),
       });
-      await defaults.getByRole('alert').waitFor();
+      const failed = defaults.getByText(await ui.t('cloudSettings.imReadFailed'), { exact: true });
+      await failed.waitFor();
+      // Still there after the page's automatic re-reads (about seven seconds).
+      await page.waitForTimeout(8_000);
+      await failed.waitFor();
       await defaults.scrollIntoViewIfNeeded();
       await ui.capture('im-read-failed');
-      await defaults
-        .getByRole('button', { name: await ui.t('cloudSettings.reload'), exact: true })
-        .click();
-      await defaults.getByRole('alert').waitFor({ state: 'hidden' });
+      await defaults.getByRole('button', { name: await ui.t('commonUi.retry'), exact: true }).click();
+      await failed.waitFor({ state: 'hidden' });
       await defaults
         .getByText(await ui.t('settings.imBot.defaults.modelLabel'), { exact: true })
         .waitFor();
@@ -262,56 +451,53 @@ export default {
       await ui.capture('terminal');
       if (ui.data.unavailable) {
         assert.ok((await terminal.textContent()).includes('fish'));
+        // The unavailable group is left out; the tips row beside it keeps working.
         assert.equal(
           await page
-            .getByRole('switch', { name: await ui.t('settings.contacts.enable.toggleAria') })
-            .isEnabled(),
-          true,
+            .getByRole('switch', { name: await ui.t('settings.chatEmbedding.toggleAria') })
+            .count(),
+          0,
         );
         assert.equal(
           await page
-            .getByRole('switch', { name: await ui.t('settings.contacts.sync.toggleAria') })
+            .getByRole('switch', { name: await ui.t('settings.silentEncryptedRetry.toggleAria') })
             .isEnabled(),
-          false,
+          true,
         );
       }
       await terminal.click();
       await ui.capture('shell-choices');
       await page.keyboard.press('Escape');
-      const web = page.getByRole('radiogroup', {
-        name: await ui.t('settings.linkOpen.web.ariaLabel'),
+      // Link opening only changes the instance's own window (2026-11-04 review).
+      assert.equal(
+        await page.locator('#settings-search-target-personalization-link-open').count(),
+        0,
+      );
+      const tips = page.locator('#settings-search-target-personalization-tips');
+      const retry = tips.getByRole('switch', {
+        name: await ui.t('settings.silentEncryptedRetry.toggleAria'),
       });
-      await web
-        .getByRole('radio', { name: await ui.t('settings.linkOpen.options.sidebar'), exact: true })
-        .click();
-      const links = page.locator('#settings-search-target-personalization-link-open');
-      const reset = links.getByRole('button', {
+      const before = await retry.getAttribute('aria-checked');
+      await retry.click();
+      const reset = tips.getByRole('button', {
         name: await ui.t('settings.defaults.restore'),
         exact: true,
       });
-      await reset.waitFor();
-      await ui.capture('links-customized');
-      await reset.click();
-      await reset.waitFor({ state: 'hidden' });
-      assert.equal(
-        await web
-          .getByRole('radio', {
-            name: await ui.t('settings.linkOpen.options.external'),
-            exact: true,
-          })
-          .getAttribute('aria-checked'),
-        'true',
-      );
-      await page.locator('#settings-search-target-personalization-tips').scrollIntoViewIfNeeded();
+      await reset.first().waitFor();
+      await tips.scrollIntoViewIfNeeded();
+      await ui.capture('tips-customized');
+      await reset.first().click();
+      await reset.first().waitFor({ state: 'hidden' });
+      assert.equal(await retry.getAttribute('aria-checked'), before);
       await ui.capture('tips');
     } else {
       const language = page.getByRole('combobox', {
         name: await ui.t('settings.language.ariaLabel'),
       });
-      const textWidth = await language.evaluate(
-        (element) =>
-          element.parentElement.querySelector('p').parentElement.getBoundingClientRect().width,
-      );
+      const textWidth = await page
+        .locator('#settings-language')
+        .getByText(await ui.t('settings.language.hint'), { exact: true })
+        .evaluate((element) => element.getBoundingClientRect().width);
       assert.ok(textWidth >= 180, `Language explanation must remain readable: ${textWidth}px`);
       const triggerBox = await language.boundingBox();
       await language.click();
@@ -322,16 +508,21 @@ export default {
       );
       await ui.capture('languages');
       await page.keyboard.press('Escape');
-      const shortcut = page.getByRole('switch', {
-        name: await ui.t('settings.composer.sendShortcut.ariaLabel', { shortcut: 'Ctrl+Enter' }),
-      });
-      await shortcut.click();
-      await page
-        .locator('#settings-composer')
-        .getByRole('button', { name: await ui.t('settings.defaults.restore'), exact: true })
-        .waitFor();
-      assert.equal(await shortcut.getAttribute('aria-checked'), 'true');
-      await ui.capture('composer-customized');
+      // The send shortcut only changes the instance's own window (2026-11-04 review).
+      assert.equal(await page.locator('#settings-composer').count(), 0);
+      const lsp = page.getByRole('switch', { name: await ui.t('settings.lspMode.toggleAria') });
+      const before = await lsp.getAttribute('aria-checked');
+      await lsp.click();
+      const reset = page
+        .locator('#settings-search-target-general-experimental')
+        .getByRole('button', { name: await ui.t('settings.defaults.restore'), exact: true });
+      await reset.waitFor();
+      assert.notEqual(await lsp.getAttribute('aria-checked'), before);
+      await lsp.scrollIntoViewIfNeeded();
+      await ui.capture('lsp-customized');
+      await reset.click();
+      await reset.waitFor({ state: 'hidden' });
+      assert.equal(await lsp.getAttribute('aria-checked'), before);
     }
   },
 };

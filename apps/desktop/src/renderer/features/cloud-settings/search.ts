@@ -59,5 +59,8 @@ export function cloudSearchEntryAllowed(
   if (entry.id === 'general' || entry.id === 'personalization')
     return CLOUD_SETTINGS_GROUPS[entry.tab as CloudSettingsTab].some((d) => domains.includes(d));
   const domain = targetDomain[entry.fallbackTargetId ?? entry.targetId];
+  // A real instance answers the prompt over its private DeviceLink channel, so the CIS open never
+  // lists this domain (client.ts) while the page always shows the section; only the trial reports it.
+  if (domain === 'personalization') return !trial || domains.includes(domain);
   return !!domain && domains.includes(domain) && (domain !== 'gitSafety' || trial);
 }

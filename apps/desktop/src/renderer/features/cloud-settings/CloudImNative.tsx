@@ -15,10 +15,12 @@ import {
 import { WechatWorkingDirectory } from '@/components/settings/WechatBotSection';
 import { CLOUD_WECHAT_WORKING_DIR_SET } from '../../../shared/cloudImSettings';
 import type { ManagementItem } from '../../../shared/settingsManagement';
+import { errorCode, useBlockRetry } from './blockRetry';
 import { createCloudImTarget, type CloudImAuthorization, type CloudImTarget } from './cloudImTarget';
 
 type Action = ManagementItem['actions'][number];
-export type CloudImSupport = 'probing' | 'ready' | 'unsupported';
+/** failed: the instance's IM channel did not answer; it is read again on its own (T17b). */
+export type CloudImSupport = 'probing' | 'ready' | 'unsupported' | 'failed';
 
 /**
  * One target per instance for the native IM cards. Binding flows reuse the cloud authorization
@@ -88,26 +90,36 @@ export function useCloudImTarget({
   }, [deviceId]);
   useEffect(() => target.setActive(enabled), [target, enabled]);
   const [support, setSupport] = useState<CloudImSupport>('probing');
+  const [failures, setFailures] = useState(0);
+  const [failureCode, setFailureCode] = useState<string>();
   useEffect(() => {
     setSupport('probing');
   }, [target]);
-  useEffect(() => {
-    if (!enabled || support !== 'probing') return;
-    let current = true;
-    void target.api.hookControl
+  // The target a read belongs to; a read for an earlier target is ignored.
+  const probedFor = useRef(target);
+  probedFor.current = target;
+  const probe = useCallback(() => {
+    const asked = target;
+    void asked.api.hookControl
       .get()
-      .then(() => current && setSupport('ready'))
+      .then(() => probedFor.current === asked && setSupport('ready'))
       .catch((error: unknown) => {
-        if (!current) return;
+        if (probedFor.current !== asked) return;
         const code = extractIpcError(error)?.code;
-        // An older runtime keeps the earlier cards; other failures retry on the next visit.
+        // An older runtime keeps the earlier cards; any other failure is read again on its own,
+        // then reported where the cards would be (T27: it used to fall back to them silently).
         if (code === 'DEVICE_LINK_CHANNEL_NOT_ALLOWED' || code === 'PERMISSION_DENIED')
           setSupport('unsupported');
+        else {
+          setSupport('failed');
+          setFailureCode(code ?? errorCode(error));
+          setFailures((count) => count + 1);
+        }
       });
-    return () => {
-      current = false;
-    };
-  }, [enabled, support, target]);
+  }, [target]);
+  useEffect(() => {
+    if (enabled && support === 'probing') probe();
+  }, [enabled, support, probe]);
   const close = (path: string | null) => {
     picker?.(path);
     setPicker(null);
@@ -127,7 +139,18 @@ export function useCloudImTarget({
       }}
     />
   ) : null;
-  return { target, support, directoryPicker };
+  const readRetry = useBlockRetry({
+    failed: enabled && support === 'failed',
+    failures,
+    // Read again while still failed, so the tries are counted.
+    retry: probe,
+  });
+  return {
+    target,
+    support,
+    directoryPicker,
+    readFailure: readRetry.exhausted ? { code: failureCode, reload: readRetry.reload } : undefined,
+  };
 }
 
 /** The local Telegram persona, behaviour and group sections against the instance. */

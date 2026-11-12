@@ -77,6 +77,7 @@ vi.mock('../VisionBridgeSection', () => ({ VisionBridgeSection: Stub }));
 vi.mock('../ProvidersSection', () => ({ ProvidersSection: Stub }));
 vi.mock('../McpServersSection', () => ({ McpServersSection: Stub }));
 vi.mock('../RemoteControlSection', () => ({ RemoteControlSection: Stub }));
+vi.mock('../LocalAgentSection', () => ({ LocalAgentSection: Stub }));
 vi.mock('@/features/device-link/SharedTaskDialog', () => ({ SharedTaskDialog: Stub }));
 vi.mock('../NotificationSection', () => ({ NotificationSection: Stub }));
 vi.mock('../WindowBehaviorSection', () => ({ WindowBehaviorSection: Stub }));
@@ -416,26 +417,6 @@ describe('SettingsView Escape', () => {
     }
   });
 
-  it('hosts cloud instance discovery inside Settings and exits without creating an instance', async () => {
-    auth.mode = 'cloud';
-    auth.cloudAccess = 'allowed';
-    const instanceList = vi.fn().mockResolvedValue([]);
-    const instanceClaim = vi.fn();
-    vi.stubGlobal('electronAPI', {
-      ...window.electronAPI,
-      platform: 'darwin',
-      cloudSettings: { instanceList, instanceClaim },
-      cloudLoginWindow: { open: vi.fn(), onCompleted: vi.fn(() => () => undefined) },
-    });
-    renderSettings('/settings?tab=cloud-instances');
-    await screen.findByRole('button', { name: 'cloudSettings.onboarding.claim' });
-    expect(screen.getByRole('tabpanel').id).toBe('settings-panel-cloud-instances');
-    expect(instanceList).toHaveBeenCalledExactlyOnceWith({});
-    expect(instanceClaim).not.toHaveBeenCalled();
-    pressEscape();
-    expect(location()).toBe('/');
-  });
-
   // Admission regression: a signed-in account used to see the cloud page
   // solely because mode=cloud. Unknown/denied permission must not mount it.
   it.each(['checking', 'hidden'])('hides cloud discovery for a signed-in account with %s access', (access) => {
@@ -448,6 +429,23 @@ describe('SettingsView Escape', () => {
     expect(screen.getByRole('tabpanel').id).toBe('settings-panel-general');
     expect(screen.queryByText('cloudSettings.instance.title')).toBeNull();
     expect(instanceList).not.toHaveBeenCalled();
+  });
+
+  // 2026-11-05: the category moved into Remote connections; old links must still land there.
+  // Admission and the instance list are covered where the group mounts (remoteControlDevicesDeepLink).
+  it('rewrites the retired cloud instances link to Remote connections', async () => {
+    auth.mode = 'cloud';
+    auth.cloudAccess = 'allowed';
+    const instanceList = vi.fn().mockResolvedValue([]);
+    Object.assign(window.electronAPI, { platform: 'darwin', cloudSettings: { instanceList } });
+    renderSettings('/settings?tab=cloud-instances&section=cloudInstances');
+    expect(location()).toBe('/settings?tab=remote-control&section=remoteControl.cloudInstances');
+    // Remote connections loads lazily, as every section but General.
+    expect((await screen.findByRole('tabpanel')).id).toBe('settings-panel-remote-control');
+    expect(screen.queryByTestId('cloud-instances-page')).toBeNull();
+    expect(instanceList).not.toHaveBeenCalled();
+    pressEscape();
+    expect(location()).toBe('/');
   });
 
   // 2026-11-04 product review: the instance's remote desktop must not offer keep-awake or quit.

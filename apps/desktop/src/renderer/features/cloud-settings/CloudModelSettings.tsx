@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/lib/toast';
 import { BotsGlobalSettingsSectionView } from '@/features/bots/BotsGlobalSettingsSection';
@@ -36,23 +36,27 @@ export function CloudBotsSettings({
   deviceId,
   disabled,
   attempt,
+  headingStatus,
 }: {
   state: CloudSettingsState;
   deviceId: string;
   disabled: boolean;
   attempt: Attempt;
+  /** The group could not be read: the status in its heading row. */
+  headingStatus?: ReactNode;
 }) {
   const { t } = useTranslation();
   const chain = normalizeBotModelChain(state.value?.modelChain);
   return (
     <BotsGlobalSettingsSectionView
+      headingStatus={headingStatus}
       modelChain={chain}
       pending={disabled}
       notice={null}
       deviceId={deviceId}
       onChange={(next) => {
         if (next.some((route) => route.agentDeviceId || route.fastMode === 'ultrafast')) {
-          toast.error(t('cloudSettings.settingUnavailable'));
+          toast.error(t('bots.remoteSettings.unsupported'));
           return;
         }
         void attempt('botModelChain', {
@@ -77,11 +81,14 @@ export function CloudSubagentSettings({
   deviceId,
   disabled,
   attempt,
+  headingStatus,
 }: {
   state: CloudSettingsState;
   deviceId: string;
   disabled: boolean;
   attempt: Attempt;
+  /** The group could not be read: the status in its heading row. */
+  headingStatus?: ReactNode;
 }) {
   const route = isRoute(state.value?.claudeCode) ? state.value.claudeCode : null;
   const customized = (key: string) => state.customizedKeys?.includes(key) ?? false;
@@ -89,6 +96,7 @@ export function CloudSubagentSettings({
   const sources = (state.choices?.claudeCode ?? []).map(({ value }) => value).filter(isRoute);
   return (
     <SubagentModelSectionView
+      headingStatus={headingStatus}
       claudeCode={route?.modelId ?? null}
       claudeCodeProviderId={route?.providerId ?? null}
       codexSmartSubagentRouting={state.value?.codexSmartSubagentRouting === true}
@@ -129,17 +137,21 @@ export function CloudVisionBridgeSettings({
   deviceId,
   disabled,
   attempt,
+  headingStatus,
 }: {
   state: CloudSettingsState;
   deviceId: string;
   disabled: boolean;
   attempt: Attempt;
+  /** The group could not be read: the status in its heading row. */
+  headingStatus?: ReactNode;
 }) {
   const catalog = useDeviceProviders(deviceId);
   const value = state.value ?? {};
   const backend = (raw: unknown) => (isRoute(raw) && raw.providerId ? (raw as VisionBackendRef) : null);
   return (
     <VisionBridgeSectionView
+      headingStatus={headingStatus}
       providers={catalog.providers}
       providersLoading={catalog.loading}
       enabled={value.enabled === true}
@@ -181,10 +193,13 @@ export function CloudAuxiliarySettings({
   state,
   disabled,
   attempt,
+  headingStatus,
 }: {
   state: CloudSettingsState;
   disabled: boolean;
   attempt: Attempt;
+  /** The group could not be read: the status in its heading row. */
+  headingStatus?: ReactNode;
 }) {
   const [drafting, setDrafting] = useState(false);
   const models = Array.isArray(state.value?.models) ? state.value.models.map(String) : [];
@@ -198,6 +213,7 @@ export function CloudAuxiliarySettings({
   ];
   return (
     <AuxiliaryModelSectionView
+      headingStatus={headingStatus}
       models={models}
       options={options}
       pending={disabled}

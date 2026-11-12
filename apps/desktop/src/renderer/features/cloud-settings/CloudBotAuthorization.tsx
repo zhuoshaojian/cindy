@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { BlockReadFailure } from './blockRetry';
+import { CloudAuthProgress } from './CloudAuthProgress';
 import { Switch } from '@/components/ui/switch';
 import { ImChannelSettingsCard } from '@/components/settings/ImChannelSettingsCard';
 import { OAuthBrowserLink, OAuthDeviceCodeCard } from '@/components/settings/OAuthDeviceCodeCard';
@@ -51,15 +53,19 @@ export function CloudBotAuthorization(
     items,
     loading,
     failure,
+    readFailure,
     operation,
     operationItem,
     requesting,
-    load,
     run,
     operate,
     prompt,
     open,
     busy,
+    phaseText,
+    progressUnreadable,
+    settling,
+    checking,
   } = useCloudAuthorization(props, 'bots');
   const [expanded, setExpanded] = useState<Record<string, string | null>>({});
   // Cards remount on every list reload (their key carries the ticket), so the typed
@@ -89,6 +95,7 @@ export function CloudBotAuthorization(
     operationActive: busy,
   });
   const nativeIm = native.support === 'ready';
+  const nativeFailed = native.support === 'failed';
   const officialOperation = operationItem?.startsWith('bot:official:') ?? false;
   // Notification items belong inside their channel card. An older target lists none,
   // and its cards keep the explicit "not available" note.
@@ -137,24 +144,36 @@ export function CloudBotAuthorization(
     <ImBotSettingsFrame
       context={
         <>
+          {/* Re-read on its own (category, window and network changes): no reload here. */}
           <p className="text-13 text-[var(--settings-section-desc)]">
             {t('cloudSettings.authScope', { name: props.name })}
           </p>
-          {failure && (
-            <div className="flex flex-wrap items-center gap-3">
-              <p role="alert" className="text-13 text-[var(--text-secondary)]">
-                {t(`cloudSettings.${failure}`)}
-              </p>
-              <Button size="sm" disabled={disabled || busy} onClick={() => void load()}>
-                {t('cloudSettings.reload')}
-              </Button>
-            </div>
+          {failure && failure !== 'readFailed' && (
+            <p role="alert" className="text-13 text-[var(--text-secondary)]">
+              {/* A binding that did not complete, in the reused card's words (D11 D6). */}
+              {t(
+                failure === 'authNotDone'
+                  ? 'settings.remoteControl.hook.binding.state.failed'
+                  : `cloudSettings.${failure}`,
+              )}
+            </p>
           )}
-          {loading && !items.length && <p role="status">{t('cloudSettings.loading')}</p>}
+          {(readFailure ?? native.readFailure) && (
+            <BlockReadFailure
+              title={t('cloudSettings.botsReadFailed')}
+              code={(readFailure ?? native.readFailure)!.code}
+              disabled={loading || !props.online}
+              onReload={(readFailure ?? native.readFailure)!.reload}
+            />
+          )}
+          {/* While reading, nothing: the page's notice says it (D11 D3). */}
         </>
       }
     >
       {(['cindy', 'personal'] as const).map((group) => {
+        // The instance's IM channel is not answering: its cards wait for it instead of falling
+        // back to the earlier ticket cards (T27).
+        if (nativeFailed) return null;
         const entries = items.filter(
           (item) =>
             item.group !== BOT_NOTIFICATION_GROUP &&
@@ -163,13 +182,9 @@ export function CloudBotAuthorization(
         if (group === 'cindy' && nativeIm)
           return (
             <ImBotGroupSection key={group} group={group} idPrefix="cloud-">
-              {officialOperation && (operation || prompt) && (
+              {/* The reused cards show their own binding state (D11 D6): only the sign-in prompt. */}
+              {officialOperation && prompt && (
                 <div className="flex flex-col gap-2">
-                  {operation && (
-                    <p role="status" className="text-13 text-[var(--text-secondary)]">
-                      {t(`cloudSettings.authPhase.${operation.phase}`)}
-                    </p>
-                  )}
                   {prompt &&
                     (prompt.kind === 'device' && prompt.userCode ? (
                       <OAuthDeviceCodeCard
@@ -183,26 +198,6 @@ export function CloudBotAuthorization(
                     ) : (
                       <OAuthBrowserLink url={prompt.url} onOpen={open} />
                     ))}
-                  {operation?.phase === 'unknown' && (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="secondary"
-                        size="md"
-                        disabled={disabled}
-                        onClick={() => void operate('status')}
-                      >
-                        {t('cloudSettings.authCheck')}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="md"
-                        disabled={disabled}
-                        onClick={() => void operate('cancel')}
-                      >
-                        {t('settings.providers.button.cancel')}
-                      </Button>
-                    </div>
-                  )}
                   {prompt && props.trial && (
                     <Button variant="secondary" size="md" onClick={() => void operate('respond')}>
                       {t('cloudSettings.authTrialComplete')}
@@ -264,9 +259,9 @@ export function CloudBotAuthorization(
                       disabled ||
                       !props.active ||
                       (busy && !own) ||
-                      (own && operation?.phase === 'unknown')
+                      (own && settling)
                     }
-                    pending={own && busy}
+                    pending={own && (busy || checking)}
                     expanded={expanded[group] === item.id}
                     onToggle={() =>
                       setExpanded((old) => ({
@@ -299,21 +294,12 @@ export function CloudBotAuthorization(
                     supplementary={
                       own ? (
                         <>
-                          {operation && (
-                            <p role="status" className="text-13 text-[var(--text-secondary)]">
-                              {t(`cloudSettings.authPhase.${operation.phase}`)}
-                            </p>
-                          )}
-                          {(busy || operation?.phase === 'unknown') && channel !== 'wechat' && (
-                            <Button
-                              variant="secondary"
-                              disabled={disabled}
-                              onClick={() => void operate('cancel')}
-                            >
-                              {t('settings.providers.button.cancel')}
-                            </Button>
-                          )}
-                          {operation?.phase === 'unknown' && channel === 'wechat' && (
+                          <CloudAuthProgress
+                            text={phaseText}
+                            unreadable={progressUnreadable}
+                            disabled={disabled}
+                          />
+                          {busy && channel !== 'wechat' && (
                             <Button
                               variant="secondary"
                               disabled={disabled}
@@ -335,11 +321,6 @@ export function CloudBotAuthorization(
                             ) : (
                               <OAuthBrowserLink url={prompt.url} onOpen={open} />
                             ))}
-                          {operation?.phase === 'unknown' && (
-                            <Button disabled={disabled} onClick={() => void operate('status')}>
-                              {t('cloudSettings.authCheck')}
-                            </Button>
-                          )}
                           {prompt && props.trial && (
                             <Button onClick={() => void operate('respond')}>
                               {t('cloudSettings.authTrialComplete')}
@@ -385,7 +366,7 @@ export function CloudBotAuthorization(
                         disabled={
                           disabled ||
                           (busy && !own) ||
-                          (own && operation?.phase === 'unknown') ||
+                          (own && settling) ||
                           (!toggleAction && !busy)
                         }
                         onCheckedChange={() => {
@@ -397,10 +378,12 @@ export function CloudBotAuthorization(
                     )
                   }
                 >
-                  {own && operation && (
-                    <p role="status" className="text-13 text-[var(--text-secondary)]">
-                      {t(`cloudSettings.authPhase.${operation.phase}`)}
-                    </p>
+                  {own && (
+                    <CloudAuthProgress
+                      text={phaseText}
+                      unreadable={progressUnreadable}
+                      disabled={disabled}
+                    />
                   )}
                   {own &&
                     prompt &&
@@ -419,7 +402,7 @@ export function CloudBotAuthorization(
                   {form &&
                     props.online &&
                     props.active &&
-                    !(own && (busy || operation?.phase === 'unknown')) && (
+                    !(own && (busy || settling)) && (
                       <CloudBotConnectionForm
                         key={`${item.id}:${form.id}`}
                         item={item}
@@ -429,27 +412,15 @@ export function CloudBotAuthorization(
                       />
                     )}
                   <div className="flex flex-wrap gap-2">
-                    {own && (busy || operation?.phase === 'unknown') ? (
-                      <>
-                        {operation?.phase === 'unknown' && (
-                          <Button
-                            variant="secondary"
-                            size="md"
-                            disabled={disabled}
-                            onClick={() => void operate('status')}
-                          >
-                            {t('cloudSettings.authCheck')}
-                          </Button>
-                        )}
-                        <Button
-                          variant="secondary"
-                          size="md"
-                          disabled={disabled}
-                          onClick={() => void operate('cancel')}
-                        >
-                          {t('settings.providers.button.cancel')}
-                        </Button>
-                      </>
+                    {own && settling && !checking ? null : own && busy ? (
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        disabled={disabled}
+                        onClick={() => void operate('cancel')}
+                      >
+                        {t('settings.providers.button.cancel')}
+                      </Button>
                     ) : (
                       actions
                         .filter((action) => !action.fields.length)
@@ -458,6 +429,8 @@ export function CloudBotAuthorization(
                             key={action.id}
                             variant="secondary"
                             size="md"
+                            // While an unknown result is read back, only the buttons spin.
+                            loading={own && checking}
                             disabled={disabled || busy}
                             onClick={() => void run(item, action)}
                           >
@@ -478,7 +451,10 @@ export function CloudBotAuthorization(
           </ImBotGroupSection>
         );
       })}
-      {!loading && !failure && !items.length && !nativeIm && <p>{t('cloudSettings.noFields')}</p>}
+      {/* No channel offered by this instance (D11 D5, as RemoteBotSettings). */}
+      {!loading && !failure && !items.length && !nativeIm && !nativeFailed && (
+        <p className="py-3 text-13 text-[var(--text-secondary)]">{t('bots.remoteSettings.unsupported')}</p>
+      )}
       {native.directoryPicker}
       {props.trial && (
         <p className="text-12 text-[var(--text-tertiary)]">{t('cloudSettings.authTrial')}</p>

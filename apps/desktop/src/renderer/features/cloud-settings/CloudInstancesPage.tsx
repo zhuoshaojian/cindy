@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Cloud,
@@ -15,30 +14,14 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
-import type {
-  CloudInstanceCapacity,
-  CloudSettingsRendererApi,
-} from '../../../shared/cloudSettingsClient';
 import type { CloudInstanceView } from '../../../shared/cloudInstanceControl';
-import { stableInstanceState, instanceStatus, canChangeInstancePower } from './instanceState';
+import { instanceStatus, canChangeInstancePower } from './instanceState';
 import { cloudInstanceName } from './instanceName';
-import { cloudRefusalKey } from './refusal';
+import { BlockReadFailure } from './blockRetry';
+import { useCloudInstances, type CloudInstancesApi } from './useCloudInstances';
 
-export type CloudInstancesApi = Pick<
-  CloudSettingsRendererApi,
-  'instanceList' | 'instanceClaim' | 'instanceInitialize' | 'instancePower'
-> &
-  Partial<Pick<CloudSettingsRendererApi, 'instanceCapacity'>> & {
-    onLoginCompleted?(cb: () => void): () => void;
-  };
-type PowerPending = {
-  deviceId: string;
-  action: 'wake' | 'sleep';
-  uncertain: boolean;
-  /** CIS refused the change, so it certainly did not happen; the message says why. */
-  refusal?: string;
-};
+export type { CloudInstancesApi } from './useCloudInstances';
+
 const card =
   'rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
 const description = 'text-13 leading-[1.6] text-[var(--settings-section-desc)]';
@@ -63,203 +46,24 @@ export function CloudInstancesPage({
   embedded?: boolean;
 }) {
   const { t } = useTranslation();
-  const { confirm } = useConfirmDialog();
   const tr = (key: string, values?: Record<string, string | number>) =>
     t(`cloudSettings.onboarding.${key}`, values);
-  const [instances, setInstances] = useState<CloudInstanceView[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const [waiting, setWaiting] = useState<string>();
-  const [uncertain, setUncertain] = useState(false);
-  const [powerPending, setPowerPending] = useState<PowerPending>();
-  // How many instances the owner has and may have; another is offered only below the limit.
-  const [capacity, setCapacity] = useState<CloudInstanceCapacity | null>(null);
-  const powerRef = useRef<PowerPending | undefined>(undefined);
-  const markPower = (value: PowerPending | undefined) => {
-    powerRef.current = value;
-    setPowerPending(value);
-  };
-  const capacityCount = useRef<number>(-1);
-  const live = useRef(false),
-    inFlight = useRef(false),
-    openWhenReady = useRef<string | undefined>(undefined);
-  const load = useCallback(
-    async (explicit = false) => {
-      if (inFlight.current) return;
-      inFlight.current = true;
-      try {
-        const next = await api.instanceList({});
-        // Read again on an explicit refresh, or when the number of instances changed.
-        const read =
-          api.instanceCapacity && (explicit || capacityCount.current !== next.length)
-            ? await api.instanceCapacity({}).catch(() => null)
-            : undefined;
-        if (live.current) {
-          setInstances(next);
-          if (read !== undefined) {
-            capacityCount.current = next.length;
-            setCapacity(read);
-          }
-          setError(undefined);
-          const pending = powerRef.current;
-          const observed = next.find((item) => item.deviceId === pending?.deviceId);
-          if (
-            pending &&
-            ((pending.uncertain && explicit) ||
-              (!pending.uncertain &&
-                observed &&
-                observed.desiredState === (pending.action === 'wake' ? 'running' : 'stopped') &&
-                stableInstanceState(observed)))
-          ) {
-            powerRef.current = undefined;
-            setPowerPending(undefined);
-          }
-        }
-      } catch {
-        if (live.current) setError('readFailed');
-      } finally {
-        inFlight.current = false;
-      }
-    },
-    [api],
-  );
-  useEffect(() => {
-    live.current = true;
-    void load();
-    return () => {
-      live.current = false;
-    };
-  }, [load]);
-  useEffect(() => api.onLoginCompleted?.(() => { void load(); }), [api, load]);
-  useEffect(() => {
-    const pending =
-      !!powerPending || instances?.some((v) => v.loginRequired || !stableInstanceState(v));
-    const timer = setInterval(
-      () => {
-        if (document.visibilityState !== 'hidden') void load();
-      },
-      pending ? 5_000 : 30_000,
-    );
-    const visible = () => {
-      if (document.visibilityState !== 'hidden') void load();
-    };
-    document.addEventListener('visibilitychange', visible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', visible);
-    };
-  }, [instances, load, powerPending]);
-  useEffect(() => {
-    const completed = instances?.find(
-      (v) => v.deviceId === openWhenReady.current && !v.loginRequired && v.ready,
-    );
-    if (completed) {
-      openWhenReady.current = undefined;
-      onOpen(completed.deviceId);
-    }
-  }, [instances, onOpen]);
-
-  const initialize = async (deviceId: string) => {
-    await api.instanceInitialize({ deviceId });
-    if (live.current) {
-      setWaiting(deviceId);
-      // An auxiliary login must not navigate the workspace when it completes.
-      if (!api.onLoginCompleted) openWhenReady.current = deviceId;
-    }
-  };
-  const claimAnother = async () => {
-    if (inFlight.current || error) return;
-    const ok = await confirm({
-      presentation: 'standard',
-      title: tr('claimAnotherTitle'),
-      description: tr('claimAnotherBody'),
-      confirmText: tr('claimAnother'),
-    });
-    if (!ok || !live.current || inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError(undefined);
-    const known = new Set(instances?.map((v) => v.deviceId));
-    try {
-      const next = await api.instanceClaim({ another: true });
-      if (!live.current) return;
-      setInstances(next);
-      const created = next.find((v) => !known.has(v.deviceId));
-      if (created?.loginRequired) await initialize(created.deviceId);
-    } catch (caught) {
-      if (live.current) setError(cloudRefusalKey(caught) ?? 'claimUnconfirmed');
-    } finally {
-      inFlight.current = false;
-      if (live.current) {
-        setBusy(false);
-        capacityCount.current = -1;
-        await load();
-      }
-    }
-  };
-  const act = async (claim: boolean, deviceId?: string) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError(undefined);
-    let creating = claim;
-    try {
-      if (claim) {
-        const next = await api.instanceClaim({});
-        if (!live.current) return;
-        setInstances(next);
-        setUncertain(false);
-        creating = false;
-        if (next.length === 1 && next[0]!.loginRequired) await initialize(next[0]!.deviceId);
-        else if (next.length === 1) openWhenReady.current = next[0]!.deviceId;
-      } else if (deviceId) await initialize(deviceId);
-    } catch (caught) {
-      if (live.current) {
-        // A refusal created nothing, so the claim is not left uncertain.
-        const refusal = cloudRefusalKey(caught);
-        setError(refusal ?? (creating ? 'claimUnconfirmed' : 'loginFailed'));
-        if (creating && !refusal) setUncertain(true);
-      }
-    } finally {
-      inFlight.current = false;
-      if (live.current) setBusy(false);
-    }
-  };
-  const power = async (instance: CloudInstanceView, name: string) => {
-    if (inFlight.current || powerRef.current || error || !canChangeInstancePower(instance)) return;
-    inFlight.current = true;
-    setBusy(true);
-    const action = instance.desiredState === 'stopped' ? 'wake' : 'sleep';
-    try {
-      if (
-        action === 'sleep' &&
-        !(await confirm({
-          presentation: 'standard',
-          title: t('cloudSettings.instance.sleepTitle'),
-          description: t('cloudSettings.instance.sleepBody', { name }),
-          confirmText: t('cloudSettings.instance.sleep'),
-        }))
-      )
-        return;
-      if (!live.current) return;
-      if (action === 'sleep') {
-        if (openWhenReady.current === instance.deviceId) openWhenReady.current = undefined;
-        setWaiting((current) => current === instance.deviceId ? undefined : current);
-      }
-      markPower({ deviceId: instance.deviceId, action, uncertain: false });
-      await api.instancePower({ deviceId: instance.deviceId, action });
-    } catch (caught) {
-      const refusal = cloudRefusalKey(caught) ?? undefined;
-      if (live.current)
-        markPower({ deviceId: instance.deviceId, action, uncertain: true, ...(refusal ? { refusal } : {}) });
-    } finally {
-      inFlight.current = false;
-      if (live.current) {
-        setBusy(false);
-        await load();
-      }
-    }
-  };
+  const {
+    instances,
+    busy,
+    error,
+    waiting,
+    powerPending,
+    powerNote,
+    reloadPower,
+    claim,
+    reloadClaim,
+    load,
+    act,
+    power,
+    capacity,
+    claimAnother,
+  } = useCloudInstances(api, onOpen);
   return (
     <div
       className={embedded ? 'min-w-0' : 'flex h-full min-h-0 bg-[var(--settings-bg)]'}
@@ -290,8 +94,8 @@ export function CloudInstancesPage({
               tone="quiet"
               compact
               disabled={busy}
-              onClick={() => void load(true)}
-              aria-label={t('cloudSettings.reload')}
+              onClick={() => void load()}
+              aria-label={t('settings.devices.refresh')}
             >
               <RefreshCw size={15} />
             </Button>
@@ -312,27 +116,25 @@ export function CloudInstancesPage({
               <h3 className="text-16 font-medium text-[var(--settings-section-title)]">
                 {tr('emptyTitle')}
               </h3>
-              <p className={`${description} max-w-[560px]`}>{tr('emptyDescription')}</p>
-              <Button disabled={busy || uncertain || !!error} onClick={() => void act(true)}>
-                {busy ? <Spinner size={16} /> : <Cloud size={16} />}
-                {tr(busy ? 'claiming' : 'claim')}
-              </Button>
-              {uncertain && (
-                <Button
-                  variant="secondary"
-                  tone="quiet"
-                  disabled={busy}
-                  onClick={async () => {
-                    await load();
-                    if (live.current) setUncertain(false);
-                  }}
-                >
-                  {tr('checkClaim')}
-                </Button>
-              )}
-              <p className="text-12 leading-[1.5] text-[var(--settings-section-desc)]">
-                {tr('defaults')}
+              <p className={`${description} max-w-[560px]`} role={claim ? 'status' : undefined}>
+                {tr(claim === 'notClaimed' ? 'claimNotDone' : 'emptyDescription')}
               </p>
+              {/* While the claim is sent and read back, only the button spins (2026-11-11). */}
+              <Button
+                loading={busy || claim === 'checking'}
+                disabled={claim === 'unreadable' || !!error}
+                onClick={() => void act(true)}
+              >
+                <Cloud size={16} />
+                {tr('claim')}
+              </Button>
+              {claim === 'unreadable' && (
+                <BlockReadFailure
+                  title={tr('claimUnreadable')}
+                  disabled={busy}
+                  onReload={() => void reloadClaim()}
+                />
+              )}
             </section>
           )}
           <div className="flex flex-col gap-4">
@@ -341,6 +143,7 @@ export function CloudInstancesPage({
               const state = instanceStatus(instance);
               const pending =
                 powerPending?.deviceId === instance.deviceId ? powerPending : undefined;
+              const note = powerNote?.deviceId === instance.deviceId ? powerNote : undefined;
               return (
                 <section key={instance.instanceId} className={card} aria-label={name}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -476,17 +279,25 @@ export function CloudInstancesPage({
                         </Button>
                       )}
                     </div>
-                    {pending && (
-                      <p
-                        role={pending.uncertain ? 'alert' : 'status'}
-                        className={`${description} mt-3`}
-                      >
-                        {t(
-                          pending.refusal ??
-                            `cloudSettings.instance.${pending.uncertain ? 'unconfirmed' : pending.action === 'wake' ? 'wakeSent' : 'sleepSent'}`,
-                        )}
+                    {note?.kind === 'unreadable' ? (
+                      <div className="mt-3">
+                        <BlockReadFailure
+                          title={t('cloudSettings.instance.statusUnreadable')}
+                          disabled={busy}
+                          onReload={() => void reloadPower()}
+                        />
+                      </div>
+                    ) : note?.kind === 'refused' && note.refusal ? (
+                      // CIS refused it: nothing changed, and the reason is the whole message.
+                      <p role="alert" className={`${description} mt-3`}>
+                        {t(note.refusal)}
                       </p>
-                    )}
+                    ) : note ? (
+                      // A request under way shows in the state above; only its outcome is said here.
+                      <p role="status" className={`${description} mt-3`}>
+                        {t(`cloudSettings.instance.${note.action}NotTaken`)}
+                      </p>
+                    ) : null}
                   </>
                   {instance.loginRequired && (
                     <p className={`${description} mt-4`}>
@@ -536,12 +347,28 @@ export function CloudInstancesPage({
                 </div>
                 <Button
                   variant="secondary"
-                  disabled={busy || !!error || !!powerPending}
+                  disabled={!!error || !!powerPending || claim === 'unreadable'}
+                  loading={busy || claim === 'checking'}
                   onClick={() => void claimAnother()}
                 >
-                  {busy ? <Spinner size={16} /> : <Plus size={16} />}
+                  <Plus size={16} />
                   {tr('claimAnother')}
                 </Button>
+                {/* An unknown result of claiming another is read back, as for the first claim. */}
+                {claim === 'notClaimed' && (
+                  <p role="status" className={`${description} basis-full`}>
+                    {tr('claimNotDone')}
+                  </p>
+                )}
+                {claim === 'unreadable' && (
+                  <div className="basis-full">
+                    <BlockReadFailure
+                      title={tr('claimUnreadable')}
+                      disabled={busy}
+                      onReload={() => void reloadClaim()}
+                    />
+                  </div>
+                )}
               </section>
             )}
           </div>

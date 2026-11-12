@@ -15,7 +15,8 @@ const RemoteSkillsPage = lazy(() =>
  * Cloud fork: the instance's plugins and skills, on the pages the client already uses for
  * another computer (Settings → Plugins with that computer chosen). The computer is fixed to
  * this instance. Everything goes over DeviceLink to the instance's Host, as for any other
- * computer; nothing here uses CIS or the remote desktop.
+ * computer; nothing here uses CIS or the remote desktop. The page shows its own 「正在管理」
+ * notice, as for any other computer (D11 A10); the settings page leaves this category its own.
  */
 export function CloudPluginManagement({
   deviceId,
@@ -64,7 +65,7 @@ export function CloudPluginManagement({
               embedded
               deviceControl={control}
               onSelectCatalogTab={select}
-            />
+                />
           </Suspense>
         </div>
       )}

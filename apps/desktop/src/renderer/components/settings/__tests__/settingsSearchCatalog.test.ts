@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createInstance, type TFunction } from 'i18next';
-import { TAB_IDS, TAB_LABEL_KEY } from '@/lib/tabLabels';
+import { MERGED_SETTINGS_TABS, TAB_IDS, TAB_LABEL_KEY } from '@/lib/tabLabels';
 import zhCN from '../../../i18n/locales/zh-CN/common.json';
 import en from '../../../i18n/locales/en/common.json';
 import { SELECTABLE_WALLPAPER_IDS } from '../../../../shared/appearanceSettings';
 import { AGENT_ISLAND_SOUND_EVENTS, AGENT_ISLAND_SOUND_OPTIONS } from '../../../../shared/agentIsland';
-
 
 import {
   buildSettingsSearchDocuments,
@@ -385,7 +384,7 @@ describe('settings search catalog', () => {
     const documents = buildSettingsSearchDocuments(t, TAB_IDS, {
       region: 'cn', mode: 'cloud', membershipKind: 'org', platform: 'darwin', canAccessCloudInstances,
     });
-    expect(documents.some(({ entry }) => entry.tab === 'cloud-instances')).toBe(canAccessCloudInstances === true);
+    expect(documents.some(({ entry }) => entry.id === 'remoteControl.cloudInstances')).toBe(canAccessCloudInstances === true);
   });
   it('normalizes mixed-width and repeated whitespace', () => {
     expect(normalizeSettingsSearchText('  Ａppearance\u00a0  ')).toBe('appearance');
@@ -478,7 +477,8 @@ describe('settings search catalog', () => {
     expect(new Set(SETTINGS_SEARCH_MODULES.map(({ id }) => id)).size).toBe(
       SETTINGS_SEARCH_MODULES.length,
     );
-    for (const tab of TAB_IDS) {
+    // A merged tab has no menu item of its own; its entries point at the new location.
+    for (const tab of TAB_IDS.filter((id) => !MERGED_SETTINGS_TABS[id])) {
       expect(
         SETTINGS_SEARCH_ENTRIES.some(
           (entry) => entry.tab === tab && entry.titleKey === TAB_LABEL_KEY[tab],

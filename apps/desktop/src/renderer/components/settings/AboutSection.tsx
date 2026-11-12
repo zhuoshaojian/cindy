@@ -34,7 +34,11 @@ import {
   HarnessVersionMenuItem,
   HarnessVersionMenuRow,
 } from './HarnessVersionMenuRow';
-import { DefaultOverrideControls } from './DefaultOverrideControls';
+import {
+  DefaultOverrideControls,
+  withDefaultOverride,
+  type DefaultOverrideReset,
+} from './DefaultOverrideControls';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
 import { LEGAL_LINKS } from '../../../shared/legalLinks';
 
@@ -383,11 +387,20 @@ export function AboutSection() {
 }
 
 /** 关于页框架:页标题 + 信息卡片(card)+ 卡片下方内容(children)。云实例设置复用同一框架。 */
-export function AboutSectionView({ card, children }: { card: ReactNode; children?: ReactNode }) {
+export function AboutSectionView({
+  card,
+  children,
+  headingStatus,
+}: {
+  card: ReactNode;
+  children?: ReactNode;
+  /** Cloud settings: rows of the card that could not be read say so here, in the page heading. */
+  headingStatus?: ReactNode;
+}) {
   const { t } = useTranslation();
 
   return (
-    <SettingsSection variant="page" title={t('settings.about.title')} description={t('settings.about.description')}>
+    <SettingsSection variant="page" title={t('settings.about.title')} description={t('settings.about.description')} action={headingStatus}>
       {/* Info Card */}
       <SettingsCard id={aboutSettings.appVersionLabel.targetId}>{card}</SettingsCard>
 
@@ -732,24 +745,28 @@ export function DebugLogToggleView({
   enabled,
   disabled,
   onChange,
+  reset,
 }: {
   enabled: boolean;
   disabled: boolean;
   onChange: (next: boolean) => void;
+  /** Optional: a saved override and how to clear it (the cloud page). */
+  reset?: DefaultOverrideReset;
 }) {
   const { t } = useTranslation();
   return (
     <SettingsRow
       title={<span id={aboutSettings.debugLogLabel.targetId}>{t(aboutSettings.debugLogLabel.titleKey)}</span>}
       hint={t(aboutSettings.debugLogLabel.descriptionKey)}
-      trailing={
+      trailing={withDefaultOverride(
         <Switch data-setting-id={aboutSettings.debugLogLabel.id}
           checked={enabled}
           disabled={disabled}
           onCheckedChange={onChange}
           aria-label={t(aboutSettings.debugLogLabel.titleKey)}
-        />
-      }
+        />,
+        reset,
+      )}
     />
   );
 }

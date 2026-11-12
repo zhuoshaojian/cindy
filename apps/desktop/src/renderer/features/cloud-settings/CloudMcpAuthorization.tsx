@@ -2,6 +2,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { errorCode, useBlockRetry } from './blockRetry';
+import { CloudRequestError } from './CloudRequestError';
+import { SETTLE_DELAYS_MS, useSettleUnknown } from './useSettleUnknown';
 import { FormField } from '@/components/ui/form-field';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { SettingsTextInput } from '@/components/settings/SettingsTextInput';
@@ -26,9 +29,12 @@ export function CloudMcpAuthorization({
   name,
   trial,
   refresh,
+  pageFailed = false,
 }: CloudAuthorizationProps) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
+  const [, setReadCode] = useState<string>();
+  const [readFailures, setReadFailures] = useState(0);
   const [items, setItems] = useState<ManagementItem[]>([]);
   // The instance's "Add MCP" entry; absent on runtimes that cannot create servers here.
   const [createItem, setCreateItem] = useState<ManagementItem>();
@@ -84,8 +90,12 @@ export function CloudMcpAuthorization({
         offset = page.nextOffset;
       }
       throw Error('INVALID_PAGE');
-    } catch {
-      if (current() && version === seq.current) setFailure('readFailed');
+    } catch (error) {
+      if (current() && version === seq.current) {
+        setFailure('readFailed');
+        setReadCode(errorCode(error));
+        setReadFailures((count) => count + 1);
+      }
     } finally {
       if (current() && version === seq.current) setLoading(false);
     }
@@ -96,9 +106,34 @@ export function CloudMcpAuthorization({
   useEffect(() => {
     if (!active || !online) setSelected(undefined);
   }, [active, online]);
+  // S3: progress that could not be read is read back from the operation, never run again.
+  const unknown = useSettleUnknown<string>({
+    delays: SETTLE_DELAYS_MS.authorization,
+    check: async (id) => {
+      if (!current() || !client.manage) throw Error('SCOPE_CHANGED');
+      accept(await client.manage({ operation: 'status', operationId: id }), id);
+      return 'done';
+    },
+    onSettled: () => {},
+  });
+  const settle = (id: string) => {
+    publish({ kind: 'operation', operationId: id, phase: 'unknown' });
+    void unknown.start(id);
+  };
+  useEffect(() => () => unknown.stop(), [client]);
+  // Credentials set or removed from a row: how it ended is a toast, as the client's MCP page says a
+  // save (D11 F4–F8); a cancel says nothing. The dialog and the delete say their own.
+  const fromRow = useRef(new Set<string>());
   const accept = (result: ManagementResult, id: string) => {
     if (result.kind !== 'operation' || result.operationId !== id) throw Error('SCOPE_CHANGED');
-    if (current() && operationRef.current?.operationId === id) publish(result);
+    if (current() && operationRef.current?.operationId === id) {
+      if (fromRow.current.has(id) && !['running', 'waiting', 'unknown'].includes(result.phase)) {
+        fromRow.current.delete(id);
+        if (result.phase === 'succeeded') toast.success(t('settings.mcp.toast.updated'));
+        else if (result.phase !== 'cancelled') toast.error(t('settings.mcp.toast.saveFailed'));
+      }
+      publish(result);
+    }
     return result;
   };
   const run = async (item: ManagementItem, action: Action, values: Record<string, string>) => {
@@ -112,7 +147,8 @@ export function CloudMcpAuthorization({
         !(await confirm({
           presentation: 'standard',
           title: t('cloudSettings.mcpRemove'),
-          description: t('cloudSettings.authScope', { name }),
+          // What removing does (D11 F13; cloud only).
+          description: t('cloudSettings.mcpRemoveBody', { name }),
           confirmText: t('settings.mcp.deleteConfirm.confirm'),
           cancelText: t('settings.mcp.cancel'),
         }))
@@ -120,6 +156,7 @@ export function CloudMcpAuthorization({
         return;
       if (!current()) return;
       const id = crypto.randomUUID();
+      fromRow.current.add(id);
       publish({ kind: 'operation', operationId: id, phase: 'running' });
       try {
         accept(
@@ -127,10 +164,7 @@ export function CloudMcpAuthorization({
           id,
         );
       } catch {
-        if (current()) {
-          publish({ kind: 'operation', operationId: id, phase: 'unknown' });
-          setFailure('authUnknown');
-        }
+        if (current()) settle(id);
       }
     } finally {
       // Only newly entered values exist here. No credentials are persisted in the controller.
@@ -148,7 +182,7 @@ export function CloudMcpAuthorization({
         operation.operationId,
       );
     } catch {
-      if (current()) setFailure('authUnknown');
+      if (current()) settle(operation.operationId);
     }
   };
   /** One ticket run to its end, for the shared MCP dialog and the row's delete. */
@@ -173,7 +207,7 @@ export function CloudMcpAuthorization({
     } catch (error) {
       // A reported outcome is shown by its phase; a lost reply may still be running.
       const phase = error instanceof Error ? error.message : '';
-      if (current() && !['failed', 'cancelled', 'expired'].includes(phase)) setFailure('authUnknown');
+      if (current() && !['failed', 'cancelled', 'expired'].includes(phase)) settle(id);
       throw error;
     } finally {
       values = {};
@@ -240,6 +274,21 @@ export function CloudMcpAuthorization({
     return () => clearTimeout(timer);
   }, [client, online, operation]);
   const busy = pending || !!running || operation?.phase === 'unknown';
+  // A result that could not be read back: a warning toast whose button reads it once more (D11 F9).
+  const unreadableNow = unknown.state === 'unreadable';
+  useEffect(() => {
+    if (!unreadableNow) return;
+    toast.warning(t('settings.ghosts.remote.unknown'), {
+      action: { label: t('cloudSettings.authCheck'), onClick: () => void unknown.reload() },
+    });
+  }, [unreadableNow]);
+  // A list that cannot be read is read again on its own before it says so.
+  const readRetry = useBlockRetry({
+    failed: failure === 'readFailed' && active && online,
+    failures: readFailures,
+    retry: () => void load(),
+    paused: pageFailed,
+  });
   return (
     <section className="flex flex-col gap-[14px]" aria-label={t('settings.mcp.title')}>
       <div className="flex flex-col gap-1">
@@ -250,26 +299,23 @@ export function CloudMcpAuthorization({
           {t('settings.mcp.subtitle')}
         </p>
       </div>
-      {failure && (
-        <div className="flex flex-wrap items-center gap-3">
-          <p role="alert" className="text-13 text-[var(--text-secondary)]">
-            {t(`cloudSettings.${failure}`)}
-          </p>
-          <Button size="sm" disabled={!online || loading || busy} onClick={() => void load()}>
-            {t('cloudSettings.reload')}
-          </Button>
-        </div>
+      {/* A failed read shows its own notice with a reload, below. */}
+      {failure && failure !== 'readFailed' && (
+        <p role="alert" className="text-13 text-[var(--text-secondary)]">
+          {t(`cloudSettings.${failure}`)}
+        </p>
       )}
-      {operation && (
-        <div className="flex items-center gap-2 text-13 text-[var(--text-secondary)]" role="status">
-          {t(`cloudSettings.authPhase.${operation.phase}`)}
-          {operation.phase === 'unknown' && (
-            <Button variant="secondary" size="md" disabled={!online} onClick={() => void check()}>
-              {t('cloudSettings.authCheck')}
-            </Button>
-          )}
-        </div>
+      {/* One line and 「重新读取」, as the client's settings read failure (D11 F12). */}
+      {readRetry.exhausted && (
+        <CloudRequestError
+          message={t('cloudSettings.mcpReadFailed')}
+          retryLabel={t('commonUi.retry')}
+          onRetry={readRetry.reload}
+          disabled={loading || !online}
+        />
       )}
+      {/* While reading nothing; with no server, only the add row (D11 F11). */}
+      {(items.length > 0 || (createItem && online)) && (
       <div className="overflow-hidden rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)]">
         {items.map((item, i) => {
           const edit = getAction(item, 'management.actions.edit');
@@ -326,17 +372,13 @@ export function CloudMcpAuthorization({
             </div>
           );
         })}
-        {!items.length && !createItem && (
-          <p className="px-5 py-4 text-13 text-[var(--text-secondary)]">
-            {t(loading ? 'cloudSettings.loading' : 'bots.capabilities.empty_mcp')}
-          </p>
-        )}
         {createItem && online && (
           <div className={items.length ? 'border-t border-[var(--settings-theme-card-border)]' : ''}>
             <McpAddRow onClick={() => !busy && setDialog({})} />
           </div>
         )}
       </div>
+      )}
       {dialog && (
         <McpServerDialog
           initial={dialog.config}

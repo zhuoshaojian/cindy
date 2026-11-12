@@ -202,6 +202,7 @@ export function SubagentModelSectionView({
   resetClaude,
   resetSmartRouting,
   setSmartRouting,
+  headingStatus,
 }: {
   claudeCode: string | null;
   claudeCodeProviderId: string | null;
@@ -218,6 +219,8 @@ export function SubagentModelSectionView({
   resetClaude: () => void;
   resetSmartRouting: () => void;
   setSmartRouting: (next: boolean) => void;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const settings = { claudeCode, claudeCodeProviderId, codexSmartSubagentRouting };
@@ -227,6 +230,7 @@ export function SubagentModelSectionView({
       title={t('settings.subagentModels.title')}
       description={t('settings.subagentModels.description')}
       caption={t('settings.subagentModels.hint')}
+      action={headingStatus}
     >
       <SettingsCard>
         <SettingsRow
