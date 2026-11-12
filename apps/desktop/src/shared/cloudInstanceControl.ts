@@ -154,22 +154,6 @@ export const cloudInstanceTargetSchema = z
 export const cloudInstancePowerSchema = cloudInstanceTargetSchema
   .extend({ action: z.enum(['wake', 'sleep']) })
   .strict();
-/** The owner's own name for one cloud Cindy; null goes back to the default. */
-export const cloudInstanceRenameSchema = cloudInstanceTargetSchema
-  .extend({ name: z.string().trim().min(1).max(64).nullable() })
-  .strict();
-/** CIS's answer to a rename: whether the device list entry got the same name. */
-export const cloudInstanceRenameReceiptSchema = z
-  .object({
-    instanceId: z.string().min(1).max(128),
-    deviceId: z.string().min(1).max(160),
-    customLabel: z.string().max(512).nullable(),
-    renameSync: z
-      .object({ status: z.string().min(1).max(64) })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough();
 export const cloudInstancePolicySchema = cloudInstanceTargetSchema
   .extend({ change: cloudMaintenanceEditSchema })
   .strict();

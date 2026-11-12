@@ -90,7 +90,6 @@ function renderDevices() {
           <CloudDeviceDirectory
             enabled
             directory={s.devices!.map((d) => d.deviceId)}
-            names={new Map(s.devices!.map((d) => [d.deviceId, d.name] as const))}
             offline={s.devices!.filter((d) => !d.online).map((d) => d.deviceId)}
             devicesOpen={false}
           >
@@ -137,12 +136,10 @@ beforeEach(() => {
   mock.access = 'allowed';
   mock.confirm.mockResolvedValue(false);
   api = {
-    // CIS keeps the name the device list shows (taking a name over is tested on its own).
-    instanceList: vi.fn().mockResolvedValue([view(CLOUD, { name: '我的云端 Cindy' }), view(PENDING, { loginRequired: true, ready: false, runtimeState: 'starting', nameSequence: 2 })]),
+    instanceList: vi.fn().mockResolvedValue([view(CLOUD), view(PENDING, { loginRequired: true, ready: false, runtimeState: 'starting', nameSequence: 2 })]),
     instanceRead: vi.fn(async ({ deviceId }: { deviceId: string }) => withPolicy(deviceId)),
     instanceClaim: vi.fn(),
     instancePower: vi.fn(),
-    instanceRename: vi.fn().mockResolvedValue({ deviceListSynced: true }),
   };
   vi.stubGlobal('electronAPI', {
     cloudSettings: api,
@@ -185,12 +182,12 @@ describe('cloud instances on My devices cards', () => {
     // The directory delete would only drop a record the running instance re-creates.
     expect(within(cloudRow).queryByRole('button', { name: 'settings.devices.delete' })).toBeNull();
     expect(within(row('mac-1')).getByRole('button', { name: 'settings.devices.delete' })).toBeTruthy();
-    // Cloud instances are pinned with this computer, outside the collapsible list, in name order:
-    // the one waiting for login has the default name, which comes first here.
+    // Cloud instances are pinned with this computer, outside the collapsible list: the
+    // directory's instance first, then a CIS-only instance waiting for login.
     const pending = row(PENDING);
     expect(within(pending).getByRole('button', { name: 'cloudSettings.onboarding.initialize' })).toBeTruthy();
     const pinned = screen.getByRole('list', { name: 'cloudSettings.instance.title' });
-    expect([...pinned.querySelectorAll('li[data-device-id]')].map((li) => li.getAttribute('data-device-id'))).toEqual([PENDING, CLOUD]);
+    expect([...pinned.querySelectorAll('li[data-device-id]')].map((li) => li.getAttribute('data-device-id'))).toEqual([CLOUD, PENDING]);
     expect(within(pinned).queryByText('Studio Mac')).toBeNull();
     expect(api.instanceList).toHaveBeenCalledTimes(1);
   });
@@ -609,61 +606,5 @@ describe('claiming another cloud Cindy and refusals on the card', () => {
     // Nothing changed: the card shows the state CIS lists, not one under way.
     await within(cloudRow()).findByText(/· cloudSettings\.instance\.state\.asleep$/);
     expect(api.instancePower).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('renaming a cloud Cindy from its card', () => {
-  const renameTo = async (name: string) => {
-    renderDevices();
-    await within(row(CLOUD)).findByRole('button', { name: 'cloudSettings.instance.manage' });
-    fireEvent.click(within(row(CLOUD)).getByRole('button', { name: 'settings.devices.rename' }));
-    const input = within(row(CLOUD)).getByRole('textbox');
-    fireEvent.change(input, { target: { value: name } });
-    fireEvent.click(within(row(CLOUD)).getByRole('button', { name: 'settings.devices.renameConfirm' }));
-  };
-
-  it('keeps the name in CIS, which also gives it to the device list, so the web shows it too', async () => {
-    api.instanceRename = vi.fn().mockResolvedValue({ deviceListSynced: true });
-    await renameTo('测试机');
-    await waitFor(() => expect(api.instanceRename).toHaveBeenCalledExactlyOnceWith({ deviceId: CLOUD, name: '测试机' }));
-    await waitFor(() => expect(s.refresh).toHaveBeenCalled());
-    expect(s.rename).not.toHaveBeenCalled();
-  });
-
-  it('renames the device list entry here when CIS could not', async () => {
-    api.instanceRename = vi.fn().mockResolvedValue({ deviceListSynced: false });
-    await renameTo('测试机');
-    await waitFor(() => expect(s.rename).toHaveBeenCalledExactlyOnceWith(CLOUD, '测试机'));
-  });
-
-  it('a failed rename changes nothing and says so', async () => {
-    api.instanceRename = vi.fn().mockRejectedValue(new Error('network'));
-    await renameTo('测试机');
-    await waitFor(() => expect(api.instanceRename).toHaveBeenCalledTimes(1));
-    expect(s.rename).not.toHaveBeenCalled();
-  });
-
-  it('the card shows the name CIS keeps, as the web does', async () => {
-    api.instanceList = vi.fn().mockResolvedValue([view(CLOUD, { name: '工作机' })]);
-    renderDevices();
-    await within(row(CLOUD)).findByText('工作机');
-  });
-});
-
-describe('names given before CIS kept them', () => {
-  it('are taken over by CIS once, so the web shows them too; the plain default is not', async () => {
-    api.instanceList = vi.fn().mockResolvedValue([view(CLOUD), view(PENDING, { loginRequired: true, ready: false, runtimeState: 'starting', nameSequence: 2 })]);
-    renderDevices();
-    // 「我的云端 Cindy」 is the user's own name for CLOUD; PENDING is not in the device list.
-    await waitFor(() => expect(api.instanceRename).toHaveBeenCalledExactlyOnceWith({ deviceId: CLOUD, name: '我的云端 Cindy' }));
-    await waitFor(() => expect(api.instanceList.mock.calls.length).toBeGreaterThan(1));
-    expect(api.instanceRename).toHaveBeenCalledTimes(1);
-  });
-
-  it('a name CIS already keeps is left as it is', async () => {
-    api.instanceList = vi.fn().mockResolvedValue([view(CLOUD, { name: '工作机' })]);
-    renderDevices();
-    await within(row(CLOUD)).findByText('工作机');
-    expect(api.instanceRename).not.toHaveBeenCalled();
   });
 });

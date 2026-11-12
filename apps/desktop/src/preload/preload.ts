@@ -1357,7 +1357,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     instanceRead: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceRead, input),
     instanceUpgrade: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceUpgrade, input),
     instancePower: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instancePower, input),
-    instanceRename: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceRename, input),
     instancePolicy: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instancePolicy, input),
     open: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.open, input),
     read: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.read, input),

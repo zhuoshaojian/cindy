@@ -52,7 +52,6 @@ import {
 } from './instanceState';
 import { byShownName, cloudBaseName, cloudDisplayName } from './instanceName';
 import { BlockReadFailure, InlineRetry, useBlockRetry } from './blockRetry';
-import { cloudRefusalKey } from './refusal';
 import {
   sleepConfirmation,
   useCloudInstances,
@@ -202,7 +201,7 @@ function AdmittedCloudDeviceDirectory({
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   const api = useMemo<
-    CloudInstancesApi & Pick<typeof window.electronAPI.cloudSettings, 'instanceRead' | 'instanceRename'>
+    CloudInstancesApi & Pick<typeof window.electronAPI.cloudSettings, 'instanceRead'>
   >(
     () => ({
       ...window.electronAPI.cloudSettings,
@@ -311,31 +310,6 @@ function AdmittedCloudDeviceDirectory({
       .sort((a, b) => byShownName(name(a), name(b)))
       .map((view, index) => [view.deviceId, index] as const),
   );
-  // A name given before CIS kept names lives only in the device list, and the web could not show
-  // it. CIS takes it over once (with this client's token, the device list keeps the same name):
-  // only a name the user gave, never the plain default, the runtime's marker or a device id.
-  const adopted = useRef(new Set<string>());
-  useEffect(() => {
-    const sole = t('cloudSettings.onboarding.defaultNameSole');
-    for (const view of live) {
-      if (view.name !== null) continue;
-      const listed = names?.get(view.deviceId)?.trim();
-      if (!listed || listed === sole || listed === view.deviceId || cloudBaseName(t, view.deviceId, listed, undefined) !== listed)
-        continue;
-      const key = `${view.deviceId}\n${listed}`;
-      if (adopted.current.has(key)) continue;
-      adopted.current.add(key);
-      // Once while the cards show; not taken now, it is tried again the next time they open.
-      void Promise.resolve()
-        .then(() => api.instanceRename({ deviceId: view.deviceId, name: listed }))
-        .then(
-          () => {
-            if (mounted.current) void cloud.load(true);
-          },
-          () => undefined,
-        );
-    }
-  }, [live, names]);
   // DeviceLink does not have the runtime: offline in the directory, or not listed there at all.
   const linkOffline = (deviceId: string) =>
     offline.includes(deviceId) || (directory !== null && !directory.includes(deviceId));
@@ -475,30 +449,6 @@ function AdmittedCloudDeviceDirectory({
         baseName: (device) => {
           const view = byDevice.get(device.deviceId);
           return view ? baseName(view, device.name) : null;
-        },
-        // The card's rename sets the name CIS keeps for the client and the web alike.
-        rename: async (device, next) => {
-          const view = byDevice.get(device.deviceId);
-          if (!view) return false;
-          const listed = (names?.get(device.deviceId) ?? device.name).trim();
-          // Saved as shown: a name CIS keeps, or the plain default, changes nothing there (only a
-          // device list entry left apart follows). A name only the device list had goes to CIS.
-          if (
-            next !== null &&
-            next === baseName(view, device.name) &&
-            (view.name !== null || next === t('cloudSettings.onboarding.defaultNameSole'))
-          )
-            return view.name === null || listed === next;
-          // Back to the default with nothing kept in CIS: only the device list entry has a name.
-          if (next === null && view.name === null) return false;
-          try {
-            const { deviceListSynced } = await api.instanceRename({ deviceId: view.deviceId, name: next });
-            void cloud.load(true);
-            return deviceListSynced;
-          } catch (error) {
-            toast.error(t(cloudRefusalKey(error) ?? 'settings.devices.toast.renameFailed'));
-            return null;
-          }
         },
         // CIS-only rows sit among the directory's cards in name order; the claim rows last.
         order: (deviceId) => shownPlace.get(deviceId) ?? Number.MAX_SAFE_INTEGER,

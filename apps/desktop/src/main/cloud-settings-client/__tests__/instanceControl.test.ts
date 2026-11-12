@@ -8,7 +8,7 @@ import {
   type CloudMaintenanceView,
 } from '../../../shared/cloudInstanceControl';
 
-function fixture(renameSync = 'synced') {
+function fixture() {
   let identity: CloudClientIdentity | null = {
     key: 'owner-a',
     generation: 1,
@@ -66,13 +66,6 @@ function fixture(renameSync = 'synced') {
       if (path === '/instances/instance-a/maintenance')
         return method === 'PATCH' ? { ...policy, ...(body as object) } : policy;
       if (path === '/instance-login/api/manage/instances/wake' || path.endsWith('/stop')) return {};
-      if (path === '/instance-login/api/manage/instances/instance-a' && method === 'PATCH')
-        return {
-          instanceId: 'instance-a',
-          deviceId: 'cloud-a',
-          customLabel: (body as { customLabel: string | null }).customLabel,
-          renameSync: { status: renameSync },
-        };
       throw Error('unexpected route');
     },
   );
@@ -111,23 +104,6 @@ describe('CIS instance controls', () => {
       ['/instances/instance-a/maintenance', 'GET'],
     ]);
     expect(JSON.stringify(view)).not.toContain('registry');
-  });
-  it('renames the owned instance where CIS keeps its name, and says whether the device list has it', async () => {
-    const f = fixture();
-    await expect(f.control.rename(f.caller, 'cloud-a', '测试机')).resolves.toEqual({ deviceListSynced: true });
-    expect(f.request.mock.calls.filter((c) => c[2] === 'PATCH').map((c) => [c[1], c[3]])).toEqual([
-      ['/instance-login/api/manage/instances/instance-a', { customLabel: '测试机' }],
-    ]);
-    const unsynced = fixture('not-configured');
-    await expect(unsynced.control.rename(unsynced.caller, 'cloud-a', null)).resolves.toEqual({
-      deviceListSynced: false,
-    });
-    // CIS already has it: nothing is written; the device list entry is renamed by the caller.
-    const same = fixture();
-    await expect(same.control.rename(same.caller, 'cloud-a', 'Cloud A')).resolves.toEqual({
-      deviceListSynced: false,
-    });
-    expect(same.request.mock.calls.some((c) => c[2] === 'PATCH')).toBe(false);
   });
   it('wakes only the resolved explicit instance, never the default creation path', async () => {
     const f = fixture();

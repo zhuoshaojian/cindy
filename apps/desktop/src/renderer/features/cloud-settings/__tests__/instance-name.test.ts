@@ -12,8 +12,6 @@ describe('a cloud Cindy is named as the device list names it', () => {
     expect(cloudBaseName(t, A, '测试机', { name: null })).toBe('测试机');
     expect(cloudBaseName(t, A, undefined, { name: '工作' })).toBe('工作');
     expect(cloudBaseName(t, A, undefined, { name: null })).toBe('云端 Cindy');
-    // The name CIS keeps is the one the web shows too: it comes first.
-    expect(cloudBaseName(t, A, '旧名', { name: '新名' })).toBe('新名');
   });
 
   it('never shows the runtime marker or a device id', () => {
