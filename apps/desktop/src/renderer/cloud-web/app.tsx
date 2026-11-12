@@ -4,6 +4,7 @@ import 'harmonyos-sans-sc-webfont-splitted';
 import '@/i18n';
 import '../themes/colors';
 import '../styles/globals.css';
+import './settings-responsive.css';
 
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -198,7 +199,7 @@ export function mountCloudApp(api: WebCloudApi, session: CisSession) {
             <Tooltip.Provider>
               <StaticAuthContextProvider value={auth}>
                 <HashRouter>
-                  <div className="h-screen w-screen overflow-hidden bg-[var(--settings-theme-bg,var(--background))]">
+                  <div className="cloud-web-app h-screen w-screen overflow-hidden bg-[var(--settings-theme-bg,var(--background))]">
                     <Routes>
                       <Route path="/" element={<Instances api={api} />} />
                       <Route path="/settings" element={<Settings api={api} />} />

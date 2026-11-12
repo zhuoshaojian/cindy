@@ -44,6 +44,11 @@ export default {
       'export function getVoiceInputWorkletUrl(){return "http://cindy-ui.test/unused-worklet.js";}',
   },
   cases: {
+    'web-narrow': {
+      about: 'Phone browser keeps settings navigation above full-width authorization forms',
+      data: { bots: true, webNarrow: true },
+      viewport: { width: 320, height: 740 },
+    },
     'im-read-failure': {
       about:
         'Native new-conversation section remains visible on failed cloud reads and recovers after retry',
@@ -85,6 +90,17 @@ export default {
     await page.locator('#settings-search-target-general-language [role="combobox"]').waitFor();
   },
   async check(page, ui) {
+    if (ui.data.webNarrow) {
+      const layout = await page.locator('[data-testid="cloud-settings"]').evaluate((root) => {
+        const sidebar = root.querySelector('aside').getBoundingClientRect();
+        const context = root.querySelector('[data-cloud-settings-context]').getBoundingClientRect();
+        return { width: innerWidth, sidebarBottom: sidebar.bottom, contextTop: context.top,
+          contextWidth: context.width, pageWidth: document.documentElement.scrollWidth };
+      });
+      assert.ok(layout.sidebarBottom <= layout.contextTop + 1, 'phone navigation must be above the content');
+      assert.ok(layout.contextWidth >= layout.width * 0.8, 'the settings content must retain usable width');
+      assert.ok(layout.pageWidth <= layout.width, 'the phone page must not overflow horizontally');
+    }
     if (ui.data.pages) {
       // Bot model chain and Subagent pickers read the target catalog over DeviceLink.
       for (const [tab, anchor] of [

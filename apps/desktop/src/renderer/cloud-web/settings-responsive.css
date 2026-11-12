@@ -1,0 +1,53 @@
+/* Only the browser controller needs a phone layout; native settings keep their frame. */
+@media (max-width: 767px) {
+  .cloud-web-app {
+    height: 100dvh;
+  }
+
+  .cloud-web-app [data-testid="cloud-settings"] > div {
+    flex-direction: column;
+    padding-bottom: 0;
+  }
+
+  .cloud-web-app [data-testid="cloud-settings"] > div > aside {
+    /* Bound the shared sidebar's inline desktop width to this single column. */
+    min-width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 40dvh;
+    padding: 16px 12px 8px;
+  }
+
+  .cloud-web-app [data-testid="cloud-settings"] > div > aside > div:first-child {
+    padding-bottom: 4px;
+  }
+
+  .cloud-web-app [data-testid="cloud-settings"] aside [role="tablist"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .cloud-web-app [data-testid="cloud-settings"] aside [role="tab"] {
+    min-width: 0;
+  }
+
+  .cloud-web-app [data-testid="cloud-settings"] aside [role="tab"] span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .cloud-web-app [data-testid="cloud-settings"] > div > aside + div {
+    height: auto;
+    padding-inline: 12px;
+  }
+
+  .cloud-web-app [data-cloud-settings-context] {
+    gap: 8px;
+    padding-block: 12px;
+  }
+
+  .cloud-web-app [data-cloud-settings-context] h2 {
+    overflow-wrap: anywhere;
+  }
+}

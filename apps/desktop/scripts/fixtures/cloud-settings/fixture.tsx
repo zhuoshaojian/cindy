@@ -3,6 +3,7 @@ import { mountPage, forbid } from '../../ui-page/harness';
 import { CloudSettingsPanel } from '../../../src/renderer/features/cloud-settings/CloudSettingsView';
 import { createTrialCloudSettingsClient } from '../../../src/renderer/features/cloud-settings/trial';
 import { BUNDLED_CATALOG } from '@cindy/model-providers';
+import '../../../src/renderer/cloud-web/settings-responsive.css';
 
 const targetModel = {
   id: 'fixture-model',
@@ -119,11 +120,16 @@ mountPage({
       },
     },
   },
-  render: (ctx) => (
-    <Fixture
-      unavailable={ctx.data.unavailable === true}
-      bots={ctx.data.bots === true}
-      imReadFailure={ctx.data.imReadFailure === true}
-    />
-  ),
+  render: (ctx) => {
+    const content = (
+      <Fixture
+        unavailable={ctx.data.unavailable === true}
+        bots={ctx.data.bots === true}
+        imReadFailure={ctx.data.imReadFailure === true}
+      />
+    );
+    return ctx.data.webNarrow ? (
+      <div className="cloud-web-app h-full w-full">{content}</div>
+    ) : content;
+  },
 });
