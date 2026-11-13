@@ -14,6 +14,10 @@ import { useMessageNavRailPreference } from '@/hooks/useMessageNavRailPreference
 import { useFileBrowserPreference } from '@/hooks/useFileBrowserPreference';
 import { useHomeUsageDashboardPreference } from '@/hooks/useHomeUsageDashboardPreference';
 import { usePromptRecommendationPreference } from '@/hooks/usePromptRecommendationPreference';
+import { useSidebarCardMode, useSidebarMainViewMode } from '@/hooks/useSidebarCardMode';
+import { useFeishuNotificationSettings } from '@/hooks/useFeishuNotificationSettings';
+import { useSwallowActivationClickSettings } from '@/hooks/useSwallowActivationClickSettings';
+import { useExperimentalFlag } from '@/hooks/useExperimentalFeatures';
 import { getThemeFamilies, tryGetFamily } from '@/themes/families';
 import { hostedPreferenceReadback, withHostedPreferences } from '@/state/hostDesktop/appPreferenceReadback';
 
@@ -28,6 +32,10 @@ const persisted: Record<keyof AppPreferencePatch, { key: string; absent?: unknow
   showIgnoredDirectories: { key: 'fileBrowser.showIgnoredDirs', absent: false },
   homeUsageDashboard: { key: 'home.usageDashboard.enabled' },
   promptRecommendations: { key: 'prompt-recommendation-enabled' },
+  sidebarPinned: { key: 'sidebar.cardMode' }, sidebarTasks: { key: 'sidebar.mainListMode' },
+  feishuNotifications: { key: 'notifications.feishuEnabled' },
+  swallowActivationClick: { key: 'input.swallowActivationClick' },
+  networkDebug: { key: 'experimental.debug-network' },
 };
 
 /** Mounted once in the main App. Reuses the same setters and subscribers as Settings. */
@@ -37,11 +45,15 @@ export function AppPreferenceControl() {
   const local = useLinkOpenPreference('local'); const fade = useStreamFadePreference();
   const navigation = useMessageNavRailPreference(); const files = useFileBrowserPreference();
   const home = useHomeUsageDashboardPreference(); const recommendations = usePromptRecommendationPreference();
+  const pinned = useSidebarCardMode(); const tasks = useSidebarMainViewMode(); const feishu = useFeishuNotificationSettings();
+  const swallow = useSwallowActivationClickSettings(); const networkDebug = useExperimentalFlag('debug-network');
   const state: Required<AppPreferencePatch> = { theme: theme.theme, themeFamily: theme.familyId,
     language: locale.locale, notifications: notifications.enabled, sendShortcut: shortcut.preference,
     webLinks: web.preference, localLinks: local.preference, streamFade: fade.preference,
     messageNavigation: navigation.enabled, showIgnoredDirectories: files.showIgnoredDirs,
-    homeUsageDashboard: home.enabled, promptRecommendations: recommendations.enabled };
+    homeUsageDashboard: home.enabled, promptRecommendations: recommendations.enabled,
+    sidebarPinned: pinned.mode, sidebarTasks: tasks.mode, feishuNotifications: feishu.enabled,
+    swallowActivationClick: swallow.enabled, networkDebug: networkDebug.enabled };
   const current = useRef<{ state: Required<AppPreferencePatch>; apply: (patch: AppPreferencePatch) => void }>({ state, apply: () => {} });
   current.current = { state, apply: patch => {
     if (patch.themeFamily !== undefined && !tryGetFamily(patch.themeFamily)) throw new Error('UNKNOWN_THEME');
@@ -58,6 +70,15 @@ export function AppPreferenceControl() {
     if (patch.showIgnoredDirectories !== undefined) files.setShowIgnoredDirs(patch.showIgnoredDirectories);
     if (patch.homeUsageDashboard !== undefined) home.setEnabled(patch.homeUsageDashboard);
     if (patch.promptRecommendations !== undefined) recommendations.setEnabled(patch.promptRecommendations);
+    if (patch.sidebarPinned !== undefined) pinned.setMode(patch.sidebarPinned);
+    if (patch.sidebarTasks !== undefined) tasks.setMode(patch.sidebarTasks);
+    if (patch.feishuNotifications !== undefined) feishu.setEnabled(patch.feishuNotifications);
+    if (patch.swallowActivationClick !== undefined) swallow.setEnabled(patch.swallowActivationClick);
+    if (patch.networkDebug !== undefined) {
+      networkDebug.setEnabled(patch.networkDebug);
+      // Same main-side switch the About row syncs; development builds keep it on.
+      void window.electronAPI?.ccSetDebugNet?.(import.meta.env.DEV ? true : patch.networkDebug);
+    }
   } };
   useEffect(() => window.electronAPI?.appPreferenceControl?.onSettingsChanged(event => {
     if (event.section !== 'memory' || !isDataOwnerPushStampCurrent(event.ownerStamp)) return;

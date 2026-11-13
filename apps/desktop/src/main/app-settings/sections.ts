@@ -16,7 +16,7 @@ const numberIn = (range: { min: number; max: number }) => z.number().min(range.m
 /** Shared host operations; discovery only serializes their registered metadata. */
 export const appSettingsSections: AppSettingsSection[] = [{
   id: 'preferences', title: '语言、主题与使用偏好',
-  description: '界面语言、明暗主题、主题家族、通知、发送快捷键、链接打开方式、流式动效、消息导航、文件显示和首页偏好。', effective: 'immediate',
+  description: '界面语言、明暗主题、主题家族、通知与飞书提醒、发送快捷键、链接打开方式、流式动效、消息导航、文件显示、首页、侧栏显示样式、切回窗口防误触和网络诊断日志。', effective: 'immediate',
   schema: appPreferenceSchema,
   read: async () => manageAppPreferences('get'),
   update: async patch => manageAppPreferences('update', patch),

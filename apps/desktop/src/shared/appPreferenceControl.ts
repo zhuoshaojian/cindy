@@ -18,6 +18,11 @@ export const appPreferenceSchema = z.strictObject({
   showIgnoredDirectories: z.boolean().optional(),
   homeUsageDashboard: z.boolean().optional(),
   promptRecommendations: z.boolean().optional(),
+  sidebarPinned: z.enum(['text', 'card', 'list']).optional(),
+  sidebarTasks: z.enum(['text', 'list']).optional(),
+  feishuNotifications: z.boolean().optional(),
+  swallowActivationClick: z.boolean().optional(),
+  networkDebug: z.boolean().optional(),
 });
 export type AppPreferencePatch = z.infer<typeof appPreferenceSchema>;
 export interface AppPreferenceRequest {
