@@ -102,7 +102,11 @@ export async function updateHostSettings(caller: HostSettingsCaller, input: Host
     try {
       // Runtime validation above closes the grammar; these casts only express the correlated domain to TS.
       if (upstreamSection) {
-        await commitThroughUpstreamSection(change.domain as never, change, before as never, options.assertCurrent);
+        // Chosen models are checked against the catalog once, right before the write: a section may
+        // restart Codex while applying (smart subagent routing), which refreshes the catalog, so
+        // during and after its write only the owner is checked.
+        options.assertCurrent();
+        await commitThroughUpstreamSection(change.domain as never, change, before as never, assertCurrent);
         const after = await inspectDomain(input.domain, input.workspaceId);
         revision = after.status === 'ready' ? after.revision : undefined;
       } else if (modelAdapter && isModelSettingsDomain(change.domain)) revision = (await modelAdapter.commit(change.domain, change, options)).revision;

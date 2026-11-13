@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 const context = vi.hoisted(() => ({ root: '', owner: 'first', generation: 1, pending: false,
-  connected: true, modelsPerAgent: 1, routeStamp: '1:0',
+  connected: true, modelsPerAgent: 1, routeStamp: '1:0', catalogRevision: 1,
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('electron', () => ({ app: { getPath: () => context.root } }));
 const prepareImDefaults = vi.hoisted(() => vi.fn(async (_channel?: string) => {}));
@@ -45,7 +45,7 @@ vi.mock('../catalog.js', () => ({ refreshSettingsModelRecommendation: async () =
 vi.mock('../../maker-host/model-visibility-mirror.js', () => ({ getModelVisibilityOverride: () => undefined, waitForModelVisibilityMirror: async () => {} }));
 vi.mock('../../maker-host/index.js', () => ({ getMakerIfReady: () => ({ listAvailableAgents: () => ['claude-code', 'codex', 'pi'] }) }));
 vi.mock('../../maker-host/createDesktopProviderService.js', () => ({ getDesktopProviderService: () => ({ listProviders: async () => [] }) }));
-vi.mock('../../maker-host/active-catalog.js', () => ({ getActiveCatalog: () => ({}), getActiveCatalogRevision: () => 1 }));
+vi.mock('../../maker-host/active-catalog.js', () => ({ getActiveCatalog: () => ({}), getActiveCatalogRevision: () => context.catalogRevision }));
 vi.mock('../../maker-host/provider-route.js', () => ({ getProviderRouteMutationStamp: () => context.routeStamp }));
 vi.mock('../../usage/ledgerCurrency.js', () => ({ currentLedgerCurrency: () => 'USD' }));
 vi.mock('../../usage/accountReferencePrice.js', () => ({ accountReferencePriceQuote: () => ({ currency: 'USD', inputPerMtok: 2, outputPerMtok: 10, source: 'reference' }) }));
@@ -70,6 +70,7 @@ import { configureAdditionalNativeOperations } from '../additionalRuntime.js';
 import { commitHostModelPrices, getHostModelPriceStore, readModelPriceOverrideView, inspectModelPriceOverrides } from '../../usage/modelPriceOverrideStore.js';
 import { configureUserDataDir } from '../../userDataPath.js';
 import { registerUpstreamRuntimeSectionsForTest } from './upstreamSectionFixture.js';
+import { registerRuntimeSettingsSection, runtimeSettingsSections } from '../../app-settings/runtime.js';
 const caller = { id: 'model-test', assertCurrent() {} };
 const route = { providerId: 'fixture-provider', modelId: 'fixture-model' };
 async function request(domain: HostSettingsDomain, values: Pick<HostSettingsUpdate, 'set' | 'clear'>) {
@@ -147,6 +148,40 @@ describe('model and IM settings native persistence', () => {
     expect(readSubagentModelSettings()).toMatchObject({ claudeCode: route.modelId, claudeCodeProviderId: route.providerId });
     await updateHostSettings(caller, await request('subagentModel', { clear: ['claudeCode'] }));
     expect(readSubagentModelSettings()).toMatchObject({ claudeCode: null, claudeCodeProviderId: null });
+  });
+  // Smart subagent routing restarts Codex while the section applies it, which refreshes the model
+  // catalog. The write has landed by then; the save must not be reported as a conflict.
+  it('reports a saved subagent change when applying it refreshed the model catalog', async () => {
+    const section = runtimeSettingsSections().find(item => item.id === 'subagent-models')!;
+    registerRuntimeSettingsSection({ ...section, update: async patch => { await section.update(patch); context.catalogRevision += 1; } });
+    try {
+      expect(await updateHostSettings(caller, await request('subagentModel', { set: { codexSmartSubagentRouting: true } })))
+        .toMatchObject({ saved: true, status: 'saved' });
+      expect(readSubagentModelSettings().codexSmartSubagentRouting).toBe(true);
+      expect(await updateHostSettings(caller, await request('subagentModel', { clear: ['codexSmartSubagentRouting'] })))
+        .toMatchObject({ saved: true, status: 'saved' });
+      expect(readSubagentModelSettings().codexSmartSubagentRouting).toBe(false);
+    } finally {
+      registerRuntimeSettingsSection(section);
+      context.catalogRevision = 1;
+    }
+  });
+  it('still refuses a model choice when the catalog changed before the write', async () => {
+    const input = await request('subagentModel', { set: { claudeCode: route } });
+    const section = runtimeSettingsSections().find(item => item.id === 'subagent-models')!;
+    const update = vi.fn(section.update);
+    registerRuntimeSettingsSection({ ...section, update });
+    const validate = validateModelSettingsChange;
+    configureHostSettingsApplication({ models: { read: readModelSettings, commit: commitModelSettings,
+      validate: async (domain, change) => { const result = await validate(domain, change); context.catalogRevision += 1; return result; } },
+      databaseWarning() {}, async validateNewTaskDefaults() {} });
+    try {
+      expect(await updateHostSettings(caller, input)).toMatchObject({ saved: false, code: 'CONFLICT' });
+      expect(update).not.toHaveBeenCalled();
+    } finally {
+      registerRuntimeSettingsSection(section);
+      context.catalogRevision = 1;
+    }
   });
   it('rejects a new route whose provider disconnected after the form was read', async () => {
     const input = await request('subagentModel', { set: { claudeCode: route } });
