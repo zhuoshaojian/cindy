@@ -88,10 +88,12 @@ function section(domain: HostSettingsDomain, entry: Entry): AppSettingsSection {
     read: async () => {
       const state = await getHostSettings(caller, domain);
       if (state.status !== 'ready') return { status: state.status };
+      // Choices only for fields this section exposes, so none invite a write it refuses.
+      const choices = 'choices' in state && state.choices ? pick(state.choices, fields) : {};
       return {
         value: pick(state.value, fields), defaults: pick(state.defaults, fields),
         customizedKeys: state.customizedKeys.filter(key => fields.includes(key)),
-        ...('choices' in state && state.choices ? { choices: state.choices } : {}),
+        ...(Object.keys(choices).length ? { choices } : {}),
       };
     },
     update: patch => write(domain, { set: patch }),

@@ -14,9 +14,15 @@ vi.mock('../../appSessionState.js', () => ({
 vi.mock('../snapshotRuntime.js', () => ({ getCloudSettingsSnapshotContext: () => null }));
 vi.mock('../../maker-host/model-visibility-mirror.js', () => ({ getModelVisibilityOverride: () => undefined }));
 vi.mock('../catalog.js', () => ({ refreshSettingsModelRecommendation: async () => ({ providers: [], agents: [], assertCurrent() {} }) }));
+// Desktop preferences come from the running app; a ready read lets desktopGeneral list its choices.
+vi.mock('../desktop-preferences.js', async (original) => {
+  const { desktopPreferenceDefaults } = await import('../../../shared/desktopPreferences.js');
+  return { ...(await original<object>()), inspectDesktopPreferences: () => ({ status: 'ready', profileStamp: 'profile', revision: 'r1',
+    value: desktopPreferenceDefaults(), defaults: desktopPreferenceDefaults(), customizedKeys: [], isCustomized: false }) };
+});
 import { createAppSettingsService } from '../../app-settings/service.js';
 import { runtimeSettingsSections } from '../../app-settings/runtime.js';
-import { configureHostSettingsApplication } from '../index.js';
+import { configureHostSettingsApplication, getHostSettings } from '../index.js';
 import { registerHostAppSettingsSections, HOST_APP_SETTINGS_SECTION_IDS } from '../appSettingsSections.js';
 
 // Sections upstream already registers, and Host domains that map onto them or stay out of the Agent surface.
@@ -59,5 +65,11 @@ describe('Host settings as upstream sections on a cloud instance', () => {
     expect(listed.sections.map((section: { id: string }) => section.id)).toEqual(expect.arrayContaining(['desktopGeneral', 'desktopNotifications']));
     expect(await manage({ operation: 'update', section: 'desktopNotifications', patch: { notificationsEnabled: false } })).toMatchObject({ ok: false, errorCode: 'INVALID_ARGS' });
     expect(await manage({ operation: 'update', section: 'desktopGeneral', patch: { locale: 'en' } })).toMatchObject({ ok: false, errorCode: 'INVALID_ARGS' });
+    // The Host lists language and theme choices; the section must not offer fields it refuses.
+    const host = await getHostSettings({ id: 'test', assertCurrent() {} }, 'desktopGeneral');
+    expect(host.status === 'ready' && 'choices' in host && host.choices && Object.keys(host.choices)).toEqual(expect.arrayContaining(['locale']));
+    const { state } = await manage({ operation: 'get', section: 'desktopGeneral' });
+    expect(Object.keys(state.value).sort()).toEqual(['sidebarMainMode', 'sidebarPinnedMode']);
+    expect(Object.keys(state.choices ?? {}).filter(key => !['sidebarMainMode', 'sidebarPinnedMode'].includes(key))).toEqual([]);
   });
 });
