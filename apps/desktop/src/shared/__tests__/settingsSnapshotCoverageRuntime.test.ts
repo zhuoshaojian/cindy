@@ -51,7 +51,6 @@ vi.mock('../../main/maker-host/model-visibility-mirror.js', () => ({ getModelVis
 vi.mock('../../main/maker-host/newMakerDefaultsCache.js', () => ({ getSelectedNewMakerRoute: state.forbidden }));
 // 四域及桌面 profile 使用显式 DI；默认入口若被误用立即失败。
 vi.mock('../../main/host-settings/personalization.js', () => ({ currentSettingsOwner: state.forbidden }));
-vi.mock('../../main/host-settings/new-task-defaults.js', () => ({ inspectNewTaskDefaultsForSnapshot: state.forbidden }));
 vi.mock('../../main/appearance-settings-store.js', () => ({ inspectAppearanceSettings: state.forbidden }));
 vi.mock('../../main/database-size-warning-settings.js', () => ({ inspectDatabaseSizeWarningSettings: state.forbidden }));
 vi.mock('../../main/host-settings/readContext.js', () => ({
@@ -177,7 +176,7 @@ describe('production reader to v2 coverage seam', () => {
     for (const id of SETTINGS_SNAPSHOT_V2_FIELD_IDS) expect(report.fields[id].status, id).toBe(inspection.fields[id]!.status);
     expect(report.fields['im.wecom.notificationsEnabled']).toEqual({ status: 'private' });
     expect(report.collections.modelVisibility.status).toBe('unavailable');
-    expect(report.collections.modelParameterHistory.status).toBe('migrationPending');
+    expect(report.collections.modelParameterHistory.status).toBe('unavailable');
     expect(report.collections.builtinToolOverrides).toMatchObject({ status: 'partial', total: null, omitted: null });
     expect(fs.readdirSync(state.root)).toEqual([]);
   });
@@ -196,11 +195,6 @@ describe('production reader to v2 coverage seam', () => {
     write('local-codex-provider-prefs.json', { providers: { private: { name: 'private-provider-name', removed: false } } });
     write('model-context-limit-prefs.json', { limits: { 'pi:private:private-model': 99999 } });
     write('model-price-overrides.json', { version: 1, entries: { fixture: { providerId: 'private-provider', agent: 'pi', modelId: 'private-model', values: { currency: 'CNY', cacheReadPerMtok: null, inputPerMtok: 0 }, baseReference: null, updatedAt: 'fixture-time' } } });
-    write('host-new-task-defaults.json', { _initialized: true, _history: {
-      vendor: 'cc', lastByVendor: {}, modelChosenByVendor: {}, defaultTupleCustomized: false, defaultTupleSelectionCustomized: false,
-      effortByModel: { 'private-model': 'high' }, fastModeByModel: { 'private-model': false }, worktreeEnabled: false,
-      worktreePreferenceCustomized: false, providerModelMemory: {},
-    } });
     write('hook-workspace-prefs.json', { version: 1, entries: [{ channel: 'telegram', teamId: null, workspace: 'private-workspace', model: null, effort: null, agentKind: null, permissionMode: null, dirty: true }] });
     write('telegram-bot-behavior.json', { groupActivation: { '-12345': 'always' } });
     write('builtin-tools-settings.json', { builtinTools: { browser: { enabled: false } } });
@@ -211,8 +205,8 @@ describe('production reader to v2 coverage seam', () => {
     assertCoverage(parts);
     for (const id of SETTINGS_SNAPSHOT_V2_FIELD_IDS) expect(report.fields[id].status, id).toBe(inspection.fields[id]!.status);
     for (const [id, collection] of Object.entries(report.collections)) {
-      // Visibility, engines and favorites live in the app window, as upstream keeps them.
-      if (['modelVisibility', 'modelEngines', 'modelFavorites'].includes(id)) { expect(collection.status, id).toBe('unavailable'); continue; }
+      // Visibility, engines, favorites and per-model tuning live in the app window, as upstream keeps them.
+      if (['modelVisibility', 'modelEngines', 'modelFavorites', 'modelParameterHistory'].includes(id)) { expect(collection.status, id).toBe('unavailable'); continue; }
       expect(collection.status, id).toBe(id === 'builtinToolOverrides' ? 'partial' : 'complete');
       expect(collection.entries.length, id).toBeGreaterThan(0);
     }

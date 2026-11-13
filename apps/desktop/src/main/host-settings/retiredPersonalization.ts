@@ -9,7 +9,7 @@ const FILE = 'host-personalization.json';
 const RETURNED = 'host-personalization.returned.json';
 type Window = (userPrompt?: string) => Promise<string>;
 const upstream: Window = async userPrompt =>
-  (await manageAppPreferences('user-prompt', undefined, undefined, undefined, userPrompt)).userPrompt ?? '';
+  (await manageAppPreferences('user-prompt', undefined, undefined, { userPrompt })).userPrompt ?? '';
 
 /**
  * Earlier cloud builds kept the owner's custom instructions in a Host file; they now live in the

@@ -2,7 +2,7 @@ import { getHostPluginPreferenceContext } from '../cindy-brain/index.js';
 import { getHostPluginCindyStore, inspectGhostCindyPrefs } from '../cindy-brain/cindyPrefsStore.js';
 import { getHostPluginErrandStore, inspectGhostErrandPrefs } from '../cindy-brain/pluginTaskPrefsStore.js';
 import { readKnownWorkspaces } from './readKnownWorkspaces.js';
-import { refreshSettingsModelRecommendation } from './catalog.js';
+import { readSettingsModelCatalog } from './catalog.js';
 import { captureSettingsModelGuard } from './additionalModels.js';
 import { isModelSelectableForNewRoute, isModelVisible } from '@cindy/model-providers';
 import { getModelVisibilityOverride } from '../maker-host/model-visibility-mirror.js';
@@ -147,7 +147,7 @@ export const nativePluginSettings = {
 };
 
 async function errandModelChoices(): Promise<Choice[]> {
-  const catalog = await refreshSettingsModelRecommendation();
+  const catalog = await readSettingsModelCatalog();
   const result = catalog.providers.filter(provider => provider.connected && !provider.suspended && !provider.modelDiscoveryFailure).flatMap(provider =>
     catalog.agents.flatMap(harness => (provider.models[harness] ?? []).filter(model => model.id.length <= 128 && provider.id.length <= 128
       && isModelSelectableForNewRoute(model, { userProvider: provider.source === 'user' }) && isModelVisible(getModelVisibilityOverride(harness, provider.id, model.id), model.defaultEnabled))

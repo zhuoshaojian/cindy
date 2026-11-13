@@ -27,7 +27,7 @@ export interface ModelPresentationTarget {
 const upstream: ModelPresentationTarget = {
   async visibility() { await waitForModelVisibilityMirror(); return getModelVisibilityMirrorSnapshot(); },
   setVisibility: setModelVisibility,
-  async engines(change) { return (await manageAppPreferences('model-engine', undefined, undefined, change)).modelEngines ?? {}; },
+  async engines(change) { return (await manageAppPreferences('model-engine', undefined, undefined, { modelEngine: change })).modelEngines ?? {}; },
   favorites: requestModelFavorites,
 };
 

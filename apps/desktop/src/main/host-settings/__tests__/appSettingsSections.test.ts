@@ -13,7 +13,7 @@ vi.mock('../../appSessionState.js', () => ({
   activeOwnerScopeKey: () => String(isolated.generation), peekCommittedAppSession: () => ({ mode: 'cloud', dataOwnerId: 'fixture-owner', generation: isolated.generation }), isAppSessionBoundaryPending: () => false, dataOwnerStorageKey: () => 'fixture-owner' }));
 vi.mock('../snapshotRuntime.js', () => ({ getCloudSettingsSnapshotContext: () => null }));
 vi.mock('../../maker-host/model-visibility-mirror.js', () => ({ getModelVisibilityOverride: () => undefined }));
-vi.mock('../catalog.js', () => ({ refreshSettingsModelRecommendation: async () => ({ providers: [], agents: [], assertCurrent() {} }) }));
+vi.mock('../catalog.js', () => ({ readSettingsModelCatalog: async () => ({ providers: [], agents: [], assertCurrent() {} }) }));
 import { createAppSettingsService } from '../../app-settings/service.js';
 import { runtimeSettingsSections } from '../../app-settings/runtime.js';
 import { configureHostSettingsApplication } from '../index.js';
@@ -30,7 +30,7 @@ const manage = (input: Parameters<ReturnType<typeof createAppSettingsService>>[0
 
 beforeEach(() => {
   isolated.root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-app-sections-')); isolated.generation += 1;
-  configureHostSettingsApplication({ databaseWarning() {}, validateNewTaskDefaults: async () => {} });
+  configureHostSettingsApplication({ databaseWarning() {} });
   registerHostAppSettingsSections();
 });
 afterEach(() => fs.rmSync(isolated.root, { recursive: true, force: true }));

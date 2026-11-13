@@ -23,7 +23,7 @@ vi.mock('../../appearance-settings-ipc.js', async () => {
 const appWindow = vi.hoisted(() => ({ userPrompt: '', answers: true }));
 vi.mock('../../app-settings/preferences.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../app-settings/preferences.js')>(),
-  manageAppPreferences: async (operation: string, _patch?: unknown, _visibility?: unknown, _engine?: unknown, userPrompt?: string) => {
+  manageAppPreferences: async (operation: string, _patch?: unknown, _visibility?: unknown, { userPrompt }: { userPrompt?: string } = {}) => {
     if (!appWindow.answers || operation !== 'user-prompt') throw new Error('PREFERENCE_WINDOW_NOT_READY');
     if (userPrompt !== undefined) appWindow.userPrompt = userPrompt;
     return { value: {}, userPrompt: appWindow.userPrompt };
@@ -48,12 +48,10 @@ import {
 import { projectSettingsSnapshot } from '../snapshotProjection.js';
 import { inspectPreferenceSettingsForSnapshot } from '../readers/preferences.js';
 import { captureHostPersonalization } from '../startup.js';
-import { readPersonalization, settingsOwnerFilePath } from '../personalization.js';
-import { setNewTaskDefaultRecommendation, inspectNewTaskDefaultsForSnapshot } from '../new-task-defaults.js';
+import { readPersonalization } from '../personalization.js';
 import { writeDatabaseSizeWarningSettings } from '../../database-size-warning-settings.js';
 
 const warning = vi.fn();
-const validate = vi.fn(async () => {});
 const caller = { id: 'fixture-session', assertCurrent: () => {} };
 const disposers: Array<() => void> = [];
 async function change(domain: HostSettingsDomain, values: Pick<HostSettingsUpdate, 'set' | 'clear'>) {
@@ -66,7 +64,7 @@ beforeEach(() => {
   isolated.owner = 'fixture-owner'; isolated.generation += 1; isolated.pending = false;
   appWindow.userPrompt = ''; appWindow.answers = true;
   vi.clearAllMocks(); warning.mockImplementation(() => {});
-  configureHostSettingsApplication({ databaseWarning: warning, validateNewTaskDefaults: validate });
+  configureHostSettingsApplication({ databaseWarning: warning });
 });
 afterEach(() => {
   for (const dispose of disposers.splice(0)) dispose();
@@ -75,7 +73,7 @@ afterEach(() => {
 });
 
 describe('真实 Host 领域保存到脱敏快照的集成', () => {
-  it('真实 owner ForSnapshot 从纯内存定位读取，不触发通用会话 getter 或写盘', () => {
+  it('新任务默认值与上游一样留在窗口草稿：Host 不读写文件，旧文件只等一次回迁', async () => {
     const dir = path.join(isolated.root, 'owners', `test-${isolated.owner}`);
     fs.mkdirSync(dir, { recursive: true });
     const defaultsFile = path.join(dir, 'host-new-task-defaults.json');
@@ -83,8 +81,9 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
     fs.writeFileSync(defaultsFile, defaultsBytes);
     const writes = [vi.spyOn(fs, 'writeFileSync'), vi.spyOn(fs, 'mkdirSync'), vi.spyOn(fs, 'unlinkSync')];
     try {
-      expect(settingsOwnerFilePath('host-new-task-defaults.json')).toBe(defaultsFile);
-      expect(inspectNewTaskDefaultsForSnapshot()).toMatchObject({ status: 'ready', value: { worktree: true } });
+      expect(readHostSettings().newTaskDefaults).toEqual({ status: 'unavailable', revision: null });
+      expect(await getHostSettings(caller, 'newTaskDefaults')).toEqual({ status: 'unavailable', revision: null });
+      expect(inspectPreferenceSettingsForSnapshot('darwin').fields['newTaskDefaults.modelId']).toEqual({ status: 'unavailable' });
       for (const spy of writes) expect(spy).not.toHaveBeenCalled();
       expect(isolated.forbiddenOwnerLoad).not.toHaveBeenCalled();
       expect(fs.readFileSync(defaultsFile, 'utf8')).toBe(defaultsBytes);
@@ -93,15 +92,14 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
 
   it('owner 缺失时直接静态拒绝定位，不回退到全局或临时目录', async () => {
     isolated.owner = '';
-    expect(() => settingsOwnerFilePath('host-new-task-defaults.json')).toThrow();
     await expect(readPersonalization()).resolves.toEqual({ status: 'unavailable', revision: null });
-    expect(inspectNewTaskDefaultsForSnapshot()).toEqual({ status: 'unavailable', revision: null });
+    expect(readHostSettings().ownerStamp).toBeNull();
     expect(fs.readdirSync(isolated.root)).toEqual([]);
   });
 
-  it('v2区别待迁移与已初始化默认，读取不写盘且不交出正文', async () => {
+  it('v2只报告 Host 自己保存的值，窗口里的设置报告不可用，读取不写盘且不交出正文', async () => {
     const before = inspectPreferenceSettingsForSnapshot('darwin');
-    expect(before.fields['newTaskDefaults.modelId']).toEqual({ status: 'migrationPending' });
+    expect(before.fields['newTaskDefaults.modelId']).toEqual({ status: 'unavailable' });
     // The instructions stay in the app window, so the synchronous report cannot see them.
     expect(before.fields['personalization.customized']).toEqual({ status: 'unavailable' });
     // Desktop preferences stay in the app window, as upstream keeps them.
@@ -109,15 +107,10 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
     expect(before.fields['databaseWarning.thresholdGiB']).toEqual({ status: 'value', value: 10, source: 'default' });
     expect(fs.readdirSync(isolated.root)).toEqual([]);
     await updateHostSettings(caller, await change('personalization', { set: { userPrompt: 'PRIVATE-TEST-PROMPT' } }));
-    await updateHostSettings(caller, await change('newTaskDefaults', { set: { planMode: false } }));
     const after = inspectPreferenceSettingsForSnapshot('darwin');
     expect(after.fields['personalization.customized']).toEqual({ status: 'unavailable' });
-    expect(after.fields['newTaskDefaults.plan']).toEqual({ status: 'value', value: false, source: 'override' });
     expect(JSON.stringify(after)).not.toContain('PRIVATE-TEST-PROMPT');
     await updateHostSettings(caller, await change('personalization', { clear: ['userPrompt'] }));
-    await updateHostSettings(caller, await change('newTaskDefaults', { clear: ['planMode'] }));
-    const cleared = inspectPreferenceSettingsForSnapshot('darwin');
-    expect(cleared.fields['newTaskDefaults.plan']).toEqual({ status: 'value', value: false, source: 'default' });
     expect(inspectPreferenceSettingsForSnapshot('linux').fields['desktop.agentIslandEnabled']).toEqual({ status: 'unsupported' });
   });
 
@@ -196,21 +189,6 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
       await settled;
       expect(opts.hostStartupPreferences).toBeUndefined();
     } finally { vi.useRealTimers(); }
-  });
-
-  it('新任务默认值持久化后只报告 next_task，并保留显式选择的来源', async () => {
-    setNewTaskDefaultRecommendation({ dataOwnerId: isolated.owner, ownerGeneration: isolated.generation }, {
-      harness: 'codex', providerId: 'provider-example', modelId: 'recommended-model', effort: 'high',
-      fast: false, thinking: true, worktree: false, planMode: false,
-    });
-    const receipt = await updateHostSettings(caller, await change('newTaskDefaults', { set: { modelId: 'selected-model', planMode: true } }));
-    expect(receipt).toMatchObject({ saved: true, application: 'next_task' });
-    expect(validate).toHaveBeenCalledOnce();
-    expect(projectSettingsSnapshot(readHostSettings(), { models: new Set(['selected-model']), providers: new Set(['provider-example']) }).newTaskDefaults).toMatchObject({ boundary: 'nextTask', fields: {
-      modelId: { value: 'selected-model', source: 'override' }, providerId: { value: 'provider-example', source: 'default' },
-      plan: { value: true, source: 'override' },
-    } });
-    expect(JSON.parse(fs.readFileSync(path.join(isolated.root, 'owners', `test-${isolated.owner}`, 'host-new-task-defaults.json'), 'utf8')).modelId).toBe('selected-model');
   });
 
   it('字体正文只留 Host，快照只带自定义标志和数值', async () => {

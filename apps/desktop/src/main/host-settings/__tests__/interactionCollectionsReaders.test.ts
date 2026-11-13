@@ -168,7 +168,7 @@ describe('known persisted dynamic collections', () => {
     expect(result.modelVisibility).toEqual({ status: 'unavailable' });
     expect(result.modelDisable).toEqual({ status: 'value', entries: [], total: 0, complete: true });
     expect(result.builtinToolOverrides).toEqual({ status: 'value', entries: [], total: null, complete: false });
-    expect(result.modelParameterHistory).toEqual({ status: 'migrationPending' });
+    expect(result.modelParameterHistory).toEqual({ status: 'unavailable' });
   });
   it('preserves sparse, retired-model, nullable price and plugin preferences using safe entry leaves', () => {
     write('model-disable-prefs.json', { disabledModels: { 'private-provider:retired-model': true }, disabledProviders: { 'private-provider': true } });
@@ -204,51 +204,12 @@ describe('known persisted dynamic collections', () => {
     expect(noWrites(lists)[collection]).toEqual({ status: 'unreadable' });
     expect(fs.readFileSync(file)).toEqual(before);
   });
-  it('retains saved parameter history and local workspace tombstones without remote hydration', () => {
-    write('host-new-task-defaults.json', { _initialized: true, _history: {
-      vendor: 'cc', lastByVendor: {}, modelChosenByVendor: {}, defaultTupleCustomized: false, defaultTupleSelectionCustomized: false,
-      effortByModel: { retired: 'high' }, fastModeByModel: { retired: false }, worktreeEnabled: false, worktreePreferenceCustomized: false,
-      providerModelMemory: { 'claude-code:private': { lastModel: 'retired', effortByModel: {}, fastByModel: { retired: false }, thinkingByModel: { retired: true } } },
-    } });
+  it('reports per-model tuning as kept by the app window and keeps local workspace tombstones', () => {
+    write('host-new-task-defaults.json', { _initialized: true, _history: null });
     write('hook-workspace-prefs.json', { version: 1, entries: [{ channel: 'telegram', teamId: null, workspace: 'project', model: null, effort: null, agentKind: null, permissionMode: null, dirty: true, dirtyPatch: { model: null } }] });
     const result = noWrites(lists);
-    expect(result.modelParameterHistory).toMatchObject({ status: 'value', complete: true, total: 2 });
-    if (result.modelParameterHistory.status === 'value') {
-      expect(result.modelParameterHistory.entries[0].fields).toMatchObject({ fast: { value: false }, thinking: { value: true }, lastSelected: { value: true } });
-      expect(result.modelParameterHistory.entries[0].fields).not.toHaveProperty('effort');
-    }
+    expect(result.modelParameterHistory).toEqual({ status: 'unavailable' });
     expect(result.imWorkspacePrefs).toMatchObject({ status: 'value', total: 1, entries: [{ fields: { modelConfigured: { value: false }, dirty: { value: true } } }] });
-  });
-  it('合法空effort只省略该叶子，provider和legacy槽的其它tuning仍可公开', () => {
-    write('host-new-task-defaults.json', { _initialized: true, _history: {
-      vendor: 'pi', lastByVendor: { pi: { providerId: 'private-provider', model: 'private-model', effort: '' } }, modelChosenByVendor: {}, defaultTupleCustomized: false, defaultTupleSelectionCustomized: false,
-      effortByModel: { 'private-legacy': '' }, fastModeByModel: { 'private-legacy': true }, worktreeEnabled: false, worktreePreferenceCustomized: false,
-      providerModelMemory: { 'pi:private-provider': { lastModel: 'private-model', effortByModel: { 'private-model': '', 'private-other': 'high' }, fastByModel: { 'private-model': false }, thinkingByModel: { 'private-model': true } } },
-    } });
-    const result = noWrites(projectedLists).modelParameterHistory;
-    expect(result).toEqual({ status: 'complete', total: 4, omitted: 0, entries: [
-      { ordinal: 1, source: 'unknown', lastSelected: true, fast: false, thinking: true },
-      { ordinal: 2, source: 'unknown', lastSelected: false, effort: 'high' },
-      { ordinal: 3, source: 'unknown', lastSelected: false, fast: true },
-      { ordinal: 4, source: 'unknown', lastSelected: true },
-    ] });
-    expect(JSON.stringify(result)).not.toContain('private-');
-  });
-  it('同route的provider memory和lastByVendor独立保留，而非静默去重', () => {
-    write('host-new-task-defaults.json', { _initialized: true, _history: {
-      vendor: 'pi', lastByVendor: { pi: { providerId: 'private-provider', model: 'private-model', effort: 'low' } }, modelChosenByVendor: {}, defaultTupleCustomized: false, defaultTupleSelectionCustomized: false,
-      effortByModel: {}, fastModeByModel: {}, worktreeEnabled: false, worktreePreferenceCustomized: false,
-      providerModelMemory: { 'pi:private-provider': { lastModel: '', effortByModel: { 'private-model': 'high' }, fastByModel: { 'private-model': false }, thinkingByModel: {} } },
-    } });
-    const raw = noWrites(lists).modelParameterHistory;
-    expect(raw).toMatchObject({ status: 'value', total: 2, complete: true });
-    if (raw.status === 'value') expect(new Set(raw.entries.map(item => item.key)).size).toBe(2);
-    const result = noWrites(projectedLists).modelParameterHistory;
-    expect(result).toEqual({ status: 'complete', total: 2, omitted: 0, entries: [
-      { ordinal: 1, source: 'unknown', lastSelected: false, effort: 'high', fast: false },
-      { ordinal: 2, source: 'unknown', lastSelected: true, effort: 'low' },
-    ] });
-    expect(JSON.stringify(result)).not.toContain('private-');
   });
   it.each([
     [null, undefined, true],

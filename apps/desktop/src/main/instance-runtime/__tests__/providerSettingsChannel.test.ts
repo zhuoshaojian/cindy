@@ -65,7 +65,7 @@ function setup(overrides: Partial<ProviderSettingsChannelDeps> = {}) {
         ),
       ),
     resolveLogoKind: () => 'cindy',
-    readEfforts: () => ({ 'codex:*': { shown: 'high' } }),
+    readEfforts: async () => ({ 'codex:*': { shown: 'high' } }),
     applyEffort: vi.fn(async () => {}),
     editModel: vi.fn(async () => {}),
     shareCommand: vi.fn(async (command) => ({ command })),

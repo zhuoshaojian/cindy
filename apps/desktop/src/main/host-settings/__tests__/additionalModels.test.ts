@@ -35,7 +35,7 @@ vi.mock('../../im/ownerScopedStorage.js', () => ({
   ownerScopedImUserDataPath: (...segments: string[]) => path.join(context.root, 'owners', `test-${context.owner}`, ...segments),
 }));
 
-vi.mock('../catalog.js', () => ({ refreshSettingsModelRecommendation: async () => ({
+vi.mock('../catalog.js', () => ({ readSettingsModelCatalog: async () => ({
   providers: [{ id: 'fixture-provider', name: 'Fixture Provider', source: 'user', connected: context.connected,
     agents: ['claude-code', 'codex', 'pi'], auth: { method: 'api-key' },
     models: Object.fromEntries(['claude-code', 'codex', 'pi'].map(agent => [agent, Array.from({ length: context.modelsPerAgent }, (_, index) => ({ id: index === 0 ? 'fixture-model' : `fixture-${index}`, name: 'Fixture Model', type: 'chat',
@@ -78,7 +78,7 @@ async function request(domain: HostSettingsDomain, values: Pick<HostSettingsUpda
   return { domain, expectedRevision: state.revision, operationId: state.operationId, ...values };
 }
 registerUpstreamRuntimeSectionsForTest();
-beforeEach(() => { configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, databaseWarning() {}, async validateNewTaskDefaults() {} }); context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-models-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; context.connected = true; context.modelsPerAgent = 1; vi.clearAllMocks(); });
+beforeEach(() => { configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, databaseWarning() {} }); context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-models-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; context.connected = true; context.modelsPerAgent = 1; vi.clearAllMocks(); });
 afterEach(() => fs.rmSync(context.root, { recursive: true, force: true }));
 describe('model and IM settings native persistence', () => {
   // A saved remote-Agent route is not representable in this wire version. Reading
@@ -173,7 +173,7 @@ describe('model and IM settings native persistence', () => {
     const validate = validateModelSettingsChange;
     configureHostSettingsApplication({ models: { read: readModelSettings, commit: commitModelSettings,
       validate: async (domain, change) => { const result = await validate(domain, change); context.catalogRevision += 1; return result; } },
-      databaseWarning() {}, async validateNewTaskDefaults() {} });
+      databaseWarning() {} });
     try {
       expect(await updateHostSettings(caller, input)).toMatchObject({ saved: false, code: 'CONFLICT' });
       expect(update).not.toHaveBeenCalled();

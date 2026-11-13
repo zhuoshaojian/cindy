@@ -37,6 +37,7 @@ Host 是设置唯一权威。网页只读取 CIS 保存的最近一份脱敏快�
 
 - **桌面偏好**：主题/语言、侧栏、通知、点击/发送/链接、淡入/推荐/导航条、Agent Island 和网络调试与上游一样保存在应用窗口，快照的同步读取拿不到，这些叶子报告 `unavailable`；云设置页经上游 `preferences` 分区实时读写。早期版本的 `host-desktop-preferences.json` 启动后写回一次并改名保留。
 - **模型显示、引擎与收藏**：与上游一样保存在应用窗口，快照的同步读取拿不到，这三类集合报告 `unavailable`；云设置页经上游的模型显示、引擎与收藏操作实时读写。早期版本的 `host-model-presentation-preferences.json` 启动后写回一次并改名保留。
+- **新任务默认值**：与上游一样保存在应用窗口的新任务草稿与模型记忆，快照的同步读取拿不到，v1 `newTaskDefaults` 与 v2 `newTaskDefaults.*` 叶子、`modelParameterHistory` 集合都报告 `unavailable`。早期版本的 `host-new-task-defaults.json` 启动后写回窗口一次并改名保留。
 - **个性化**：个人指令正文与上游一样保存在应用窗口，快照的同步读取拿不到，v1 `personalization` 报告 `unavailable`，v2 `personalization.customized` 报告 `unavailable`；云设置页经实例私有通道实时读写。早期版本的 `host-personalization.json` 启动后写回一次并改名保留。
 - **初始化与缓存**：Host 已初始化或恢复默认后，旧 Renderer 数据不得覆盖；多窗口冲突只回读，不换 revision 重放旧表。Renderer 仅有可重建缓存，成功以 Host 回执为准；兼容首帧缓存只能由成功提交单向更新。不能证明全新且尚未导入的旧数据明确 `migrationPending`，不冒充默认值；初始化完成后无窗口也能读取。
 - **Inspection**：`readSnapshot.ts` 调用窄的纯 inspection，复用领域真实类型、枚举、范围和默认解释；不调用会 ensure、修复、删除坏文件、执行迁移/claim、读凭据或探测权限的旧 getter，不联网或启动设备。读取保存事实不套用当前模型写入准入，也不把退役型号换成推荐值。
@@ -105,7 +106,7 @@ v2 引用只能是 `{ configured: false }`、`{ configured: true }`，或有证�
 
 | 领域 | 可展示内容 | 作用范围及生效边界 |
 | --- | --- | --- |
-| `newTaskDefaults` | 引擎、有公共证据的来源/模型 ID、effort、fast、thinking、worktree、Plan 默认值 | 当前 owner；后续新任务 |
+| `newTaskDefaults` | 引擎、有公共证据的来源/模型 ID、effort、fast、thinking、worktree、Plan 默认值（改存应用窗口后报告 `unavailable`） | 当前 owner；后续新任务 |
 | `personalization` | 是否自定义（正文改存应用窗口后报告 `unavailable`） | 当前 owner；后续 Agent 启动 |
 | `databaseWarning` | 提醒阈值、是否关闭 | 云 Host profile；即时 |
 | `appearance` | UI/代码字号、窗口缩放、字体是否自定义 | 云实例自身桌面；不改变控制端或网页 |

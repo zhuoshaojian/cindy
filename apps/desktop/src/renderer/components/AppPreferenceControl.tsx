@@ -1,6 +1,10 @@
 import { setModelVisibility, resetModelVisibilities, isModelEnabled, isModelVisibilityCustomized } from '@/state/modelVisibilityPrefs';
 import { clearModelEngineOverride, getModelEngineOverride, listModelEngineOverrides, setModelEngineOverride } from '@/state/modelEnginePrefs';
 import { getUserPrompt, setUserPrompt } from '@/lib/userPromptStore';
+import { clearProviderModelEffort, getProviderModelEffort, setProviderModelEffort } from '@/state/providerModelMemory';
+import { applyReturnedNewTaskHistory, modelEffortSnapshot } from '@/state/returnedNewTaskHistory';
+import { validateNewTaskPreferenceHistory } from '../../shared/newTaskPreferenceHistory';
+import type { Effort } from '@/lib/userPreferences.types';
 import { setMakerMemoryEnabled } from '@/lib/memorySettingsStore';
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
@@ -125,6 +129,24 @@ export function AppPreferenceControl() {
           }
           userPrompt = getUserPrompt();
         }
+        let modelEfforts: Record<string, Record<string, string>> | undefined;
+        if (request.operation === 'model-effort') {
+          const change = request.modelEffort;
+          if (change) {
+            if (change.effort === null) clearProviderModelEffort(change.agent, change.providerId, change.modelId);
+            else setProviderModelEffort(change.agent, change.providerId, change.modelId, change.effort as Effort);
+            if (getProviderModelEffort(change.agent, change.providerId, change.modelId) !== (change.effort ?? undefined)) throw new Error('MODEL_EFFORT_NOT_SAVED');
+          }
+          modelEfforts = modelEffortSnapshot();
+        }
+        if (request.operation === 'new-task-history') {
+          const history: unknown = request.newTaskHistory;
+          validateNewTaskPreferenceHistory(history);
+          const ownerId = request.ownerStamp.dataOwnerId;
+          if (!ownerId) throw new Error('OWNER_REQUIRED');
+          applyReturnedNewTaskHistory(history, ownerId);
+          if (!isDataOwnerPushStampCurrent(request.ownerStamp)) throw new Error('OWNER_CHANGED');
+        }
         if (request.operation === 'reset') throw new Error('RESET_NOT_SUPPORTED');
         if (request.operation === 'update') {
           const patch = appPreferenceSchema.parse(request.patch);
@@ -138,7 +160,8 @@ export function AppPreferenceControl() {
         }
         bridge.reply({ requestId: request.requestId, ok: true, state: current.current.state,
           themeFamilies: getThemeFamilies().map(family => family.id), ...(modelVisibility ? { modelVisibility } : {}),
-          ...(modelEngines ? { modelEngines } : {}), ...(userPrompt !== undefined ? { userPrompt } : {}) });
+          ...(modelEngines ? { modelEngines } : {}), ...(userPrompt !== undefined ? { userPrompt } : {}),
+          ...(modelEfforts ? { modelEfforts } : {}) });
       } catch { bridge.reply({ requestId: request.requestId, ok: false }); }
     });
   }, []);

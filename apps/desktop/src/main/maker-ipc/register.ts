@@ -157,10 +157,6 @@ import { configureCloudMemoryManagement, configureCloudMcpCredentials } from '..
 import { cloudMcpCredentialStore } from '../secrets/providerSecretStore.js';
 import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudManagementExecution, registerPrivateCloudManagementCall } from '../host-settings/managementCalls.js';
 import { configureAdditionalModelRuntime } from '../host-settings/additionalRuntime.js';
-import { installHostNewMakerDefaultsSource } from '../host-settings/cache.js';
-import { hostOwnsNewTaskDefaults, onNewTaskDefaultsChanged, commitNewTaskDefaults, applyHostRemoteDraftPreference } from '../host-settings/new-task-defaults.js';
-import { refreshSettingsModelRecommendation } from '../host-settings/catalog.js';
-import { onAuthStateChange } from '../authManager.js';
 import type { BuiltinApiKeyBridgeDeps } from '../secrets/builtinApiKeyBridge.js';
 import { setBotInvitationWelcomeDispatch } from './botInvitation.js';
 import { createQueuedDispatchReceipts } from './queuedDispatchReceipts.js';
@@ -6639,19 +6635,13 @@ export function applyNewMakerDraftRoute(route: BotModelRoute): void {
 export function registerModelVisibilitySyncIpc(): void {
   registerPreferenceControlIpc();
   registerModelFavoritesSync(broadcastToAllWindows);
-  if (hostOwnsNewTaskDefaults()) {
-    // 托管云实例的新任务默认由 Host 保存；普通桌面仍由 Renderer 草稿推送镜像。
-    installHostNewMakerDefaultsSource();
-    onNewTaskDefaultsChanged(broadcastNewMakerDraftChanged);
-  } else {
-    configureAppDefaultModelSelection((appDefaultSelection) => {
-      broadcastToAllWindows(MAKER_PUSH.DRAFT_PREF_APPLY, {
-        agent: appDefaultSelection.route.harness === 'claude' ? 'claude-code' : appDefaultSelection.route.harness,
-        providerId: appDefaultSelection.route.providerId ?? '', modelId: appDefaultSelection.route.model,
-        active: true, appDefaultSelection,
-      });
+  configureAppDefaultModelSelection((appDefaultSelection) => {
+    broadcastToAllWindows(MAKER_PUSH.DRAFT_PREF_APPLY, {
+      agent: appDefaultSelection.route.harness === 'claude' ? 'claude-code' : appDefaultSelection.route.harness,
+      providerId: appDefaultSelection.route.providerId ?? '', modelId: appDefaultSelection.route.model,
+      active: true, appDefaultSelection,
     });
-  }
+  });
   // Register with model visibility before the first window; a cold-start preference
   // push must not be lost while the larger Maker bundle is still initializing.
   ipcMain.on(MAKER_SEND.SYNC_NEW_MAKER_DRAFT, (event, payload: unknown) => {
@@ -6690,12 +6680,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   });
   configureCloudMemoryManagement(maker);
   configureCloudMcpCredentials(cloudMcpCredentialStore);
-  // 推荐只取执行端真实目录，生命周期预热保证没有 Renderer 时也能创建后续任务。
-  const refreshTaskRecommendation = () => {
-    if (hostOwnsNewTaskDefaults()) void refreshSettingsModelRecommendation().catch(() => {});
-  };
-  refreshTaskRecommendation();
-  onAuthStateChange(refreshTaskRecommendation);
   // Catalog updates and explicit budget edits share one serial refresh boundary.
   let contextRefresh = Promise.resolve();
   /**
@@ -6756,7 +6740,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     contextRefresh = next.catch(() => {});
     return next;
   };
-  configureAdditionalModelRuntime({ pricingChanged: broadcastReferenceModelPricing, refreshTools: async () => { await refreshCodexMcpEnvironment({ restartCodex: restartCodexAfterAuthModeChange, shutdownCodexEnvironment, onDeferred: () => deferredCodexRestartHolder?.schedule('Codex Browser capability routing changed'), logger: log }); }, refreshContext: () => refreshContextSettings(), accessChanged: () => { broadcastToAllWindows(MAKER_PUSH.PROVIDER_CHANGED, {}); refreshTaskRecommendation(); } });
+  configureAdditionalModelRuntime({ pricingChanged: broadcastReferenceModelPricing, refreshTools: async () => { await refreshCodexMcpEnvironment({ restartCodex: restartCodexAfterAuthModeChange, shutdownCodexEnvironment, onDeferred: () => deferredCodexRestartHolder?.schedule('Codex Browser capability routing changed'), logger: log }); }, refreshContext: () => refreshContextSettings(), accessChanged: () => { broadcastToAllWindows(MAKER_PUSH.PROVIDER_CHANGED, {}); } });
   /**
    * 预算对账（**锁内**，调用方已持 send 锁）：把偏好文件里的当前预算落到活实例。
    *
@@ -6900,7 +6884,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   };
 
   setModelContextRuntimeRefreshListener(() => {
-    refreshTaskRecommendation();
     if (!getMakerIfReady()) return;
     void refreshContextSettings().catch((error) => log.warn('model default context refresh failed', {
       error: error instanceof Error ? error.message : String(error),
@@ -7533,7 +7516,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // newMakerDefaultsCache(那只是镜像、renderer 才是真相),而是把 pref 转发给自身 renderer
   // (DRAFT_PREF_APPLY,非转发 channel,只落本地窗口),由 renderer 调它原来的本地 setter 写真实草稿;
   // 草稿变更经既有 SYNC_NEW_MAKER_DRAFT re-mirror + 上面的 NEW_MAKER_DRAFT_CHANGED 广播回控制端。
-  ipcMain.handle(MAKER_INVOKE.APPLY_NEW_MAKER_DRAFT_PREF, async (event, pref: unknown) => {
+  ipcMain.handle(MAKER_INVOKE.APPLY_NEW_MAKER_DRAFT_PREF, (_e, pref: unknown) => {
     if (!pref || typeof pref !== 'object') throwIpcError('INVALID_PARAMS', 'pref required');
     const p = pref as {
       agent?: unknown;
@@ -7576,22 +7559,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     ) {
       throwIpcError('INVALID_PARAMS', 'taskProviderId must be a string of at most 256 chars');
     }
-    if (hostOwnsNewTaskDefaults()) {
-      // 托管云实例直接写执行 Host 的偏好；无 Renderer 时同样落盘并广播，不等窗口转发/ACK。
-      if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
-      await applyHostRemoteDraftPreference({
-        agent: p.agent,
-        providerId: p.providerId ?? '',
-        modelId: p.modelId,
-        active: p.active === true,
-        ...(typeof p.markModelChoice === 'boolean' ? { markModelChoice: p.markModelChoice } : {}),
-        ...(p.taskProviderId ? { taskProviderId: p.taskProviderId } : {}),
-        ...(p.effort !== undefined ? { effort: p.effort } : {}),
-        ...(p.fast !== undefined ? { fast: p.fast } : {}),
-        ...(p.thinking !== undefined ? { thinking: p.thinking } : {}),
-      }).catch(() => throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
-      return;
-    }
     broadcastToAllWindows(MAKER_PUSH.DRAFT_PREF_APPLY, {
       agent: p.agent,
       providerId: p.providerId ?? '',
@@ -7615,10 +7582,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     assertTrustedCaller: (event) =>
       assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]),
     broadcast: broadcastToAllWindows,
-    // 托管云实例由 Host 保存，广播只在真实提交后发生。
-    ...(hostOwnsNewTaskDefaults()
-      ? { savePreference: async (enabled: boolean) => { await commitNewTaskDefaults({ set: { worktree: enabled } }); } }
-      : {}),
   });
 
   // worktree 源分支不是设备全局草稿字段，而是 canonical baseRepo scoped 的 host 真相。
@@ -7636,7 +7599,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // 旧控制端的 device-link 会话模型预设写穿兼容入口。转发给被控端 renderer 后,renderer 将值
   // 收敛到 providerModelMemory 全局预设,同时经 SYNC_SESSION_MODEL_PREF 回流供旧控制端的
   // session-scoped 镜像显示。新控制端统一走 APPLY_NEW_MAKER_DRAFT_PREF。
-  ipcMain.handle(MAKER_INVOKE.SET_SESSION_MODEL_PREF, async (event, pref: unknown) => {
+  ipcMain.handle(MAKER_INVOKE.SET_SESSION_MODEL_PREF, (_e, pref: unknown) => {
     if (!pref || typeof pref !== 'object') throwIpcError('INVALID_PARAMS', 'pref required');
     const p = pref as {
       sessionId?: unknown;
@@ -7663,24 +7626,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     }
     if (p.fast !== undefined && (typeof p.fast !== 'boolean' && p.fast !== 'ultrafast')) {
       throwIpcError('INVALID_PARAMS', 'fast must be boolean or ultrafast');
-    }
-    if (hostOwnsNewTaskDefaults()) {
-      // 托管云实例直接写 Host，成功后只向对应会话广播镜像，不依赖 Renderer 存活。
-      if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
-      const ownerScope = activeOwnerScopeKey();
-      await applyHostRemoteDraftPreference({ agent: p.agent, providerId: p.providerId, modelId: p.model, active: false,
-        ...(p.effort !== undefined ? { effort: p.effort } : {}), ...(p.fast !== undefined ? { fast: p.fast } : {}),
-      }).catch(() => throwIpcError('PRECONDITION_FAILED', 'Host preference save failed'));
-      if (isAppSessionBoundaryPending() || activeOwnerScopeKey() !== ownerScope) throwIpcError('PRECONDITION_FAILED', 'Owner changed');
-      tapWindowBroadcast(MAKER_PUSH.SESSION_MODEL_PREF_CHANGED, {
-        sessionId: p.sessionId,
-        agent: p.agent,
-        providerId: p.providerId,
-        model: p.model,
-        ...(p.effort !== undefined ? { effort: p.effort } : {}),
-        ...(p.fast !== undefined ? { fast: p.fast } : {}),
-      });
-      return;
     }
     broadcastToAllWindows(MAKER_PUSH.SESSION_PREF_APPLY, {
       sessionId: p.sessionId,
@@ -11715,15 +11660,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     setPendingHandoff: (sessionId, handoff, expectedGeneration) =>
       agentHandoffPending.set(sessionId, handoff, expectedGeneration),
     readPendingHandoffGeneration: (sessionId) => agentHandoffPending.readGeneration(sessionId),
-    rememberThinkingIntent: async ({ agentKind, providerId, model, thinking }) => {
-      if (hostOwnsNewTaskDefaults()) {
-        if (!providerId || !model) return;
-        // 托管云实例由 Host 保存模型偏好，没有本机 Renderer 时也在 bootstrap 前落盘。
-        await applyHostRemoteDraftPreference({
-          agent: agentKind, providerId, modelId: model, active: false, thinking,
-        });
-        return;
-      }
+    rememberThinkingIntent: ({ agentKind, providerId, model, thinking }) => {
       setThinkingEnabledInMemory(agentKind, providerId, model, thinking);
       // 同步本机 renderer 的记忆：主进程写的只是镜像，renderer 才是 providerModelMemory
       // 的真相源。不写回这一笔，renderer 的全量快照会一直「尚未包含该选择」，提交时写入

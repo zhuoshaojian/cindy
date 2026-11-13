@@ -21,7 +21,7 @@ vi.mock('../../maker-host/active-catalog.js', () => ({
 }));
 vi.mock('../../app-settings/preferences.js', () => ({
   manageAppPreferences: async (operation: string, _patch: unknown, visibility?: { target: { providerId: string; agent: string; modelId: string }; visible: boolean | null; defaultEnabled?: boolean },
-    engine?: { providerId: string; modelId: string; agent: 'cc' | 'codex' | 'pi' | null }) => {
+    { modelEngine: engine }: { modelEngine?: { providerId: string; modelId: string; agent: 'cc' | 'codex' | 'pi' | null } } = {}) => {
     if (!window.answers) throw new Error('PREFERENCE_WINDOW_NOT_READY');
     if (operation === 'model-visibility') {
       window.visibilityCalls.push(visibility);

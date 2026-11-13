@@ -1,11 +1,10 @@
 import { isAdditionalSettingsDomain, isModelSettingsDomain, additionalSettingsMetadata } from '../../shared/settingsEditableCatalog.js';
 import { readAdditionalSettings, commitAdditionalSettings } from './additional.js';
-import { isHostSettingsDomain, normalizeHostSettingsChange, type HostSettingsSnapshot, type HostSettingsDomain, type HostSettingsUpdate, type NewTaskDefaultSettings, type HostSettingsReceipt } from '../../shared/hostSettings.js';
+import { isHostSettingsDomain, normalizeHostSettingsChange, type HostSettingsSnapshot, type HostSettingsDomain, type HostSettingsUpdate, type HostSettingsReceipt } from '../../shared/hostSettings.js';
 import { inspectAppearanceSettings, onAppearanceSettingsChanged } from '../appearance-settings-store.js';
 import { commitThroughUpstreamSection, isUpstreamSectionDomain } from './upstreamSections.js';
 import { inspectDatabaseSizeWarningSettings, onDatabaseSizeWarningSettingsChanged, commitDatabaseSizeWarningSettings } from '../database-size-warning-settings.js';
 import { readPersonalization, commitPersonalization, currentSettingsOwner, assertSettingsOwner, settingsOwnerKey } from './personalization.js';
-import { inspectNewTaskDefaults, onNewTaskDefaultsChanged, commitNewTaskDefaults } from './new-task-defaults.js';
 import { SettingsOperationJournal, HostSettingsError } from './operations.js';
 import { OverrideSettingsError } from '../maker-host/override-settings-file.js';
 
@@ -14,7 +13,8 @@ export function readHostSettings(): HostSettingsSnapshot {
   const ownerStamp = currentSettingsOwner();
   return {
     ownerStamp,
-    newTaskDefaults: inspectNewTaskDefaults(),
+    // New-task defaults stay in the app window's draft, as upstream keeps them.
+    newTaskDefaults: { status: 'unavailable', revision: null },
     // The custom instructions live in the app window and are read asynchronously (inspectDomain).
     personalization: { status: 'unavailable', revision: null },
     databaseWarning: inspectDatabaseSizeWarningSettings(),
@@ -22,7 +22,7 @@ export function readHostSettings(): HostSettingsSnapshot {
   };
 }
 export function onHostSettingsChanged(listener: () => void): () => void {
-  const off = [onNewTaskDefaultsChanged(listener), onDatabaseSizeWarningSettingsChanged(listener), onAppearanceSettingsChanged(listener)];
+  const off = [onDatabaseSizeWarningSettingsChanged(listener), onAppearanceSettingsChanged(listener)];
   return () => off.forEach(dispose => dispose());
 }
 export interface HostSettingsCaller {
@@ -37,7 +37,6 @@ interface Application {
   };
   databaseWarning: () => void;
   additional?: (domain: import('../../shared/settingsEditableCatalog.js').AdditionalSettingsDomain, revision: string, changedKeys?: readonly string[]) => Promise<void>;
-  validateNewTaskDefaults: (value: NewTaskDefaultSettings) => Promise<void>;
 }
 let application: Application | null = null;
 export function configureHostSettingsApplication(value: Application): void { application = value; }
@@ -88,13 +87,6 @@ export async function updateHostSettings(caller: HostSettingsCaller, input: Host
     assertCurrent();
     if (before.status !== 'ready') throw new HostSettingsError('UNREADABLE');
     if (before.revision !== input.expectedRevision) throw new HostSettingsError('CONFLICT');
-    if (input.domain === 'newTaskDefaults' && [...Object.keys(change.set), ...change.clear].some(key => !['worktree', 'planMode'].includes(key))) {
-      const state = inspectNewTaskDefaults();
-      if (state.status !== 'ready' || !application) throw new HostSettingsError('NOT_READY');
-      const next = { ...state.value, ...Object.fromEntries(change.clear.map(k => [k, state.defaults[k as keyof NewTaskDefaultSettings]])), ...change.set } as NewTaskDefaultSettings;
-      await application.validateNewTaskDefaults(next);
-      assertCurrent();
-    }
     const modelAdapter = isModelSettingsDomain(change.domain) ? application?.models : null;
     if (isModelSettingsDomain(change.domain) && !modelAdapter) throw new HostSettingsError('NOT_READY');
     const modelValidation = modelAdapter && isModelSettingsDomain(change.domain)
@@ -121,7 +113,7 @@ export async function updateHostSettings(caller: HostSettingsCaller, input: Host
       }
       else if (change.domain === 'databaseWarning') revision = (await commitDatabaseSizeWarningSettings(change as never, options)).revision;
       else if (change.domain === 'personalization') revision = (await commitPersonalization(change as never, options)).revision ?? undefined;
-      else revision = (await commitNewTaskDefaults(change as never, options)).revision;
+      else throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
     } catch (error) {
       if (error instanceof OverrideSettingsError) throw new HostSettingsError(error.code);
       throw error;

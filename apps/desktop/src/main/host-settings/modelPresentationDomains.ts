@@ -114,7 +114,7 @@ export async function commitModelPresentationDomain(domain: ModelPresentationDom
     const wanted = new Map(desired.map(entry => [engineKey(entry.providerId, entry.modelId), entry]));
     const before = new Map((current.value.entries as Entry[]).map(entry => [engineKey(entry.providerId, entry.modelId), entry]));
     const save = async (providerId: string, modelId: string, agent: Engine | null) => {
-      const engines = (await manageAppPreferences('model-engine', undefined, undefined, { providerId, modelId, agent })).modelEngines ?? {};
+      const engines = (await manageAppPreferences('model-engine', undefined, undefined, { modelEngine: { providerId, modelId, agent } })).modelEngines ?? {};
       if ((engines[engineKey(providerId, modelId)] ?? null) !== agent) throw new HostSettingsError('SAVE_FAILED');
       assertCurrent();
     };

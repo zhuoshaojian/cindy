@@ -1365,17 +1365,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   } satisfies CloudSettingsRendererApi,
   hostSettings: {
     hostOwned: ipcRenderer.sendSync('host-settings:host-owned') === true,
-    get: () => ipcRenderer.invoke('host-settings:get'),
-    update: (input) => ipcRenderer.invoke('host-settings:update', input),
-    saveHistory: (input) => ipcRenderer.invoke('host-settings:save-history', input),
-    onChanged: (callback) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        stamp: import('../shared/hostSettings').SettingsOwnerStamp | null,
-      ) => callback(stamp);
-      ipcRenderer.on('host-settings:changed', listener);
-      return () => ipcRenderer.removeListener('host-settings:changed', listener);
-    },
   } satisfies import('../shared/hostSettings').HostSettingsRendererApi,
   appearanceSettings: {
     importWallpaper: () => ipcRenderer.invoke('appearance-settings:import-wallpaper'),

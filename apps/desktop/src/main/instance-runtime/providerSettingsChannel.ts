@@ -48,8 +48,8 @@ export interface ProviderSettingsChannelDeps {
   /** Display-only routing (upstream DeviceLink projection) for built-in and organization rows. */
   projectRouting(routing: unknown): unknown;
   resolveLogoKind(providerId: string, routing: unknown): string | null;
-  /** Remembered reasoning effort by memory slot and model (Host new-task history). */
-  readEfforts(): Record<string, Record<string, string>>;
+  /** Remembered reasoning effort by memory slot and model, as the app window keeps it. */
+  readEfforts(): Promise<Record<string, Record<string, string>>>;
   applyEffort(pref: {
     agent: AgentKind;
     providerId: string;
@@ -166,7 +166,7 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
         ? raw.providerOrder.filter((id): id is string => typeof id === 'string')
         : [],
       visibility,
-      efforts: deps.readEfforts(),
+      efforts: await deps.readEfforts(),
       supportedOps: [...CLOUD_PROVIDER_SETTINGS_OPS],
       shareActions: [...CLOUD_PROVIDER_SHARE_ACTIONS],
     };
@@ -287,7 +287,7 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
           ok: true,
           ownerGeneration: owner.ownerGeneration,
           catalogChanged: false,
-          value: deps.readEfforts(),
+          value: await deps.readEfforts(),
         };
       case 'model-edit':
         await deps.editModel(

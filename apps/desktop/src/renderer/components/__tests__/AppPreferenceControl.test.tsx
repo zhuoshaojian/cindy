@@ -85,6 +85,49 @@ describe('AppPreferenceControl', () => {
     setUserPromptOwner(null);
   });
 
+  it('reads and saves a model\'s reasoning effort in the model memory the model settings use', async () => {
+    const memory = await import('@/state/providerModelMemory');
+    memory.setProviderModelMemoryOwner('owner');
+    render(<AppPreferenceControl />);
+    expect((await send(request('model-effort'))).modelEfforts).toEqual({});
+    const saved = await send(request('model-effort', undefined, { modelEffort: { agent: 'codex', providerId: 'xd', modelId: 'gpt', effort: 'high' } }));
+    expect(saved.ok).toBe(true);
+    expect(saved.modelEfforts?.['codex:*']).toEqual({ gpt: 'high' });
+    expect(memory.getProviderModelEffort('codex', 'xd', 'gpt')).toBe('high');
+    const cleared = await send(request('model-effort', undefined, { modelEffort: { agent: 'codex', providerId: 'xd', modelId: 'gpt', effort: null } }));
+    expect(cleared.ok).toBe(true);
+    expect(memory.getProviderModelEffort('codex', 'xd', 'gpt')).toBeUndefined();
+    memory.setProviderModelMemoryOwner(null);
+  });
+
+  it('writes back new-task choices an earlier cloud build kept, through the new-task setters', async () => {
+    const draft = await import('@/state/newMakerDraft');
+    const memory = await import('@/state/providerModelMemory');
+    draft.setNewMakerDraftOwner('owner'); memory.setProviderModelMemoryOwner('owner');
+    memory.setProviderModelEffort('codex', 'xd', 'cleared-there', 'low');
+    localStorage.setItem('xdt:newMakerDraft:v1:owner:workspace', JSON.stringify({ newChatDefaultPermissionMode: 'bypassPermissions' }));
+    render(<AppPreferenceControl />);
+    const newTaskHistory = {
+      vendor: 'codex' as const, modelChosenByVendor: { codex: true }, defaultTupleCustomized: true, defaultTupleSelectionCustomized: true,
+      lastByVendor: { codex: { model: 'gpt', providerId: 'xd', effort: 'high', planMode: true } },
+      effortByModel: {}, fastModeByModel: { gpt: true }, worktreeEnabled: true, worktreePreferenceCustomized: true,
+      providerModelMemory: { 'codex:xd': { lastModel: 'gpt', effortByModel: { gpt: 'high' }, fastByModel: { gpt: true }, thinkingByModel: { gpt: false } } },
+    };
+    expect((await send(request('new-task-history', undefined, { newTaskHistory }))).ok).toBe(true);
+    const saved = draft.getDraft();
+    expect(saved).toMatchObject({ vendor: 'codex', worktreeEnabled: true, defaultTupleCustomized: true, newChatDefaultPermissionMode: 'bypassPermissions' });
+    expect(saved.modelChosenByVendor.codex).toBe(true);
+    expect(saved.lastByVendor.codex).toMatchObject({ model: 'gpt', providerId: 'xd', effort: 'high', planMode: true });
+    expect(memory.getProviderModelEffort('codex', 'xd', 'gpt')).toBe('high');
+    expect(memory.getProviderModelFast('codex', 'xd', 'gpt')).toBe(true);
+    expect(memory.getProviderModelThinking('codex', 'xd', 'gpt')).toBe(false);
+    expect(memory.getProviderModelEffort('codex', 'xd', 'cleared-there')).toBeUndefined();
+    expect(localStorage.getItem('xdt:newMakerDraft:v1:owner:workspace')).toBeNull();
+    expect(JSON.parse(localStorage.getItem('xdt:newMakerDraft:v1:owner') ?? '{}')).toMatchObject({ vendor: 'codex' });
+    expect((await send(request('new-task-history', undefined, { newTaskHistory: { vendor: 'nope' } as never }))).ok).toBe(false);
+    draft.setNewMakerDraftOwner(null); memory.setProviderModelMemoryOwner(null);
+  });
+
   it('refuses a value outside the preference grammar', async () => {
     render(<AppPreferenceControl />);
     const result = await send(request('update', { sidebarTasks: 'card' } as never));

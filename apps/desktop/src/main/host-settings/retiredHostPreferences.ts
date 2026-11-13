@@ -2,6 +2,7 @@ import { createLogger } from '../logger.js';
 import { returnRetiredDesktopPreferences } from './retiredDesktopPreferences.js';
 import { returnRetiredModelPresentation } from './retiredModelPresentation.js';
 import { returnRetiredPersonalization } from './retiredPersonalization.js';
+import { returnRetiredNewTaskDefaults } from './retiredNewTaskDefaults.js';
 
 const log = createLogger('retired-host-preferences');
 type Outcome = 'none' | 'returned' | 'retry';
@@ -10,6 +11,7 @@ const RETURNS: ReadonlyArray<{ name: string; run(): Promise<Outcome> }> = [
   { name: 'desktop preferences', run: () => returnRetiredDesktopPreferences() },
   { name: 'model visibility, engines and favorites', run: () => returnRetiredModelPresentation() },
   { name: 'custom instructions', run: () => returnRetiredPersonalization() },
+  { name: 'new-task defaults', run: () => returnRetiredNewTaskDefaults() },
 ];
 
 /** Cloud instances only. Tries after startup and then every half minute for up to an hour. */

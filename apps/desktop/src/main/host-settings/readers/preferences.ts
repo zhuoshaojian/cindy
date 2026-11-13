@@ -3,7 +3,6 @@ import { AGENT_ISLAND_SOUND_EVENTS } from '../../../shared/agentIsland.js';
 import type { SettingsSnapshotFieldId } from '../../../shared/settingsReadCatalog.js';
 import { inspectAppearanceSettings } from '../../appearance-settings-store.js';
 import { inspectDatabaseSizeWarningSettings } from '../../database-size-warning-settings.js';
-import { inspectNewTaskDefaultsForSnapshot } from '../new-task-defaults.js';
 import { inspectedValue, type ReadonlySettingsInspection, type ReadonlySettingInspection } from '../readTypes.js';
 
 const firstDomains = {
@@ -26,14 +25,14 @@ export const PREFERENCE_SETTINGS_FIELD_IDS = [
 
 type NativeState = HostSettingState<object> | { status: 'migrationPending'; revision: null };
 export interface PreferenceSettingsReaders {
-  newTaskDefaults: typeof inspectNewTaskDefaultsForSnapshot;
+  newTaskDefaults: () => NativeState;
   personalization: () => NativeState;
   databaseWarning: typeof inspectDatabaseSizeWarningSettings;
   appearance: typeof inspectAppearanceSettings;
 }
 const stores: PreferenceSettingsReaders = {
-  // The custom instructions live in the app window, out of this synchronous read.
-  newTaskDefaults: inspectNewTaskDefaultsForSnapshot, personalization: () => ({ status: 'unavailable', revision: null }),
+  // New-task defaults and custom instructions live in the app window, out of this synchronous read.
+  newTaskDefaults: () => ({ status: 'unavailable', revision: null }), personalization: () => ({ status: 'unavailable', revision: null }),
   databaseWarning: inspectDatabaseSizeWarningSettings, appearance: inspectAppearanceSettings,
 };
 

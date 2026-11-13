@@ -7,10 +7,7 @@ import * as authManager from '../authManager.js';
 import { projectRoutingForDisplay, setCloudPrivateInvokeHandler } from '../device-link/dispatch.desktop.js';
 import { callCloudManagement } from '../host-settings/managementCalls.js';
 import { modelVisibilityRevision, setModelVisibility } from '../host-settings/modelPresentationDomains.js';
-import {
-  applyHostModelEffort,
-  readNewTaskPreferenceHistory,
-} from '../host-settings/new-task-defaults.js';
+import { manageAppPreferences } from '../app-settings/preferences.js';
 import { commitPersonalization, currentSettingsOwner, readPersonalization } from '../host-settings/personalization.js';
 import { createLogger } from '../logger.js';
 import { getCustomProvider } from '../maker-host/custom-provider-store.js';
@@ -56,13 +53,15 @@ export function registerCloudProviderSettings(): () => void {
       projectRouting: projectRoutingForDisplay,
       resolveLogoKind: (providerId, routing) =>
         resolveProviderLogoKind(providerId, routing as ProviderLogoRouting | undefined),
-      readEfforts: () =>
-        Object.fromEntries(
-          Object.entries(readNewTaskPreferenceHistory()?.providerModelMemory ?? {}).map(
-            ([slot, memory]) => [slot, { ...memory.effortByModel }],
-          ),
-        ),
-      applyEffort: (pref) => applyHostModelEffort(pref),
+      // The window keeps per-model reasoning effort, as upstream does; this is the providers page's own setter.
+      // A window that does not answer leaves the efforts shown as defaults rather than failing the whole list.
+      readEfforts: async () => {
+        try { return (await manageAppPreferences('model-effort')).modelEfforts ?? {}; }
+        catch { return {}; }
+      },
+      applyEffort: async (modelEffort) => {
+        await manageAppPreferences('model-effort', undefined, undefined, { modelEffort });
+      },
       shareCommand: (command) => executeProviderShareGuestCommand(command),
       setup,
       modelAccess: cloudModelAccessControl,

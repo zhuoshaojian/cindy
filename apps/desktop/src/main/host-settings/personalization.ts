@@ -1,7 +1,5 @@
-import path from 'node:path';
-import { app } from 'electron';
 import { createHmac, randomBytes } from 'node:crypto';
-import { dataOwnerStorageKey, isAppSessionBoundaryPending, peekCommittedAppSession } from '../appSessionState.js';
+import { isAppSessionBoundaryPending, peekCommittedAppSession } from '../appSessionState.js';
 import type { OverrideSettingsCommitOptions, OverrideSettingsMutation } from '../maker-host/override-settings-file.js';
 import { manageAppPreferences } from '../app-settings/preferences.js';
 import type { PersonalizationSettings, SettingsOwnerStamp, HostSettingState } from '../../shared/hostSettings.js';
@@ -22,14 +20,6 @@ export function currentSettingsOwner(): SettingsOwnerStamp | null {
   const session = peekCommittedAppSession();
   if (!session || !session.dataOwnerId || isAppSessionBoundaryPending()) return null;
   return { dataOwnerId: session.dataOwnerId, ownerGeneration: session.generation };
-}
-/** 两个 Host owner store 共用的纯定位；不经过会加载或迁移会话的通用 getter。 */
-export function settingsOwnerFilePath(fileName: 'host-new-task-defaults.json'): string {
-  const owner = currentSettingsOwner();
-  if (!owner?.dataOwnerId) throw new HostSettingsError('OWNER_CHANGED');
-  const userDataPath = app.getPath('userData');
-  if (!path.isAbsolute(userDataPath)) throw new HostSettingsError('OWNER_CHANGED');
-  return path.join(userDataPath, 'owners', dataOwnerStorageKey(owner.dataOwnerId), fileName);
 }
 export function settingsOwnerKey(stamp: SettingsOwnerStamp): string {
   return `${stamp.dataOwnerId ?? 'none'}:${stamp.ownerGeneration}`;
@@ -80,7 +70,7 @@ export async function commitPersonalization(mutation: OverrideSettingsMutation<P
   const next = mutation.clear?.includes('userPrompt') ? '' : mutation.set?.userPrompt ?? before.value.userPrompt;
   if (typeof next !== 'string' || next.length > 8000) throw new HostSettingsError('INVALID_PARAMS');
   let saved: string | undefined;
-  try { saved = (await manageAppPreferences('user-prompt', undefined, undefined, undefined, next)).userPrompt; }
+  try { saved = (await manageAppPreferences('user-prompt', undefined, undefined, { userPrompt: next })).userPrompt; }
   catch { throw new HostSettingsError('SAVE_FAILED'); }
   assertCurrent();
   if (saved !== next) throw new HostSettingsError('SAVE_FAILED');

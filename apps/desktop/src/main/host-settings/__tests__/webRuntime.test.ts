@@ -18,7 +18,7 @@ vi.mock('../../appearance-settings-ipc.js', async () => {
 const appWindow = vi.hoisted(() => ({ userPrompt: '' }));
 vi.mock('../../app-settings/preferences.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../app-settings/preferences.js')>(),
-  manageAppPreferences: async (operation: string, _patch?: unknown, _visibility?: unknown, _engine?: unknown, userPrompt?: string) => {
+  manageAppPreferences: async (operation: string, _patch?: unknown, _visibility?: unknown, { userPrompt }: { userPrompt?: string } = {}) => {
     if (operation !== 'user-prompt') throw new Error('PREFERENCE_WINDOW_NOT_READY');
     if (userPrompt !== undefined) appWindow.userPrompt = userPrompt;
     return { value: {}, userPrompt: appWindow.userPrompt };
@@ -38,7 +38,7 @@ vi.mock('../managementRuntime.js', () => ({
   startCloudManagementMaintenance: vi.fn(() => () => {}),
 }));
 vi.mock('../../maker-host/model-visibility-mirror.js', () => ({ getModelVisibilityOverride: () => undefined }));
-vi.mock('../catalog.js', () => ({ refreshSettingsModelRecommendation: async () => ({ providers: [], agents: [], assertCurrent() {} }) }));
+vi.mock('../catalog.js', () => ({ readSettingsModelCatalog: async () => ({ providers: [], agents: [], assertCurrent() {} }) }));
 import { executeWebSettingsRequest } from '../webRuntime.js';
 import { configureHostSettingsApplication } from '../index.js';
 import { settingsWebResultSchema, type SettingsWebCommand, type SettingsWebEnvelope } from '../../../shared/settingsWeb.js';
@@ -46,7 +46,7 @@ const input = (command: SettingsWebCommand, sessionKey = 'a'.repeat(64)): Settin
 beforeEach(() => {
   isolated.root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-web-settings-')); isolated.generation += 1;
   appWindow.userPrompt = '';
-  configureHostSettingsApplication({ databaseWarning() {}, validateNewTaskDefaults: async () => {} });
+  configureHostSettingsApplication({ databaseWarning() {} });
 });
 afterEach(() => fs.rmSync(isolated.root, { recursive: true, force: true }));
 describe('web adapter uses actual Host settings files', () => {
@@ -75,7 +75,6 @@ describe('web adapter uses actual Host settings files', () => {
     expect(await executeWebSettingsRequest(input({ kind: 'read', domain: 'databaseWarning' }), () => {})).toMatchObject({ settings: { value: { thresholdGiB: 10, disabled: false }, customizedKeys: [] } });
   });
   it.each([
-    ['newTaskDefaults', { planMode: true }],
     ['personalization', { userPrompt: 'fixture custom prompt' }],
     ['appearance', { uiSize: 16 }],
   ] as const)('reads and writes %s with a response accepted by the actual wire schema', async (domain, set) => {
@@ -89,6 +88,10 @@ describe('web adapter uses actual Host settings files', () => {
       expect(JSON.stringify(after)).not.toContain('fixture custom prompt');
       expect(appWindow.userPrompt).toBe('fixture custom prompt');
     }
+  });
+  it('reports new-task defaults as kept by the app window, like any desktop', async () => {
+    expect(settingsWebResultSchema.parse(await executeWebSettingsRequest(input({ kind: 'read', domain: 'newTaskDefaults' }), () => {})))
+      .toMatchObject({ ok: true, settings: { status: 'unavailable', domain: 'newTaskDefaults' } });
   });
   it('rejects a revision from another browser session and never changes the file', async () => {
     const before = await executeWebSettingsRequest(input({ kind: 'read', domain: 'databaseWarning' }), () => {});

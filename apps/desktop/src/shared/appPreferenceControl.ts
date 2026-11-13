@@ -29,12 +29,16 @@ export interface AppPreferenceRequest {
   requestId: string;
   ownerStamp: DataOwnerPushStamp;
   expiresAt: number;
-  operation: 'get' | 'update' | 'reset' | 'model-visibility' | 'model-engine' | 'user-prompt';
+  operation: 'get' | 'update' | 'reset' | 'model-visibility' | 'model-engine' | 'user-prompt' | 'model-effort' | 'new-task-history';
   modelVisibility?: { target: { providerId: string; agent: 'claude-code' | 'codex' | 'pi'; modelId: string }; visible: boolean | null; defaultEnabled?: boolean };
   /** With operation `model-engine`: the engine to remember for a model, or null to follow the recommendation again; omitted to only read. */
   modelEngine?: { providerId: string; modelId: string; agent: 'cc' | 'codex' | 'pi' | null };
   /** With operation `user-prompt`: the custom instructions to save (empty clears them); omitted to only read. */
   userPrompt?: string;
+  /** With operation `model-effort`: a model's remembered reasoning effort, or null to follow its default; omitted to only read. */
+  modelEffort?: { agent: 'claude-code' | 'codex' | 'pi'; providerId: string; modelId: string; effort: string | null };
+  /** With operation `new-task-history`: new-task choices an earlier cloud build kept outside the window, written back once. */
+  newTaskHistory?: import('./newTaskPreferenceHistory.js').NewTaskPreferenceHistory;
   patch?: AppPreferencePatch;
 }
 export interface AppPreferenceReply {
@@ -47,6 +51,8 @@ export interface AppPreferenceReply {
   modelEngines?: Record<string, 'cc' | 'codex' | 'pi'>;
   /** The saved custom instructions. */
   userPrompt?: string;
+  /** Remembered reasoning effort by memory slot (`agent:providerId`, `agent:*`) and model. */
+  modelEfforts?: Record<string, Record<string, string>>;
 }
 export interface AppPreferenceControlBridge {
   onSettingsChanged(listener: (event: { section: string; ownerStamp: DataOwnerPushStamp }) => void): () => void;

@@ -12,7 +12,7 @@ import { getVisionBridgeSettingsStore } from '../vision-bridge/vision-bridge-set
 import { getBotModelChainSettingsStore, readBotModelChainSettingsState } from '../maker-host/bot-model-chain-settings-store.js';
 import { ownerScopedUserDataPath } from '../appSessionState.js';
 import { currentSettingsOwner } from './personalization.js';
-import { refreshSettingsModelRecommendation } from './catalog.js';
+import { readSettingsModelCatalog } from './catalog.js';
 import { getModelVisibilityOverride } from '../maker-host/model-visibility-mirror.js';
 import { getActiveCatalog, getActiveCatalogRevision } from '../maker-host/active-catalog.js';
 import { getProviderRouteMutationStamp } from '../maker-host/provider-route.js';
@@ -61,7 +61,7 @@ async function currentModelSettings(domain: ModelSettingsDomain): Promise<State>
   return isModelPresentationDomain(domain) ? readModelPresentationDomain(domain) : inspectModelSettings(domain);
 }
 export async function modelSettingsChoices(domain: ModelSettingsDomain): Promise<Record<string, SettingsChoice[]>> {
-  const catalog = await refreshSettingsModelRecommendation();
+  const catalog = await readSettingsModelCatalog();
   const models = catalog.providers.flatMap(provider => provider.connected && !provider.suspended && !provider.modelDiscoveryFailure
     ? catalog.agents.flatMap(agent => provider.agents.includes(agent) ? (provider.models[agent] ?? [])
       .filter(model => isModelSelectableForNewRoute(model, { userProvider: provider.source === 'user' })

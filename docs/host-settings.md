@@ -72,29 +72,24 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 发布前完成可失败的序列化、默认解释及回执构造；发布后不依赖再次读盘才能确认保存。通知订阅者失败不改变写入结果。初始化迁移发现已经初始化时不重写文件、不发布虚假的设置变化。
 
-## Renderer 偏好迁移
+## 应用窗口里的偏好（与上游一致）
 
-托管云实例上，新任务偏好从 Renderer localStorage 迁入 owner-scoped Host 文件，不复制整个 localStorage；个性化与上游一样留在应用窗口。
+云实例与普通桌面一样，新任务默认值、个性化、桌面偏好与模型显示/引擎/收藏/思考档都由应用窗口按上游方式保存（localStorage），Main 只保留上游已有的内存镜像，不另存 Host 正本。设置读取对 `newTaskDefaults` 报告 `unavailable`、写入返回 `UNSUPPORTED_CAPABILITY`；新任务默认值改由新任务页、上游 `cindy_helper` 的默认模型工具和远程草稿（按上游转发给实例窗口）修改。Renderer 只通过 `hostSettings.hostOwned` 得知自己运行在托管云实例上（preload 启动时向 Main 同步查询一次），不再有其余 `host-settings:*` Renderer 通道。
 
-普通桌面沿用上游：新任务偏好留在 Renderer 草稿（localStorage）与 Main 内存镜像，个性化留在 Renderer localStorage 并随新建任务请求带给 Main；不迁移、不写 `host-new-task-defaults.json`，设置读取对 `newTaskDefaults` 与 `personalization` 报告 `unavailable`，写入返回 `UNSUPPORTED_CAPABILITY`。本机个性化设置页在云实例上也与上游一样只有保存（保存空串即不再自定义）；同账号控制端的云设置页另有恢复默认。远程草稿选模、会话模型预设、工作树默认、思考开关回写与 Bot 默认模型仍按上游转发给本机 Renderer；只有云实例由 Main 直接写 Host。Renderer 通过 `hostSettings.hostOwned` 判断，preload 在启动时向 Main 同步查询一次；普通桌面上 Main 只回答这个探测，不注册其余 `host-settings:*` Renderer 通道。
-
-- 导入受 owner/generation 和 revision 保护，仅初始化未迁移领域。Host 已经修改或恢复默认的领域不能被旧 Renderer 覆盖。
-- 初始化标记不随 reset 删除；旧值保留用于人工处理冲突，但不再作为正常读写真值。
-- 新任务偏好保留显式选模标记、各引擎/来源历史型号、per-model tuning、lastModel 与已有权限偏好；不迁草稿正文、附件、工作目录、临时设备或额外可写目录。
-- 远程新任务默认值快照增加兼容可选字段 `hostAuthoritative` 与 `planMode`。新控制端看到 Host 权威标记时保留其显式型号与空态，不用控制端推荐替换；计划默认来自执行 Host，发送任务后不反写为关闭。旧 Host 不带标记时维持既有消费路径；旧控制端忽略新字段，不承诺获得新版显式型号保护。Mobile 原有消费范围不在本轮扩展。
-- Worker 与远程草稿的 effort 优先级保持各自原合同。
-- Renderer 只持有可重建缓存，等待 Host 保存回执后才显示成功。旧回读不能覆盖较新的通知；保存等待期间切换身份不把旧草稿写给新 owner。
-- 云设置页编辑个性化时保留未保存草稿；外部更新（包括实例窗口里的修改）造成 revision 冲突时禁止覆盖，提示保留草稿并重新打开设置。窗口 store 以空串表示未自定义，恢复默认即写回空串。
+- 本机个性化设置页在云实例上也与上游一样只有保存（保存空串即不再自定义）；同账号控制端的云设置页另有恢复默认，编辑时保留未保存草稿，外部更新（包括实例窗口里的修改）造成 revision 冲突时禁止覆盖。
 - 云实例的个性化由执行 Host 在原启动装配点从实例窗口读取（窗口加载中再试两次，仍不应答则拒绝启动），随后沿原顺序追加项目上下文；控制端发来的正文副本不被采用。公共 system prompt 与各引擎拼接顺序不变。
+- 云设置页模型供应商页的思考档经上游 `preferences` 分区新增的 `model-effort` 操作读写窗口的模型记忆，与本机模型设置抽屉用同一组 setter（设置写全局与来源槽，恢复默认删除两处）；窗口未应答时列表照常返回，思考档显示为默认。
+- 只读快照无法同步读取窗口里的值，这些叶子与集合（含 `modelParameterHistory`）与普通桌面一样报告 `unavailable`。
+- 运行态消费（桌面通知、窗口创建期点击行为、Agent Island）沿用上游：由应用窗口的偏好同步给 Main，云实例不另设读取路径。
 
-### 本次新增的 profile 与 owner 正本
+### 早期云版本的 Host 文件（一次性回迁）
 
 - **桌面偏好（与上游一致）**：主题/主题族、语言、侧栏样式、桌面/飞书通知、点击/发送/链接行为、淡入、推荐、消息导航条与网络调试，在云实例上也由应用窗口按上游方式保存（localStorage），不另存 Host 正本。云设置页的 `desktopGeneral` / `desktopChat` / `desktopNotifications` 经上游 `preferences` 分区读写（`host-settings/desktopPreferenceDomains.ts`）：读取须应用窗口应答，未应答时该组为 `unreadable`；是否自定义按值与默认值比较，单字段恢复默认即写回默认值；`ghostPanelRestoreMode` 没有对应偏好，固定读默认值且不可写。上游 `preferences` 分区为此补齐侧栏样式、飞书提醒、切回防误触与网络诊断字段，Agent 与本机设置共用同一入口。早期云版本写下的 `host-desktop-preferences.json` 在启动后经同一分区逐项写回一次，随后改名为 `host-desktop-preferences.returned.json` 保留（`host-settings/retiredDesktopPreferences.ts`）。只读快照无法同步读取窗口里的偏好，这些叶子与普通桌面一样报告 `unavailable`。
 - **模型显示、引擎与收藏（与上游一致）**：在云实例上也由应用窗口的上游 store 保存，不另存 Host 正本。`modelVisibility` 读上游 Main 镜像、经上游 `preferences` 的 `model-visibility` 操作逐个模型修改；`modelEngines` 经该分区新增的 `model-engine` 操作读写（上游可单独接受的小扩展）；`modelFavorites` 经上游收藏请求 `requestModelFavorites`（与其它设备读写收藏同一入口）逐条增删，保留原条目与速度档（`host-settings/modelPresentationDomains.ts`）。云设置页模型供应商页的显示开关同样读上游设备列表的 `modelVisibilityOverrides`、按上游镜像算 CAS。窗口未应答时这些组为 `unreadable`。早期云版本的 `host-model-presentation-preferences.json` 启动后让窗口与其一致一次，再改名为 `.returned.json` 保留（`host-settings/retiredModelPresentation.ts`）；只读快照的这三类集合与普通桌面一样报告 `unavailable`。
 - **个性化（与上游一致）**：个人指令正文在云实例上也由应用窗口的上游 store（`userPromptStore`）保存，不另存 Host 正本（`host-settings/personalization.ts`）。早期云版本的 `host-personalization.json` 启动后写回窗口一次，再改名为 `host-personalization.returned.json` 保留；早期版本从未接管的文件只改名、不改窗口（`host-settings/retiredPersonalization.ts`）。只读快照无法同步读取窗口里的正文，`personalization.customized` 报告 `unavailable`。
-- **提交与缓存**：profile 写入受 profile stamp/revision 保护，owner 写入另受 owner/generation 保护；都在真实锁内 CAS 与原子提交。多窗口冲突只回读，不换 revision 重放旧整表。初始化标记不随恢复默认删除，旧 Renderer 数据不能重新覆盖；首次导入也尊重旧 owner 的 follow-catalog 墓碑和目标显式选择。兼容首帧缓存只能由成功 Host 提交单向更新，不是第二正本。remote viewer 不经过 Host 存储，沿用上游 localStorage hook。
-- **待迁移**：未能证明全新且尚未完成导入的旧 profile/owner 数据返回 `migrationPending`；只有有依据的新 profile 才解释为默认。inspection 不执行导入、不删旧键；完成初始化后，即使没有 Renderer 窗口也能从 Host 读取。
-- **运行态消费**：桌面通知、窗口创建期点击行为与 Agent Island 沿用上游：由应用窗口的偏好同步给 Main，云实例不另设读取路径。
+- **新任务默认值（与上游一致）**：早期云版本的 `host-new-task-defaults.json` 启动后经上游 `preferences` 分区新增的 `new-task-history` 操作写回窗口一次：以文件里的历史为底，叠加当时显式保存的字段；窗口用新任务页自己的 setter 写入显式选模、各引擎上次型号与思考档、计划与工作树默认、默认权限，以及按模型的思考档/Fast/思考开关，并清除那时已恢复默认的思考档与 Fast。随后文件改名为 `host-new-task-defaults.returned.json` 保留；早期版本从未接管或无法读取的文件只改名、不改窗口（`host-settings/retiredNewTaskDefaults.ts`、`renderer/state/returnedNewTaskHistory.ts`）。远程控制端不再收到 `hostAuthoritative` 与 `planMode` 字段，与普通被控电脑一致。
+
+这些回迁在云实例启动约 10 秒后执行，窗口未应答时每 30 秒重试，最多一小时（`host-settings/retiredHostPreferences.ts`）。
 
 ### 云设置页的私有通道（仅托管云实例）
 
@@ -107,7 +102,7 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 ### 共用校验与纯读取边界
 
-字段 validator 只在云端读取（`inspect`）与带版本比对的提交（`commitAtomic`）中执行；本机设置页与上游分区的普通写入（`writePatch` / `writePatchAtomic` / `updateAtomic` / `reset`）保持上游语义，不因云端校验失败或显式写默认值而改变。只在云实例使用的 Host 存储（`atomicOnly`）发布时使用私有唯一临时文件；普通存储仍用上游的临时文件写法。外观、数据库提醒、插件开关、LSP、终端等原生写入链恢复为上游实现，云端写入另走同文件的版本比对提交。inspection 使用有字节上限、拒绝文件软链接的读取 helper，仅 `ENOENT` 按缺失解释；坏文件、权限错误和超限不删除、不修复。新任务默认值文件通过已提交 owner 和当前 profile 纯定位，不经过会加载或迁移登录态的 getter。
+字段 validator 只在云端读取（`inspect`）与带版本比对的提交（`commitAtomic`）中执行；本机设置页与上游分区的普通写入（`writePatch` / `writePatchAtomic` / `updateAtomic` / `reset`）保持上游语义，不因云端校验失败或显式写默认值而改变。只在云实例使用的 Host 存储（`atomicOnly`）发布时使用私有唯一临时文件；普通存储仍用上游的临时文件写法。外观、数据库提醒、插件开关、LSP、终端等原生写入链恢复为上游实现，云端写入另走同文件的版本比对提交。inspection 使用有字节上限、拒绝文件软链接的读取 helper，仅 `ENOENT` 按缺失解释；坏文件、权限错误和超限不删除、不修复。
 
 ## 跨端快照
 

@@ -223,7 +223,6 @@ export function useRemoteDraftSelection({
             ? resolveDeviceLinkDraftDefaults(
                 capabilities,
                 {
-                  hostAuthoritative: deviceDraftDefaults?.hostAuthoritative,
                   model: current.model,
                   modelChosenByUser: true,
                   effort: current.effort,

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { getHostWorkspacePrefsStore, commitHostWorkspacePrefs, type WorkspacePrefsEntry } from '../hook-control/workspacePrefsStore.js';
 import { getHostHookPreferencesContext } from '../hook-control/ipc.js';
 import { getWorkspaceProviderSource } from '../hook-control/workspaceProviderSourceStore.js';
-import { refreshSettingsModelRecommendation } from './catalog.js';
+import { readSettingsModelCatalog } from './catalog.js';
 import { captureSettingsModelGuard } from './additionalModels.js';
 import { isModelSelectableForNewRoute, isModelVisible } from '@cindy/model-providers';
 import { getModelVisibilityOverride } from '../maker-host/model-visibility-mirror.js';
@@ -32,7 +32,7 @@ async function choices() {
     entries: [...targets.map(target => ({ value: { workspaceId: idFor(target) }, label: target.label })), ...historical.map(row => ({ value: { workspaceId: idFor(row) }, label: `${row.workspace === HOOK_CHAT_WORKSPACE_ALIAS ? 'Cindy' : row.workspace} · ${row.channel === 'telegram' ? 'Telegram' : row.channel === 'slack' ? 'Slack' : 'X'}` }))],
   };
   if (!targets.length) return result;
-  const catalog = await refreshSettingsModelRecommendation();
+  const catalog = await readSettingsModelCatalog();
   for (const target of targets) {
     const providerId = getWorkspaceProviderSource(target.channel, target.teamId, target.workspace);
     const models = catalog.providers.filter(provider => provider.connected && !provider.suspended && !provider.modelDiscoveryFailure && (!providerId || providerId === provider.id)).flatMap(provider =>

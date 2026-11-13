@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { inspectModelDisableOverrides } from '../../maker-host/model-disable-store.js';
 import { inspectProviderPresentations } from '../../maker-host/provider-presentation-store.js';
 import { inspectModelContextLimits } from '../../maker-host/model-context-limit-store.js';
@@ -10,8 +9,7 @@ import { inspectGhostErrandPrefs } from '../../cindy-brain/pluginTaskPrefsStore.
 import { inspectSidebarSettings } from '../../sidebarSettingsStore.js';
 import { SettingsReader } from '../../maker-host/plugins/settings-reader.js';
 import { createBuiltinPlugins } from '../../maker-host/plugins/builtin-plugins.js';
-import { inspectSettingsJson, isSettingsRecord } from '../../maker-host/inspect-settings-json.js';
-import { validateNewTaskPreferenceHistory } from '../../../shared/newTaskPreferenceHistory.js';
+import { isSettingsRecord } from '../../maker-host/inspect-settings-json.js';
 import { isImDefaultAgentKind, isImDefaultEffort, isImDefaultPermissionMode } from '../../../shared/imDefaultSettings.js';
 import { inspectedValue, type ReadonlyCollectionEntry, type ReadonlyCollectionInspection, type ReadonlySettingInspection, type ReadonlySettingsInspection, type ReadonlySettingSource } from '../readTypes.js';
 
@@ -38,9 +36,9 @@ export function inspectDynamicSettingsCollections(options: CollectionInspectionO
   const run = (names: string[], inspect: () => void) => {
     try { inspect(); } catch { for (const name of names) collections[name] = { status: 'unreadable' }; }
   };
-  // Visibility, engines and favorites live in the app window, as upstream keeps them; this
+  // Visibility, engines, favorites and per-model tuning live in the app window, as upstream keeps them; this
   // synchronous read cannot reach them, so they are reported as on any desktop.
-  for (const name of ['modelVisibility', 'modelEngines', 'modelFavorites']) collections[name] = { status: 'unavailable' };
+  for (const name of ['modelVisibility', 'modelEngines', 'modelFavorites', 'modelParameterHistory']) collections[name] = { status: 'unavailable' };
   run(['modelDisable'], () => {
     const state = inspectModelDisableOverrides(options.ownerRoot);
     if (state.status !== 'ready') { collections.modelDisable = state; return; }
@@ -68,39 +66,6 @@ export function inspectDynamicSettingsCollections(options: CollectionInspectionO
     const entries = Object.entries(state.value.entries).map(([key, value]) => entry(key, { ...value.values }));
     const rawTotal = isSettingsRecord(state.raw.entries) ? Object.keys(state.raw.entries).length : 0;
     collections.modelPrices = { status: 'value', entries, total: rawTotal, complete: entries.length === rawTotal };
-  });
-  run(['modelParameterHistory'], () => {
-    const state = inspectSettingsJson(path.join(options.ownerRoot, 'host-new-task-defaults.json'), raw => {
-      if (raw._history != null) validateNewTaskPreferenceHistory(raw._history);
-      return raw;
-    }, 512 * 1024);
-    if (state.status !== 'ready') { collections.modelParameterHistory = state; return; }
-    if (state.value._initialized !== true || state.value._history == null) { collections.modelParameterHistory = { status: 'migrationPending' }; return; }
-    const history = state.value._history;
-    validateNewTaskPreferenceHistory(history);
-    const entries: ReadonlyCollectionEntry[] = [];
-    const add = (key: string, model: string, memory: { lastModel?: string; effortByModel: Record<string, string>; fastByModel: Record<string, boolean | 'ultrafast'>; thinkingByModel?: Record<string, boolean> }) => {
-      const values: Record<string, unknown> = { lastSelected: memory.lastModel === model };
-      // 空 effort 是领域允许的「未指定」，只省略此叶子，不丢弃其它调档或整集合。
-      if (Object.hasOwn(memory.effortByModel, model) && memory.effortByModel[model] !== '') values.effort = memory.effortByModel[model];
-      if (Object.hasOwn(memory.fastByModel, model)) values.fast = memory.fastByModel[model] !== false;
-      if (Object.hasOwn(memory.thinkingByModel ?? {}, model)) values.thinking = memory.thinkingByModel![model];
-      const result = entry(key, values, 'unknown');
-      if ('effort' in values && !isImDefaultEffort(values.effort)) result.fields.effort = { status: 'private' };
-      entries.push(result);
-    };
-    for (const [key, memory] of Object.entries(history.providerModelMemory)) {
-      const models = new Set([...Object.keys(memory.effortByModel), ...Object.keys(memory.fastByModel), ...Object.keys(memory.thinkingByModel), ...(memory.lastModel ? [memory.lastModel] : [])]);
-      for (const model of models) add(JSON.stringify([key, model]), model, memory);
-    }
-    for (const model of new Set([...Object.keys(history.effortByModel), ...Object.keys(history.fastModeByModel)])) add(JSON.stringify(['legacy', model]), model, { effortByModel: history.effortByModel, fastByModel: history.fastModeByModel });
-    for (const [vendor, memory] of Object.entries(history.lastByVendor)) {
-      if (!memory?.model) continue;
-      // vendor 选择与 provider 调档是独立槽；同路由也保留两条，以各自 ordinal/lastSelected 表达。
-      const key = JSON.stringify(['lastByVendor', vendor, memory.providerId, memory.model]);
-      add(key, memory.model, { lastModel: memory.model, effortByModel: memory.effort ? { [memory.model]: memory.effort } : {}, fastByModel: {} });
-    }
-    collections.modelParameterHistory = complete(entries);
   });
   run(['imWorkspacePrefs'], () => {
     const state = inspectWorkspacePrefs(options.ownerRoot);
