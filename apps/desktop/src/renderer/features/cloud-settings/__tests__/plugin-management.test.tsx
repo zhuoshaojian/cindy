@@ -68,6 +68,8 @@ it('manages the instance with the remote plugin page, fixed to that instance', (
   expect(props.deviceControl.selected).toEqual(props.device);
   // These settings belong to the instance: no computer can be chosen from here.
   expect(props.deviceControl.fixed).toBe(true);
+  // The settings page names the instance above this category, as above every other.
+  expect(props).toMatchObject({ hideManagingNotice: true });
 });
 it('follows DeviceLink presence, not the settings connection', () => {
   pages.online = false;
@@ -83,6 +85,7 @@ it('reads skills only once their tab is opened and keeps the plugin page mounted
     device: { deviceId: instance, name: 'Cloud A' },
     active: true,
     embedded: true,
+    hideManagingNotice: true,
   });
   expect(last(pages.plugins).active).toBe(false);
   expect(screen.getByTestId('plugins')).toBeTruthy();

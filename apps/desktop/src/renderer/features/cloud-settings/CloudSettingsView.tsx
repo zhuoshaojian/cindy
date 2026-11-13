@@ -17,7 +17,10 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Cloud, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { CatalogManagementNotice } from '@/features/plugin/PluginManagementLayout';
+import {
+  CatalogManagementNotice,
+  PLUGIN_MANAGEMENT_FRAME_CLASS,
+} from '@/features/plugin/PluginManagementLayout';
 import { SettingsSection } from '@/components/ui/settings-rows';
 import {
   CLOUD_RETRY_DELAYS_MS,
@@ -497,7 +500,9 @@ export function CloudSettingsPanel({
 
   // The page's one notice (D11 A3–A7, B8, client: RemoteSkillsPage / RemotePluginPage): who is
   // managed, and in its text what the page is doing: reading, could not read, offline, updating,
-  // not supported. Until the instance has been read it is not known to be offline.
+  // not supported. Until the instance has been read it is not known to be offline. The plugin
+  // page reads over DeviceLink, not these settings, so there it says only the instance's state;
+  // the plugin and skill pages report their own reads below it.
   const retryButton = (onClick: () => void, disabled: boolean) => (
     <Button size="sm" variant="secondary" disabled={disabled} onClick={onClick}>
       {t('settings.ghosts.remote.retry')}
@@ -520,6 +525,8 @@ export function CloudSettingsPanel({
               </Button>
             ),
           }
+        : pluginPage
+          ? { text: t('settings.ghosts.remote.managingDescription') }
         : failure === 'refused' && refusal
           ? { text: t(refusal), warning: true }
           : failure === 'unsupported'
@@ -544,7 +551,8 @@ export function CloudSettingsPanel({
               : { text: t('settings.ghosts.remote.managingDescription') };
   const pageNotice = (
     <CatalogManagementNotice
-      className="shrink-0"
+      // The plugin page below starts with its own top padding.
+      className={pluginPage ? 'mb-0 shrink-0' : 'shrink-0'}
       title={t('settings.ghosts.remote.managingTarget', { device: name })}
       warning={notice.warning}
       action={notice.action}
@@ -683,9 +691,14 @@ export function CloudSettingsPanel({
                 className={`mx-auto w-full min-w-0 animate-fade-in ${pluginPage ? 'max-w-none' : 'max-w-[920px] px-1'} ${fills ? 'flex h-full min-h-0 flex-col' : 'pb-32'}`}
               >
                 {/* As the client shows another computer it manages (D11 A3–A7, B8): one notice
-                    at the top, whose text says what the page is doing. The plugin page shows its
-                    own (A10). */}
-                {!pluginPage && pageNotice}
+                    at the top, whose text says what the page is doing. On the plugin page it
+                    stays above every tab, aligned with that page's own frame, which then shows
+                    only what it alone knows (offline, loading, project). */}
+                {pluginPage ? (
+                  <div className={`${PLUGIN_MANAGEMENT_FRAME_CLASS} shrink-0 pt-8`}>{pageNotice}</div>
+                ) : (
+                  pageNotice
+                )}
                 {/* Read by screen readers only: a save says nothing on screen, as on this computer. */}
                 <span className="sr-only" role="status">
                   {result ? t(result) : ''}

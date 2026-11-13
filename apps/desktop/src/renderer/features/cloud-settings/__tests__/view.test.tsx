@@ -107,6 +107,11 @@ it('loads the plugin page for the selected instance only once its category is op
   expect(Plugins).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.ghosts' }));
   expect((await screen.findByTestId('plugins')).textContent).toBe(`${state.deviceId} Cloud A true`);
+  // The 「正在管理」 notice stays at the top, above the plugin page, as for every other category.
+  const notice = screen.getByText('settings.ghosts.remote.managingTarget').closest('[role="status"]')!;
+  expect(
+    notice.compareDocumentPosition(screen.getByTestId('plugins')) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   // It stays mounted when another category is shown, so its page state is kept.
   fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.general' }));
   await waitFor(() =>
