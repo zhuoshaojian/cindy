@@ -535,11 +535,8 @@ import {
 import { createDatabaseSizeWarningSettingsWatcher } from './database-size-warning-settings-watcher.js';
 import { registerHostSettingsIpc } from './host-settings/ipc.js';
 import { removeRetiredSettingsSkill } from './host-settings/retiredSettingsSkill.js';
-import { markCloudLoginWindow, isCloudLoginWindow } from './cloud-settings-client/login-window-registry.js';
+import { markCloudLoginWindow } from './cloud-settings-client/login-window-registry.js';
 import { cloudLoginWindowLifecycle, registerCloudSettingsClientIpc } from './cloud-settings-client/runtime.js';
-import { isResourceUsageWebContentsId } from './resource-usage-window/registry.js';
-import { isTrustedAppearanceSettingsReadWindow } from './appearance-settings-reader.js';
-import { registerModelPresentationPreferencesIpc } from './host-settings/model-presentation-preferences-ipc.js';
 import { createLocalDbMaintenanceIpcHandlers } from './localDb/ipc/maintenance';
 import {
   createDialogueWorkspaceHandlers,
@@ -672,7 +669,7 @@ import { startInstanceStatus } from './instance-runtime/status.js';
 import { registerCloudProviderSettings } from './instance-runtime/providerSettingsRegistration.js';
 import { publishedPluginOauthIdentity } from './plugin-oauth/runtime.js';
 import { startCloudSettingsSnapshotPublisher } from './host-settings/snapshotRuntime.js';
-import { startReturningRetiredDesktopPreferences } from './host-settings/retiredDesktopPreferences.js';
+import { startReturningRetiredHostPreferences } from './host-settings/retiredHostPreferences.js';
 import { startCloudSettingsWebTransport } from './host-settings/webRuntime.js';
 
 let instanceBinariesReady = false;
@@ -4949,24 +4946,6 @@ const registerIpcHandlers = () => {
       register: markCloudLoginWindow, loginCaptcha: true,
     }),
   });
-  const localPreferencesAccess = {
-    isLocalWindow(id: number, access: 'read' | 'write') {
-      const sender = webContents.fromId(id);
-      if (!sender || sender.isDestroyed()) return false;
-      const win = BrowserWindow.fromWebContents(sender);
-      if (!win || !isTrustedCindyRendererWindow(win)) return false;
-      const isWriter = win === mainWindowRef || isSecondaryAppWindow(win);
-      if (access === 'write') return isWriter;
-      if (isWriter) return true;
-      const isContent: boolean = isAppContentWindow(win);
-      return sender === rsbWindowController.getSidebarWebContents()
-        || sidebarTabWindowsController.slotForSender(sender) !== null
-        || isResourceUsageWebContentsId(id)
-        || isCloudLoginWindow(id)
-        || (!isContent && isTrustedAppearanceSettingsReadWindow(win));
-    },
-  };
-  registerModelPresentationPreferencesIpc(localPreferencesAccess);
   ipcMain.handle('database-size-warning:get-settings', (event) => {
     assertTrustedAppRendererEvent(event);
     const state = readDatabaseSizeWarningSettingsState();
@@ -10677,7 +10656,7 @@ app.on('ready', async () => {
       stopRecovery ? () => ({ version: 1, state: instanceLoginRequired() ? 'login-required' : readInstanceReadiness().auth ? 'ready' : 'pending' }) : undefined);
     const stopProfileTelemetry = startProfileTelemetry({ deviceId: instance.deviceId, membershipId: instance.membershipId, realm: instanceAuthRealm, read: readInstanceReadiness, readAuth: instanceDurableObservation, onFailure: () => createLogger('instance-runtime').warn('profile observation unavailable') });
     const stopSettingsSnapshot = startCloudSettingsSnapshotPublisher();
-    const stopReturningPreferences = startReturningRetiredDesktopPreferences();
+    const stopReturningPreferences = startReturningRetiredHostPreferences();
     app.once('will-quit', stopReturningPreferences);
     const stopSettingsWeb = startCloudSettingsWebTransport();
     const stopProviderSettings = registerCloudProviderSettings();

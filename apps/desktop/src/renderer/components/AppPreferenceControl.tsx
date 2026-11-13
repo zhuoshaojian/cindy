@@ -1,4 +1,5 @@
 import { setModelVisibility, resetModelVisibilities, isModelEnabled, isModelVisibilityCustomized } from '@/state/modelVisibilityPrefs';
+import { clearModelEngineOverride, getModelEngineOverride, listModelEngineOverrides, setModelEngineOverride } from '@/state/modelEnginePrefs';
 import { setMakerMemoryEnabled } from '@/lib/memorySettingsStore';
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
@@ -105,6 +106,16 @@ export function AppPreferenceControl() {
           modelVisibility = { visible: isModelEnabled(target.agent, target.providerId, { id: target.modelId, defaultEnabled }),
             customized: isModelVisibilityCustomized(target.agent, target.providerId, target.modelId) };
         }
+        let modelEngines: Record<string, 'cc' | 'codex' | 'pi'> | undefined;
+        if (request.operation === 'model-engine') {
+          const change = request.modelEngine;
+          if (change) {
+            if (change.agent === null) clearModelEngineOverride(change.providerId, change.modelId);
+            else setModelEngineOverride(change.providerId, change.modelId, change.agent);
+            if (getModelEngineOverride(change.providerId, change.modelId) !== (change.agent ?? undefined)) throw new Error('MODEL_ENGINE_NOT_SAVED');
+          }
+          modelEngines = listModelEngineOverrides();
+        }
         if (request.operation === 'reset') throw new Error('RESET_NOT_SUPPORTED');
         if (request.operation === 'update') {
           const patch = appPreferenceSchema.parse(request.patch);
@@ -117,7 +128,8 @@ export function AppPreferenceControl() {
           }
         }
         bridge.reply({ requestId: request.requestId, ok: true, state: current.current.state,
-          themeFamilies: getThemeFamilies().map(family => family.id), ...(modelVisibility ? { modelVisibility } : {}) });
+          themeFamilies: getThemeFamilies().map(family => family.id), ...(modelVisibility ? { modelVisibility } : {}),
+          ...(modelEngines ? { modelEngines } : {}) });
       } catch { bridge.reply({ requestId: request.requestId, ok: false }); }
     });
   }, []);

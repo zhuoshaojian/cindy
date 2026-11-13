@@ -5,28 +5,21 @@ import {
   createProviderSettingsChannel,
   type ProviderSettingsChannelDeps,
 } from '../providerSettingsChannel';
-import type { ModelPresentationPreferencesSnapshot } from '../../../shared/modelPresentationPreferences';
 
 const OWNER = { dataOwnerId: 'owner-1', ownerGeneration: 7 };
-const snapshot = (revision: string, overrides: Record<string, boolean>) =>
-  ({
-    status: 'ready',
-    ownerStamp: OWNER,
-    revision,
-    initialized: true,
-    value: { visibility: { overrides, initialization: {} }, engines: {}, favorites: {} },
-  }) as unknown as ModelPresentationPreferencesSnapshot;
 
 function setup(overrides: Partial<ProviderSettingsChannelDeps> = {}) {
   let owner: typeof OWNER | null = OWNER;
   let isOwner = true;
+  // The window's visibility choices as upstream's provider list and Main mirror report them.
+  const visibility = { revision: 'rev-1', overrides: { 'codex:xd:hidden': false } as Record<string, boolean> };
   const call = vi.fn<ProviderSettingsChannelDeps['call']>(async (channel) =>
     channel === 'maker:provider:list'
       ? {
           dataOwnerId: OWNER.dataOwnerId,
           ownerGeneration: OWNER.ownerGeneration,
           providerOrder: ['xd', 'openai'],
-          modelVisibilityOverrides: {},
+          modelVisibilityOverrides: { ...visibility.overrides },
           providers: [
             {
               id: 'xd',
@@ -54,15 +47,16 @@ function setup(overrides: Partial<ProviderSettingsChannelDeps> = {}) {
         }
       : undefined,
   );
-  const mutateVisibility = vi.fn(async () => ({
-    snapshot: snapshot('rev-2', { 'codex:xd:hidden': true }),
-  }));
+  const setVisibility = vi.fn<ProviderSettingsChannelDeps['setVisibility']>(async (providerId, targets, enabled) => {
+    for (const target of targets) visibility.overrides[`${target.agent}:${providerId}:${target.modelId}`] = enabled!;
+    visibility.revision = 'rev-2';
+  });
   const deps: ProviderSettingsChannelDeps = {
     isInstanceOwner: () => isOwner,
     owner: () => owner,
     call,
-    inspectVisibility: () => snapshot('rev-1', { 'codex:xd:hidden': false }),
-    mutateVisibility,
+    visibilityRevision: async () => visibility.revision,
+    setVisibility,
     projectRouting: (routing) =>
       routing &&
       Object.fromEntries(
@@ -81,7 +75,7 @@ function setup(overrides: Partial<ProviderSettingsChannelDeps> = {}) {
     channel: createProviderSettingsChannel(deps),
     call,
     deps,
-    mutateVisibility,
+    setVisibility,
     setOwner: (next: typeof OWNER | null) => {
       owner = next;
     },
@@ -240,7 +234,7 @@ describe('cloud provider settings channel', () => {
         enabled: true,
       }),
     ).rejects.toThrow('[REVISION_CONFLICT]');
-    expect(h.mutateVisibility).not.toHaveBeenCalled();
+    expect(h.setVisibility).not.toHaveBeenCalled();
     await expect(
       run(h, {
         op: 'visibility-set',
@@ -256,14 +250,7 @@ describe('cloud provider settings channel', () => {
       catalogChanged: false,
       visibility: { status: 'ready', revision: 'rev-2', overrides: { 'codex:xd:hidden': true } },
     });
-    expect(h.mutateVisibility).toHaveBeenCalledWith(
-      {
-        ownerStamp: OWNER,
-        expectedRevision: 'rev-1',
-        operation: { kind: 'visibility-set', providerId: 'xd', targets, enabled: true },
-      },
-      expect.any(Function),
-    );
+    expect(h.setVisibility).toHaveBeenCalledWith('xd', targets, true, expect.any(Function));
   });
 
   it('rejects malformed requests and unknown operations', async () => {

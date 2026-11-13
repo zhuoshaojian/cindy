@@ -159,7 +159,6 @@ import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudMana
 import { configureAdditionalModelRuntime } from '../host-settings/additionalRuntime.js';
 import { installHostNewMakerDefaultsSource } from '../host-settings/cache.js';
 import { hostOwnsNewTaskDefaults, onNewTaskDefaultsChanged, commitNewTaskDefaults, applyHostRemoteDraftPreference } from '../host-settings/new-task-defaults.js';
-import { onModelPresentationPreferencesChanged } from '../host-settings/model-presentation-preferences.js';
 import { refreshSettingsModelRecommendation } from '../host-settings/catalog.js';
 import { onAuthStateChange } from '../authManager.js';
 import type { BuiltinApiKeyBridgeDeps } from '../secrets/builtinApiKeyBridge.js';
@@ -6653,7 +6652,6 @@ export function registerModelVisibilitySyncIpc(): void {
       });
     });
   }
-  onModelPresentationPreferencesChanged(() => { broadcastToAllWindows(MAKER_PUSH.PROVIDER_CHANGED, {}); });
   // Register with model visibility before the first window; a cold-start preference
   // push must not be lost while the larger Maker bundle is still initializing.
   ipcMain.on(MAKER_SEND.SYNC_NEW_MAKER_DRAFT, (event, payload: unknown) => {

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProviderView } from '@cindy/model-providers';
 
 import { CLOUD_PROVIDER_SETTINGS_CHANNEL } from '../../../../shared/cloudProviderSettings';
-import { visibilityPreferenceKey } from '../../../../shared/modelPresentationPreferences';
+const visibilityPreferenceKey = (agent: string, providerId: string, modelId: string) => `${agent}:${providerId}:${modelId}`;
 import type { ManagementItem } from '../../../../shared/settingsManagement';
 import type { CloudSettingsClient } from '../client';
 import { cloudAddChoices } from '../CloudAddProviderDialog';

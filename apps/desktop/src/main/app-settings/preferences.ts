@@ -9,7 +9,8 @@ import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer.js
 
 const replySchema = z.strictObject({ requestId: z.string().uuid(), ok: z.boolean(),
   state: appPreferenceSchema.required().optional(), themeFamilies: z.array(z.string().max(256)).max(256).optional(),
-  modelVisibility: z.strictObject({ visible: z.boolean(), customized: z.boolean() }).optional() });
+  modelVisibility: z.strictObject({ visible: z.boolean(), customized: z.boolean() }).optional(),
+  modelEngines: z.record(z.string().max(4096), z.enum(['cc', 'codex', 'pi'])).optional() });
 const pending = new Map<string, { senderId: number; settle: (value: unknown) => void }>();
 export function registerPreferenceControlIpc(): void {
   ipcMain.on(APP_PREFERENCE_REPLY, (event, raw: unknown) => {
@@ -22,7 +23,7 @@ export function registerPreferenceControlIpc(): void {
 }
 
 /** Finite host→main-window request; no arbitrary renderer command or storage key. */
-export async function manageAppPreferences(operation: AppPreferenceRequest['operation'], patch?: Record<string, unknown>, modelVisibility?: AppPreferenceRequest['modelVisibility']) {
+export async function manageAppPreferences(operation: AppPreferenceRequest['operation'], patch?: Record<string, unknown>, modelVisibility?: AppPreferenceRequest['modelVisibility'], modelEngine?: AppPreferenceRequest['modelEngine']) {
   const window = getDeepLinkMainWindow();
   if (!window || window.isDestroyed()) throw new Error('PREFERENCE_WINDOW_NOT_READY');
   const parsedPatch = patch === undefined ? undefined : appPreferenceSchema.parse(patch);
@@ -42,11 +43,13 @@ export async function manageAppPreferences(operation: AppPreferenceRequest['oper
     } });
     try {
       window.webContents.send(APP_PREFERENCE_REQUEST, { requestId, ownerStamp: getActiveDataOwnerPushStamp(),
-        expiresAt: Date.now() + 5000, operation, ...(modelVisibility ? { modelVisibility } : {}), ...(parsedPatch ? { patch: parsedPatch } : {}) } satisfies AppPreferenceRequest);
+        expiresAt: Date.now() + 5000, operation, ...(modelVisibility ? { modelVisibility } : {}), ...(modelEngine ? { modelEngine } : {}),
+        ...(parsedPatch ? { patch: parsedPatch } : {}) } satisfies AppPreferenceRequest);
     } catch (error) { pending.delete(requestId); clearTimeout(timer); reject(error); }
   });
   assertOwner();
   if (parsedPatch && Object.entries(parsedPatch).some(([key, value]) => reply.state?.[key as keyof typeof parsedPatch] !== value))
     throw new Error('PREFERENCE_READBACK_MISMATCH');
-  return { value: reply.state, themeFamilies: reply.themeFamilies, ...(reply.modelVisibility ? { modelVisibility: reply.modelVisibility } : {}) };
+  return { value: reply.state, themeFamilies: reply.themeFamilies, ...(reply.modelVisibility ? { modelVisibility: reply.modelVisibility } : {}),
+    ...(reply.modelEngines ? { modelEngines: reply.modelEngines } : {}) };
 }

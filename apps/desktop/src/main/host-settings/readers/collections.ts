@@ -10,7 +10,6 @@ import { inspectGhostErrandPrefs } from '../../cindy-brain/pluginTaskPrefsStore.
 import { inspectSidebarSettings } from '../../sidebarSettingsStore.js';
 import { SettingsReader } from '../../maker-host/plugins/settings-reader.js';
 import { createBuiltinPlugins } from '../../maker-host/plugins/builtin-plugins.js';
-import { createModelPresentationPreferencesStore, hostOwnsModelPresentation } from '../model-presentation-preferences.js';
 import { inspectSettingsJson, isSettingsRecord } from '../../maker-host/inspect-settings-json.js';
 import { validateNewTaskPreferenceHistory } from '../../../shared/newTaskPreferenceHistory.js';
 import { isImDefaultAgentKind, isImDefaultEffort, isImDefaultPermissionMode } from '../../../shared/imDefaultSettings.js';
@@ -39,38 +38,9 @@ export function inspectDynamicSettingsCollections(options: CollectionInspectionO
   const run = (names: string[], inspect: () => void) => {
     try { inspect(); } catch { for (const name of names) collections[name] = { status: 'unreadable' }; }
   };
-  run(['modelVisibility', 'modelEngines', 'modelFavorites'], () => {
-    // Ordinary desktops keep these in renderer localStorage; only an instance has the file.
-    if (!hostOwnsModelPresentation()) {
-      for (const name of ['modelVisibility', 'modelEngines', 'modelFavorites']) collections[name] = { status: 'unavailable' };
-      return;
-    }
-    const owner = { dataOwnerId: options.ownerId, ownerGeneration: options.ownerGeneration };
-    const state = createModelPresentationPreferencesStore({
-      getOwner: () => owner,
-      filePath: () => path.join(options.ownerRoot, 'host-model-presentation-preferences.json'),
-      getLegacyClaim: () => { throw new Error('inspection cannot claim a legacy namespace'); },
-    }).inspect();
-    if (state.status !== 'ready') {
-      for (const name of ['modelVisibility', 'modelEngines', 'modelFavorites']) collections[name] = { status: state.status === 'pending-migration' ? 'migrationPending' : state.status };
-      return;
-    }
-    const visibility = Object.entries(state.value.visibility.overrides).map(([key, enabled]) => entry(key, { enabled }));
-    // 首见默认只是历史记录，不证明当前目录值；未被显式 override 覆盖的保存路由只计省略数。
-    // 这里统计已保存的路由范围，不读取活动/网络目录，也不声称覆盖全部可用模型。
-    const visibilityKeys = new Set([
-      ...Object.keys(state.value.visibility.overrides),
-      ...Object.keys(state.value.visibility.initialization.defaults),
-      ...state.value.visibility.initialization.followCatalogKeys,
-    ]);
-    collections.modelVisibility = { status: 'value', entries: visibility, total: visibilityKeys.size, complete: visibilityKeys.size === visibility.length };
-    collections.modelEngines = complete(Object.entries(state.value.engines).map(([key, value]) => entry(key, { agent: harness(value.agent) })));
-    collections.modelFavorites = complete(state.value.favorites.items.map(value => {
-      const result = entry(value.uid, { agent: harness(value.agent), effort: value.effort ?? null, fast: value.fast === true || value.fast === 'ultrafast' }, 'unknown');
-      if (value.effort !== undefined && !isImDefaultEffort(value.effort)) result.fields.effort = { status: 'private' };
-      return result;
-    }));
-  });
+  // Visibility, engines and favorites live in the app window, as upstream keeps them; this
+  // synchronous read cannot reach them, so they are reported as on any desktop.
+  for (const name of ['modelVisibility', 'modelEngines', 'modelFavorites']) collections[name] = { status: 'unavailable' };
   run(['modelDisable'], () => {
     const state = inspectModelDisableOverrides(options.ownerRoot);
     if (state.status !== 'ready') { collections.modelDisable = state; return; }

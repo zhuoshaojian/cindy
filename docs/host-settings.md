@@ -90,8 +90,7 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 ### 本次新增的 profile 与 owner 正本
 
 - **桌面偏好（与上游一致）**：主题/主题族、语言、侧栏样式、桌面/飞书通知、点击/发送/链接行为、淡入、推荐、消息导航条与网络调试，在云实例上也由应用窗口按上游方式保存（localStorage），不另存 Host 正本。云设置页的 `desktopGeneral` / `desktopChat` / `desktopNotifications` 经上游 `preferences` 分区读写（`host-settings/desktopPreferenceDomains.ts`）：读取须应用窗口应答，未应答时该组为 `unreadable`；是否自定义按值与默认值比较，单字段恢复默认即写回默认值；`ghostPanelRestoreMode` 没有对应偏好，固定读默认值且不可写。上游 `preferences` 分区为此补齐侧栏样式、飞书提醒、切回防误触与网络诊断字段，Agent 与本机设置共用同一入口。早期云版本写下的 `host-desktop-preferences.json` 在启动后经同一分区逐项写回一次，随后改名为 `host-desktop-preferences.returned.json` 保留（`host-settings/retiredDesktopPreferences.ts`）。只读快照无法同步读取窗口里的偏好，这些叶子与普通桌面一样报告 `unavailable`。
-- **Owner 模型偏好（仅托管云实例）**：云实例上模型显示 override、引擎偏好和收藏迁入 `host-model-presentation-preferences.json`，让设置通道、网页控制台和设置工具在没有窗口时也能读写。保留初始化默认规则、follow-catalog 记录、收藏顺序/身份与 seed 墓碑；不把它们错误迁为 profile，也不重复迁移已接入的 `providerModelMemory`。普通桌面沿用上游 Renderer localStorage 与 Main 内存镜像，不迁移、不写这个文件，设置读取对这三项报告 `unavailable`。上游三个 store 保持原签名，只在云实例转交 Host：收藏与引擎写入和本机一样不等待回执，失败时提示并回到 Host 正本；云实例的 device-link 收藏请求由 Main 按 revision 直接读写该文件。
-- **本机桥**：仅执行 Host 同一 profile 的可信本地 Renderer，可经固定 preload/IPC 通道读取、一次性导入和保存模型偏好。模型桥校验可信顶层 frame、实际 profile partition 与 Host 注册的窗口身份；仅本机主、副应用窗口可写，登记为只读的辅助窗不可写，remote viewer 明确排除，提交前重新校验。控制端、远控窗口、网页或工具参数不能冒充本机导入者。
+- **模型显示、引擎与收藏（与上游一致）**：在云实例上也由应用窗口的上游 store 保存，不另存 Host 正本。`modelVisibility` 读上游 Main 镜像、经上游 `preferences` 的 `model-visibility` 操作逐个模型修改；`modelEngines` 经该分区新增的 `model-engine` 操作读写（上游可单独接受的小扩展）；`modelFavorites` 经上游收藏请求 `requestModelFavorites`（与其它设备读写收藏同一入口）逐条增删，保留原条目与速度档（`host-settings/modelPresentationDomains.ts`）。云设置页模型供应商页的显示开关同样读上游设备列表的 `modelVisibilityOverrides`、按上游镜像算 CAS。窗口未应答时这些组为 `unreadable`。早期云版本的 `host-model-presentation-preferences.json` 启动后让窗口与其一致一次，再改名为 `.returned.json` 保留（`host-settings/retiredModelPresentation.ts`）；只读快照的这三类集合与普通桌面一样报告 `unavailable`。
 - **提交与缓存**：profile 写入受 profile stamp/revision 保护，owner 写入另受 owner/generation 保护；都在真实锁内 CAS 与原子提交。多窗口冲突只回读，不换 revision 重放旧整表。初始化标记不随恢复默认删除，旧 Renderer 数据不能重新覆盖；首次导入也尊重旧 owner 的 follow-catalog 墓碑和目标显式选择。兼容首帧缓存只能由成功 Host 提交单向更新，不是第二正本。remote viewer 不经过 Host 存储，沿用上游 localStorage hook。
 - **待迁移**：未能证明全新且尚未完成导入的旧 profile/owner 数据返回 `migrationPending`；只有有依据的新 profile 才解释为默认。inspection 不执行导入、不删旧键；完成初始化后，即使没有 Renderer 窗口也能从 Host 读取。
 - **运行态消费**：桌面通知、窗口创建期点击行为与 Agent Island 沿用上游：由应用窗口的偏好同步给 Main，云实例不另设读取路径。
@@ -113,7 +112,7 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 只读快照传输保持有时效的白名单报告，不承担设置写入。能力 GET 确认后使用 v2，旧端明确 404 或明确仅支持 v1 时保留四域降级。v1 仍为 8 KiB，v2 为 128 KiB（固定 96 KiB / 动态 24 KiB / envelope 8 KiB），fresh TTL 仍为 180 秒；完整协商形状和版本兼容见 [云设置脱敏快照](./cloud-settings-snapshot.md)。
 
-正常每 60 秒加最多 6 秒抖动采样。原四域和 owner 模型偏好已有即时变更通知，可触发 750ms 去抖重采样，但仍受最短 10 秒间隔限制。其它领域没有现成事件时由周期采样覆盖，不为只读展示新增文件 watcher，也不承诺所有设置实时刷新。
+正常每 60 秒加最多 6 秒抖动采样。原四域已有即时变更通知，可触发 750ms 去抖重采样，但仍受最短 10 秒间隔限制。其它领域没有现成事件时由周期采样覆盖，不为只读展示新增文件 watcher，也不承诺所有设置实时刷新。
 
 ## 验证范围与发布边界
 

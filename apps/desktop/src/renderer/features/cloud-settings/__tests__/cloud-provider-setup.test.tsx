@@ -211,8 +211,6 @@ function setup({
           if (key in target) return target[key as keyof typeof target];
           if (key === 'providerShare')
             return { command: async () => [], onReceivedChanged: () => () => undefined };
-          // An ordinary desktop's preload does not expose the Host preference store.
-          if (key === 'modelPresentationPreferences') return undefined;
           throw Error(`LOCAL_API_FORBIDDEN ${String(key)}`);
         },
       },

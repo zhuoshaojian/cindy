@@ -12,7 +12,8 @@ import {
   type CloudProviderSettingsRequest,
   type CloudProviderSettingsWriteReceipt,
 } from '../../../shared/cloudProviderSettings';
-import { visibilityPreferenceKey } from '../../../shared/modelPresentationPreferences';
+/** Same key as upstream's visibility preferences and the provider list's overrides. */
+const visibilityPreferenceKey = (agent: string, providerId: string, modelId: string) => `${agent}:${providerId}:${modelId}`;
 
 type Without<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 /** Writes carry the catalog's owner generation and, for visibility, its revision. */

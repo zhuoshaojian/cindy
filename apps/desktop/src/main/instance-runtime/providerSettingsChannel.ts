@@ -12,12 +12,6 @@ import {
   type CloudProviderVisibilityState,
 } from '../../shared/cloudProviderSettings.js';
 import type { SettingsOwnerStamp } from '../../shared/hostSettings.js';
-import type {
-  ModelPresentationPreferencesSnapshot,
-  ModelPresentationOperation,
-  ModelPresentationReceipt,
-  ModelPresentationRequest,
-} from '../../shared/modelPresentationPreferences.js';
 import type { CustomModelEdit } from '../../shared/customModelEdit.js';
 import type { ManagementExecution } from '../host-settings/management.js';
 import { hasRuntimeHeaders, type ProviderSetup } from './providerSetup.js';
@@ -42,11 +36,15 @@ export interface ProviderSettingsChannelDeps {
     execution: ManagementExecution,
     options?: { sender?: boolean },
   ): Promise<unknown>;
-  inspectVisibility(): ModelPresentationPreferencesSnapshot;
-  mutateVisibility(
-    request: ModelPresentationRequest & { operation: ModelPresentationOperation },
+  /** CAS token over the window's visibility choices (upstream's Main mirror); null until it is ready. */
+  visibilityRevision(): Promise<string | null>;
+  /** One provider's models through upstream's model-visibility operation; null follows the default. */
+  setVisibility(
+    providerId: string,
+    targets: Array<{ agent: AgentKind; modelId: string }>,
+    enabled: boolean | null,
     assertCaller: () => void,
-  ): Promise<ModelPresentationReceipt>;
+  ): Promise<void>;
   /** Display-only routing (upstream DeviceLink projection) for built-in and organization rows. */
   projectRouting(routing: unknown): unknown;
   resolveLogoKind(providerId: string, routing: unknown): string | null;
@@ -83,17 +81,6 @@ const record = (value: unknown): Record<string, unknown> =>
     ? (value as Record<string, unknown>)
     : fail('INTERNAL', 'invalid provider list');
 
-function visibilityState(
-  snapshot: ModelPresentationPreferencesSnapshot,
-): CloudProviderVisibilityState {
-  return snapshot.status === 'ready' || snapshot.status === 'pending-migration'
-    ? {
-        status: snapshot.status,
-        revision: snapshot.revision,
-        overrides: { ...snapshot.value.visibility.overrides },
-      }
-    : { status: snapshot.status, revision: null, overrides: {} };
-}
 
 /**
  * Same display fields as the upstream DeviceLink list, without dropping hidden models. The
@@ -156,19 +143,21 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
     const providers = Array.isArray(raw.providers)
       ? raw.providers
       : fail('INTERNAL', 'invalid list');
-    const snapshot = deps.inspectVisibility();
-    const visibility = visibilityState(snapshot);
-    // Before migration the Host reports its mirror; keep it read-only until a revision exists.
-    if (
-      visibility.revision === null &&
-      raw.modelVisibilityOverrides &&
-      typeof raw.modelVisibilityOverrides === 'object'
-    )
-      visibility.overrides = Object.fromEntries(
-        Object.entries(raw.modelVisibilityOverrides as Record<string, unknown>).filter(
-          (entry): entry is [string, boolean] => typeof entry[1] === 'boolean',
-        ),
-      );
+    // The same visibility the upstream list gives other devices; editable once the window's choices are ready.
+    const revision = await deps.visibilityRevision();
+    run.assertCurrent();
+    const visibility: CloudProviderVisibilityState = {
+      status: revision === null ? 'unavailable' : 'ready',
+      revision,
+      overrides:
+        raw.modelVisibilityOverrides && typeof raw.modelVisibilityOverrides === 'object'
+          ? Object.fromEntries(
+              Object.entries(raw.modelVisibilityOverrides as Record<string, unknown>).filter(
+                (entry): entry is [string, boolean] => typeof entry[1] === 'boolean',
+              ),
+            )
+          : {},
+    };
     const result: CloudProviderSettingsList = {
       version: 1,
       ownerGeneration: owner.ownerGeneration,
@@ -201,32 +190,21 @@ export function createProviderSettingsChannel(deps: ProviderSettingsChannelDeps)
     switch (request.op) {
       case 'visibility-set':
       case 'visibility-reset': {
-        const current = deps.inspectVisibility();
-        if (current.revision === null) fail('UNAVAILABLE', 'model preferences are not ready');
-        if (current.revision !== request.revision)
+        const revision = await deps.visibilityRevision();
+        if (revision === null) fail('UNAVAILABLE', 'model preferences are not ready');
+        if (revision !== request.revision)
           fail('REVISION_CONFLICT', 'model visibility changed; refresh');
-        const targets = request.targets as Extract<
-          ModelPresentationOperation,
-          { kind: 'visibility-set' }
-        >['targets'];
-        const operation: ModelPresentationOperation =
-          request.op === 'visibility-set'
-            ? {
-                kind: 'visibility-set',
-                providerId: request.providerId,
-                targets,
-                enabled: request.enabled,
-              }
-            : { kind: 'visibility-reset', providerId: request.providerId, targets };
-        const receipt = await deps.mutateVisibility(
-          { ownerStamp: owner, expectedRevision: request.revision, operation },
+        await deps.setVisibility(
+          request.providerId,
+          request.targets as Array<{ agent: AgentKind; modelId: string }>,
+          request.op === 'visibility-set' ? request.enabled : null,
           run.assertCurrent,
         );
         run.assertCurrent();
         return {
           ok: true,
           ownerGeneration: owner.ownerGeneration,
-          visibility: visibilityState(receipt.snapshot),
+          visibility: (await list(owner)).visibility,
           catalogChanged: false,
         };
       }

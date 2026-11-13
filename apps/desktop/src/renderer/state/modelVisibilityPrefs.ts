@@ -27,8 +27,6 @@
  * 写 localStorage；调用方等待落盘结果后再报告成功，不做乐观整表覆盖或事后重放。
  * 另外维护一个递增 version + 订阅者集合,供 useSyncExternalStore 让消费组件在开关变更后
  * 实时重算(设置页与聊天页可能同时挂载:设置里改完、返回聊天,ModelSelector 不重挂也能刷新)。
- *
- * 托管云实例除外:真源在 Host 文件,导出函数转交 hostModelPresentationStores。
  */
 
 import { useSyncExternalStore } from 'react';
@@ -38,7 +36,6 @@ import { isModelVisible, type ProviderView } from '@cindy/model-providers';
 import { hasAnyProviderModelOverride, hasProviderModelHistory } from './providerModelMemory';
 import { hasAnyModelEngineOverride } from './modelEnginePrefs';
 import { listModelFavorites } from './modelFavorites';
-import { hasHostModelPresentation, hostModelVisibility as host } from './hostModelPresentationStores';
 
 import type { AgentKind } from '@/hooks/useAgentCapabilities';
 import { createLogger } from '@/lib/logger';
@@ -81,7 +78,6 @@ export function getModelVisibilityInitializationFailure(
   ownerId: string | null,
   ownerGeneration: number,
 ): ModelVisibilityInitializationFailure | null {
-  if (hasHostModelPresentation()) return host.initializationFailure(ownerId, ownerGeneration);
   return ownerId === activeOwnerId && ownerGeneration === activeOwnerGeneration
     ? initializationFailure : null;
 }
@@ -622,7 +618,6 @@ function retryPendingLocalAdoption(): void {
 }
 
 function subscribe(cb: () => void): () => void {
-  if (hasHostModelPresentation()) return host.subscribe(cb);
   listeners.add(cb);
   return () => {
     listeners.delete(cb);
@@ -630,7 +625,6 @@ function subscribe(cb: () => void): () => void {
 }
 
 export function getModelVisibilityVersion(): number {
-  if (hasHostModelPresentation()) return host.version();
   return version;
 }
 
@@ -640,7 +634,6 @@ export async function setModelVisibilityOwner(
   ownerGeneration: number,
   mode: 'signed-out' | 'local' | 'cloud',
 ): Promise<void> {
-  if (hasHostModelPresentation()) return host.setOwner(ownerId, ownerGeneration, mode);
   if (
     activeOwnerId === ownerId
     && activeOwnerGeneration === ownerGeneration
@@ -684,7 +677,6 @@ export async function migrateModelVisibilityDefaults(
   providers: readonly ProviderView[],
   isCurrent: () => boolean = () => true,
 ): Promise<boolean> {
-  if (hasHostModelPresentation()) return host.migrateDefaults(ownerId, ownerGeneration, providers, isCurrent);
   // Signed-out catalogs have no owner preferences to initialize.
   if (!ownerId) return true;
   const initialized = await withOwnerLock(ownerId, ownerGeneration, () => {
@@ -758,7 +750,6 @@ export function isModelEnabled(
   providerId: string,
   model: { id: string; defaultEnabled?: boolean },
 ): boolean {
-  if (hasHostModelPresentation()) return host.isModelEnabled(agent, providerId, model);
   const key = keyOf(agent, providerId, model.id);
   const override = load()[key];
   if (override !== undefined) return override;
@@ -784,7 +775,6 @@ async function setVisibilityTargets(
     return false;
   }
   if (targets.length === 0) return true;
-  if (hasHostModelPresentation()) return host.set(providerId, targets, enabled);
   return withOwnerLock(activeOwnerId, activeOwnerGeneration, () => {
     if (!ensureActiveOwnerReadyForWrites()) {
       log.warn('model visibility write rejected', {
@@ -886,7 +876,6 @@ export async function resetModelVisibilities(
   providerId: string,
   targets: readonly { agent: AgentKind; modelId: string }[],
 ): Promise<boolean> {
-  if (hasHostModelPresentation()) return host.reset(providerId, targets);
   return withOwnerLock(activeOwnerId, activeOwnerGeneration, () => {
     // Restore defaults is the explicit action that may replace a corrupt
     // initialization record after owner readiness has been established.
@@ -956,7 +945,6 @@ const removeStorageListener = (() => {
 if (import.meta.hot) import.meta.hot.dispose(() => removeStorageListener?.());
 
 export function isModelVisibilityCustomized(agent: AgentKind, providerId: string, modelId: string): boolean {
-  if (hasHostModelPresentation()) return host.isCustomized(agent, providerId, modelId);
   return Object.hasOwn(load(), keyOf(agent, providerId, modelId));
 }
 

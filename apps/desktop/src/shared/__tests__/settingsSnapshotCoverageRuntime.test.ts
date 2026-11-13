@@ -73,7 +73,6 @@ import type { ReadonlySettingsInspection } from '../../main/host-settings/readTy
 import { SETTINGS_READ_FIELD_IDS, SETTINGS_READ_COLLECTION_IDS } from '../settingsReadCatalog.js';
 import { settingsSnapshotReportV2Schema, SETTINGS_SNAPSHOT_V2_COMPATIBILITY_FIXTURE, SETTINGS_SNAPSHOT_V2_FIELD_IDS } from '../settingsSnapshot.js';
 import { DEFAULT_APPEARANCE_SETTINGS } from '../appearanceSettings.js';
-import { emptyModelPresentationPreferences } from '../modelPresentationPreferences.js';
 import { encodeCatalogModelPin } from '../catalogModelPin.js';
 import type { HostSettingState, NewTaskDefaultSettings } from '../hostSettings.js';
 import { configureUserDataDir } from '../../main/userDataPath.js';
@@ -177,7 +176,7 @@ describe('production reader to v2 coverage seam', () => {
     // 所有旧版 wire 字段保留真实读取状态，新版字段仍必须有本地读取接线。
     for (const id of SETTINGS_SNAPSHOT_V2_FIELD_IDS) expect(report.fields[id].status, id).toBe(inspection.fields[id]!.status);
     expect(report.fields['im.wecom.notificationsEnabled']).toEqual({ status: 'private' });
-    expect(report.collections.modelVisibility.status).toBe('migrationPending');
+    expect(report.collections.modelVisibility.status).toBe('unavailable');
     expect(report.collections.modelParameterHistory.status).toBe('migrationPending');
     expect(report.collections.builtinToolOverrides).toMatchObject({ status: 'partial', total: null, omitted: null });
     expect(fs.readdirSync(state.root)).toEqual([]);
@@ -193,12 +192,6 @@ describe('production reader to v2 coverage seam', () => {
     write('worklouder-codex-settings.json', { customAgentKeys: [{ type: 'task', sessionId: 'private-session' }], deviceEnabled: true });
     write('im-default-settings.json', { schemaVersion: 3, channels: { telegram: { agents: { codex: { model: 'private-model', effort: 'high' } } } } });
     write('slack-hook.json', { version: 2, accounts: { account_a_123: { slack: { enabled: true } } }, workspaces: {} });
-    const presentation = emptyModelPresentationPreferences();
-    presentation.visibility.overrides['pi:private-provider:private-model'] = false;
-    presentation.engines['private-provider:private-model'] = { agent: 'cc' };
-    presentation.favorites.items = [{ uid: 'fixture-favorite', providerId: 'private-provider', modelId: 'private-model', agent: 'pi' }];
-    presentation.favorites.uidSeq = 2;
-    write('host-model-presentation-preferences.json', { _initialized: true, preferences: presentation });
     write('model-disable-prefs.json', { disabledModels: { 'private-provider:private-model': true } });
     write('local-codex-provider-prefs.json', { providers: { private: { name: 'private-provider-name', removed: false } } });
     write('model-context-limit-prefs.json', { limits: { 'pi:private:private-model': 99999 } });
@@ -218,6 +211,8 @@ describe('production reader to v2 coverage seam', () => {
     assertCoverage(parts);
     for (const id of SETTINGS_SNAPSHOT_V2_FIELD_IDS) expect(report.fields[id].status, id).toBe(inspection.fields[id]!.status);
     for (const [id, collection] of Object.entries(report.collections)) {
+      // Visibility, engines and favorites live in the app window, as upstream keeps them.
+      if (['modelVisibility', 'modelEngines', 'modelFavorites'].includes(id)) { expect(collection.status, id).toBe('unavailable'); continue; }
       expect(collection.status, id).toBe(id === 'builtinToolOverrides' ? 'partial' : 'complete');
       expect(collection.entries.length, id).toBeGreaterThan(0);
     }

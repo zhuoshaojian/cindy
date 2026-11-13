@@ -5,7 +5,6 @@ import { readLocalWorkerCreationSelection } from './state/workerCreationPrefs';
 import { useModelFavoritesHost } from './state/useModelFavoritesHost';
 import { getDataOwnerGeneration } from './contexts/dataOwnerGeneration';
 import { connectHostNewTaskPreferences } from './state/hostNewTaskPreferences';
-import { connectHostModelPresentationPreferences } from './state/hostModelPresentationPreferences';
 import { RouterProvider } from 'react-router-dom';
 
 import { useEffect } from 'react';
@@ -223,7 +222,6 @@ function MakerBootstrap() {
 
   useResyncAgentIslandSettingsAfterLogin(isAuthenticated);
   useEffect(() => connectHostNewTaskPreferences(), [dataOwnerId, dataOwnerRecoveryEpoch]);
-  useEffect(() => connectHostModelPresentationPreferences(), [dataOwnerId, dataOwnerRecoveryEpoch]);
 
   // Remote SSH handlers register during the environment check. Read the
   // snapshot only after that gate passes, then keep receiving live pushes.

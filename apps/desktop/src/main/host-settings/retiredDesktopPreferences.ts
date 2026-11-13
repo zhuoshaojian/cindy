@@ -63,20 +63,3 @@ export async function returnRetiredDesktopPreferences(
   fs.renameSync(file, path.join(root, RETURNED));
   return 'returned';
 }
-
-/** Cloud instances only. Tries after startup and then every half minute for up to an hour. */
-export function startReturningRetiredDesktopPreferences(): () => void {
-  let timer: NodeJS.Timeout | null = null;
-  let stopped = false;
-  let attempts = 0;
-  const schedule = (delay: number) => { timer = setTimeout(() => void attempt(), delay); timer.unref?.(); };
-  const attempt = async () => {
-    timer = null;
-    if (stopped) return;
-    const outcome = await returnRetiredDesktopPreferences().catch(() => 'retry' as const);
-    if (outcome === 'returned') log.info('earlier desktop preferences returned to the app window');
-    if (outcome === 'retry' && !stopped && ++attempts < 120) schedule(30_000);
-  };
-  schedule(10_000);
-  return () => { stopped = true; if (timer) clearTimeout(timer); };
-}

@@ -294,9 +294,9 @@ const collectionDefinition = <T extends z.ZodTypeAny>(entrySchema: T, tab: Setti
   privacy: 'safeProjection' as const, labelKey: `settingsRead.collections.${control}`,
 });
 export const SETTINGS_READ_COLLECTION_CATALOG = {
-  modelVisibility: collectionDefinition(z.object({ ...entryBase, enabled: bool }).strict(), 'providers', 'UnifiedModelList', 'main/host-settings/model-presentation-preferences.ts'),
-  modelEngines: collectionDefinition(z.object({ ...entryBase, agent: harness }).strict(), 'providers', 'UnifiedModelList', 'main/host-settings/model-presentation-preferences.ts'),
-  modelFavorites: collectionDefinition(z.object({ ...entryBase, agent: harness, effort: effort.nullable(), fast: bool }).strict(), 'providers', 'UnifiedModelList', 'main/host-settings/model-presentation-preferences.ts'),
+  modelVisibility: collectionDefinition(z.object({ ...entryBase, enabled: bool }).strict(), 'providers', 'UnifiedModelList', 'main/maker-host/model-visibility-mirror.ts'),
+  modelEngines: collectionDefinition(z.object({ ...entryBase, agent: harness }).strict(), 'providers', 'UnifiedModelList', 'main/maker-host/model-visibility-mirror.ts'),
+  modelFavorites: collectionDefinition(z.object({ ...entryBase, agent: harness, effort: effort.nullable(), fast: bool }).strict(), 'providers', 'UnifiedModelList', 'main/maker-host/model-visibility-mirror.ts'),
   modelDisable: collectionDefinition(z.object({ ...entryBase, kind: z.enum(['model', 'provider']), disabled: z.literal(true) }).strict(), 'providers', 'UnifiedModelList', 'main/maker-host/model-disable-store.ts'),
   providerPresentation: collectionDefinition(z.object({ ...entryBase, nameConfigured: bool, removed: bool.nullable() }).strict(), 'providers', 'ProvidersSection', 'main/maker-host/provider-presentation-store.ts'),
   modelContextBudget: collectionDefinition(z.object({ ...entryBase, contextLimit: integer(1000, 100_000_000) }).strict(), 'providers', 'ModelAdvancedDrawer', 'shared/modelContextLimit.ts'),

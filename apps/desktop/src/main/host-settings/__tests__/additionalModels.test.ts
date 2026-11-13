@@ -42,7 +42,7 @@ vi.mock('../catalog.js', () => ({ refreshSettingsModelRecommendation: async () =
       efforts: ['low', 'high'], defaultEffort: 'high', supportsFastMode: true, defaultEnabled: true }))])),
   }], agents: ['claude-code', 'codex', 'pi'], assertCurrent() {},
 }) }));
-vi.mock('../../maker-host/model-visibility-mirror.js', () => ({ getModelVisibilityOverride: () => undefined, waitForModelVisibilityMirror: async () => {} }));
+vi.mock('../../maker-host/model-visibility-mirror.js', () => ({ getModelVisibilityOverride: () => undefined, waitForModelVisibilityMirror: async () => {}, getModelVisibilityMirrorSnapshot: () => ({}) }));
 vi.mock('../../maker-host/index.js', () => ({ getMakerIfReady: () => ({ listAvailableAgents: () => ['claude-code', 'codex', 'pi'] }) }));
 vi.mock('../../maker-host/createDesktopProviderService.js', () => ({ getDesktopProviderService: () => ({ listProviders: async () => [] }) }));
 vi.mock('../../maker-host/active-catalog.js', () => ({ getActiveCatalog: () => ({}), getActiveCatalogRevision: () => context.catalogRevision }));
@@ -59,7 +59,6 @@ import { configureHostSettingsApplication, getHostSettings, updateHostSettings }
 import { normalizeHostSettingsChange, type HostSettingsDomain, type HostSettingsUpdate } from '../../../shared/hostSettings.js';
 import { modelSettingsChoices, readModelSettings, validateModelSettingsChange, commitModelSettings } from '../additionalModels.js';
 import { settingsWebReadResultSchema } from '../../../shared/settingsWeb.js';
-import { emptyModelPresentationPreferences } from '../../../shared/modelPresentationPreferences.js';
 import { readModelContextLimit } from '../../maker-host/model-context-limit-store.js';
 import { readModelDisableOverrides } from '../../maker-host/model-disable-store.js';
 import { readSubagentModelSettings } from '../../maker-host/subagent-model-settings-store.js';
@@ -223,34 +222,6 @@ describe('model and IM settings native persistence', () => {
     expect(isTargetModelsCustomized()).toBe(true);
     await updateHostSettings(caller, await request('visionBridge', { clear: ['targetModels'] }));
     expect(isTargetModelsCustomized()).toBe(false);
-  });
-  it('preserves the upstream speed tier when the legacy cloud editor round-trips its Fast switch', async () => {
-    const dir = path.join(context.root, 'owners', 'test-first'); fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, 'host-model-presentation-preferences.json');
-    const preferences = emptyModelPresentationPreferences();
-    preferences.favorites = { uidSeq: 2, seeded: true, items: [{ uid: 'fav-1', agent: 'codex', providerId: route.providerId, modelId: route.modelId, effort: 'low', fast: 'ultrafast' }] };
-    fs.writeFileSync(file, JSON.stringify({ _initialized: true, preferences }));
-    expect(await getHostSettings(caller, 'modelFavorites')).toMatchObject({ status: 'ready', value: { entries: [{ fast: true }] } });
-    const target = { ...route, harness: 'codex', effort: 'low', fast: true };
-    expect(await updateHostSettings(caller, await request('modelFavorites', { set: { entries: [target] } }))).toMatchObject({ saved: true });
-    expect(JSON.parse(fs.readFileSync(file, 'utf8')).preferences.favorites.items[0]).toMatchObject({ uid: 'fav-1', fast: 'ultrafast' });
-    expect(await updateHostSettings(caller, await request('modelFavorites', { set: { entries: [{ ...target, fast: false }] } }))).toMatchObject({ saved: true });
-    expect(JSON.parse(fs.readFileSync(file, 'utf8')).preferences.favorites.items[0].fast).toBeUndefined();
-  });
-  it('edits model preference axes independently and keeps native favorite identities', async () => {
-    const dir = path.join(context.root, 'owners', 'test-first'); fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, 'host-model-presentation-preferences.json');
-    fs.writeFileSync(file, JSON.stringify({ _initialized: true, preferences: emptyModelPresentationPreferences() }));
-    const target = { ...route, harness: 'codex' };
-    expect(await updateHostSettings(caller, await request('modelVisibility', { set: { entries: [{ ...target, enabled: false }] } }))).toMatchObject({ saved: true });
-    expect(await updateHostSettings(caller, await request('modelFavorites', { set: { entries: [{ ...target, effort: 'low', fast: true }] } }))).toMatchObject({ saved: true });
-    const firstUid = JSON.parse(fs.readFileSync(file, 'utf8')).preferences.favorites.items[0].uid;
-    await updateHostSettings(caller, await request('modelEngines', { set: { entries: [target] } }));
-    await updateHostSettings(caller, await request('modelVisibility', { clear: ['entries'] }));
-    const native = JSON.parse(fs.readFileSync(file, 'utf8')).preferences;
-    expect(native.favorites.items[0].uid).toBe(firstUid);
-    expect(native.engines).toEqual({ 'fixture-provider:fixture-model': { agent: 'codex' } });
-    expect(native.visibility.overrides).toEqual({});
   });
   it('updates actual context limits and disabled model/provider maps', async () => {
     const target = { ...route, harness: 'codex' };

@@ -1,4 +1,5 @@
 import { inspectModelPreferences, commitModelPreferences } from './additionalModelPreferences.js';
+import { isModelPresentationDomain, readModelPresentationDomain, commitModelPresentationDomain } from './modelPresentationDomains.js';
 import { inspectImSettings, commitImSettings } from './additionalIm.js';
 import { app } from 'electron';
 import { SETTINGS_WEB_MAX_CHOICES } from '../../shared/settingsWeb.js';
@@ -16,7 +17,7 @@ import { getModelVisibilityOverride } from '../maker-host/model-visibility-mirro
 import { getActiveCatalog, getActiveCatalogRevision } from '../maker-host/active-catalog.js';
 import { getProviderRouteMutationStamp } from '../maker-host/provider-route.js';
 import { readModelDisableOverrides, getHostModelAccessStore } from '../maker-host/model-disable-store.js';
-import { inspectModelPresentationPreferences } from './model-presentation-preferences.js';
+import { getModelVisibilityMirrorSnapshot } from '../maker-host/model-visibility-mirror.js';
 import { readProviderOrder } from '../maker-host/provider-order-store.js';
 import { buildTextOneshotPinOptions } from '../utility-model/textOneshotPinOptions.js';
 import { hasOneshotProviderCredential } from '../utility-model/oneshotProviderUsability.js';
@@ -54,6 +55,10 @@ export function inspectModelSettings(domain: ModelSettingsDomain): State {
     }
     return project(domain, storeFor(domain).inspect());
   } catch { return { status: 'unreadable', revision: null }; }
+}
+/** Visibility, engines and favorites live in the app window and are read asynchronously. */
+async function currentModelSettings(domain: ModelSettingsDomain): Promise<State> {
+  return isModelPresentationDomain(domain) ? readModelPresentationDomain(domain) : inspectModelSettings(domain);
 }
 export async function modelSettingsChoices(domain: ModelSettingsDomain): Promise<Record<string, SettingsChoice[]>> {
   const catalog = await refreshSettingsModelRecommendation();
@@ -105,7 +110,7 @@ export async function modelSettingsChoices(domain: ModelSettingsDomain): Promise
 }
 export function captureSettingsModelGuard() {
   const stamp = () => [getActiveCatalogRevision(), getProviderRouteMutationStamp(),
-    getHostModelAccessStore().inspect().revision, inspectModelPresentationPreferences().revision].join(':');
+    getHostModelAccessStore().inspect().revision, JSON.stringify(getModelVisibilityMirrorSnapshot([], true))].join(':');
   if (!getProviderRouteMutationStamp().endsWith(':0')) throw new HostSettingsError('CONFLICT');
   const expected = stamp();
   const assertCurrent = () => { if (stamp() !== expected) throw new HostSettingsError('CONFLICT'); };
@@ -115,7 +120,7 @@ export async function validateModelSettingsChange(domain: ModelSettingsDomain, c
   const assertCurrent = captureSettingsModelGuard();
   const choices = await modelSettingsChoices(domain);
   assertCurrent();
-  const before = inspectModelSettings(domain);
+  const before = await currentModelSettings(domain);
   if (before.status !== 'ready') throw new HostSettingsError('UNREADABLE');
   for (const [key, value] of Object.entries(change.set)) {
     if (!(key in choices) || value === null) continue;
@@ -138,6 +143,7 @@ export async function validateModelSettingsChange(domain: ModelSettingsDomain, c
   return { choices, assertCurrent };
 }
 export async function commitModelSettings(domain: ModelSettingsDomain, change: { set: Values; clear: string[] }, options: OverrideSettingsCommitOptions): Promise<State & { status: 'ready' }> {
+  if (isModelPresentationDomain(domain)) return commitModelPresentationDomain(domain, change, () => options.assertCurrent?.());
   if (isModelPreferenceDomain(domain)) return commitModelPreferences(domain, change, options);
   if (isImSettingsDomain(domain)) return commitImSettings(domain, change, options);
   // subagentModel, auxiliaryModel and visionBridge are saved through their upstream sections.
@@ -147,7 +153,7 @@ export async function commitModelSettings(domain: ModelSettingsDomain, change: {
 
 /** Interpret dynamic defaults without writing them as overrides. */
 export async function readModelSettings(domain: ModelSettingsDomain) {
-  const before = inspectModelSettings(domain);
+  const before = await currentModelSettings(domain);
   if (before.status !== 'ready') return before;
   const choices = await modelSettingsChoices(domain);
   let value = before.value, defaults = before.defaults;
@@ -166,6 +172,6 @@ export async function readModelSettings(domain: ModelSettingsDomain) {
       before.customizedKeys.push('models'); before.isCustomized = true;
     }
   }
-  if (inspectModelSettings(domain).revision !== before.revision) throw new HostSettingsError('CONFLICT');
+  if ((await currentModelSettings(domain)).revision !== before.revision) throw new HostSettingsError('CONFLICT');
   return { ...before, value, defaults, choices };
 }

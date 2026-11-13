@@ -1,7 +1,5 @@
 import { additionalSettingsSchemas, type ModelPreferenceDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
-import { inspectModelPresentationPreferences, commitHostModelPresentationPreferences } from './model-presentation-preferences.js';
-import { applyModelPresentationOperation, visibilityPreferenceKey, enginePreferenceKey, type ModelPresentationPreferences, type ModelFavoriteConfig } from '../../shared/modelPresentationPreferences.js';
 import { getHostModelContextStore, inspectModelContextLimits, modelContextLimitKey } from '../maker-host/model-context-limit-store.js';
 import { getHostModelAccessStore, inspectModelDisableOverrides } from '../maker-host/model-disable-store.js';
 import { ownerScopedUserDataPath } from '../appSessionState.js';
@@ -13,19 +11,13 @@ import { getHostModelPriceStore, readModelPriceOverrideView, inspectModelPriceOv
 import { getActiveCatalog } from '../maker-host/active-catalog.js';
 type Values = Record<string, SettingsEditableValue>;
 type State = HostSettingState<Values>;
-type Entry = { harness: 'claude-code' | 'codex' | 'pi'; providerId: string; modelId: string; enabled?: boolean; limit?: number; effort?: ModelFavoriteConfig['effort'] | null; fast?: boolean };
+type Entry = { harness: 'claude-code' | 'codex' | 'pi'; providerId: string; modelId: string; limit?: number };
 function parseTarget(key: string, withHarness = true) {
   const parts = key.split(':');
   const harness = withHarness ? parts.shift() : undefined;
   const providerId = parts.shift(), modelId = parts.join(':');
   if (!providerId || !modelId || withHarness && !['claude-code', 'codex', 'pi'].includes(harness!)) throw new HostSettingsError('UNREADABLE');
   return { ...(withHarness ? { harness } : {}), providerId, modelId };
-}
-const publicHarness = (engine: string) => engine === 'cc' ? 'claude-code' : engine;
-function presentationValues(domain: ModelPreferenceDomain, prefs: ModelPresentationPreferences): Values {
-  if (domain === 'modelVisibility') return { entries: Object.entries(prefs.visibility.overrides).map(([key, enabled]) => ({ ...parseTarget(key), enabled })) } as Values;
-  if (domain === 'modelEngines') return { entries: Object.entries(prefs.engines).map(([key, value]) => ({ ...parseTarget(key, false), harness: publicHarness(value.agent) })) } as Values;
-  return { entries: prefs.favorites.items.map(item => ({ harness: publicHarness(item.agent), providerId: item.providerId, modelId: item.modelId, effort: item.effort ?? null, fast: item.fast === true || item.fast === 'ultrafast' })) };
 }
 function ready(domain: ModelPreferenceDomain, revision: string, value: Values): State & { status: 'ready' } {
   additionalSettingsSchemas[domain].parse(value);
@@ -64,9 +56,8 @@ export function inspectModelPreferences(domain: ModelPreferenceDomain): State {
       const state = getHostModelAccessStore().inspect();
       return state.status !== 'ready' ? state : ready(domain, state.revision, { models: Object.keys(state.value.disabledModels).map(key => parseTarget(key, false)), providers: Object.keys(state.value.disabledProviders) } as Values);
     }
-    const prefs = inspectModelPresentationPreferences();
-    if (prefs.status !== 'ready') return { status: prefs.status === 'unreadable' ? 'unreadable' : 'unavailable', revision: null };
-    return ready(domain, prefs.revision, presentationValues(domain, prefs.value));
+    // Visibility, engines and favorites are read asynchronously through upstream (modelPresentationDomains).
+    return { status: 'unavailable', revision: null };
   } catch { return { status: 'unreadable', revision: null }; }
 }
 export async function commitModelPreferences(domain: ModelPreferenceDomain, change: { set: Values; clear: string[] }, options: OverrideSettingsCommitOptions): Promise<State & { status: 'ready' }> {
@@ -110,32 +101,5 @@ export async function commitModelPreferences(domain: ModelPreferenceDomain, chan
     }, options);
     return ready(domain, state.revision, { models: Object.keys(state.value.disabledModels).map(key => parseTarget(key, false)), providers: Object.keys(state.value.disabledProviders) } as Values);
   }
-  const result = await commitHostModelPresentationPreferences(current => {
-    const entries = values('entries')!;
-    if (domain === 'modelVisibility') {
-      for (const key of Object.keys(current.visibility.overrides)) {
-        const target = parseTarget(key) as { harness: Entry['harness']; providerId: string; modelId: string };
-        current = applyModelPresentationOperation(current, { kind: 'visibility-reset', providerId: target.providerId, targets: [{ agent: target.harness, modelId: target.modelId }] }).value;
-      }
-      for (const item of entries) current = applyModelPresentationOperation(current, { kind: 'visibility-set', providerId: item.providerId, targets: [{ agent: item.harness, modelId: item.modelId }], enabled: item.enabled! }).value;
-    } else if (domain === 'modelEngines') {
-      current.engines = Object.fromEntries(entries.map(item => [enginePreferenceKey(item.providerId, item.modelId), { agent: item.harness === 'claude-code' ? 'cc' : item.harness }]));
-    } else {
-      const previous = current.favorites.items;
-      current.favorites.items = [];
-      for (const item of entries) {
-        const config: ModelFavoriteConfig = { providerId: item.providerId, modelId: item.modelId, agent: item.harness === 'claude-code' ? 'cc' : item.harness,
-          ...(item.effort ? { effort: item.effort } : {}), ...(item.fast ? { fast: true } : {}) };
-        // The legacy settings editor only has an enabled switch. Retain the exact tier
-        // when it sends back an unchanged enabled entry. Native favorites carry all tiers.
-        if (item.fast && previous.some(old => old.providerId === config.providerId && old.modelId === config.modelId && old.agent === config.agent && old.effort === config.effort && old.fast === 'ultrafast')) config.fast = 'ultrafast';
-        const same = previous.find(old => old.providerId === config.providerId && old.modelId === config.modelId && old.agent === config.agent && old.effort === config.effort && old.fast === config.fast);
-        if (same) current.favorites.items.push(same);
-        else current = applyModelPresentationOperation(current, { kind: 'favorite-add', config }).value;
-      }
-      current.favorites.seeded = true;
-    }
-    return current;
-  }, options);
-  return ready(domain, result.revision, presentationValues(domain, result.value));
+  throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
 }

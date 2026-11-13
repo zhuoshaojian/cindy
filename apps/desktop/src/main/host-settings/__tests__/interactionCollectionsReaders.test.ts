@@ -32,7 +32,6 @@ import { inspectDynamicSettingsCollections } from '../readers/collections.js';
 import { inspectSettingsJson } from '../../maker-host/inspect-settings-json.js';
 import { SETTINGS_READ_CATALOG, SETTINGS_READ_FIELD_IDS, SETTINGS_READ_COLLECTION_CATALOG, SETTINGS_READ_COLLECTION_IDS, SETTINGS_READ_SHORTCUT_IDS } from '../../../shared/settingsReadCatalog.js';
 import { projectSettingsSnapshotV2 } from '../snapshotProjectionV2.js';
-import { emptyModelPresentationPreferences } from '../../../shared/modelPresentationPreferences.js';
 import type { ReadonlySettingsInspection } from '../readTypes.js';
 
 let root: string;
@@ -166,7 +165,7 @@ describe('known persisted dynamic collections', () => {
   });
   it('reports empty/default and migration states honestly without enumerating workspaces', () => {
     const result = noWrites(lists);
-    expect(result.modelVisibility).toEqual({ status: 'migrationPending' });
+    expect(result.modelVisibility).toEqual({ status: 'unavailable' });
     expect(result.modelDisable).toEqual({ status: 'value', entries: [], total: 0, complete: true });
     expect(result.builtinToolOverrides).toEqual({ status: 'value', entries: [], total: null, complete: false });
     expect(result.modelParameterHistory).toEqual({ status: 'migrationPending' });
@@ -220,36 +219,6 @@ describe('known persisted dynamic collections', () => {
     }
     expect(result.imWorkspacePrefs).toMatchObject({ status: 'value', total: 1, entries: [{ fields: { modelConfigured: { value: false }, dirty: { value: true } } }] });
   });
-  it('retains omitted persisted visibility keys in totals without inventing catalog values', () => {
-    const preferences = emptyModelPresentationPreferences();
-    preferences.visibility.initialization.followCatalogKeys = ['pi:private:retired'];
-    write('host-model-presentation-preferences.json', { _initialized: true, preferences });
-    expect(noWrites(lists).modelVisibility).toEqual({ status: 'value', entries: [], total: 1, complete: false });
-  });
-  it.each([false, true])('历史默认不是当前值，即使有followCatalog墓碑也不补值：%s', followCatalog => {
-    const preferences = emptyModelPresentationPreferences();
-    const key = 'pi:private-provider:historical-model';
-    preferences.visibility.initialization.defaults[key] = false;
-    if (followCatalog) preferences.visibility.initialization.followCatalogKeys.push(key);
-    write('host-model-presentation-preferences.json', { _initialized: true, preferences });
-    const result = noWrites(projectedLists);
-    expect(result.modelVisibility).toEqual({ status: 'partial', entries: [], total: 1, omitted: 1 });
-    expect(JSON.stringify(result)).not.toContain(key);
-  });
-  it('只公开显式visibility override，未覆盖的历史默认和跟随目录项计入省略数', () => {
-    const preferences = emptyModelPresentationPreferences();
-    preferences.visibility.overrides = { 'pi:private:on': true, 'pi:private:off': false };
-    preferences.visibility.initialization.defaults = { 'pi:private:on': false, 'pi:private:off': true, 'pi:private:historical': true, 'pi:private:follow': false };
-    preferences.visibility.initialization.followCatalogKeys = ['pi:private:follow'];
-    write('host-model-presentation-preferences.json', { _initialized: true, preferences });
-    const result = noWrites(projectedLists);
-    expect(result.modelVisibility).toEqual({ status: 'partial', total: 4, omitted: 2, entries: [
-      { ordinal: 1, source: 'override', enabled: true },
-      { ordinal: 2, source: 'override', enabled: false },
-    ] });
-    expect(result.builtinToolOverrides).toEqual({ status: 'partial', entries: [], total: null, omitted: null });
-    expect(JSON.stringify(result)).not.toContain('pi:private:');
-  });
   it('合法空effort只省略该叶子，provider和legacy槽的其它tuning仍可公开', () => {
     write('host-new-task-defaults.json', { _initialized: true, _history: {
       vendor: 'pi', lastByVendor: { pi: { providerId: 'private-provider', model: 'private-model', effort: '' } }, modelChosenByVendor: {}, defaultTupleCustomized: false, defaultTupleSelectionCustomized: false,
@@ -292,21 +261,14 @@ describe('known persisted dynamic collections', () => {
     expect(result).toMatchObject({ status: 'complete', total: 1, omitted: 0, entries: [{ ordinal: 1, dirty: expected, modelConfigured: model !== null }] });
     expect(JSON.stringify(result)).not.toContain('private-');
   });
-  it('covers three presentation axes and known user/project tool overrides without arbitrary KV', () => {
-    const preferences = emptyModelPresentationPreferences();
-    preferences.visibility.overrides['pi:private:retired'] = false;
-    preferences.engines['private:retired'] = { agent: 'cc' };
-    preferences.favorites.items = [{ uid: 'fav-1', providerId: 'private', modelId: 'retired', agent: 'pi' }];
-    preferences.favorites.uidSeq = 2;
-    write('host-model-presentation-preferences.json', { _initialized: true, preferences });
+  it('reports presentation axes as on any desktop and covers known user/project tool overrides without arbitrary KV', () => {
     write('builtin-tools-settings.json', { builtinTools: { browser: { enabled: false }, arbitrary: { enabled: true, token: 'secret' } } });
     const workspace = path.join(root, 'known-project');
     fs.mkdirSync(path.join(workspace, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(workspace, '.claude/settings.json'), JSON.stringify({ xdtMaker: { plugins: { ssh: { enabled: false } } }, arbitrary: { token: 'secret' } }));
     const result = noWrites(() => inspectDynamicSettingsCollections({ ...context(), knownWorkspaces: [workspace], knownWorkspacesComplete: true }).collections!);
-    expect(result.modelVisibility).toMatchObject({ total: 1, complete: true });
-    expect(result.modelEngines).toMatchObject({ total: 1, complete: true });
-    expect(result.modelFavorites).toMatchObject({ total: 1, complete: true });
+    // The three presentation axes live in the app window, as upstream keeps them.
+    for (const name of ['modelVisibility', 'modelEngines', 'modelFavorites'] as const) expect(result[name]).toEqual({ status: 'unavailable' });
     expect(result.builtinToolOverrides).toMatchObject({ total: 2, complete: true });
     expect(JSON.stringify(result.builtinToolOverrides)).not.toContain('arbitrary');
   });

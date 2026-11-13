@@ -7,7 +7,6 @@ import { readHostSettings, onHostSettingsChanged } from './index.js';
 import { projectSettingsSnapshot } from './snapshotProjection.js';
 import { readSettingsSnapshotV2 } from './readSnapshot.js';
 import { getSettingsPublicIdentifiers } from './publicIdentifiers.js';
-import { onModelPresentationPreferencesChanged } from './model-presentation-preferences.js';
 import { createSettingsSnapshotPublisher, settingsSnapshotPublishUrl, type SnapshotPublishContext } from './snapshotPublisher.js';
 
 /** 只读取已提交身份和现成 AT；未就绪、旧协议或未配置端点时不上报。 */
@@ -51,7 +50,6 @@ export function startCloudSettingsSnapshotPublisher(): () => void {
   });
   const stopAuth = authManager.onAuthStateChange(() => publisher.requestPublish());
   const stopSettings = onHostSettingsChanged(() => publisher.requestPublish());
-  const stopModelPresentation = onModelPresentationPreferencesChanged(() => publisher.requestPublish());
   publisher.start();
   let stopped = false;
   return () => {
@@ -60,6 +58,5 @@ export function startCloudSettingsSnapshotPublisher(): () => void {
     publisher.stop();
     stopAuth();
     stopSettings();
-    stopModelPresentation();
   };
 }

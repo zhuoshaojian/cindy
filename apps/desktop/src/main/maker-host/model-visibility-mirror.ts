@@ -14,15 +14,12 @@
  * maker-ipc → im 的反向耦合。
  *
  * key 形如 `${agent}:${providerId}:${modelId}`,与 renderer modelVisibilityPrefs.keyOf 一致。
- *
- * 托管云实例除外:真源在 Host 文件,导出函数转交 hostModelVisibilityMirror。
  */
 
 import type { AgentKind, ProviderView } from '@cindy/model-providers';
 
 import { createIpcError } from '../../shared/ipc-errors.js';
 import { isDataOwnerPushStamp, type DataOwnerPushStamp } from '../../shared/dataOwnerPush.js';
-import { hostModelVisibilityMirror } from '../host-settings/model-presentation-preferences.js';
 
 /** 有效开关表:key=`${agent}:${providerId}:${modelId}` → 用户显式设定的可见性。 */
 type VisibilityMap = Record<string, boolean>;
@@ -38,8 +35,6 @@ function notReady(): Error {
 
 /** Wait only for current-account preferences; never manufacture factory defaults. */
 export function waitForModelVisibilityMirror(timeoutMs = 5000): Promise<void> {
-  const host = hostModelVisibilityMirror();
-  if (host) return host.waitForModelVisibilityMirror(timeoutMs);
   if (ready) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const finish = (error?: Error): void => {
@@ -64,8 +59,6 @@ function keyOf(agent: AgentKind, providerId: string, modelId: string): string {
  * 返回净化后的镜像是否实际变化，调用方据此避免重复广播目录失效事件。
  */
 export function setModelVisibilityMirror(raw: unknown, policy?: unknown): boolean {
-  const host = hostModelVisibilityMirror();
-  if (host) return host.setModelVisibilityMirror(raw, policy);
   const candidate = policy as { fallback?: unknown; followCatalogKeys?: unknown; pending?: unknown } | undefined;
   if (candidate?.pending === true) {
     if (!ready) return false;
@@ -150,8 +143,6 @@ export function getModelVisibilityOverride(
   providerId: string,
   modelId: string,
 ): boolean | undefined {
-  const host = hostModelVisibilityMirror();
-  if (host) return host.getModelVisibilityOverride(agent, providerId, modelId);
   if (!ready) throw notReady();
   const key = keyOf(agent, providerId, modelId);
   return mirror[key] ?? (strict && !followCatalogKeys.has(key) ? false : undefined);
@@ -162,8 +153,6 @@ export function getModelVisibilityOverride(
  * 控制端(手机),让手机模型列表按**被控端**用户的显示开关过滤(与本机 / IM /model 同口径)。
  */
 export function getModelVisibilityMirrorSnapshot(providers: readonly ProviderView[] = [], allowPending = false): Record<string, boolean> {
-  const host = hostModelVisibilityMirror();
-  if (host) return host.getModelVisibilityMirrorSnapshot(providers, allowPending);
   if (!ready && allowPending) return {};
   if (!ready) throw notReady();
   const snapshot = { ...mirror };
@@ -187,7 +176,6 @@ export function getModelVisibilityMirrorSnapshot(providers: readonly ProviderVie
 
 /** Clear the process-global mirror at an account boundary before the next owner is committed. */
 export function clearModelVisibilityMirror(): void {
-  hostModelVisibilityMirror()?.clearModelVisibilityMirror();
   mirror = {};
   ready = false;
   for (const finish of readinessWaiters) finish(notReady());

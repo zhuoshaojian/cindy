@@ -14,12 +14,12 @@ import { AppPreferenceControl } from '../AppPreferenceControl';
 type Listener = (request: AppPreferenceRequest) => Promise<void> | void;
 let listener: Listener | null = null;
 const reply = vi.fn<(value: AppPreferenceReply) => void>();
-const setDebugNet = vi.fn(async (_enabled: boolean) => ({ ok: true as const }));
-const setSwallow = vi.fn(async (_enabled: boolean) => undefined);
+const setDebugNet = vi.fn<(enabled: boolean) => Promise<{ ok: true }>>(async () => ({ ok: true }));
+const setSwallow = vi.fn<(enabled: boolean) => Promise<void>>(async () => undefined);
 
-function request(operation: AppPreferenceRequest['operation'], patch?: AppPreferenceRequest['patch']): AppPreferenceRequest {
+function request(operation: AppPreferenceRequest['operation'], patch?: AppPreferenceRequest['patch'], extra: Partial<AppPreferenceRequest> = {}): AppPreferenceRequest {
   return { requestId: '00000000-0000-4000-8000-000000000001', ownerStamp: { dataOwnerId: 'owner', ownerGeneration: 1 },
-    expiresAt: Date.now() + 5000, operation, ...(patch ? { patch } : {}) } as AppPreferenceRequest;
+    expiresAt: Date.now() + 5000, operation, ...(patch ? { patch } : {}), ...extra } as AppPreferenceRequest;
 }
 async function send(value: AppPreferenceRequest): Promise<AppPreferenceReply> {
   reply.mockClear();
@@ -60,6 +60,15 @@ describe('AppPreferenceControl', () => {
     expect(localStorage.getItem('experimental.debug-network')).toBe('true');
     expect(setSwallow).toHaveBeenCalledWith(true);
     expect(setDebugNet).toHaveBeenCalled();
+  });
+
+  it('remembers and forgets a model engine through the engine preferences store', async () => {
+    render(<AppPreferenceControl />);
+    expect((await send(request('model-engine'))).modelEngines).toEqual({});
+    const saved = await send(request('model-engine', undefined, { modelEngine: { providerId: 'xd', modelId: 'gpt', agent: 'pi' } }));
+    expect(saved).toMatchObject({ ok: true, modelEngines: { 'xd:gpt': 'pi' } });
+    const cleared = await send(request('model-engine', undefined, { modelEngine: { providerId: 'xd', modelId: 'gpt', agent: null } }));
+    expect(cleared).toMatchObject({ ok: true, modelEngines: {} });
   });
 
   it('refuses a value outside the preference grammar', async () => {

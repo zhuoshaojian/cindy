@@ -6,10 +6,7 @@ import { applyCustomModelEdit } from '../../shared/customModelEdit.js';
 import * as authManager from '../authManager.js';
 import { projectRoutingForDisplay, setCloudPrivateInvokeHandler } from '../device-link/dispatch.desktop.js';
 import { callCloudManagement } from '../host-settings/managementCalls.js';
-import {
-  inspectModelPresentationPreferences,
-  mutateModelPresentationPreferences,
-} from '../host-settings/model-presentation-preferences.js';
+import { modelVisibilityRevision, setModelVisibility } from '../host-settings/modelPresentationDomains.js';
 import {
   applyHostModelEffort,
   readNewTaskPreferenceHistory,
@@ -49,8 +46,13 @@ export function registerCloudProviderSettings(): () => void {
       isInstanceOwner,
       owner: currentSettingsOwner,
       call: callCloudManagement,
-      inspectVisibility: inspectModelPresentationPreferences,
-      mutateVisibility: mutateModelPresentationPreferences,
+      visibilityRevision: modelVisibilityRevision,
+      async setVisibility(providerId, targets, enabled, assertCaller) {
+        for (const target of targets) {
+          await setModelVisibility({ harness: target.agent, providerId, modelId: target.modelId }, enabled);
+          assertCaller();
+        }
+      },
       projectRouting: projectRoutingForDisplay,
       resolveLogoKind: (providerId, routing) =>
         resolveProviderLogoKind(providerId, routing as ProviderLogoRouting | undefined),
