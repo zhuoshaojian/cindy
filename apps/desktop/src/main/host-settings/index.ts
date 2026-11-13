@@ -1,6 +1,6 @@
 import { isAdditionalSettingsDomain, isModelSettingsDomain, additionalSettingsMetadata } from '../../shared/settingsEditableCatalog.js';
 import { readAdditionalSettings, commitAdditionalSettings } from './additional.js';
-import { HOST_SETTINGS_CATALOG, isHostSettingsDomain, normalizeHostSettingsChange, type HostSettingsSnapshot, type HostSettingsDomain, type HostSettingsUpdate, type NewTaskDefaultSettings, type HostSettingsReceipt } from '../../shared/hostSettings.js';
+import { isHostSettingsDomain, normalizeHostSettingsChange, type HostSettingsSnapshot, type HostSettingsDomain, type HostSettingsUpdate, type NewTaskDefaultSettings, type HostSettingsReceipt } from '../../shared/hostSettings.js';
 import { inspectAppearanceSettings, onAppearanceSettingsChanged, commitAppearanceSettings } from '../appearance-settings-store.js';
 import { inspectDatabaseSizeWarningSettings, onDatabaseSizeWarningSettingsChanged, commitDatabaseSizeWarningSettings } from '../database-size-warning-settings.js';
 import { inspectPersonalization, onPersonalizationChanged, commitPersonalization, currentSettingsOwner, assertSettingsOwner, settingsOwnerKey } from './personalization.js';
@@ -27,7 +27,6 @@ export function onHostSettingsChanged(listener: () => void): () => void {
 export interface HostSettingsCaller {
   id: string;
   assertCurrent: () => void;
-  confirm?: (input: Record<string, unknown>, assertCurrent: () => void) => Promise<boolean>;
 }
 interface Application {
   models?: {
@@ -52,7 +51,7 @@ function validateScope(domain: HostSettingsDomain, workspaceId: unknown, writing
     || writing && domain === 'workspaceTools' && workspaceId === undefined) throw new HostSettingsError('INVALID_PARAMS');
 }
 
-export async function getHostSettings(caller: HostSettingsCaller, domain: HostSettingsDomain, includeUserPrompt = false, workspaceId?: string) {
+export async function getHostSettings(caller: HostSettingsCaller, domain: HostSettingsDomain, workspaceId?: string) {
   caller.assertCurrent();
   validateScope(domain, workspaceId);
   const owner = currentSettingsOwner();
@@ -61,17 +60,7 @@ export async function getHostSettings(caller: HostSettingsCaller, domain: HostSe
   const snapshot = await inspectDomain(domain, workspaceId);
   assertCurrent();
   if (snapshot.status !== 'ready') return snapshot;
-  let body: { userPrompt: string } | undefined;
-  if (includeUserPrompt) {
-    if (domain !== 'personalization') throw new HostSettingsError('INVALID_PARAMS');
-    if (!caller.confirm || !await caller.confirm({ domain, action: 'read_user_prompt', scope: 'owner', applies: 'next_agent_start' }, assertCurrent)) throw new HostSettingsError('CONFIRMATION_REQUIRED');
-    assertCurrent();
-    const fresh = inspectPersonalization();
-    if (fresh.status !== 'ready' || fresh.revision !== snapshot.revision) throw new HostSettingsError('CONFLICT');
-    body = fresh.value;
-  }
-  assertCurrent();
-  const value = domain === 'telegramPersona' ? { ...snapshot.value, soul: '' } : body ?? snapshot.value;
+  const value = domain === 'telegramPersona' ? { ...snapshot.value, soul: '' } : snapshot.value;
   return { ...snapshot, value, operationId: journal.issue(settingsOwnerKey(owner), caller.id, domain, snapshot.revision) };
 }
 export function getHostSettingsOperation(caller: HostSettingsCaller, id: string) {
@@ -79,7 +68,7 @@ export function getHostSettingsOperation(caller: HostSettingsCaller, id: string)
   if (!owner) throw new HostSettingsError('OWNER_CHANGED');
   return journal.get(id, settingsOwnerKey(owner), caller.id);
 }
-export async function updateHostSettings(caller: HostSettingsCaller, input: HostSettingsUpdate, nativeSave = false): Promise<HostSettingsReceipt> {
+export async function updateHostSettings(caller: HostSettingsCaller, input: HostSettingsUpdate): Promise<HostSettingsReceipt> {
   caller.assertCurrent();
   const owner = currentSettingsOwner();
   if (!owner) throw new HostSettingsError('OWNER_CHANGED');
@@ -101,21 +90,10 @@ export async function updateHostSettings(caller: HostSettingsCaller, input: Host
       await application.validateNewTaskDefaults(next);
       assertCurrent();
     }
-    const catalog = HOST_SETTINGS_CATALOG.find(entry => entry.domain === change.domain)!;
     const modelAdapter = isModelSettingsDomain(change.domain) ? application?.models : null;
     if (isModelSettingsDomain(change.domain) && !modelAdapter) throw new HostSettingsError('NOT_READY');
-    let modelValidation = modelAdapter && isModelSettingsDomain(change.domain)
+    const modelValidation = modelAdapter && isModelSettingsDomain(change.domain)
       ? await modelAdapter.validate(change.domain, change) : undefined;
-    const choices = modelValidation?.choices ?? ('choices' in before ? before.choices : undefined);
-    assertCurrent();
-    if (!nativeSave && (!caller.confirm || !await caller.confirm({ domain: change.domain, set: change.set, clear: change.clear,
-      before: before.value, defaults: before.defaults, ...(choices ? { choices } : {}),
-      ...('workspaceLabel' in before ? { workspaceLabel: before.workspaceLabel } : {}),
-      scope: 'scope' in catalog ? catalog.scope : '', applies: 'applies' in catalog ? catalog.applies : '',
-    }, assertCurrent))) throw new HostSettingsError('CONFIRMATION_REQUIRED');
-    assertCurrent();
-    // A confirmation can remain open while a provider is disconnected or a model changes.
-    if (modelAdapter && isModelSettingsDomain(change.domain)) modelValidation = await modelAdapter.validate(change.domain, change);
     assertCurrent();
     const options = { expectedRevision: input.expectedRevision, assertCurrent: () => { assertCurrent(); modelValidation?.assertCurrent(); } };
     let revision: string | undefined;
@@ -154,4 +132,4 @@ export async function updateHostSettings(caller: HostSettingsCaller, input: Host
     return { operationId: input.operationId, domain: input.domain, status: 'saved', saved: true, application: applied, revision };
   } });
 }
-export { HOST_SETTINGS_CATALOG, HostSettingsError };
+export { HostSettingsError };

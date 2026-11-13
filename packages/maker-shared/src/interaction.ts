@@ -173,39 +173,6 @@ export interface PermissionReviewPresentation {
   summary: InteractionDecisionSummary;
   title: string;
   toolName: string;
-  settings?: SettingsConfirmationPreview | null;
-}
-
-/** A bounded, text-only preview prepared by the execution Host. No HTML or executable actions. */
-export interface SettingsConfirmationPreview {
-  version: 1;
-  title: string;
-  description: string;
-  confirmLabel: string;
-  cancelLabel: string;
-  changes: Array<{ label: string; previous?: string; value: string }>;
-}
-
-export function parseSettingsConfirmationPreview(input: Record<string, unknown>): SettingsConfirmationPreview | null {
-  const preview = input.preview;
-  const text = (value: unknown, max: number): value is string => typeof value === 'string' && value.length <= max;
-  if (!isRecord(preview) || preview.version !== 1 || !text(preview.title, 160) || !preview.title
-    || !text(preview.description, 400) || !text(preview.confirmLabel, 80) || !preview.confirmLabel
-    || !text(preview.cancelLabel, 80) || !preview.cancelLabel
-    || !Array.isArray(preview.changes) || preview.changes.length > 16) return null;
-  const changes: SettingsConfirmationPreview['changes'] = [];
-  for (const change of preview.changes) {
-    if (!isRecord(change) || !text(change.label, 160) || !change.label || !text(change.value, 8192)
-      || (change.previous !== undefined && !text(change.previous, 8192))) return null;
-    changes.push({ label: change.label, value: change.value,
-      ...(change.previous !== undefined ? { previous: change.previous } : {}) });
-  }
-  return { version: 1, title: preview.title, description: preview.description,
-    confirmLabel: preview.confirmLabel, cancelLabel: preview.cancelLabel, changes };
-}
-
-export function formatSettingsConfirmationPreview(preview: SettingsConfirmationPreview): string {
-  return preview.changes.map(change => `${change.label}\n${change.previous === undefined ? '' : `${change.previous} → `}${change.value}`).join('\n\n');
 }
 
 export interface AskQuestionReviewPresentation {
@@ -364,8 +331,7 @@ export function buildPermissionReviewPresentation(
   const toolName = permissionToolName(request);
   const input = permissionInput(request);
   const riskSummary = permissionRiskSummary(request, localizer);
-  const settings = toolName === 'cindy_host_settings' ? parseSettingsConfirmationPreview(input) : undefined;
-  const canAlwaysAllow = toolName !== 'cindy_host_settings' && sessionScopedPermissionSuggestions(request.suggestions).length > 0;
+  const canAlwaysAllow = sessionScopedPermissionSuggestions(request.suggestions).length > 0;
   const sourceDescription = permissionSourceDescription(request);
   let description = permissionDescription(request);
   // IM retains its combined body; UI titles must describe the operation only.
@@ -387,7 +353,6 @@ export function buildPermissionReviewPresentation(
     summary: buildPermissionDecisionSummary({ toolName, riskSummary, canAlwaysAllow }, localizer),
     title: permissionTitle(request, localizer),
     toolName,
-    ...(settings !== undefined ? { settings } : {}),
   };
 }
 
@@ -1096,10 +1061,6 @@ function browserStep(args: Record<string, unknown>): string {
  */
 export function describePermissionAction(toolName: string, input: Record<string, unknown>): PermissionActionSummary {
   const name = toolName.toLowerCase();
-  if (name === 'cindy_host_settings') {
-    const preview = parseSettingsConfirmationPreview(input);
-    return { kind: 'tool', preview: preview ? formatSettingsConfirmationPreview(preview) : '' };
-  }
   // Progressive MCP dispatchers: mcp__server__call_tool / mcp:server:call_tool → inner tool.
   const innerName = readString(input.name);
   const innerArgs = argsObject(input.args);

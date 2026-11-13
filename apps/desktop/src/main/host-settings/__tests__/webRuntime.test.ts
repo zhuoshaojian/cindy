@@ -44,7 +44,7 @@ describe('web adapter uses actual Host settings files', () => {
     expect(await executeWebSettingsRequest(input({kind:'update',change}, 'b'.repeat(64)), () => {})).toMatchObject({ok:false,code:'OPERATION_MISMATCH'});
     expect(await executeWebSettingsRequest(input({kind:'update',change}), () => {})).toMatchObject({receipt:{saved:true}});
   });
-  it('saves, reads back and clears through the same CAS writer, without an agent approval shortcut', async () => {
+  it('saves, reads back and clears through the same CAS writer', async () => {
     const before = await executeWebSettingsRequest(input({ kind: 'read', domain: 'databaseWarning' }), () => {});
     if (!before.ok || !('settings' in before) || before.settings.status !== 'ready') throw new Error('fixture read');
     const change = { domain: 'databaseWarning' as const, operationId: before.settings.operationId, expectedRevision: before.settings.revision, set: { thresholdGiB: 5 } };
@@ -54,10 +54,6 @@ describe('web adapter uses actual Host settings files', () => {
     if (!after.ok || !('settings' in after) || after.settings.status !== 'ready') throw new Error('fixture read');
     expect(await executeWebSettingsRequest(input({ kind: 'update', change: { domain: 'databaseWarning', operationId: after.settings.operationId, expectedRevision: after.settings.revision, clear: ['thresholdGiB'] } }), () => {})).toMatchObject({ receipt: { saved: true } });
     expect(await executeWebSettingsRequest(input({ kind: 'read', domain: 'databaseWarning' }), () => {})).toMatchObject({ settings: { value: { thresholdGiB: 10, disabled: false }, customizedKeys: [] } });
-    const agent = { id: 'ordinary-agent', assertCurrent() {} };
-    const read = await getHostSettings(agent, 'databaseWarning');
-    if (read.status !== 'ready') throw new Error('fixture read');
-    expect(await updateHostSettings(agent, { domain: 'databaseWarning', operationId: read.operationId, expectedRevision: read.revision, set: { thresholdGiB: 7 } })).toMatchObject({ saved: false, code: 'CONFIRMATION_REQUIRED' });
   });
   it.each([
     ['newTaskDefaults', { planMode: true }],

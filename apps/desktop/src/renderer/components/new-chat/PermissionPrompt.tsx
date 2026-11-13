@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { describePermissionAction, parseSettingsConfirmationPreview, permissionTitle } from '@cindy/maker-shared/interaction';
+import { describePermissionAction, permissionTitle } from '@cindy/maker-shared/interaction';
 
 import { BotAvatar } from '@/features/bots/BotAvatar';
 import type { BotChatIdentity } from '@/features/bots/BotSessionContentHeader';
@@ -47,7 +47,7 @@ interface PermissionPromptProps {
 export function formatToolInput(toolName: string, input: Record<string, unknown>): string {
   if (toolName.toLowerCase() === 'cindy.media.download' && typeof input.source === 'string') return input.source;
   const action = describePermissionAction(toolName, input);
-  if (action.kind !== 'tool' || toolName.toLowerCase() === 'cindy_host_settings') return action.preview;
+  if (action.kind !== 'tool') return action.preview;
   const text = JSON.stringify(input, null, 2);
   return text.length > 500 ? text.slice(0, 500) + '...' : text;
 }
@@ -92,8 +92,6 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
   const [consentHead, ...consentBody] = isPluginInstallConsent
     ? (description ?? '').split('\n')
     : [];
-  const isSettings = toolName === 'cindy_host_settings';
-  const settings = isSettings ? parseSettingsConfirmationPreview(input) : null;
   const promptDescription = autoReviewUnavailable
     ? t('newChat.permissionPrompt.autoReviewUnavailable')
     : isPluginInstallConsent
@@ -109,7 +107,7 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
     ? consentBody.join('\n')
     : formatToolInput(toolName, input);
   const sessionSuggestions = useMemo(() => filterSessionScopedSuggestions(suggestions), [suggestions]);
-  const canAlwaysAllowForSession = !isSettings && sessionSuggestions.length > 0;
+  const canAlwaysAllowForSession = sessionSuggestions.length > 0;
   // 这个按钮加的是 agent 给的一条具体规则(Bash 多为 `curl:*` 这类前缀模式),
   // 范围远小于「总是允许」的字面。把范围写到按钮上,别让用户猜。
   // 描述不全时返回 null(见该函数顶注:点击会转发**全部** suggestions,文案漏项就是说谎),
@@ -123,11 +121,11 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
   // ── Action handlers ──
 
   const handleAllowOnce = useCallback(() => {
-    if (submitting || (isSettings && !settings)) return;
+    if (submitting) return;
     onRespond({
       behavior: 'allow',
     });
-  }, [onRespond, submitting, isSettings, settings]);
+  }, [onRespond, submitting]);
 
   const handleAlwaysAllow = useCallback(() => {
     if (submitting) return;
@@ -192,7 +190,7 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
         {companion ? <BotAvatar bot={companion} size="sm" /> : null}
         <div className="min-w-0">
           <p className="text-15 font-semibold leading-tight text-[var(--chat-input-text)]">
-            {settings?.title ?? (companion ? t('bots.permissionRequest', { name: companion.name }) : displayTitle)}
+            {companion ? t('bots.permissionRequest', { name: companion.name }) : displayTitle}
           </p>
           {companion ? (
             <p className="mt-1 text-12 text-[var(--status-bar-meta)]">{displayTitle}</p>
@@ -201,12 +199,12 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
       </div>
 
       {/* Description */}
-      {!isSettings && autoReviewUnavailable && permission.sourceDescription && (
+      {autoReviewUnavailable && permission.sourceDescription && (
         <p className="mt-1.5 whitespace-pre-wrap break-words text-13 font-normal text-[var(--status-bar-meta)]">
           {permission.sourceDescription}
         </p>
       )}
-      {!isSettings && promptDescription && (
+      {promptDescription && (
         <p className="mt-1.5 whitespace-pre-wrap break-words text-13 font-normal leading-tight text-[var(--status-bar-meta)]">
           {promptDescription}
         </p>
@@ -218,24 +216,8 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
         </p>
       )}
 
-      {isSettings ? (
-        <div className="mt-3 text-13 leading-relaxed text-[var(--chat-input-text)]">
-          {settings ? <>
-            <div className="max-h-48 overflow-auto">
-              {settings.changes.map((change, index) => (
-                <div key={index} className="py-1.5">
-                  <p className="font-medium">{change.label}</p>
-                  <p className="whitespace-pre-wrap break-words">
-                    {change.previous !== undefined ? <><span className="text-[var(--status-bar-meta)]">{change.previous}</span>{' → '}</> : null}
-                    {change.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-2 text-12 text-[var(--status-bar-meta)]">{settings.description}</p>
-          </> : <p>{t('hostSettings.card.unavailable')}</p>}
-        </div>
-      ) : <div
+      {/* Code block */}
+      <div
         className={cn(
           'mt-3 overflow-auto rounded-[8px] border px-3.5 py-2.5',
           'border-[var(--perm-code-border)] bg-[var(--perm-code-bg)]',
@@ -257,7 +239,7 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
         ) : (
           <pre className="whitespace-pre-wrap break-all">{codeContent}</pre>
         )}
-      </div>}
+      </div>
 
       {/* Action buttons — inline text + kbd badges, right-aligned.
           flex-wrap:带范围的「本对话都允许 …」按钮会比原来长,窄宽(doc rail portal)
@@ -277,10 +259,10 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
           disabled={submitting}
           className={secondaryActionClass}
         >
-          <span>{settings?.cancelLabel ?? t(isMcpUrl ? 'newChat.permissionPrompt.mcpCancel' : isMediaDownload ? 'newChat.mediaDownload.defer' : 'agentIsland.native.deny')}</span>
-          {!isSettings && <kbd className="rounded-[4px] border border-[var(--chat-input-border)] bg-[var(--perm-code-bg)] px-1.5 py-[1px] text-11 font-normal text-[var(--status-bar-meta)]">
+          <span>{t(isMcpUrl ? 'newChat.permissionPrompt.mcpCancel' : isMediaDownload ? 'newChat.mediaDownload.defer' : 'agentIsland.native.deny')}</span>
+          <kbd className="rounded-[4px] border border-[var(--chat-input-border)] bg-[var(--perm-code-bg)] px-1.5 py-[1px] text-11 font-normal text-[var(--status-bar-meta)]">
             Esc
-          </kbd>}
+          </kbd>
         </Button>
 
         {canAlwaysAllowForSession && (
@@ -328,13 +310,13 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
           palette="permission"
           size="lg"
           onClick={handleAllowOnce}
-          disabled={submitting || (isSettings && !settings)}
+          disabled={submitting}
           className={allowActionClass}
         >
-          <span>{settings?.confirmLabel ?? t(isMcpUrl ? 'newChat.permissionPrompt.mcpComplete' : isMediaDownload ? 'newChat.mediaDownload.allow' : 'agentIsland.native.allowOnce')}</span>
-          {!isSettings && <kbd className="rounded-[4px] border border-[var(--perm-allow-kbd-border)] bg-[var(--perm-allow-kbd-bg)] px-1.5 py-[1px] text-11 font-normal text-[var(--perm-allow-btn-text)] opacity-70">
+          <span>{t(isMcpUrl ? 'newChat.permissionPrompt.mcpComplete' : isMediaDownload ? 'newChat.mediaDownload.allow' : 'agentIsland.native.allowOnce')}</span>
+          <kbd className="rounded-[4px] border border-[var(--perm-allow-kbd-border)] bg-[var(--perm-allow-kbd-bg)] px-1.5 py-[1px] text-11 font-normal text-[var(--perm-allow-btn-text)] opacity-70">
             Enter
-          </kbd>}
+          </kbd>
         </Button>
       </div>
     </div>

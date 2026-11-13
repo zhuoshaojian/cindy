@@ -18,7 +18,6 @@ import { readDisabledSkillPaths } from '../skillhub/activationPreferences';
 import { resolveLocalMcpDuplicateChoices } from './mcp-duplicate-preferences.js';
 import { cindyMakeManager } from '../cindy-make/manager.js';
 import { makeSourceRoot } from '../cindy-make/sourcePaths.js';
-import { prepareHostSettingsSkillDiscovery } from '../host-settings/cindy-settings-skill.js';
 import { captureHostPersonalization } from '../host-settings/startup.js';
 import { hostOwnsPersonalization } from '../host-settings/personalization.js';
 import { clearCodexAccountUsageSnapshot } from '../usageBroadcaster.js';
@@ -1463,7 +1462,6 @@ export function getMaker(): Maker {
       getDisabledSkillPaths: readDisabledSkillPaths,
       getManagedSkills: listCindyManagedSkills,
       scanLocalCustomizations,
-      prepareHostOwnedSkills: () => prepareHostSettingsSkillDiscovery('claude-code'),
       auth: desktopClaudeAuthAdapter,
       runtimeConfig: buildDesktopClaudeRuntimeConfig(getClaudeEndpoint),
       binaryPath: claudePath,
@@ -1787,7 +1785,6 @@ export function getMaker(): Maker {
       getManagedSkills: listCindyManagedSkills,
       scanLocalCustomizations,
       prepareCodexSkills: prepareCindyCodexSkills,
-      prepareHostOwnedSkills: () => prepareHostSettingsSkillDiscovery('codex'),
       auth: desktopCodexAuthAdapter,
       runtimeConfig: desktopCodexRuntimeConfig,
       binaryPath: codexPath,

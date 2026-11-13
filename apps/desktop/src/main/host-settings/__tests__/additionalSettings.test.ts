@@ -36,14 +36,13 @@ import { readCollaborationSettings } from '../../maker-host/collaboration-settin
 import { getDefaultShellPref } from '../../terminal/terminalPrefsStore.js';
 import { configureUserDataDir } from '../../userDataPath.js';
 
-const confirm = vi.fn(async () => true);
-const caller = { id: 'test-session', assertCurrent() {}, confirm };
+const caller = { id: 'test-session', assertCurrent() {} };
 async function request(domain: HostSettingsDomain, values: { set?: Record<string, unknown>; clear?: string[] }) {
   const state = await getHostSettings(caller, domain);
   if (state.status !== 'ready' || !('operationId' in state)) throw new Error(`Not ready: ${domain}`);
   return { domain, expectedRevision: state.revision, operationId: state.operationId, ...values };
 }
-beforeEach(() => { context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-catalog-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; vi.clearAllMocks(); confirm.mockResolvedValue(true); });
+beforeEach(() => { context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-catalog-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; vi.clearAllMocks(); });
 afterEach(() => fs.rmSync(context.root, { recursive: true, force: true }));
 
 describe('expanded settings use the real native stores', () => {
@@ -67,9 +66,8 @@ describe('expanded settings use the real native stores', () => {
     await updateHostSettings(caller, await request('memory', { clear: ['maker'] }));
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ pi: false });
     expect(readMemorySettings()).toMatchObject({ maker: true, pi: false });
-    expect(confirm).toHaveBeenCalledTimes(3);
   });
-  it('rejects stale forms, cross-owner reuse and unconfirmed changes without altering native values', async () => {
+  it('rejects stale forms and cross-owner reuse without altering native values', async () => {
     const stale = await request('collaboration', { set: { workerSoftLimit: 3 } });
     await updateHostSettings(caller, await request('collaboration', { set: { workerSoftLimit: 4 } }));
     expect(await updateHostSettings(caller, stale)).toMatchObject({ saved: false, code: 'CONFLICT' });
@@ -77,9 +75,6 @@ describe('expanded settings use the real native stores', () => {
     const cross = await request('memory', { set: { pi: false } });
     context.owner = 'second'; context.generation++;
     await expect(updateHostSettings(caller, cross)).rejects.toThrow();
-    expect(readMemorySettings().pi).toBe(true);
-    confirm.mockResolvedValue(false);
-    expect(await updateHostSettings(caller, await request('memory', { set: { pi: false } }))).toMatchObject({ saved: false, code: 'CONFIRMATION_REQUIRED' });
     expect(readMemorySettings().pi).toBe(true);
   });
   it('preserves consent records and never exposes them as editable fields', async () => {

@@ -2,7 +2,6 @@ import { parseCodexAccountIdentity, type AccountIdentity } from './codex-auth-id
 export { parseCodexAccountIdentity } from './codex-auth-identity.js';
 import { openManagementAuthorization, attachManagementAuthorization } from '../host-settings/managementAuthorization.js';
 import { cloudManagementExecution } from '../host-settings/managementCalls.js';
-import { prepareHostSettingsSkill } from '../host-settings/cindy-settings-skill.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
@@ -115,7 +114,6 @@ function codexAccountState(providerId: string): AuthState {
 async function prepareCodexAccountHome(providerId: string, managedRoots: readonly string[], managedSkills: Awaited<ReturnType<NonNullable<AgentDeps['getManagedSkills']>>>): Promise<string> {
   if (!codexAccountState(providerId).authenticated) throw new Error('Codex account requires login');
   const home = codexAccountHome(providerId);
-  await prepareHostSettingsSkill();
   await Promise.all([prepareCodexGlobalSkillsLinks(home, { managedRoots, managedSkills }), prepareCodexGlobalRulesCopy(home)]);
   const plugins = await prepareCodexGlobalPluginsBridge(home, {
     capabilityRouting: DESKTOP_CAPABILITY_ROUTING_POLICY,

@@ -33,11 +33,10 @@ import { importLegacyPersonalization, inspectPersonalizationForSnapshot, setting
 import { setNewTaskDefaultRecommendation, inspectNewTaskDefaultsForSnapshot } from '../new-task-defaults.js';
 import { writeDatabaseSizeWarningSettings } from '../../database-size-warning-settings.js';
 
-const confirm = vi.fn(async () => true);
 const appearance = vi.fn();
 const warning = vi.fn();
 const validate = vi.fn(async () => {});
-const caller = { id: 'fixture-session', assertCurrent: () => {}, confirm };
+const caller = { id: 'fixture-session', assertCurrent: () => {} };
 const disposers: Array<() => void> = [];
 async function change(domain: HostSettingsDomain, values: Pick<HostSettingsUpdate, 'set' | 'clear'>) {
   const current = await getHostSettings(caller, domain);
@@ -47,7 +46,7 @@ async function change(domain: HostSettingsDomain, values: Pick<HostSettingsUpdat
 beforeEach(() => {
   isolated.root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-service-snapshot-'));
   isolated.owner = 'fixture-owner'; isolated.generation += 1; isolated.pending = false;
-  vi.clearAllMocks(); confirm.mockResolvedValue(true); appearance.mockImplementation(() => {}); warning.mockImplementation(() => {});
+  vi.clearAllMocks(); appearance.mockImplementation(() => {}); warning.mockImplementation(() => {});
   configureHostSettingsApplication({ appearance, databaseWarning: warning, validateNewTaskDefaults: validate });
 });
 afterEach(() => {
@@ -113,12 +112,12 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
     expect(fs.readdirSync(isolated.root)).toEqual([]);
   });
 
-  it('确认后写真实文件，变化通知驱动投影；显式默认值与 clear 不混同', async () => {
+  it('写真实文件，变化通知驱动投影；显式默认值与 clear 不混同', async () => {
     const changed = vi.fn(); disposers.push(onHostSettingsChanged(changed));
     const request = await change('databaseWarning', { set: { thresholdGiB: 10, disabled: false } });
     const receipt = await updateHostSettings(caller, request);
     expect(receipt).toMatchObject({ status: 'saved', saved: true, application: 'applied' });
-    expect(confirm).toHaveBeenCalledOnce(); expect(changed).toHaveBeenCalledOnce(); expect(warning).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledOnce(); expect(warning).toHaveBeenCalledOnce();
     const file = path.join(isolated.root, 'database-size-warning-settings.json');
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toMatchObject({ thresholdGiB: 10, disabled: false });
     expect(projectSettingsSnapshot(readHostSettings()).databaseWarning).toMatchObject({ fields: {
@@ -205,7 +204,7 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
     expect(JSON.stringify(snapshot)).not.toContain('仅本地测试字体');
   });
 
-  it('应用失败仍报告已保存，同 ID 重试不再次确认/写入/应用', async () => {
+  it('应用失败仍报告已保存，同 ID 重试不再次写入/应用', async () => {
     warning.mockImplementation(() => { throw new Error('模拟应用失败，不应进入回执'); });
     const changed = vi.fn(); disposers.push(onHostSettingsChanged(changed));
     const request = await change('databaseWarning', { set: { thresholdGiB: 20 } });
@@ -213,7 +212,7 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
     const second = await updateHostSettings(caller, request);
     expect(first).toMatchObject({ status: 'saved', saved: true, application: 'failed' }); expect(second).toEqual(first);
     expect(getHostSettingsOperation(caller, request.operationId)).toMatchObject(first);
-    expect(confirm).toHaveBeenCalledOnce(); expect(warning).toHaveBeenCalledOnce(); expect(changed).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledOnce(); expect(changed).toHaveBeenCalledOnce();
     expect(projectSettingsSnapshot(readHostSettings()).databaseWarning).toMatchObject({ fields: { thresholdGiB: { value: 20, source: 'override' } } });
   });
 
@@ -240,33 +239,10 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8')).thresholdGiB).toBe(25);
   });
 
-  it('拒绝确认后不保存，投影保持原默认值', async () => {
-    confirm.mockResolvedValue(false);
-    const receipt = await updateHostSettings(caller, await change('databaseWarning', { set: { disabled: true } }));
-    expect(receipt).toMatchObject({ saved: false, status: 'rejected', code: 'CONFIRMATION_REQUIRED' });
-    expect(fs.readdirSync(isolated.root)).toEqual([]);
-    expect(projectSettingsSnapshot(readHostSettings()).databaseWarning).toMatchObject({ fields: { disabled: { value: false, source: 'default' } } });
-  });
-
-  it('确认期间 owner generation 变化即拒绝保存，不污染新 owner', async () => {
-    const request = await change('personalization', { set: { userPrompt: '上一身份的测试说明' } });
-    confirm.mockImplementationOnce(async () => { isolated.generation += 1; return true; });
-    expect(await updateHostSettings(caller, request)).toMatchObject({ saved: false, code: 'OWNER_CHANGED' });
-    expect(fs.readdirSync(isolated.root)).toEqual([]);
-    expect(projectSettingsSnapshot(readHostSettings()).personalization).toMatchObject({ fields: { customized: { value: false } } });
-  });
-
-  it('个性化普通查询不询问正文，只有单独批准读取才返回正文', async () => {
+  it('个性化查询不返回正文', async () => {
     const body = '仅本地保存的测试说明';
     await updateHostSettings(caller, await change('personalization', { set: { userPrompt: body } }));
-    confirm.mockClear();
     expect(JSON.stringify(await getHostSettings(caller, 'personalization'))).not.toContain(body);
-    expect(confirm).not.toHaveBeenCalled();
-    confirm.mockResolvedValueOnce(false);
-    await expect(getHostSettings(caller, 'personalization', true)).rejects.toMatchObject({ code: 'CONFIRMATION_REQUIRED' });
-    const approved = await getHostSettings(caller, 'personalization', true);
-    expect(approved).toMatchObject({ value: { userPrompt: body } });
-    expect(confirm).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(projectSettingsSnapshot(readHostSettings()))).not.toContain(body);
   });
 

@@ -534,6 +534,7 @@ import {
 } from './database-size-warning-settings';
 import { createDatabaseSizeWarningSettingsWatcher } from './database-size-warning-settings-watcher.js';
 import { registerHostSettingsIpc } from './host-settings/ipc.js';
+import { removeRetiredSettingsSkill } from './host-settings/retiredSettingsSkill.js';
 import { markCloudLoginWindow, isCloudLoginWindow } from './cloud-settings-client/login-window-registry.js';
 import { cloudLoginWindowLifecycle, registerCloudSettingsClientIpc } from './cloud-settings-client/runtime.js';
 import { registerDesktopPreferencesIpc } from './host-settings/desktopPreferencesIpc.js';
@@ -4934,6 +4935,7 @@ function parseOptionalDeviceLinkDeviceId(value: unknown): string | null | undefi
 
 const registerIpcHandlers = () => {
   registerHostSettingsIpc(broadcastDatabaseSizeWarningChanged);
+  removeRetiredSettingsSkill();
   registerCloudSettingsClientIpc({
     title: () => t('cloudSettings.onboarding.initialize'),
     isOpenSender: (sender) => isResourceUsageOpenSender({

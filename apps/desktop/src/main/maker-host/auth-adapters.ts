@@ -3,7 +3,6 @@ export { chatgptAccountIdFromIdToken, chatgptAccountIdFromTokens } from './codex
 import { readCodexLocalAuthState } from './codex-local-auth-state.js';
 import { cindyManagedSkillRoots, listCindyManagedSkills } from './managed-skills.js';
 import { cindyManagedHomeDir, cloudPilotClaudeCliEnv } from '../cloudPilotDistribution.js';
-import { prepareHostSettingsSkill } from '../host-settings/cindy-settings-skill.js';
 import { retainInvalidatedProviderPresentation, retainProviderPresentationAfterAuthChange } from './provider-presentation-store.js';
 import { subscriptionAccountKind, subscriptionAccountState } from './subscription-account-auth.js';
 import { attachDefaultSubscriptionPool, disconnectSubscriptionPool } from '../subscription-accounts/runtime.js';
@@ -560,7 +559,6 @@ export class DesktopClaudeAuthAdapter implements AuthAdapter {
   }
 
   private async runEnsureSharedGlobalSkills(ownerId: string | null): Promise<boolean> {
-    await prepareHostSettingsSkill();
     try {
       const result = await withSharedGlobalSkillProjectionMutation(ownerId, async () => {
         // Bundle publication keeps every managed Agent link on one stable
@@ -1371,7 +1369,6 @@ export class DesktopCodexAuthAdapter implements AuthAdapter {
     // Codex does not repeat it; per-launch freshness of the approved catalog comes from
     // prepareCodexGlobalSkillsLinks below.
     await desktopClaudeAuthAdapter.ensureSharedGlobalSkills();
-    await prepareHostSettingsSkill();
 
     const [skillsOutcome, rulesOutcome] = await Promise.all([
       withSharedGlobalSkillProjectionMutation(ownerId, async () =>

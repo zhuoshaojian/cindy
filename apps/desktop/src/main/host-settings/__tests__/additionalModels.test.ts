@@ -67,15 +67,14 @@ import { nativePluginSettings } from '../additionalPlugins.js';
 import { configureAdditionalNativeOperations } from '../additionalRuntime.js';
 import { commitHostModelPrices, getHostModelPriceStore, readModelPriceOverrideView, inspectModelPriceOverrides } from '../../usage/modelPriceOverrideStore.js';
 import { configureUserDataDir } from '../../userDataPath.js';
-const confirm = vi.fn(async () => true);
-const caller = { id: 'model-test', assertCurrent() {}, confirm };
+const caller = { id: 'model-test', assertCurrent() {} };
 const route = { providerId: 'fixture-provider', modelId: 'fixture-model' };
 async function request(domain: HostSettingsDomain, values: Pick<HostSettingsUpdate, 'set' | 'clear'>) {
   const state = await getHostSettings(caller, domain);
   if (state.status !== 'ready' || !('operationId' in state)) throw new Error(`Not ready: ${domain}`);
   return { domain, expectedRevision: state.revision, operationId: state.operationId, ...values };
 }
-beforeEach(() => { configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, appearance() {}, databaseWarning() {}, async validateNewTaskDefaults() {} }); context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-models-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; context.connected = true; context.modelsPerAgent = 1; vi.clearAllMocks(); confirm.mockResolvedValue(true); });
+beforeEach(() => { configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, appearance() {}, databaseWarning() {}, async validateNewTaskDefaults() {} }); context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-models-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; context.connected = true; context.modelsPerAgent = 1; vi.clearAllMocks(); });
 afterEach(() => fs.rmSync(context.root, { recursive: true, force: true }));
 describe('model and IM settings native persistence', () => {
   // A saved remote-Agent route is not representable in this wire version. Reading
@@ -145,9 +144,9 @@ describe('model and IM settings native persistence', () => {
     await updateHostSettings(caller, await request('subagentModel', { clear: ['claudeCode'] }));
     expect(readSubagentModelSettings()).toMatchObject({ claudeCode: null, claudeCodeProviderId: null });
   });
-  it('rejects a disconnected new route after the human confirmation wait', async () => {
+  it('rejects a new route whose provider disconnected after the form was read', async () => {
     const input = await request('subagentModel', { set: { claudeCode: route } });
-    confirm.mockImplementationOnce(async () => { context.connected = false; return true; });
+    context.connected = false;
     expect(await updateHostSettings(caller, input)).toMatchObject({ saved: false, code: 'MODEL_UNAVAILABLE' });
     expect(readSubagentModelSettings().claudeCode).toBeNull();
   });

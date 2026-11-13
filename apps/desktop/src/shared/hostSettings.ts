@@ -1,4 +1,4 @@
-import { ADDITIONAL_SETTINGS_DOMAINS, additionalSettingsSchemas, additionalSettingsMetadata, isAdditionalSettingsDomain, normalizeAdditionalSettingsChange } from './settingsEditableCatalog.js';
+import { ADDITIONAL_SETTINGS_DOMAINS, isAdditionalSettingsDomain, normalizeAdditionalSettingsChange } from './settingsEditableCatalog.js';
 import { isValidAppearanceSetting, clampAppearanceWindowZoom, type AppearanceSettings } from './appearanceSettings.js';
 
 export const NATIVE_HOST_SETTINGS_DOMAINS = ['newTaskDefaults', 'personalization', 'databaseWarning', 'appearance'] as const;
@@ -72,31 +72,6 @@ export interface HostSettingsReceipt {
   revision?: string;
   code?: string;
 }
-
-/** Stable capability directory, not a claim that every category is writable. */
-export const HOST_SETTINGS_CATALOG = [
-  { domain: 'newTaskDefaults', access: 'write', scope: 'owner', applies: 'next_task', fields: { harness: 'claude-code | codex | pi', providerId: 'available provider id', modelId: 'available model id', effort: 'supported effort or null for explicit automatic', fast: 'boolean | ultrafast', thinking: 'boolean', worktree: 'boolean', planMode: 'boolean' } },
-  { domain: 'personalization', access: 'write', scope: 'owner', applies: 'next_agent_start', fields: { userPrompt: 'string, at most 8000 characters; body read requires human consent' } },
-  { domain: 'databaseWarning', access: 'write', scope: 'profile', applies: 'immediate', fields: { thresholdGiB: 'number 1..1024', disabled: 'boolean' } },
-  { domain: 'appearance', access: 'write', scope: 'profile', applies: 'host_desktop_only', fields: { uiFamily: 'string <=256 characters', codeFamily: 'string <=256 characters', uiSize: 'integer 12..24', codeSize: 'integer 10..24', windowZoom: 'number 0.5..3, step 0.1' } },
-  ...ADDITIONAL_SETTINGS_DOMAINS.map(domain => ({ domain, access: 'write' as const, ...additionalSettingsMetadata[domain], fields: Object.keys(additionalSettingsSchemas[domain].shape) })),
-  { domain: 'currentTaskRuntime', access: 'dedicated_tool', tools: ['get_session_runtime', 'set_session_runtime'], applies: 'next_send' },
-  { domain: 'bots', access: 'dedicated_tool', entry: { server: 'cindy_helper', category: 'bots' }, note: '按当前任务身份发现伙伴专用能力，不赋予跨伙伴权限；其余配置使用伙伴设置页。' },
-  { domain: 'schedules', access: 'dedicated_tool', entry: { server: 'cindy_scheduler', category: 'scheduler' } },
-  { domain: 'pluginsAndAccounts', access: 'dedicated_tool', tools: ['ghost_info', 'ghost_call', 'connect_account'] },
-  { domain: 'memoryAndContext', access: 'dedicated_ui', areas: ['记忆内容查看与重置'], note: '开关使用 memory，压缩使用 claudeCompaction / piCompaction。内容删除不同于恢复默认。' },
-  { domain: 'providersAndModelRouting', access: 'dedicated_ui', areas: ['模型供应商连接与模型管理', '子代理模型路由', '辅助模型及备用链', '视觉桥'], note: '不是新任务默认值；凭据使用专用授权入口，不返回正文。' },
-  { domain: 'languageAndNotifications', access: 'dedicated_ui', applies: 'host_desktop_only', areas: ['系统通知授权'], note: '显示语言和通知偏好使用 desktopGeneral / desktopNotifications；不改变控制端。' },
-  { domain: 'themesAndDesktopLayout', access: 'dedicated_ui', applies: 'host_desktop_only', areas: ['主题与主题导入', '桌面布局', '快捷键'], note: '不属于字体、字号与窗口缩放的四域写入接口。' },
-  { domain: 'browserAndComputerUse', access: 'dedicated_ui', areas: ['浏览器自动化开关与 backend', '浏览器 profile 使用偏好', '平台电脑使用授权'], note: '平台授权依赖执行 Host；云实例没有对应桌面能力时不支持，不改控制端权限。' },
-  { domain: 'mediaAndVoice', access: 'dedicated_ui', areas: ['语音服务模式与 ASR 来源', '自定义实时 ASR', '媒体模型来源'], note: '插件内生成偏好使用对应插件；无统一全局媒体配置工具。' },
-  { domain: 'privacyAndDiagnostics', access: 'dedicated_ui', areas: ['分析统计开关', '崩溃自动上传', '网络调试', '手动上传日志'], note: '上传沿用隐私同意与专用确认，不能由通用设置接口触发。' },
-  { domain: 'storageAndDataManagement', access: 'dedicated_ui', areas: ['媒体空间扫描与清理', '聊天附件维护', '数据库瘦身与备份', '会话导入'], note: '数据维护不等于数据库提醒设置；此目录不授权删除、迁移或导出数据。' },
-  { domain: 'workspaceRuntimePreferences', access: 'dedicated_ui', areas: ['默认终端 shell', 'Git 自动快照'], note: '工作环境偏好不是新任务模型默认值。' },
-  { domain: 'workspaceMcpSkills', access: 'dedicated_ui' },
-  { domain: 'remoteControlPermissions', access: 'unsupported' },
-  { domain: 'resourcesImageLifecycleUpdates', access: 'platform_policy' },
-] as const;
 
 export function isHostSettingsDomain(value: unknown): value is HostSettingsDomain {
   return typeof value === 'string' && HOST_SETTINGS_DOMAINS.includes(value as HostSettingsDomain);

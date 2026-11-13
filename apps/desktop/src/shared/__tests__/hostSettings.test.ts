@@ -1,18 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { HOST_SETTINGS_CATALOG, HOST_SETTINGS_DOMAINS, normalizeHostSettingsChange } from '../hostSettings.js';
+import { normalizeHostSettingsChange } from '../hostSettings.js';
 
 describe('host settings closed mutation grammar', () => {
-  it('目录中的可写领域与封闭写入协议保持一致', () => {
-    expect(HOST_SETTINGS_CATALOG.filter(entry => entry.access === 'write').map(entry => entry.domain)).toEqual([...HOST_SETTINGS_DOMAINS]);
-    expect(new Set(HOST_SETTINGS_CATALOG.map(entry => entry.domain)).size).toBe(HOST_SETTINGS_CATALOG.length);
-    for (const entry of HOST_SETTINGS_CATALOG.filter(entry => entry.access !== 'write')) {
-      expect(() => normalizeHostSettingsChange({ domain: entry.domain, set: { enabled: true } })).toThrow('INVALID_SETTINGS_CHANGE');
-    }
-    expect(HOST_SETTINGS_CATALOG.map(entry => entry.domain)).toEqual(expect.arrayContaining([
-      'memoryAndContext', 'providersAndModelRouting', 'languageAndNotifications', 'themesAndDesktopLayout',
-      'browserAndComputerUse', 'mediaAndVoice', 'privacyAndDiagnostics', 'storageAndDataManagement', 'workspaceRuntimePreferences',
-    ]));
-  });
   it.each([{ harness: ['codex'] }, { harness: { toString: () => 'codex' } }, { harness: null }, { harness: 0 }, { harness: true }])('rejects non-string harness %j', ({ harness }) => {
     expect(() => normalizeHostSettingsChange({ domain: 'newTaskDefaults', set: { harness } })).toThrow('INVALID_SETTINGS_CHANGE');
   });

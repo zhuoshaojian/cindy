@@ -20,7 +20,6 @@ const sha = (s) => createHash('sha256').update(s).digest('hex');
 const guidanceTargets = [
   'apps/desktop/src/main/maker-host/runtime-configs.ts',
   'apps/desktop/src/main/maker-host/pi-host.ts',
-  'apps/desktop/src/main/host-settings/helper.ts',
 ];
 
 const guidance = cloudSettingsGuidancePlugin({ sourceRoot: root });

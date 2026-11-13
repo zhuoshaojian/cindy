@@ -831,13 +831,10 @@ function PermissionCard({
   const requestId = readRequestId(item);
   const [armedDecision, setArmedDecision] = useState<'allow-once' | 'always-allow' | null>(null);
   const permissionState = buildMobilePermissionCardState({ armedDecision, presentation });
-  const isSettings = presentation.toolName === 'cindy_host_settings';
-  const settings = presentation.settings;
   const requestDecision = (
     action: 'allow-once' | 'always-allow',
     decision: Record<string, unknown>,
   ) => {
-    if (isSettings && !settings) return;
     if (permissionState.isHighRisk && armedDecision !== action) {
       setArmedDecision(action);
       return;
@@ -912,22 +909,7 @@ function PermissionCard({
         onPress={() => { void Linking.openURL(url).catch((error) => onError(formatRemoteError(error))); }}>
         {url}
       </Text> : null}
-      {isMcpUrl ? (!companion && presentation.description ? <Text style={styles.body}>{presentation.description}</Text> : null) : isSettings ? <>
-        {settings ? <>
-          <ScrollView style={styles.settingsChanges} nestedScrollEnabled>
-            {settings.changes.map((change, index) => (
-              <View key={index} style={styles.settingsChange}>
-                <Text style={styles.settingsLabel}>{change.label}</Text>
-                <Text selectable style={styles.settingsValue}>
-                  {change.previous !== undefined ? <><Text style={styles.permissionEvidenceDetail}>{change.previous}</Text>{' → '}</> : null}
-                  {change.value}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
-          <Text style={styles.permissionEvidenceDetail}>{settings.description}</Text>
-        </> : <Text style={styles.permissionEvidenceDetail}>{t('interaction.panel.unsupportedType')}</Text>}
-      </> : <PermissionEvidence
+      {isMcpUrl ? (!companion && presentation.description ? <Text style={styles.body}>{presentation.description}</Text> : null) : <PermissionEvidence
         input={item.request.input}
         armed={!!armedDecision}
         presentation={presentation}
@@ -2568,24 +2550,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     maxHeight: 112,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-  },
-  settingsChanges: {
-    maxHeight: 192,
-  },
-  settingsChange: {
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-  },
-  settingsLabel: {
-    color: colors.textPrimary,
-    fontSize: typeScale.body,
-    fontWeight: fontWeight.medium,
-    lineHeight: lineHeight.body,
-  },
-  settingsValue: {
-    color: colors.textPrimary,
-    fontSize: typeScale.body,
-    lineHeight: lineHeight.body,
   },
   codeText: {
     color: colors.textPrimary,

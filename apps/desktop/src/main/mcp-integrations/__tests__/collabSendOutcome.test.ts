@@ -108,15 +108,6 @@ vi.mock('../../maker-host/session-search.js', () => ({
   searchSessionsFn: vi.fn(),
 }));
 
-// Collaboration dispatch does not execute settings tools. Mock the injected
-// helper at its boundary instead of loading every native settings store.
-vi.mock('../../host-settings/helper.js', () => ({
-  hostSettingsHelper: {
-    allowed: vi.fn(async () => false),
-    call: vi.fn(() => { throw new Error('Unexpected settings call'); }),
-  },
-}));
-
 vi.mock('../../maker-host/lsp-mode-store.js', () => ({
   readLspModeSettings: () => ({ enabled: true }),
 }));
@@ -149,7 +140,6 @@ import {
   resolveCollabDispatchResult,
 } from '../../maker-ipc/collabSendOutcome.js';
 import { createDesktopMcpProviders } from '../mcp-providers.js';
-import { hostSettingsHelper } from '../../host-settings/helper.js';
 import { createDbClient } from '../../localDb/client/DbClient.js';
 import { clearCurrentDbClient, setCurrentDbClient } from '../../localDb/client/current.js';
 import type { FeishuBotMcpHostDeps, XdtHelperMcpDeps } from '@cindy/mcps';
@@ -276,10 +266,7 @@ describe('collab send outcome semantics', () => {
       invokeRemote: vi.fn(),
     });
     const orcaProvider = providers.find((provider) => provider.name === 'cindy_orca');
-    expect(mockState.capturedProvidersConfig?.xdtHelper).toMatchObject({
-      botCapabilities,
-      settings: hostSettingsHelper,
-    });
+    expect(mockState.capturedProvidersConfig?.xdtHelper).toMatchObject({ botCapabilities });
 
 
     expect(orcaProvider).toBeDefined();

@@ -158,7 +158,6 @@ import { cloudMcpCredentialStore } from '../secrets/providerSecretStore.js';
 import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudManagementExecution, registerPrivateCloudManagementCall } from '../host-settings/managementCalls.js';
 import { configureAdditionalModelRuntime, configureAdditionalLiveApplication } from '../host-settings/additionalRuntime.js';
 import { installHostNewMakerDefaultsSource } from '../host-settings/cache.js';
-import { prepareHostSettingsSkill } from '../host-settings/cindy-settings-skill.js';
 import { hostOwnsNewTaskDefaults, onNewTaskDefaultsChanged, commitNewTaskDefaults, applyHostRemoteDraftPreference } from '../host-settings/new-task-defaults.js';
 import { onModelPresentationPreferencesChanged } from '../host-settings/model-presentation-preferences.js';
 import { refreshSettingsModelRecommendation } from '../host-settings/catalog.js';
@@ -1015,15 +1014,7 @@ import { resolveOrcaImageAttachmentInput } from './orcaImageAttachments.js';
 import { buildOrcaQueueDispatchNote } from './orcaQueueNote.js';
 import { createOrcaWorkerReportQueue, type OrcaWorkerReportQueue } from './orcaWorkerReportQueue.js';
 import { OrcaWorkerPermissionConfirmBridge } from './orcaWorkerPermissionConfirmBridge.js';
-import { SettingsConfirmationBridge, SETTINGS_CONFIRM_CAPABILITY, SETTINGS_CONFIRM_TOOL } from '../host-settings/confirmation.js';
-import { buildHostSettingsConfirmationPreview } from '../host-settings/confirmationHostPresentation.js';
-import { configureHostSettingsCaller } from '../host-settings/helper.js';
-import { createHostSettingsCallerResolver } from './hostSettingsCaller.js';
-import { currentSettingsOwner, assertSettingsOwner } from '../host-settings/personalization.js';
 import { captureHostPersonalization } from '../host-settings/startup.js';
-import { HostSettingsError } from '../host-settings/operations.js';
-import * as settingsSubscriptions from '../device-link/subscriptions.js';
-import { isAppContentWindow } from '../windowFocusClassifier.js';
 import { assertTaskActionCurrent, runTaskActionRequest, captureTaskActionGuard, bindTaskActionInput, hasTaskActionAuthorization, taskActionInputGuard, settleTaskActionInput, type TaskActionDeliveryGuard, type TaskActionConfirmation } from './taskActionAuthorization.js';
 import {
   getOrcaWorkspaceInfoReadOnly,
@@ -3469,8 +3460,6 @@ const renameSessionsConfirmBridge = new RenameSessionsConfirmBridge({
     desktopConfirmImNotifier(sessionId, '「批量重命名任务」的确认卡'),
 });
 
-const settingsConfirmationBridge = new SettingsConfirmationBridge((channel, payload) => broadcastToAllWindows(channel, payload));
-
 const orcaWorkerPermissionConfirmBridge = new OrcaWorkerPermissionConfirmBridge({
   broadcast: (channel, payload) => broadcastToAllWindows(channel, payload),
   logger: log,
@@ -3817,7 +3806,6 @@ function getPendingInteractionsForSession(sessionId: string): PendingInteraction
   }
   out.push(
     ...mcpSetupBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
-    ...settingsConfirmationBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
     ...issueConfirmBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
     ...renameSessionsConfirmBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
     ...taskActionConfirmBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
@@ -4118,7 +4106,6 @@ function inputHandoffNoteDelivered(sessionId: string): void {
 
 function cleanupPendingInteractionsForSession(sessionId: string, reason: string): void {
   mcpSetupBridge.cleanupForSession(sessionId);
-  settingsConfirmationBridge.cleanupForSession(sessionId);
   cleanupPendingAgentInteractionsForSession(sessionId, reason);
   taskActionConfirmBridge.cleanupForSession(sessionId, reason === 'session_closed' ? 'session_closed' : 'session_aborted');
   // Desktop-only 确认只跟随真实会话终止/中止清理。权威 NO_ACTIVE_TURN 的
@@ -6705,22 +6692,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   });
   configureCloudMemoryManagement(maker);
   configureCloudMcpCredentials(cloudMcpCredentialStore);
-  configureHostSettingsCaller(createHostSettingsCallerResolver({
-    getOwner: currentSettingsOwner,
-    assertOwner: assertSettingsOwner,
-    getSession: id => maker.getSession(id),
-    getSessionSource: async sessionId => {
-      const [row] = await getDbClient().drizzle.select({ source: sessions.source }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
-      return row?.source;
-    },
-    confirm: async (sessionId, input, recheck) => {
-      const local = BrowserWindow.getAllWindows().some(win => !win.isDestroyed() && isAppContentWindow(win));
-      const remote = settingsSubscriptions.getControllersForTopic(`session:${sessionId}`).some(id => settingsSubscriptions.controllerSupports(id, SETTINGS_CONFIRM_CAPABILITY));
-      if (!local && !remote) throw new HostSettingsError('CONFIRMATION_UNSUPPORTED');
-      const preview = buildHostSettingsConfirmationPreview(input);
-      return settingsConfirmationBridge.request(sessionId, { preview }, { title: preview.title, description: preview.description }, recheck);
-    },
-  }));
   // 推荐只取执行端真实目录，生命周期预热保证没有 Renderer 时也能创建后续任务。
   const refreshTaskRecommendation = () => {
     if (hostOwnsNewTaskDefaults()) void refreshSettingsModelRecommendation().catch(() => {});
@@ -8467,8 +8438,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           ? false
           : await measureTraceOperation('maker:list-agent-skills:project-links',
             () => preparePaletteProjectSkillLinks(skillParams.workingDir));
-        const hostSkillChanged = !skillParams.remoteHostId && (await prepareHostSettingsSkill()).changed;
-        if (kind === 'codex' && (linksChanged || hostSkillChanged)) {
+        if (kind === 'codex' && linksChanged) {
           skillParams.forceReload = true;
         }
         await measureTraceOperation('maker:list-agent-skills:global-assets', async () => {
@@ -8739,7 +8709,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         kinds?: unknown;
       };
       const agentKind = p.agentKind !== undefined ? requireAgentKind(p.agentKind) : undefined;
-      await prepareHostSettingsSkill();
       if (agentKind === undefined || agentKind === 'codex') {
         await desktopCodexAuthAdapter.ensureGlobalCodexAssets();
       } else if (agentKind === 'pi') {
@@ -22909,11 +22878,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         assertTrustedAppRendererEvent(event);
         return { accepted: mcpSetupBridge.resolve(requestId, decision) };
       }
-      if (settingsConfirmationBridge.resolveFromIpc(requestId, decision, {
-        isDeviceLink: isDeviceLinkInvoke(),
-        supportsSettingsConfirmation: deviceLinkInvokeControllerSupports(SETTINGS_CONFIRM_CAPABILITY),
-        assertTrustedSender: () => assertTrustedAppRendererEvent(event),
-      })) return { accepted: true };
       if (issueConfirmBridge.resolve(requestId, decision)) return { accepted: true };
       if (renameSessionsConfirmBridge.resolve(requestId, decision)) return { accepted: true };
       if (!sharedTask && taskActionConfirmBridge.resolveFromIpc(requestId, decision, {
@@ -22956,9 +22920,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // 快照:打开/重连/刷新会话时,renderer 拉当前挂起交互重建面板(本机 + device-link 远程共用)。
   ipcMain.handle(MAKER_INVOKE.GET_PENDING_INTERACTIONS, (_e, sessionId: unknown) => {
     if (typeof sessionId !== 'string' || !sessionId) return [];
-    let pending = getPendingInteractionsForSession(sessionId).filter(({ request }) =>
-      !isDeviceLinkInvoke() || deviceLinkInvokeControllerSupports(SETTINGS_CONFIRM_CAPABILITY)
-      || request.kind !== 'permission' || request.toolName !== SETTINGS_CONFIRM_TOOL);
+    let pending = getPendingInteractionsForSession(sessionId);
     // Owner-only input and unpublished feedback/identity stay out of guest snapshots.
     if (getDeviceLinkInvokeContext()?.sharedTask)
       pending = pending.filter(({ request }) => request.kind !== 'input_handoff' && request.kind !== 'issue_confirm');

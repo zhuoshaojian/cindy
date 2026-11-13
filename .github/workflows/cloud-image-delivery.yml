@@ -72,7 +72,6 @@ jobs:
             /apps/desktop/src/main/remote-desktop/inputOwnership.ts
             /apps/desktop/src/main/cindy-brain/cindySlot.ts
             /apps/desktop/src/main/cindy-brain/pipeDispatcher.ts
-            /apps/desktop/src/main/host-settings/helper.ts
             /apps/desktop/src/preload/preload.ts
             /apps/desktop/src/renderer/components/sidebar/UserInfoSection.tsx
             /apps/desktop/src/main/instance-runtime/host.ts

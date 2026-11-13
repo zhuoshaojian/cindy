@@ -4,7 +4,7 @@
 
 设置属于**运行任务的 Host**，不是控制端电脑，也不是 CIS 管理网页。Host 持有设置真值；CIS 接收脱敏快照；按实例开启网页编辑时，还短期加密转送用户明确提交的命令及回执。本文描述隔离云版本线中的实现合同，不代表已经部署到现有实例。
 
-可写目录由原四个领域扩展为 58 个固定领域，由 `settingsEditableCatalog.ts` 定义并与服务端校验对齐。是否显示还取决于当前 Host 的平台、已连接能力及原生配置状态；未连接的插件或 IM 工作区没有伪造选项。`list_settings` 返回的资源、动作和授权入口仍用于指路。当前任务的模型与运行参数继续使用 `get_session_runtime` / `set_session_runtime`，不能用新任务默认值去修改存活任务。资源、镜像、启停、更新属于 CIS/平台策略。
+可写目录由原四个领域扩展为 58 个固定领域，由 `settingsEditableCatalog.ts` 定义并与服务端校验对齐。是否显示还取决于当前 Host 的平台、已连接能力及原生配置状态；未连接的插件或 IM 工作区没有伪造选项。当前任务的模型与运行参数继续使用 `get_session_runtime` / `set_session_runtime`，不能用新任务默认值去修改存活任务。资源、镜像、启停、更新属于 CIS/平台策略。
 
 | 领域 | 字段 | 归属 | 保存后的生效边界 |
 | --- | --- | --- | --- |
@@ -43,35 +43,15 @@
 - 模型/来源只有属于随包 `BUNDLED_CATALOG` 的精确公共成员，且通过保守 wire 语法，才可上传公开 ID。活动目录、组织发现、用户连接、前缀、别名或 regex 命中都不是公开性证明；无法证明时只上传配置状态。正文、路径、自由文本、字体名、设备身份以及它们的摘要/hash 均不上传。
 - `migrationPending` 表示尚未完成原生领域迁移，不是默认值，也不允许由快照读取自动认领或导入旧数据。网页的未上报、旧版未包含和过期状态另行区分，不能都归成“未配置”。
 
-## 工具流程
+## 入口与身份
 
-从 `cindy_helper` 的 `host_settings` 类目发现四个工具（上游的 `settings` 类目另有 `list_app_settings` 等本机设置工具，两者互不影响）：
+本服务只有两个写入口：CIS 设置会话（云设置页与网页）和 Host 本机设置页的可信 Renderer IPC。两者都按单领域白名单、revision 与 Host 发行的 `operationId` 提交，`set` 等于默认值也记录明确的自定义意图，`clear` 删除 override 后跟随版本默认值。一次请求不能跨领域，也不承诺多个配置文件的全局事务。
 
-1. `list_settings`：读取完整能力目录、作用范围及其它专用入口。
-2. `get_settings({ domain })`：读取一个领域及来源，取得 `revision` 和 Host 发行的 `operationId`。
-3. `update_settings({ domain, expected_revision, operation_id, set?, clear? })`：单领域白名单修改；等待原生任务确认卡。
-4. `get_settings_operation({ operation_id })`：读取保存回执；不重放操作。
+Agent 不使用本服务的独立工具。云实例上的 Agent 通过上游 `cindy_helper` 的 `settings` 类目（`list_app_settings` / `get_app_settings` / `update_app_settings` / `reset_app_settings`）读改设置，授权与确认沿用上游规则。早期版本投放的 `cindy-settings` Skill 已撤回；云实例和 Dev 包启动时只删除仍指向 profile 内 `host-settings-skills` 的链接及该目录（`host-settings/retiredSettingsSkill.ts`），用户自建的同名 Skill 保持不动。
 
-例如将数据库提醒设为 20 GiB，应先读取 `databaseWarning`，再用那次读取给出的 revision/operationId 提交 `set: { thresholdGiB: 20 }`。恢复默认用 `clear: ['thresholdGiB']`，不能把某一版本的默认阈值写成固定 override。
-
-`set` 等于默认值也记录明确的自定义意图；`clear` 删除 override，随后跟随版本默认值。一次请求不能跨领域，也不承诺多个配置文件的全局事务。
-
-## 身份与真人确认
-
-- 发现和执行均从可信上下文反查当前 owner、live Session 实例、根调用者和执行来源；参数不能自报 owner、caller 或目标实例。
-- Claude 本地原生子代理继承的 MCP 闭包仍属于父任务，因此在 SDK `PreToolUse` 用逐调用 `agent_id` 拦截四个设置工具及设置类目发现。未指定类目的 helper 总览也包含设置目录，子代理需由根任务代查总览；其它明确 helper 类目的发现和调用不受该拦截影响。该拦截独立于 Ask、Auto、Full Access，不依赖 `canUseTool` 一定触发。
-- Codex 按可信 thread 路由保留调用来源；同一 instance 的 root/descendant 或不同证明状态不能作为等价 alias，也不能在混合 batch 中互相覆盖。缺少 threadId 的兼容请求仍可使用原有 session 能力，但来源降为 `unknown / false`，不能据 instance URL 获得设置权限；未知 thread 和过期 instance 不回退猜测身份。
-- Pi 的 MCP 上下文透传 `remoteHostId`；设置入口还独立检查 live Session 的远端归属。即使桥接上下文漏掉该字段，SSH 任务也不能发现、查询或修改控制端 Host 设置，不能进入其确认流程。
-- Bot、群聊、调度、非 owner、SSH、Plan/只读等不满足当前授权条件的上下文不能借此写入 Host 全局设置。
-- 工具写入必须经过 Host 自己的 pending confirmation，一次批准只针对捕获的目标、变更、revision 和身份代次。Full Access、trusted helper 身份、模型提供的 token 或 `updatedInput` 均不能替代真人点击。
-- 确认后、等文件锁后、发布文件前重验身份与 revision。关闭任务、超时、账号/权限代次变化会使旧确认无效。
-- 本机设置页的保存是独立的可信 Renderer IPC 入口，不重复弹确认；该入口不暴露为工具参数。
-- 远程确认复用任务的 `permission` 卡、pending 快照和 resolve 回执，不要求打开云端桌面。桌面和手机在 link-open 与 subscribe 共用的能力列表中声明 `host-settings-confirmation-v1`，完整显示捕获的变更（含长正文），仅提供一次允许或拒绝。
-- Host 仍校验实际可信 device-link 来源和该能力。旧控制端即使直接发送批准响应也被拒绝，但不能取消另一个控制端仍可确认的卡。断线重连获取同一待确认请求；重复回执只能结算一次，过期请求不能补写配置。
-- 设置确认卡只显示设置名称、原值 → 新值和生效说明，按钮为「取消 / 保存修改」；恢复默认明确显示「跟随默认」。桌面和手机复用已有任务确认入口，不显示原始 JSON、工具名、revision 或 operationId。长正文可以完整滚动查看；描述旧个性化状态时只显示是否设置，不读取或披露旧正文。
-- 显示内容由 Host 根据捕获且已校验的变更生成，经现有 permission input 的 `preview` 字段传递。控制端只解析版本为 1 的有界纯文本结构，不执行 HTML，不将显示内容作为写入参数；实际批准仍绑定 Host 捕获的变更与身份。缺少有效 preview 的旧 Host 请求不可在新版界面批准，需 Host 一并更新；不能回退为 JSON 或无内容批准。独立的正文查看请求仍使用「允许查看」，不混作保存。
-- 个性化普通查询仅返回是否自定义。请求 `include_user_prompt: true` 仍需单独的 Host 真人确认，不能由模型传“已授权”解锁。
-- 插件 OAuth、API Key/PAT 和其它秘密继续使用原有专用授权/保密输入卡片，不经通用设置工具传递。
+- 读取和保存都从可信上下文核对当前 owner；参数不能自报 owner 或目标实例。保存前、等文件锁后、发布文件前重验身份与 revision。
+- 个性化读取只返回是否自定义，不返回正文；正文只经 `cloud:personalization:v1` 提供给实例主人。
+- 插件 OAuth、API Key/PAT 和其它秘密继续使用原有专用授权/保密输入卡片，不经通用设置接口传递。
 
 ## 保存、并发和回执
 
@@ -120,7 +100,7 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 同账号控制端的云设置页经 DeviceLink 私有通道读写本实例，正文与设置不经过 CIS 中继或其数据库。通道只在云运行时注册；普通桌面和旧运行时回 `CHANNEL_NOT_ALLOWED`，云页保留旧卡片或只显示页标题。所有通道入口先校验实例主人与 owner generation，回执带 generation，切换账号后的迟到回执被丢弃。
 
-- `cloud:personalization:v1`：个人指令正文 `read` / `save` / `reset`，与本地编辑器一样按 revision 拒绝过期写入（`REVISION_CONFLICT`），恢复默认即 `clear`。日志不记录正文；Agent 设置工具读取正文仍需实例上的真人确认。
+- `cloud:personalization:v1`：个人指令正文 `read` / `save` / `reset`，与本地编辑器一样按 revision 拒绝过期写入（`REVISION_CONFLICT`），恢复默认即 `clear`。日志不记录正文。
 - `cloud:im-settings:v1`：一次转发一个本地 IM 设置 handler，名单见 `shared/cloudImSettings.ts`，并编译进 cloud management 的封闭 call 集。覆盖官方 Slack/Telegram/X 的连接快照、工作目录映射、默认目录、目录偏好与上线播报、官方 Telegram 行为与群，个人 Telegram 人格/行为/群、智能通讯录开关、个人微信工作目录，以及个人机器人的连接状态（回执顶层的 secret/token/password/webhook 字符串置空）。
 - `cloud:storage-usage:v1`：只读 `read`，返回实例数据卷总量与剩余，以及与本地存储页相同的数据库、媒体、旧图片缓存与聊天附件字节数；单项测量失败只把该项置 `null`。只回字节数，不回路径或文件名；清理仍在实例原生页。
 - 发起绑定（开 Slack、添加/重新授权 workspace、关联 Telegram/X、Telegram 上线）仍走云授权票据，授权页在控制端打开；通道内 `set-enabled` 只接受 `false`，`telegramBot:set-online` 只接受下线。目录在实例的目录浏览器中选择，不在实例上弹窗，微信目录写入经私有 `cloud:wechat:working-dir-set` 复用本地路径校验。provider 链接（加群、bot 主页）由实例校验后返回，在控制端打开。
@@ -129,17 +109,7 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 外观工具 grammar 与持久 store 使用同一严格字段 validator；原 UI 仍先执行原有 clamp/round，再经过最终持久校验。通用 override writer 只对显式配置了 validator 的领域增加最终闸门，不顺带收紧其它 legacy store。inspection 使用有字节上限、拒绝文件软链接的读取 helper，仅 `ENOENT` 按缺失解释；坏文件、权限错误和超限不删除、不修复。新任务默认值与个性化文件通过已提交 owner 和当前 profile 纯定位，不经过会加载或迁移登录态的 getter。
 
-## Skill 与跨端快照
-
-`cindy-settings` 是 Host-owned 静态 Skill，只负责语义引导，权限裁决仍由代码执行。内容不得包含用户偏好、秘密或个性化正文；当前 Agent 的启动快照不强制热更新。
-
-源文件随 Host 静态打包，在调用时解析当前 profile / managed home，受既有 `cindy-settings` 单名称 mutation lease 保护。稳定物理源位于当前 userData 的 `host-settings-skills/cindy-settings`，仅物化 canonical `.agents/skills/cindy-settings` 与实际 Claude config 下的同名单 entry；不增加整库同步，不修改进程 HOME。Pilot 激活晚于模块导入时仍使用 Pilot 私有目录；开发版 Claude 的 `claude-home` 也使用其实际配置入口。
-
-ownership marker 记录版本、内容摘要和目录/文件/link 身份。只升级确认归本 Host 所有且内容未变的源；升级前复验、预记待发布 inode，再原子发布内容，marker 更新中断时可凭预记身份恢复。升级保留物理源目录，因此停用偏好不随版本升级丢失。用户同名目录、文件、外部/断链 symlink、未登记或替换的实体全部保留；冲突时不另开 explicit path 绕过。首次创建或 link 发布中断而未留下可验证 ownership 时保守报冲突，不按名称或相同内容接管。
-
-Claude 走实际 config 单 entry 与原生 `skillOverrides`；Codex 复用既有 `xdt-agents` root bridge，以真实 `skills/list` 为准，并在 Host 内容/入口变化时刷新目录；Pi 在本地普通任务启动时只给已启用的精确入口追加 `--skill`，禁用仍走既有 exclusions。管理扫描只补读这个精确 entry，不扫描额外根目录；SSH 不注入控制端 Skill。停用/重新启用沿既有物理路径身份处理，运行中任务不强制热刷新。
-
-普通卸载保护只匹配通过 ownership 验证的精确 Host 源，不按 `cindy-settings` 名称封禁用户自有 Skill，也不借用插件 ownership 阻断停用。
+## 跨端快照
 
 只读快照传输保持有时效的白名单报告，不承担设置写入。能力 GET 确认后使用 v2，旧端明确 404 或明确仅支持 v1 时保留四域降级。v1 仍为 8 KiB，v2 为 128 KiB（固定 96 KiB / 动态 24 KiB / envelope 8 KiB），fresh TTL 仍为 180 秒；完整协商形状和版本兼容见 [云设置脱敏快照](./cloud-settings-snapshot.md)。
 
@@ -147,7 +117,7 @@ Claude 走实际 config 单 entry 与原生 `skillOverrides`；Codex 复用既�
 
 ## 验证范围与发布边界
 
-自动化测试必须使用临时 HOME/profile、无效测试身份、内存权限 fixture 或本地独立服务，不得读取开发者真实授权、Electron userData 或系统钥匙串。Claude native 还需显式设置 `CLAUDE_CODE_TMPDIR`，不能只靠 `TMPDIR` 隔离其临时缓存。macOS 的 Unix socket 路径长度有限，隔离临时根须足够短，避免地址截断碰撞；不能为解决路径问题改回真实 HOME。确认回调 fixture 不等于真人点击验证，磁盘发现不等于三个 native runtime 均已加载。
+自动化测试必须使用临时 HOME/profile、无效测试身份、内存权限 fixture 或本地独立服务，不得读取开发者真实授权、Electron userData 或系统钥匙串。Claude native 还需显式设置 `CLAUDE_CODE_TMPDIR`，不能只靠 `TMPDIR` 隔离其临时缓存。macOS 的 Unix socket 路径长度有限，隔离临时根须足够短，避免地址截断碰撞；不能为解决路径问题改回真实 HOME。磁盘发现不等于三个 native runtime 均已加载。
 
 ### 首版门禁历史
 
@@ -155,11 +125,7 @@ Claude 走实际 config 单 entry 与原生 `skillOverrides`；Codex 复用既�
 
 2026-09-19 本地门禁记录：`pnpm test:unit:related` 自动选择全量单测计划，29 个执行 workspace 全部通过，另有 6 个无可收集测试的 workspace 按原清单标记不适用；Desktop typecheck、maker-core 与 device-link build 通过。`@cindy/mcps` build 仍有 9 条、maker-shared 类型检查仍有 8 条错误，使用内存 CompilerHost 与所选 HEAD 对照确认诊断完全一致，本轮没有修这些存量问题或放宽门禁；不能据此声称所有包构建已通过。
 
-- Claude Skill 的原生初始化测试验证发现、停用、升级后保持停用与重新启用；Codex/Pi 当前只有发现/RPC/启动配置接缝验证，没有真实 native 加载证据。
-- `claudeSettingsProvenance.native.test.ts` 使用捆绑 CLI、真实 SDK/MCP 与本地假模型，由真实 `Agent` 创建子代理，验证 Ask 和 Full Access 的逐调用拦截。通过 `CINDY_CLAUDE_SETTINGS_PROVENANCE_NATIVE=1 pnpm --filter desktop exec vitest run src/main/host-settings/__tests__/claudeSettingsProvenance.native.test.ts --maxWorkers=1` 显式运行；默认跳过。它不替代完整 Desktop adapter 接线测试。Auto 的真实审批模型链不由假服务仿造，当前仅覆盖 SDK options 接缝，不声称 native Auto 已通过。
-- Codex/Pi 来源回归使用真实 loopback HTTP、helper 分派与生产设置 resolver，覆盖缺 threadId、双顺序混合 batch、过期 instance 和丢失远端字段等拒绝路径；没有运行真实 native Codex/Pi 或 SSH daemon，也不证明 native 模型会产生这些构造报文。
-- 本轮全量检查曾暴露旧认证 fixture 未隔离新增 Skill 准备入口，误建两条指向测试目录的全局链接；已核对 ownership、内容指纹及文件身份后仅撤销本任务链接，并修复 fixture 的准备函数 mock 与临时 HOME。不能将早期测试描述为完全没有真实 HOME 副作用。
-- 真实云实例、Electron 双窗口/device-link 真人确认、Windows native、真实模型缓存率与性能尚未验收；本地 fixture 和假模型结果不替代这些证据。
+- 真实云实例、Electron 双窗口、Windows native、真实模型缓存率与性能尚未验收；本地 fixture 和假模型结果不替代这些证据。
 
 ### 本次全量只读扩展的定向证据
 
@@ -195,7 +161,7 @@ CIS 浏览器证据是本地合成身份下的真实 TLS、专属 PostgreSQL 与
 
 网页复用 `HostSettingsService` 与现有文件 writer；新增的 `webTransport.ts` / `webRuntime.ts` 只负责 HTTPS 收发、当前身份与执行期限校验。只在 cloud resource-v1 Host 启动，从冻结 manifest 读取明确的 CIS 端点；不启动新窗口、不复制客户端设置布局引擎。
 
-CIS 按实例 allowlist 开启，网页使用已有 HttpOnly 登录会话与 Origin 校验。Host 使用已登录设备 Access Token；两者不能互换。每次 read 发行的 operationId 绑定当前浏览器会话，真实保存与 agent/native UI 共用身份、单领域校验、CAS 和文件锁。网页明确点击保存是独立可信入口；`confirmed` 不是 wire 字段，agent 工具仍需原生真人卡片。
+CIS 按实例 allowlist 开启，网页使用已有 HttpOnly 登录会话与 Origin 校验。Host 使用已登录设备 Access Token；两者不能互换。每次 read 发行的 operationId 绑定当前浏览器会话，真实保存与本机设置页共用身份、单领域校验、CAS 和文件锁。网页明确点击保存是独立可信入口；`confirmed` 不是 wire 字段。
 
 只开放上文四个领域，模型选项来自 Host 已缓存的实际目录，不刷新授权。`effort:null` 是显式自动；clear 是跟随默认。prompt 普通查询只返回自定义状态，不能借网页读出旧正文。网页 UI 只发送脏字段，收到 saved 回执后重新读取值与 override 核对；恢复默认用 clear。保存但应用失败单独报告，冲突/结果未知保留草稿，不自动重写。
 
@@ -211,15 +177,13 @@ CIS 按实例 allowlist 开启，网页使用已有 HttpOnly 登录会话与 Ori
 
 ### 客户端完整目录到云端可用配置
 
-`settingsCloudCoverage.ts` 与 `settingsCloudCoverage.test.ts` 按实际客户端目录逐项核对：453 个固定叶子中 190 个映射到可编辑配置，253 个属于目标 Linux 云环境不适用的硬件/平台/未消费字段，10 个保留专用入口。15 个集合有 14 个对应编辑领域，模型参数历史由实际选择派生；26 个账号、内容、授权和维护项目保留各自入口。这是目录映射，不能当作真实 Host 已全部可用或已上线的证据。
-
 新增配置覆盖协作与命令资源、Git 快照、记忆与压缩、辅助/子代理/视觉/伙伴模型、模型显示/收藏/上下文/准入/名称/参考价格、八类 IM 默认值、Telegram 人设和群参与、官方 IM 默认工作目录与通知、IM 工作区模型及来源、插件能力与 Agent 偏好、工具开关、快捷键、桌面布局/语言/通知、浏览器后端、隐私与诊断。每域使用原生 store，保留未修改的配置和未知扩展字段。
 
-- 工作区工具支持原六个普通工具以及浏览器。先读取 `workspaceTools` 取得 Host 已知的工作区列表，再在 read/update 中携带 `workspaceId`（工具参数为 `workspace_id`）。该标识不是路径，不能指定未知目录；revision 同时绑定工作区与当前继承的全局默认值。确认卡显示工作区名称。修改只影响后续使用该工作区的任务。
+- 工作区工具支持原六个普通工具以及浏览器。先读取 `workspaceTools` 取得 Host 已知的工作区列表，再在 read/update 中携带 `workspaceId`。该标识不是路径，不能指定未知目录；revision 同时绑定工作区与当前继承的全局默认值。修改只影响后续使用该工作区的任务。
 - IM 工作区模型和来源分开保存到它们各自的原生配置文件；每次只编辑一个领域。重置偏好保留 native mirror 所需的代次、dirty 标记和删除墓碑，不直接删除同步状态。
 - 插件/模型列表只使用当前真实选择项；保留已保存但暂不可用的选择，改动时重新检查连接和模型能力。单字段目录选项超过 512 项或响应总量超过 64 KiB 上限时明确失败，不把截断结果称为完整目录。
 - 网页保持 en、zh-CN、zh-TW、ja、ko 五语与双主题。未升级 Host 仍使用原四领域布局；新 Host 按客户端设置分类展示扩展领域，未知或不适用的能力不显示编辑控件。
-- 远程授权 v3 的身份绑定、签名和专用 IPC 保持原实现；普通配置不会接收 Token，也不会借修改权限档跳过真人设置确认。
+- 远程授权 v3 的身份绑定、签名和专用 IPC 保持原实现；普通配置不会接收 Token。
 
 目标云环境的硬件与连接可用性须在部署/验收时重新检查。桌面语音、物理控制器、iOS/Agent Island、桌面更新器不等同于云实例配置；个人浏览器资料复制、ADB 设置、远程控制同意、IM 绑定与账号凭据保留原生专用流程。
 

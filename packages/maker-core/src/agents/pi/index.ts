@@ -3,8 +3,7 @@ import { NATIVE_SUBSCRIPTION_ACCOUNT } from '../../interfaces/auth-adapter.js';
 import { getPiExtensionUiCapability } from './extension-ui-capabilities.js';
 import { createPiCacheInputTracker } from './cache-input.js';
 import { parsePiManagementArgs, parsePiManagementText } from './managed-command.js';
-import { canonicalSkillPath, isSkillDisabled, snapshotDisabledSkillLaunch, currentDisabledSkillLaunchPaths, extendDisabledSkillLaunchPaths, type DisabledSkillLaunchSnapshot } from '../shared/skill-activation.js';
-import { withHostOwnedSkillEntries } from '../shared/customization-scanner.js';
+import { canonicalSkillPath, snapshotDisabledSkillLaunch, currentDisabledSkillLaunchPaths, extendDisabledSkillLaunchPaths, type DisabledSkillLaunchSnapshot } from '../shared/skill-activation.js';
 /**
  * PiAgent —— pi coding agent(earendil-works/pi)接入。
  *
@@ -3952,8 +3951,6 @@ export class PiAgent extends BaseAgent {
     // skills. Missing/throwing authorities and paths fail closed; never infer
     // approval from permission mode, MCP/plugin state, or caller vendor options.
     // 受邀者不读本机用户的技能停用偏好(本机技能整体不加载)。
-    const hostSkillPaths = opts.remoteHostId || isolatedBotProfile(opts.botRuntimeProfile) || reviewMode || hostedGuest || opts[LOCAL_AGENT_CLIENT]?.hostToolsOnly
-      ? [] : (await this.deps.prepareHostOwnedSkills?.())?.paths ?? [];
     const disabledSkillPaths = opts.remoteHostId || isolatedBotProfile(opts.botRuntimeProfile) || reviewMode || hostedGuest
       ? [] : [...(this.deps.getDisabledSkillPaths?.() ?? [])];
     let disabledSkillLaunch = snapshotDisabledSkillLaunch(disabledSkillPaths);
@@ -4061,7 +4058,6 @@ export class PiAgent extends BaseAgent {
       disabledSkillLaunch = extendDisabledSkillLaunchPaths(disabledSkillLaunch,
         piDisabledDiscoveryPaths(currentDisabledSkillLaunchPaths(disabledSkillLaunch), [
           path.join(configHome, 'skills'), path.join(os.homedir(), '.agents', 'skills'),
-          ...hostSkillPaths,
           ...managedPackageResources.skills.map((skill) => skill.path),
         ]));
       await fs.writeFile(settingsPath, JSON.stringify(applyPiDisabledSkillSettings(settings,
@@ -4119,8 +4115,6 @@ export class PiAgent extends BaseAgent {
       // The catalog path may alias a managed source. Apply the managed grant and
       // activation checks once, including paths already selected by the Bot.
       const additionalSkillPaths = [...new Map([
-        ...hostSkillPaths.filter(skillPath => !managedSourceIdentities.has(canonicalSkillPath(skillPath))
-          && !currentDisabledSkillLaunchPaths(disabledSkillLaunch).some(disabled => canonicalSkillPath(disabled) === canonicalSkillPath(skillPath))),
         ...(loadProjectResourcesInPlace || opts[LOCAL_AGENT_CLIENT]?.hostToolsOnly ? [] : botSkillSelection.explicitSkillPaths.filter((skillPath) =>
           !managedSourcePaths.has(path.resolve(skillPath)) && !managedSourceIdentities.has(canonicalSkillPath(skillPath)))),
       ].map((skillPath) => [canonicalSkillPath(skillPath), skillPath])).values()];
@@ -9103,7 +9097,6 @@ export class PiAgent extends BaseAgent {
 
   /** SkillHub raw view; project items remain discovered until runtime truth says otherwise. */
   override async listCustomizations(opts: ListCustomizationsOptions): Promise<ListCustomizationsResult> {
-    const hostSkills = !opts.kinds?.length || opts.kinds.includes('skill') ? await this.deps.prepareHostOwnedSkills?.() : undefined;
     const result = await (this.deps.scanLocalCustomizations
       ? this.deps.scanLocalCustomizations('pi', opts)
       : scanPiCustomizations(opts));
@@ -9114,7 +9107,7 @@ export class PiAgent extends BaseAgent {
         enabled: skill.enabled,
       })));
     }
-    return withHostOwnedSkillEntries(result, 'pi', hostSkills?.paths ?? []);
+    return result;
   }
 
   /**
@@ -9130,7 +9123,7 @@ export class PiAgent extends BaseAgent {
       return scanRemotePiSkills({ fileOps, workingDir: opts.workingDir });
     }
     const [{ items, errors }, managedPackages] = await Promise.all([
-      this.listCustomizations({
+      scanPiCustomizations({
         workingDirs: opts.workingDir ? [opts.workingDir] : [],
       }),
       opts.includeManagedPiPackages ? this.deps.resolvePiManagedPackageResources?.().catch(() => undefined) : undefined,

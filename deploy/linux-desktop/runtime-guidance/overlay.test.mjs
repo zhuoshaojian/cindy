@@ -56,9 +56,9 @@ test('cloud build rejects an omitted engine and resolves the exact virtual modul
   assert.equal(plugin.resolveId('unrelated'),null);
   const id=plugin.resolveId('virtual:cindy-cloud-settings-guidance');
   assert.ok(plugin.load(id).includes(JSON.stringify(settingsPrompt)));
-  for(const file of files){const relative=`apps/desktop/src/main/maker-host/${file}`;plugin.transform(fs.readFileSync(path.join(sourceRoot,relative),'utf8'),path.join(sourceRoot,relative));}
-  const helper='apps/desktop/src/main/host-settings/helper.ts';
+  const [first, ...rest] = files.map(file => `apps/desktop/src/main/maker-host/${file}`);
+  plugin.transform(fs.readFileSync(path.join(sourceRoot,first),'utf8'),path.join(sourceRoot,first));
   assert.throws(() => plugin.buildEnd());
-  plugin.transform(fs.readFileSync(path.join(sourceRoot,helper),'utf8'),path.join(sourceRoot,helper));
+  for(const relative of rest) plugin.transform(fs.readFileSync(path.join(sourceRoot,relative),'utf8'),path.join(sourceRoot,relative));
   plugin.buildEnd();
 });

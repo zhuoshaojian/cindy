@@ -63,7 +63,7 @@ export function registerHostSettingsIpc(databaseWarningChanged: () => void): voi
   ipcMain.handle('host-settings:update', (event, raw: unknown) => safe(async () => {
     if (!object(raw) || Object.keys(raw).some(k => !['ownerStamp', 'domain', 'operationId', 'expectedRevision', 'set', 'clear'].includes(k)) || !raw.ownerStamp || !isHostSettingsDomain(raw.domain)) rejectInvalid();
     const caller = nativeCaller(event, raw.ownerStamp);
-    return updateHostSettings(caller, raw as unknown as HostSettingsUpdate, true);
+    return updateHostSettings(caller, raw as unknown as HostSettingsUpdate);
   }));
   ipcMain.handle('host-settings:save-history', (event, raw: unknown) => safe(async () => {
     if (!object(raw) || Object.keys(raw).some(k => !['ownerStamp', 'expectedRevision', 'history', 'importOnly'].includes(k)) || !raw.ownerStamp || typeof raw.expectedRevision !== 'string' || typeof raw.importOnly !== 'boolean') rejectInvalid();

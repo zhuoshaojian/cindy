@@ -34,10 +34,6 @@ vi.mock('../active-catalog.js', () => ({
     })),
   }),
 }));
-// Account-auth fixtures must not project Host Skills into the developer's OS home.
-vi.mock('../../host-settings/cindy-settings-skill.js', () => ({
-  prepareHostSettingsSkill: async () => ({ status: 'unavailable', changed: false }),
-}));
 vi.mock('../codex-global-skills.js', () => ({ prepareCodexGlobalSkillsLinks: vi.fn() }));
 vi.mock('../codex-global-rules.js', () => ({ prepareCodexGlobalRulesCopy: vi.fn() }));
 vi.mock('../codex-global-plugins.js', () => ({

@@ -43,7 +43,7 @@ export async function executeWebSettingsRequest(request: SettingsWebEnvelope, as
     if (request.command.kind === 'update') {
       // The authenticated web form's Save is the human action, as with native settings
       // IPC. This path is not exposed through helper tools or device-link invoke.
-      return { ok: true, receipt: await updateHostSettings(caller, request.command.change, true) } as SettingsWebResult;
+      return { ok: true, receipt: await updateHostSettings(caller, request.command.change) } as SettingsWebResult;
     }
     if (request.command.kind === 'receipt') return { ok: true, receipt: getHostSettingsOperation(caller, request.command.operationId) } as SettingsWebResult;
     const domain = request.command.domain;
@@ -62,7 +62,7 @@ export async function executeWebSettingsRequest(request: SettingsWebEnvelope, as
     const choices = domain === 'terminal' ? { defaultShellPref: [
         { value: 'auto', label: 'Auto' }, ...probeAvailableShells().map(shell => ({ value: shell.id, label: shell.displayName })),
       ] } : undefined;
-    let settings = await getHostSettings(caller, domain, false, request.command.workspaceId);
+    let settings = await getHostSettings(caller, domain, request.command.workspaceId);
     assertCurrent();
     if (domain === 'appearance' && settings.status === 'ready') {
       const keys = ['uiFamily', 'codeFamily', 'uiSize', 'codeSize', 'windowZoom'];
