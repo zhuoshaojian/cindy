@@ -30,7 +30,7 @@ vi.mock('../managementRuntime.js', () => ({
 vi.mock('../../maker-host/model-visibility-mirror.js', () => ({ getModelVisibilityOverride: () => undefined }));
 vi.mock('../catalog.js', () => ({ refreshSettingsModelRecommendation: async () => ({ providers: [], agents: [], assertCurrent() {} }) }));
 import { executeWebSettingsRequest } from '../webRuntime.js';
-import { configureHostSettingsApplication, getHostSettings, updateHostSettings } from '../index.js';
+import { configureHostSettingsApplication } from '../index.js';
 import { settingsWebResultSchema, type SettingsWebCommand, type SettingsWebEnvelope } from '../../../shared/settingsWeb.js';
 const input = (command: SettingsWebCommand, sessionKey = 'a'.repeat(64)): SettingsWebEnvelope => ({ requestId: randomUUID(), runtimeId: randomUUID(), sessionKey, expiresAtMs: Date.now() + 30_000, command });
 beforeEach(() => {

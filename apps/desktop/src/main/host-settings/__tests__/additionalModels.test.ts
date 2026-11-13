@@ -6,7 +6,7 @@ const context = vi.hoisted(() => ({ root: '', owner: 'first', generation: 1, pen
   connected: true, modelsPerAgent: 1, routeStamp: '1:0', catalogRevision: 1,
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('electron', () => ({ app: { getPath: () => context.root } }));
-const prepareImDefaults = vi.hoisted(() => vi.fn(async (_channel?: string) => {}));
+const prepareImDefaults = vi.hoisted(() => vi.fn<(channel?: string) => Promise<void>>(async () => {}));
 vi.mock('../../im/index.js', () => ({ prepareImDefaultSettingsChange: prepareImDefaults }));
 // Model preference axes are Host settings only on a managed cloud instance.
 vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));

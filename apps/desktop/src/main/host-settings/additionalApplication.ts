@@ -4,7 +4,7 @@ import { additionalSettingsRuntime, additionalModelRuntime } from './additionalR
 import type { AdditionalSettingsDomain } from '../../shared/settingsEditableCatalog.js';
 
 /** Apply through the same runtime services as native settings, preserving busy turns. */
-export async function applyAdditionalSettings(domain: AdditionalSettingsDomain, revision: string, changedKeys?: readonly string[]): Promise<void> {
+export async function applyAdditionalSettings(domain: AdditionalSettingsDomain): Promise<void> {
   if (domain === 'modelContext' || domain === 'modelAccess' || domain === 'providerNames' || domain === 'modelPrices') {
     const runtime = additionalModelRuntime();
     if (!runtime && getMakerIfReady()) throw new Error('NOT_READY');
