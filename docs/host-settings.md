@@ -47,7 +47,7 @@
 
 本服务只有两个写入口：CIS 设置会话（云设置页与网页）和 Host 本机设置页的可信 Renderer IPC。两者都按单领域白名单、revision 与 Host 发行的 `operationId` 提交，`set` 等于默认值也记录明确的自定义意图，`clear` 删除 override 后跟随版本默认值。一次请求不能跨领域，也不承诺多个配置文件的全局事务。
 
-Agent 不使用本服务的独立工具。云实例上的 Agent 通过上游 `cindy_helper` 的 `settings` 类目（`list_app_settings` / `get_app_settings` / `update_app_settings` / `reset_app_settings`）读改设置，授权与确认沿用上游规则。早期版本投放的 `cindy-settings` Skill 已撤回；云实例和 Dev 包启动时只删除仍指向 profile 内 `host-settings-skills` 的链接及该目录（`host-settings/retiredSettingsSkill.ts`），用户自建的同名 Skill 保持不动。
+Agent 不使用本服务的独立工具。云实例上的 Agent 通过上游 `cindy_helper` 的 `settings` 类目（`list_app_settings` / `get_app_settings` / `update_app_settings` / `reset_app_settings`）读改设置，授权与确认沿用上游规则。上游没有的 Host 领域在云实例启动时登记为上游设置分区（`host-settings/appSettingsSections.ts`，分区 ID 与领域名相同），读写仍走本服务的单领域校验、CAS 与文件锁；普通桌面不登记。已有上游分区或模型工具的领域（外观、Git 安全、运行资源、记忆、子代理/辅助模型、视觉桥、语言主题等偏好、模型显示/上下文/准入/名称/价格）不重复登记；按工作区区分的工具设置、个性化正文和新任务默认值不进入这组工具。早期版本投放的 `cindy-settings` Skill 已撤回；云实例和 Dev 包启动时只删除仍指向 profile 内 `host-settings-skills` 的链接及该目录（`host-settings/retiredSettingsSkill.ts`），用户自建的同名 Skill 保持不动。
 
 - 读取和保存都从可信上下文核对当前 owner；参数不能自报 owner 或目标实例。保存前、等文件锁后、发布文件前重验身份与 revision。
 - 个性化读取只返回是否自定义，不返回正文；正文只经 `cloud:personalization:v1` 提供给实例主人。

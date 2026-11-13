@@ -12,6 +12,7 @@ import { readHostSettings, getHostSettings, updateHostSettings, onHostSettingsCh
 import { currentSettingsOwner, assertSettingsOwner, inspectPersonalization, importLegacyPersonalization } from './personalization.js';
 import { hostOwnsNewTaskDefaults, readNewTaskPreferenceHistory, saveNewTaskPreferenceHistory } from './new-task-defaults.js';
 import { validateSettingsModelSelection, refreshSettingsModelRecommendation } from './catalog.js';
+import { registerHostAppSettingsSections } from './appSettingsSections.js';
 
 function nativeCaller(event: IpcMainInvokeEvent, stamp?: unknown): HostSettingsCaller {
   assertTrustedAppRendererEvent(event);
@@ -52,6 +53,7 @@ export function registerHostSettingsIpc(databaseWarningChanged: () => void): voi
   ipcMain.on('host-settings:host-owned', event => { event.returnValue = hostOwnsNewTaskDefaults(); });
   // Ordinary desktops keep the new-task draft and personalization in renderer localStorage.
   if (!hostOwnsNewTaskDefaults()) return;
+  registerHostAppSettingsSections();
   ipcMain.handle('host-settings:get', event => safe(async () => {
     const caller = nativeCaller(event);
     let modelCatalogReady = true;
