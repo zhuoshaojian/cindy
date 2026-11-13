@@ -81,6 +81,7 @@ function currentStore(rootPath?: string) {
   let current = stores.get(key);
   if (!current) {
     current = createOverrideSettingsFile<MemorySettings>({
+  // Cloud settings reads only; ordinary writes keep upstream semantics.
   validateOverrides: raw => validateAdditionalSettingsOverrides('memory', raw),
       filePath: () => settingsFilePath(ownerRoot ?? undefined),
       defaults: DEFAULTS,

@@ -81,9 +81,10 @@ function normalize(raw: unknown): VisionBridgeSettings {
 }
 
 const store = createOverrideSettingsFile<VisionBridgeSettings>({
+  // Cloud settings reads only; ordinary writes keep upstream semantics.
+  validateOverrides: raw => validateAdditionalSettingsOverrides('visionBridge', raw),
   filePath: settingsFilePath,
   defaults: DEFAULTS,
-  validateOverrides: raw => validateAdditionalSettingsOverrides('visionBridge', raw),
   normalize,
   log,
   label: 'vision bridge',
@@ -118,7 +119,6 @@ interface CachedSnapshot {
   createdAt: number;
 }
 let cachedSnapshot: CachedSnapshot | null = null;
-store.onChanged(() => { cachedSnapshot = null; });
 /** 快照 TTL：hot-path（proxy shouldBridge 每请求）在 TTL 内零 I/O；外部改文件在 TTL 后感知。 */
 const CACHE_TTL_MS = 2000;
 

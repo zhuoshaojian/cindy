@@ -29,13 +29,10 @@ export type DatabaseSizeWarningSettingsPatchParseResult =
 export function parseDatabaseSizeWarningSettingsPatch(
   raw: unknown,
 ): DatabaseSizeWarningSettingsPatchParseResult {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+  if (!raw || typeof raw !== 'object') {
     return { error: 'database size warning settings payload required' };
   }
   const value = raw as Record<string, unknown>;
-  if (Object.keys(value).some((key) => key !== 'thresholdGiB' && key !== 'disabled')) {
-    return { error: 'unknown database size warning setting' };
-  }
   const patch: DatabaseSizeWarningSettingsPatch = {};
   if (value.thresholdGiB !== undefined) {
     if (
@@ -97,13 +94,12 @@ const store = createOverrideSettingsFile<DatabaseSizeWarningSettings>({
   normalize,
   log,
   label: 'database-size-warning',
-  atomicOnly: true,
-  preserveUnreadableFile: true,
-  maxBytes: 4096,
+  // Cloud settings commits only (commitAtomic); ordinary writes keep their existing semantics.
   scopeKey: () => JSON.stringify(peekCommittedAppSession()),
   validateOverrides: (raw) => {
     if (Object.keys(raw).length === 0) return;
-    if ('error' in parseDatabaseSizeWarningSettingsPatch(raw)) throw new Error('invalid database warning settings');
+    if (Object.keys(raw).some((key) => key !== 'thresholdGiB' && key !== 'disabled')
+      || 'error' in parseDatabaseSizeWarningSettingsPatch(raw)) throw new Error('invalid database warning settings');
   },
 });
 
@@ -128,7 +124,7 @@ export async function writeDatabaseSizeWarningSettings(
   patch: Partial<DatabaseSizeWarningSettings>,
 ): Promise<DatabaseSizeWarningSettings> {
   try {
-    await store.writePatchAtomic(patch, { preserveDefaults: true });
+    await store.writePatchAtomic(patch);
     return store.read();
   } catch {
     log.warn('database size warning settings write failed');

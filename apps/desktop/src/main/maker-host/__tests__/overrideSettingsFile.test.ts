@@ -130,27 +130,20 @@ describe('host settings CAS and pure inspection', () => {
 });
 
 describe('shared final validation and bounded inspection', () => {
-  it.each(['sync', 'atomic', 'update'] as const)('applies an opted-in validator to the final %s write before publication', async (kind) => {
+  it.each(['sync', 'atomic', 'update'] as const)('keeps the opted-in validator off ordinary %s writes; only cloud commits check it', async (kind) => {
     const validateOverrides = vi.fn((raw: Record<string, unknown>) => {
       if (raw.limit !== undefined && (typeof raw.limit !== 'number' || raw.limit > 10)) throw new Error('invalid limit');
     });
-    const { dir, file, store } = createTempStore(undefined, { validateOverrides });
-    const listener = vi.fn(); const off = store.onChanged(listener);
+    const { dir, store } = createTempStore(undefined, { validateOverrides });
     try {
       store.writePatch({ limit: 7 });
-      const before = fs.readFileSync(file, 'utf8');
-      listener.mockClear();
-      if (kind === 'sync') expect(() => store.writePatch({ limit: 99 })).toThrow('invalid limit');
-      else if (kind === 'atomic') await expect(store.writePatchAtomic({ limit: 99 })).rejects.toThrow('invalid limit');
-      else await expect(store.updateAtomic(() => ({ limit: 99 }))).rejects.toThrow('invalid limit');
-      expect(validateOverrides).toHaveBeenCalledWith({ limit: 99 });
-      expect(fs.readFileSync(file, 'utf8')).toBe(before);
-      expect(fs.readdirSync(dir)).toEqual(['settings.json']);
-      expect(listener).not.toHaveBeenCalled();
-      expect(store.inspect()).toMatchObject({ status: 'ready', value: { limit: 7 } });
-    } finally { off(); fs.rmSync(dir, { recursive: true, force: true }); }
+      if (kind === 'sync') store.writePatch({ limit: 99 });
+      else if (kind === 'atomic') await store.writePatchAtomic({ limit: 99 });
+      else await store.updateAtomic(() => ({ limit: 99 }));
+      expect(store.read()).toMatchObject({ limit: 99 });
+      await expect(store.commitAtomic({ set: { limit: 100 } })).rejects.toThrow();
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
-
   it('does not add validation constraints to stores that did not opt in', async () => {
     const { dir, file, store } = createTempStore();
     try {

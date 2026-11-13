@@ -101,6 +101,7 @@ function clampInt(v: number, min: number, max: number): number {
 }
 
 const store = createOverrideSettingsFile<AgentResourceSettings>({
+  // Cloud settings reads only; ordinary writes keep upstream semantics.
   validateOverrides: raw => validateAdditionalSettingsOverrides('agentResource', raw),
   filePath: settingsFilePath,
   defaults: DEFAULTS,

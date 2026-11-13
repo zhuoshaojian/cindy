@@ -20,14 +20,6 @@ function installBridge(initial: AppearanceSettings) {
     snapshot = { ...snapshot, ...patch };
     onChanged?.(snapshot);
   });
-  // Reset clears the saved override, so the field follows the default again.
-  const clearFields = vi.fn(async (keys: Array<keyof AppearanceSettings>) => {
-    snapshot = {
-      ...snapshot,
-      ...Object.fromEntries(keys.map((key) => [key, DEFAULT_APPEARANCE_SETTINGS[key]])),
-    };
-    onChanged?.(snapshot);
-  });
   const logToMain = vi.fn();
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
@@ -35,7 +27,6 @@ function installBridge(initial: AppearanceSettings) {
       appearanceSettings: {
         getSync: () => snapshot,
         setPatch,
-        clearFields,
         onChanged: (callback: typeof onChanged) => {
           onChanged = callback;
           return () => {
@@ -48,7 +39,6 @@ function installBridge(initial: AppearanceSettings) {
   });
   return {
     setPatch,
-    clearFields,
     logToMain,
     broadcast: (next: Partial<AppearanceSettings>) => {
       snapshot = { ...snapshot, ...next };
@@ -102,13 +92,12 @@ describe('terminal font settings isolation', () => {
     expect(result.current.codeSize).toBe(18);
 
     act(() => result.current.resetTerminalFamily());
-    await waitFor(() => expect(bridge.clearFields).toHaveBeenCalledTimes(1));
-    expect(bridge.clearFields).toHaveBeenLastCalledWith(['terminalFamily']);
+    await waitFor(() => expect(bridge.setPatch).toHaveBeenCalledTimes(3));
+    expect(bridge.setPatch).toHaveBeenLastCalledWith({ terminalFamily: '' });
     expect(result.current.terminalSize).toBe(20);
     act(() => result.current.resetTerminalSize());
-    await waitFor(() => expect(bridge.clearFields).toHaveBeenCalledTimes(2));
-    expect(bridge.clearFields).toHaveBeenLastCalledWith(['terminalSize']);
-    expect(bridge.setPatch).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(bridge.setPatch).toHaveBeenCalledTimes(4));
+    expect(bridge.setPatch).toHaveBeenLastCalledWith({ terminalSize: 13 });
     expect(result.current.terminalFamily).toBe('');
     expect(result.current.terminalSize).toBe(13);
     expect([document.documentElement.style.cssText, document.body.style.cssText]).toEqual(

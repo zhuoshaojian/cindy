@@ -5,6 +5,17 @@ import path from 'node:path';
 const context = vi.hoisted(() => ({ root: '', owner: 'first', generation: 1, pending: false,
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('electron', () => ({ app: { getPath: () => context.root } }));
+// electron-store binds its directory once per process; read the current profile file like it does in the app.
+vi.mock('electron-store', async () => {
+  const nodeFs = await import('node:fs'); const nodePath = await import('node:path');
+  return { default: class {
+    private file: string;
+    constructor(options: { name: string }) { this.file = nodePath.join(context.root, `${options.name}.json`); }
+    private read(): Record<string, unknown> { try { return JSON.parse(nodeFs.readFileSync(nodePath.join(context.root, nodePath.basename(this.file)), 'utf8')); } catch { return {}; } }
+    get(key: string, fallback?: unknown) { return this.read()[key] ?? fallback; }
+    set(key: string, value: unknown) { nodeFs.writeFileSync(nodePath.join(context.root, nodePath.basename(this.file)), JSON.stringify({ ...this.read(), [key]: value })); }
+  } };
+});
 vi.mock('../../logger.js', () => ({ createLogger: () => context.log }));
 vi.mock('../../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => context.log } }));
 vi.mock('../../appSessionState.js', () => ({

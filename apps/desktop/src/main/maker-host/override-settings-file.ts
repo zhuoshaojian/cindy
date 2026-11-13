@@ -390,33 +390,36 @@ export function createOverrideSettingsFile<T>(options: {
   }
 
   function writeOverrides(overrides: Record<string, unknown>, prepared = prepareState(overrides)): T {
-    // 所有已选择校验的领域共用最终落盘闸门；未配置 validator 的存量 store 保持原语义。
-    options.validateOverrides?.(overrides);
+    // Validation belongs to the cloud commit path (commitAtomic); ordinary writes keep upstream semantics.
+    if (Object.keys(overrides).length === 0) return reset();
     const file = options.filePath();
-    const result = clone(prepared.value);
+    const tmp = `${file}.tmp`;
     const serialized = JSON.stringify(overrides, null, 2);
-    if (options.maxBytes !== undefined && Buffer.byteLength(serialized, 'utf-8') > options.maxBytes) {
+    if (
+      options.maxBytes !== undefined &&
+      Buffer.byteLength(serialized, 'utf-8') > options.maxBytes
+    ) {
       throw new Error(`file exceeds ${options.maxBytes} byte limit`);
     }
     fs.mkdirSync(pathDirname(file), { recursive: true });
-    if (Object.keys(overrides).length === 0) {
-      try { fs.unlinkSync(file); } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    if (options.atomicOnly) {
+      // Cloud-only Host stores: private, unique temp file that never outlives a failed publish.
+      const privateTmp = `${file}.${randomUUID()}.tmp`;
+      try {
+        fs.writeFileSync(privateTmp, serialized, { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
+        fs.renameSync(privateTmp, file);
+      } finally {
+        try { fs.unlinkSync(privateTmp); } catch { /* rename consumed it */ }
       }
     } else {
-      const tmp = `${file}.${randomUUID()}.tmp`;
-      try {
-        fs.writeFileSync(tmp, serialized, { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
-        fs.renameSync(tmp, file);
-      } finally {
-        try { fs.unlinkSync(tmp); } catch { /* rename 已消耗临时文件。 */ }
-      }
+      fs.writeFileSync(tmp, serialized, 'utf-8');
+      fs.renameSync(tmp, file);
     }
     cachedFileMtimeMs = statFileMtimeMs();
     cachedResolvedPath = file;
     cached = prepared;
     notifyChanged();
-    return result;
+    return clone(prepared.value);
   }
 
   function reset(): T {

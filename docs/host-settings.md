@@ -107,7 +107,7 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 ### 共用校验与纯读取边界
 
-外观工具 grammar 与持久 store 使用同一严格字段 validator；原 UI 仍先执行原有 clamp/round，再经过最终持久校验。通用 override writer 只对显式配置了 validator 的领域增加最终闸门，不顺带收紧其它 legacy store。inspection 使用有字节上限、拒绝文件软链接的读取 helper，仅 `ENOENT` 按缺失解释；坏文件、权限错误和超限不删除、不修复。新任务默认值与个性化文件通过已提交 owner 和当前 profile 纯定位，不经过会加载或迁移登录态的 getter。
+字段 validator 只在云端读取（`inspect`）与带版本比对的提交（`commitAtomic`）中执行；本机设置页与上游分区的普通写入（`writePatch` / `writePatchAtomic` / `updateAtomic` / `reset`）保持上游语义，不因云端校验失败或显式写默认值而改变。只在云实例使用的 Host 存储（`atomicOnly`）发布时使用私有唯一临时文件；普通存储仍用上游的临时文件写法。外观、数据库提醒、插件开关、LSP、终端等原生写入链恢复为上游实现，云端写入另走同文件的版本比对提交。inspection 使用有字节上限、拒绝文件软链接的读取 helper，仅 `ENOENT` 按缺失解释；坏文件、权限错误和超限不删除、不修复。新任务默认值与个性化文件通过已提交 owner 和当前 profile 纯定位，不经过会加载或迁移登录态的 getter。
 
 ## 跨端快照
 

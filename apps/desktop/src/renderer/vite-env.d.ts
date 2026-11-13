@@ -1264,7 +1264,6 @@ interface ElectronAPI {
       patch: Partial<import('../shared/appearanceSettings').AppearanceSettings>,
     ) => Promise<import('../shared/appearanceSettings').AppearanceSettings>;
     reset: () => Promise<import('../shared/appearanceSettings').AppearanceSettings>;
-    clearFields: (fields: Array<keyof import('../shared/appearanceSettings').AppearanceSettings>) => Promise<import('../shared/appearanceSettings').AppearanceSettings>;
     onChanged: (
       callback: (settings: import('../shared/appearanceSettings').AppearanceSettings) => void,
     ) => () => void;

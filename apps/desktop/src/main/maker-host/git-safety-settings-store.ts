@@ -99,6 +99,8 @@ function mergeOverrides({
 }
 
 const store = createOverrideSettingsFile<PersistedGitSafetySettings>({
+  // Cloud settings reads only; ordinary writes keep upstream semantics.
+  validateOverrides: raw => validateAdditionalSettingsOverrides('gitSafety', raw),
   filePath: settingsFilePath,
   defaults: DEFAULTS,
   normalize,

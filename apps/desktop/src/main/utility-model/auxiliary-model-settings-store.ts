@@ -459,9 +459,10 @@ function normalize(raw: unknown): AuxiliaryModelSettings {
 }
 
 const store = createOverrideSettingsFile<AuxiliaryModelSettings>({
+  // Cloud settings reads only; ordinary writes keep upstream semantics.
+  validateOverrides: raw => validateAdditionalSettingsOverrides('auxiliaryModel', raw),
   filePath: settingsFilePath,
   defaults: AUXILIARY_MODEL_SETTINGS_DEFAULTS,
-  validateOverrides: raw => validateAdditionalSettingsOverrides('auxiliaryModel', raw),
   normalize,
   log,
   label: 'auxiliary model',
@@ -565,18 +566,3 @@ export const auxiliaryModelPortableSettings = portableOverrideSettings(store);
 /** Internal Host settings adapter; uses the native persistence and revision lock. */
 export function getAuxiliaryModelSettingsStore() { return store; }
 
-/** CAS wrapper around the native store, retaining the native reset migration seal. */
-export async function commitAuxiliaryModelSettings(
-  mutation: import('../maker-host/override-settings-file.js').OverrideSettingsMutation<AuxiliaryModelSettings>,
-  options: import('../maker-host/override-settings-file.js').OverrideSettingsCommitOptions,
-) {
-  return store.commitAtomic(() => {
-    if (mutation.clear?.includes('models')) {
-      const legacyVoice = hasLegacyVoiceMigrationMarker()
-        || legacyVoiceOverrideRefs(readJsonObject(ownerVoiceModelsPath())).length > 0
-        || legacyVoiceOverrideRefs(readClaimedUnscopedVoiceModels()).length > 0;
-      if (legacyVoice) markLegacyVoiceMigrationComplete();
-    }
-    return { ...mutation, clear: [...mutation.clear ?? [], 'sessionTitleModel', 'promptRecommendationModel'] as Array<keyof AuxiliaryModelSettings> };
-  }, options);
-}

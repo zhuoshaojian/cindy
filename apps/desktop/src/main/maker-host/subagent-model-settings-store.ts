@@ -62,13 +62,14 @@ const ACTIVE_KEYS = new Set<keyof SubagentModelSettings>([
 ]);
 
 const store = createOverrideSettingsFile<SubagentModelSettings>({
-  filePath: settingsFilePath,
-  defaults: SUBAGENT_MODEL_SETTINGS_DEFAULTS,
-  normalize,
+  // Cloud settings reads only; ordinary writes keep upstream semantics.
   validateOverrides: raw => validateOptionalSettingsFields(raw, {
     claudeCode: isValidSubagentModelIdInput, claudeCodeProviderId: isValidSubagentModelIdInput,
     codexSmartSubagentRouting: isSettingBoolean,
   }),
+  filePath: settingsFilePath,
+  defaults: SUBAGENT_MODEL_SETTINGS_DEFAULTS,
+  normalize,
   // 写设置时顺便移除旧版 Codex 固定路由与护栏键；它们已不属于有效协议。
   mergeOverrides: ({ patch, next, defaults, overrides }) => {
     const activeOverrides = Object.fromEntries(

@@ -1391,8 +1391,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setPatch: (patch: Partial<AppearanceSettings>): Promise<AppearanceSettings> =>
       ipcRenderer.invoke('appearance-settings:set-patch', patch),
     reset: (): Promise<AppearanceSettings> => ipcRenderer.invoke('appearance-settings:reset'),
-    clearFields: (fields: Array<keyof AppearanceSettings>): Promise<AppearanceSettings> =>
-      ipcRenderer.invoke('appearance-settings:clear-fields', fields),
     onChanged: fanOutAppearanceSettingsChanged,
   },
   onApplicationMenuCommand: (callback: (command: ApplicationMenuCommand) => void): (() => void) =>

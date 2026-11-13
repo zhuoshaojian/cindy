@@ -106,7 +106,7 @@ describe.each(['main', 'sidebar'] as const)('%s preload appearance snapshot', (k
       expect(exposed.maker.claimLegacyModelVisibilityOwner().canWriteOwnerScoped).toBe(false);
     } else {
       expect(Object.keys(bridge).sort()).toEqual([
-        'clearFields', 'ensureWallpaperImage', 'ensureWallpaperVideo', 'get', 'getSync', 'importWallpaper',
+        'ensureWallpaperImage', 'ensureWallpaperVideo', 'get', 'getSync', 'importWallpaper',
         'onChanged', 'onWallpaperDownloadProgress', 'removeWallpaper', 'reset', 'setPatch',
       ]);
     }

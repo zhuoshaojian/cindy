@@ -39,7 +39,7 @@ export class SettingsReader {
   private projectCache = new Map<string, ProjectCacheEntry>();
   private globalCache: ProjectCacheEntry | null = null;
 
-  /** The same file and lock are used by native toggles and remote settings. */
+  /** Cloud settings commits (revision-checked, locked); the toggles below keep their direct writes. */
   private globalStore = createOverrideSettingsFile<Record<string, unknown>>({
     filePath: () => this.getGlobalSettingsPath(), defaults: {},
     normalize: raw => ({ ...raw as Record<string, unknown> }),
@@ -149,11 +149,26 @@ export class SettingsReader {
   }
 
   async writeGlobalPluginSetting(pluginId: PluginId, enabled: boolean): Promise<void> {
-    await this.commitUserDefaults({ set: { [pluginId]: enabled } });
+    const settingsPath = this.getGlobalSettingsPath();
+    const root = await this.readJsonFile(settingsPath);
+    const builtinTools = (root.builtinTools as Record<string, { enabled?: boolean }> | undefined) ?? {};
+    builtinTools[pluginId] = { ...builtinTools[pluginId], enabled };
+    root.builtinTools = builtinTools;
+    await fs.promises.mkdir(path.dirname(settingsPath), { recursive: true });
+    await fs.promises.writeFile(settingsPath, JSON.stringify(root, null, 2), 'utf-8');
+    this.globalCache = null;
   }
 
   async clearGlobalPluginSetting(pluginId: PluginId): Promise<void> {
-    await this.commitUserDefaults({ clear: [pluginId] });
+    const settingsPath = this.getGlobalSettingsPath();
+    const root = await this.readJsonFile(settingsPath);
+    const builtinTools = (root.builtinTools as Record<string, unknown> | undefined) ?? {};
+    if (!(pluginId in builtinTools)) return;
+    delete builtinTools[pluginId];
+    root.builtinTools = builtinTools;
+    await fs.promises.mkdir(path.dirname(settingsPath), { recursive: true });
+    await fs.promises.writeFile(settingsPath, JSON.stringify(root, null, 2), 'utf-8');
+    this.globalCache = null;
   }
 
   // ── Project settings ──────────────────────────────────────────────────────
@@ -182,12 +197,55 @@ export class SettingsReader {
 
   /** Write a project-level plugin override to .claude/settings.json. */
   async writeProjectPluginSetting(workingDir: string, pluginId: PluginId, enabled: boolean): Promise<void> {
-    await this.commitProjectSettings(workingDir, { set: { [pluginId]: enabled } });
+    const settingsPath = path.join(workingDir, '.claude', 'settings.json');
+
+    // Read existing file, preserving all other keys
+    const root = await this.readJsonFile(settingsPath);
+
+    const xdtMaker = (root.xdtMaker as Record<string, unknown> | undefined) ?? {};
+    const builtinTools = (xdtMaker.builtinTools as Record<string, { enabled?: boolean }> | undefined) ?? {};
+    builtinTools[pluginId] = { ...builtinTools[pluginId], enabled };
+
+    root.xdtMaker = { ...xdtMaker, builtinTools };
+    await fs.promises.mkdir(path.dirname(settingsPath), { recursive: true });
+    await fs.promises.writeFile(settingsPath, JSON.stringify(root, null, 2), 'utf-8');
+
+    // Invalidate cache for this workingDir
+    this.projectCache.delete(workingDir);
   }
 
-  /** Remove only the selected override and follow the current user default. */
+  /** Remove a project-level override so the plugin follows the user/product default again. */
   async clearProjectPluginSetting(workingDir: string, pluginId: PluginId): Promise<void> {
-    await this.commitProjectSettings(workingDir, { clear: [pluginId] });
+    const settingsPath = path.join(workingDir, '.claude', 'settings.json');
+
+    let root: Record<string, unknown> = {};
+    try {
+      const raw = await fs.promises.readFile(settingsPath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        root = parsed as Record<string, unknown>;
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
+    }
+
+    const xdtMaker = (root.xdtMaker as Record<string, unknown> | undefined) ?? {};
+    const builtinTools = (xdtMaker.builtinTools as Record<string, unknown> | undefined) ?? {};
+    const legacyPlugins = (xdtMaker.plugins as Record<string, unknown> | undefined) ?? {};
+    const hadBuiltinOverride = pluginId in builtinTools;
+    const hadLegacyOverride = pluginId in legacyPlugins;
+    if (!hadBuiltinOverride && !hadLegacyOverride) return;
+
+    if (hadBuiltinOverride) delete builtinTools[pluginId];
+    if (hadLegacyOverride) delete legacyPlugins[pluginId];
+    root.xdtMaker = {
+      ...xdtMaker,
+      ...(xdtMaker.builtinTools ? { builtinTools } : {}),
+      ...(xdtMaker.plugins ? { plugins: legacyPlugins } : {}),
+    };
+    await fs.promises.writeFile(settingsPath, JSON.stringify(root, null, 2), 'utf-8');
+    this.projectCache.delete(workingDir);
   }
 
   private getGlobalSettingsPath(): string {
