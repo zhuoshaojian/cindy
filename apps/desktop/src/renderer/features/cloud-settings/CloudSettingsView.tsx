@@ -695,7 +695,7 @@ export function CloudSettingsPanel({
                     stays above every tab, aligned with that page's own frame, which then shows
                     only what it alone knows (offline, loading, project). */}
                 {pluginPage ? (
-                  <div className={`${PLUGIN_MANAGEMENT_FRAME_CLASS} shrink-0 pt-8`}>{pageNotice}</div>
+                  <div className={`${PLUGIN_MANAGEMENT_FRAME_CLASS} shrink-0`}>{pageNotice}</div>
                 ) : (
                   pageNotice
                 )}
