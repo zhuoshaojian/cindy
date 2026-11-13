@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   read: vi.fn(), project: vi.fn(), createPublisher: vi.fn(), fetch: vi.fn(),
   start: vi.fn(), stop: vi.fn(), request: vi.fn(), stopAuth: vi.fn(), stopSettings: vi.fn(),
   readV2: vi.fn(), publicIds: { models: new Set<string>(), providers: new Set<string>() },
-  onDesktop: vi.fn(), onModelPresentation: vi.fn(), stopDesktop: vi.fn(), stopModelPresentation: vi.fn(),
+  onModelPresentation: vi.fn(), stopModelPresentation: vi.fn(),
 }));
 vi.mock('electron', () => ({ net: { fetch: mocks.fetch } }));
 vi.mock('../../authManager.js', () => ({ getAccessToken: mocks.getToken, getCurrentUserId: mocks.getUser,
@@ -18,7 +18,6 @@ vi.mock('../index.js', () => ({ readHostSettings: mocks.read, onHostSettingsChan
 vi.mock('../snapshotProjection.js', () => ({ projectSettingsSnapshot: mocks.project }));
 vi.mock('../readSnapshot.js', () => ({ readSettingsSnapshotV2: mocks.readV2 }));
 vi.mock('../publicIdentifiers.js', () => ({ getSettingsPublicIdentifiers: () => mocks.publicIds }));
-vi.mock('../desktop-preferences.js', () => ({ onDesktopPreferencesChanged: mocks.onDesktop }));
 vi.mock('../model-presentation-preferences.js', () => ({ onModelPresentationPreferencesChanged: mocks.onModelPresentation }));
 vi.mock('../snapshotPublisher.js', async importOriginal => ({
   ...await importOriginal<typeof import('../snapshotPublisher.js')>(), createSettingsSnapshotPublisher: mocks.createPublisher,
@@ -37,7 +36,7 @@ beforeEach(() => {
   mocks.getToken.mockReturnValue('test-invalid-access-token'); mocks.getRealm.mockReturnValue('cn');
   mocks.getEndpoint.mockReturnValue('https://cis.example.invalid/api');
   mocks.onAuth.mockReturnValue(mocks.stopAuth); mocks.onSettings.mockReturnValue(mocks.stopSettings);
-  mocks.onDesktop.mockReturnValue(mocks.stopDesktop); mocks.onModelPresentation.mockReturnValue(mocks.stopModelPresentation);
+  mocks.onModelPresentation.mockReturnValue(mocks.stopModelPresentation);
   mocks.readV2.mockReturnValue({ fields: {}, collections: {} });
   mocks.createPublisher.mockReturnValue({ start: mocks.start, stop: mocks.stop, requestPublish: mocks.request });
   mocks.read.mockReturnValue({ ownerStamp: { dataOwnerId: 'owner-example', ownerGeneration: 7 } });
@@ -80,8 +79,8 @@ describe('实例快照运行期接线', () => {
     const stop = startCloudSettingsSnapshotPublisher();
     expect(mocks.start).toHaveBeenCalledOnce();
     mocks.onAuth.mock.calls[0][0](); mocks.onSettings.mock.calls[0][0]();
-    mocks.onDesktop.mock.calls[0][0](); mocks.onModelPresentation.mock.calls[0][0]();
-    expect(mocks.request).toHaveBeenCalledTimes(4);
+    mocks.onModelPresentation.mock.calls[0][0]();
+    expect(mocks.request).toHaveBeenCalledTimes(3);
     const deps = capturedDependencies();
     expect(deps.getContext()).not.toBeNull();
     expect(deps.readDomains()).toEqual({ fakeProjection: true });
@@ -94,7 +93,7 @@ describe('实例快照运行期接线', () => {
     stop(); stop();
     expect(mocks.stop).toHaveBeenCalledOnce(); expect(mocks.stopAuth).toHaveBeenCalledOnce();
     expect(mocks.stopSettings).toHaveBeenCalledOnce();
-    expect(mocks.stopDesktop).toHaveBeenCalledOnce(); expect(mocks.stopModelPresentation).toHaveBeenCalledOnce();
+    expect(mocks.stopModelPresentation).toHaveBeenCalledOnce();
   });
   it.each([null, { dataOwnerId: 'other-owner', ownerGeneration: 7 }, { dataOwnerId: 'owner-example', ownerGeneration: 8 }])(
     '读取设置的 owner stamp 不一致时不投影', ownerStamp => {

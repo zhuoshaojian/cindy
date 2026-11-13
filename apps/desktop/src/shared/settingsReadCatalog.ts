@@ -212,7 +212,7 @@ const desktop = {
     localLinkOpenPreference: z.enum(['external', 'sidebar']), streamFadePreference: z.enum(['on', 'off']),
     promptRecommendationEnabled: bool, messageNavRailEnabled: bool, feishuNotificationsEnabled: bool,
     networkDebugEnabled: bool,
-  }, 'general', 'DesktopPreferences', 'main/host-settings/desktop-preferences.ts', 'cloudDesktop'),
+  }, 'general', 'DesktopPreferences', 'renderer/components/AppPreferenceControl.tsx', 'cloudDesktop'),
   ...group('desktop', { agentIslandEnabled: bool, agentIslandMascotSkin: z.enum(['cindy', 'blackcat', 'pululu', 'tarara', 'boli', 'whitesnow', 'annie', 'chaku', 'muffin', 'erika']),
     agentIslandDisplayTargetConfigured: bool }, 'agent-island', 'AgentIslandSection', 'shared/agentIsland.ts', 'cloudDesktop', 'immediate', 'value', ['darwin']),
   ...group('desktop.agentIslandSoundSettings', { enabled: bool }, 'agent-island', 'AgentIslandSection', 'shared/agentIsland.ts#AgentIslandSoundSettings', 'cloudDesktop', 'immediate', 'value', ['darwin']),

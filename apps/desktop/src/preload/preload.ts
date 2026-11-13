@@ -38,7 +38,6 @@ import {
   type CopyTextToClipboardParams,
 } from '../shared/textClipboard';
 import type { ByokStatus } from '../shared/modelAccess.js';
-import { createDesktopPreferencesApi } from './desktopPreferences';
 import { createModelPresentationPreferencesApi } from './modelPresentationPreferences';
 import type { LocalPluginOauthRequest, LocalPluginSecretRequest } from '../shared/pluginOauth';
 import { REMOTE_VIEWER } from '../shared/remoteDesktopViewer';
@@ -1333,7 +1332,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pageZoomOut: (): Promise<{ ok: true; zoomFactor: number }> => ipcRenderer.invoke('page-zoom:out'),
   pageZoomReset: (): Promise<{ ok: true; zoomFactor: number }> =>
     ipcRenderer.invoke('page-zoom:reset'),
-  desktopPreferences: createDesktopPreferencesApi(ipcRenderer),
   modelPresentationPreferences: createModelPresentationPreferencesApi(ipcRenderer),
   cloudLoginWindow: {
     open: (input: { deviceId: string }): Promise<void> => ipcRenderer.invoke(CLOUD_LOGIN_WINDOW.open, input),

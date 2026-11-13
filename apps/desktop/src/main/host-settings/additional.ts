@@ -2,7 +2,6 @@ import { additionalSettingsRuntime, additionalNativeOperations } from './additio
 import { getHostBrowserBackendStore } from '../browser-backend-settings-store.js';
 import { inspectHostChatEmbeddingSettings, commitHostChatEmbeddingSettings } from '../maker-host/chat-embedding-settings-store.js';
 import { additionalSettingsSchemas, RETIRED_ADDITIONAL_SETTINGS_DOMAINS, type AdditionalSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
-import { SETTINGS_DISPLAY_LOCALES } from '../../shared/settingsReadCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import type { OverrideSettingsCommitOptions, OverrideSettingsFile } from '../maker-host/override-settings-file.js';
 import { getCollaborationSettingsStore } from '../maker-host/collaboration-settings-store.js';
@@ -17,8 +16,7 @@ import { getLogUploadSettingsStore } from '../log-upload/logUploadSettingsStore.
 import { getWindowBehaviorSettingsStore } from '../window-behavior-settings-store.js';
 import { getTelegramBehaviorSettingsStore, getTelegramPersonaSettingsStore } from '../im/telegram/behaviorStore.js';
 import { getTerminalSettingsStore } from '../terminal/terminalPrefsStore.js';
-import { inspectDesktopPreferences, commitDesktopPreferences } from './desktop-preferences.js';
-import type { DesktopPreferenceKey } from '../../shared/desktopPreferences.js';
+import { isDesktopPreferenceDomain, readDesktopPreferenceDomain } from './desktopPreferenceDomains.js';
 import { ownerScopedUserDataPath } from '../appSessionState.js';
 import { HostSettingsError } from './operations.js';
 import { probeAvailableShells } from '../terminal/shellResolver.js';
@@ -38,7 +36,6 @@ const stores = {
   linuxWindow: getWindowBehaviorSettingsStore, telegramBehavior: getTelegramBehaviorSettingsStore,
   terminal: getTerminalSettingsStore,
 };
-const desktopDomains = new Set(['desktopGeneral', 'desktopChat', 'desktopNotifications']);
 // Retired domains stay in the wire catalog for existing callers and always read as unavailable.
 const retiredDomains = new Set<AdditionalSettingsDomain>(RETIRED_ADDITIONAL_SETTINGS_DOMAINS);
 const toolDomains = new Set(['builtinTools', 'browserTools', 'computerTools', 'androidTools']);
@@ -83,15 +80,9 @@ export function inspectAdditionalSettings(domain: AdditionalSettingsDomain, work
     if (toolDomains.has(domain)) return projectTools(domain, toolReader().inspectUserDefaults());
     if (domain === 'linuxWindow' && process.platform !== 'linux') return { status: 'unavailable', revision: null };
     if (domain === 'piCompaction' && inspectPiCompactionSettings(ownerScopedUserDataPath()).status !== 'ready') return { status: 'unavailable', revision: null };
-    const source = desktopDomains.has(domain) ? inspectDesktopPreferences() : storeFor(domain).inspect();
-    // A language outside the cloud wire stays in the instance's own settings rather than failing the read.
-    if (domain === 'desktopGeneral' && source.status === 'ready'
-      && !(SETTINGS_DISPLAY_LOCALES as readonly unknown[]).includes((source.value as { locale?: unknown }).locale)) return { status: 'unavailable', revision: null };
-    const state = project(domain, source);
-    // Listing the languages tells cloud pages this Host accepts more than the original six.
-    if (domain === 'desktopGeneral' && state.status === 'ready') return { ...state, choices: { themeFamilyId: additionalNativeOperations()?.themeChoices() ?? [],
-      locale: SETTINGS_DISPLAY_LOCALES.map(value => ({ value, label: value })) } };
-    return state;
+    // Desktop preferences live in the app window and are only read asynchronously (readAdditionalSettings).
+    if (isDesktopPreferenceDomain(domain)) return { status: 'unavailable', revision: null };
+    return project(domain, storeFor(domain).inspect());
   } catch { return { status: 'unreadable', revision: null }; }
 }
 export async function readAdditionalSettings(domain: AdditionalSettingsDomain, workspaceId?: string): Promise<State> {
@@ -99,6 +90,7 @@ export async function readAdditionalSettings(domain: AdditionalSettingsDomain, w
   if (domain === 'imWorkspaces') return await additionalNativeOperations()?.imWorkspaces.read() ?? { status: 'unavailable', revision: null };
   if (domain === 'telegramGroups') return await additionalNativeOperations()?.telegramGroups.read() ?? { status: 'unavailable', revision: null };
   if (domain === 'pluginCindy' || domain === 'pluginSidebar' || domain === 'pluginErrand') return (await additionalNativeOperations()?.plugins.read(domain) ?? { status: 'unavailable', revision: null }) as State;
+  if (isDesktopPreferenceDomain(domain)) return readDesktopPreferenceDomain(domain, () => additionalNativeOperations()?.themeChoices() ?? []);
   return inspectAdditionalSettings(domain, workspaceId);
 }
 export async function commitAdditionalSettings(domain: AdditionalSettingsDomain, change: { set: Values; clear: string[] }, options: OverrideSettingsCommitOptions, workspaceId?: string): Promise<State & { status: 'ready'; applicationFailed?: boolean }> {
@@ -153,18 +145,6 @@ export async function commitAdditionalSettings(domain: AdditionalSettingsDomain,
   if (toolDomains.has(domain)) {
     const result = await toolReader().commitUserDefaults(change as { set: Record<string, boolean>; clear: string[] }, options);
     return projectTools(domain, result) as State & { status: 'ready' };
-  }
-  if (desktopDomains.has(domain)) {
-    const state = inspectDesktopPreferences();
-    if (state.status !== 'ready') throw new HostSettingsError('UNREADABLE');
-    if (domain === 'desktopGeneral' && ('ghostPanelRestoreMode' in change.set || change.clear.includes('ghostPanelRestoreMode'))) throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
-    const result = await commitDesktopPreferences({ profileStamp: state.profileStamp, expectedRevision: options.expectedRevision!,
-      set: change.set, clear: change.clear as DesktopPreferenceKey[], importOnly: false }, () => {
-        options.assertCurrent?.();
-        if (domain === 'desktopGeneral' && change.set.themeFamilyId !== undefined
-          && !additionalNativeOperations()?.themeChoices().some(item => item.value === change.set.themeFamilyId)) throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
-      });
-    return project(domain, result) as State & { status: 'ready' };
   }
   const result = await storeFor(domain).commitAtomic(state => {
     const next = { ...state.value, ...Object.fromEntries(change.clear.map(key => [key, state.defaults[key]])), ...change.set };

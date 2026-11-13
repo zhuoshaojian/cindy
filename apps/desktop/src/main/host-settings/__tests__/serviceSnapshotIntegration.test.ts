@@ -96,7 +96,8 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
     const before = inspectPreferenceSettingsForSnapshot('darwin');
     expect(before.fields['newTaskDefaults.modelId']).toEqual({ status: 'migrationPending' });
     expect(before.fields['personalization.customized']).toEqual({ status: 'migrationPending' });
-    expect(before.fields['desktop.theme']).toEqual({ status: 'migrationPending' });
+    // Desktop preferences stay in the app window, as upstream keeps them.
+    expect(before.fields['desktop.theme']).toEqual({ status: 'unavailable' });
     expect(before.fields['databaseWarning.thresholdGiB']).toEqual({ status: 'value', value: 10, source: 'default' });
     expect(fs.readdirSync(isolated.root)).toEqual([]);
     await updateHostSettings(caller, await change('personalization', { set: { userPrompt: 'PRIVATE-TEST-PROMPT' } }));

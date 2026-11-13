@@ -14,14 +14,6 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import * as host from '@/state/hostDesktop/useFeishuNotificationSettings';
-import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
-
-/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
-const hostDesktop = hasHostDesktopPreferences();
-export const getFeishuNotificationsEnabled = hostDesktop ? host.getFeishuNotificationsEnabled : getFeishuNotificationsEnabledLocal;
-export const setFeishuNotificationsEnabled = hostDesktop ? host.setFeishuNotificationsEnabled : setFeishuNotificationsEnabledLocal;
-export const useFeishuNotificationSettings = hostDesktop ? host.useFeishuNotificationSettings : useFeishuNotificationSettingsLocal;
 
 const STORAGE_KEY = 'notifications.feishuEnabled';
 const DEFAULT_ENABLED = false;
@@ -34,7 +26,7 @@ function notifySubscribers(): void {
 }
 
 /** 同步读 localStorage——给非 hook 路径用。坏数据当默认值。 */
-function getFeishuNotificationsEnabledLocal(): boolean {
+export function getFeishuNotificationsEnabled(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === 'true') return true;
@@ -52,7 +44,7 @@ function getFeishuNotificationsEnabledLocal(): boolean {
  * 后顺手把开关落到 false,避免"幽灵 true 状态"导致的 main 侧 warn 噪音和
  * UI disabled 后用户无法手动关闭)。
  */
-function setFeishuNotificationsEnabledLocal(next: boolean): void {
+export function setFeishuNotificationsEnabled(next: boolean): void {
   try {
     localStorage.setItem(STORAGE_KEY, String(next));
   } catch {
@@ -61,7 +53,7 @@ function setFeishuNotificationsEnabledLocal(next: boolean): void {
   notifySubscribers();
 }
 
-function useFeishuNotificationSettingsLocal(): {
+export function useFeishuNotificationSettings(): {
   enabled: boolean;
   setEnabled: (next: boolean) => void;
 } {

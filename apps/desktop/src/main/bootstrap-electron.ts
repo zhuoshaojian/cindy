@@ -537,7 +537,6 @@ import { registerHostSettingsIpc } from './host-settings/ipc.js';
 import { removeRetiredSettingsSkill } from './host-settings/retiredSettingsSkill.js';
 import { markCloudLoginWindow, isCloudLoginWindow } from './cloud-settings-client/login-window-registry.js';
 import { cloudLoginWindowLifecycle, registerCloudSettingsClientIpc } from './cloud-settings-client/runtime.js';
-import { registerDesktopPreferencesIpc } from './host-settings/desktopPreferencesIpc.js';
 import { isResourceUsageWebContentsId } from './resource-usage-window/registry.js';
 import { isTrustedAppearanceSettingsReadWindow } from './appearance-settings-reader.js';
 import { registerModelPresentationPreferencesIpc } from './host-settings/model-presentation-preferences-ipc.js';
@@ -673,6 +672,7 @@ import { startInstanceStatus } from './instance-runtime/status.js';
 import { registerCloudProviderSettings } from './instance-runtime/providerSettingsRegistration.js';
 import { publishedPluginOauthIdentity } from './plugin-oauth/runtime.js';
 import { startCloudSettingsSnapshotPublisher } from './host-settings/snapshotRuntime.js';
+import { startReturningRetiredDesktopPreferences } from './host-settings/retiredDesktopPreferences.js';
 import { startCloudSettingsWebTransport } from './host-settings/webRuntime.js';
 
 let instanceBinariesReady = false;
@@ -4966,7 +4966,6 @@ const registerIpcHandlers = () => {
         || (!isContent && isTrustedAppearanceSettingsReadWindow(win));
     },
   };
-  registerDesktopPreferencesIpc(localPreferencesAccess);
   registerModelPresentationPreferencesIpc(localPreferencesAccess);
   ipcMain.handle('database-size-warning:get-settings', (event) => {
     assertTrustedAppRendererEvent(event);
@@ -10678,6 +10677,8 @@ app.on('ready', async () => {
       stopRecovery ? () => ({ version: 1, state: instanceLoginRequired() ? 'login-required' : readInstanceReadiness().auth ? 'ready' : 'pending' }) : undefined);
     const stopProfileTelemetry = startProfileTelemetry({ deviceId: instance.deviceId, membershipId: instance.membershipId, realm: instanceAuthRealm, read: readInstanceReadiness, readAuth: instanceDurableObservation, onFailure: () => createLogger('instance-runtime').warn('profile observation unavailable') });
     const stopSettingsSnapshot = startCloudSettingsSnapshotPublisher();
+    const stopReturningPreferences = startReturningRetiredDesktopPreferences();
+    app.once('will-quit', stopReturningPreferences);
     const stopSettingsWeb = startCloudSettingsWebTransport();
     const stopProviderSettings = registerCloudProviderSettings();
     app.once('will-quit', stopProviderSettings);

@@ -3,13 +3,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { getVoiceInputSettings } from './useVoiceInputSettings';
 import { findComposerVoiceInputConflict } from '@/voice-input/composerVoiceInputConflict';
 import { getComposerModifierShortcutLabel, hasComposerModifier } from '@/voice-input/composerShortcut';
-import * as host from '@/state/hostDesktop/useComposerSendShortcutPreference';
-import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
-
-/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
-const hostDesktop = hasHostDesktopPreferences();
-export const getComposerSendShortcutPreference = hostDesktop ? host.getComposerSendShortcutPreference : getComposerSendShortcutPreferenceLocal;
-export const useComposerSendShortcutPreference = hostDesktop ? host.useComposerSendShortcutPreference : useComposerSendShortcutPreferenceLocal;
 
 export { getComposerModifierShortcutLabel, hasComposerModifier } from '@/voice-input/composerShortcut';
 
@@ -74,7 +67,7 @@ let memoryValue: ComposerSendShortcutPreference | null = null;
 
 const listeners = new Set<() => void>();
 
-function getComposerSendShortcutPreferenceLocal(): ComposerSendShortcutPreference {
+export function getComposerSendShortcutPreference(): ComposerSendShortcutPreference {
   if (memoryValue !== null) return memoryValue;
   try {
     const parsed = parsePreference(localStorage.getItem(COMPOSER_SEND_SHORTCUT_STORAGE_KEY));
@@ -85,7 +78,7 @@ function getComposerSendShortcutPreferenceLocal(): ComposerSendShortcutPreferenc
   return DEFAULT_COMPOSER_SEND_SHORTCUT;
 }
 
-function useComposerSendShortcutPreferenceLocal(): {
+export function useComposerSendShortcutPreference(): {
   preference: ComposerSendShortcutPreference;
   isCustomized: boolean;
   setPreference: (next: ComposerSendShortcutPreference) => ComposerSendShortcutUpdateResult;

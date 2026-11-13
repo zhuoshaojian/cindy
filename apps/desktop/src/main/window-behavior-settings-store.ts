@@ -14,8 +14,8 @@ import { validateAdditionalSettingsOverrides } from '../shared/settingsEditableC
  *  - awayGuardDelaySeconds: null (离开多久后遮住;null 跟随系统熄屏时间)
  *
  * swallowActivationClick 仍由 renderer localStorage 承担运行时事实标准,main
- * 侧文件只供下次创建 BrowserWindow 时读取(托管云实例改读 Host profile 正本)。
- * 平台关闭行为则完全由 main 侧持久化与执行,renderer 通过 IPC 读写同一份状态。
+ * 侧文件只供下次创建 BrowserWindow 时读取。平台关闭行为则完全由 main 侧
+ * 持久化与执行,renderer 通过 IPC 读写同一份状态。
  */
 
 import { app } from 'electron';
@@ -32,7 +32,6 @@ import {
 import { isAwayGuardDelaySeconds, type AwayGuardDelaySeconds } from '../shared/awayGuard.js';
 
 import { inspectSettingsFile, isSettingBoolean, validateOptionalSettingsFields } from './maker-host/settings-inspection.js';
-import { hostDesktopPreference } from './host-settings/desktop-preferences.js';
 
 const log = desktopMakerLogger.child('window-behavior-settings-store');
 
@@ -99,9 +98,7 @@ const store = createOverrideSettingsFile<WindowBehaviorSettings>({
 });
 
 export function readWindowBehaviorSettings(): WindowBehaviorSettings {
-  const settings = store.read();
-  const swallowActivationClick = hostDesktopPreference('swallowActivationClick');
-  return swallowActivationClick === undefined ? settings : { ...settings, swallowActivationClick };
+  return store.read();
 }
 
 export function writeSwallowActivationClick(swallowActivationClick: boolean): void {

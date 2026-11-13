@@ -1,6 +1,5 @@
 import { expect, it, vi } from 'vitest';
 import path from 'node:path';
-import { desktopPreferenceDefaults } from '../../../shared/desktopPreferences.js';
 
 const context = vi.hoisted(() => ({ locale: 'ja' as string }));
 vi.mock('electron', () => ({ app: { getPath: () => path.join('/nonexistent', 'cloud-locale-wire') } }));
@@ -14,15 +13,11 @@ vi.mock('../../appSessionState.js', () => ({
   dataOwnerStorageKey: (id: string) => `test-${id}`,
   ownerScopedUserDataPath: (...segments: string[]) => path.join('/nonexistent', ...segments),
 }));
-vi.mock('../desktop-preferences.js', () => ({
-  inspectDesktopPreferences: () => ({
-    status: 'ready', profileStamp: 'profile', revision: 'r1',
-    value: { ...desktopPreferenceDefaults(), locale: context.locale }, defaults: desktopPreferenceDefaults(),
-    customizedKeys: ['locale'], isCustomized: true,
-  }),
-  commitDesktopPreferences: vi.fn(),
+// Desktop preferences come from the app window through upstream's preferences section.
+vi.mock('../../app-settings/preferences.js', () => ({
+  manageAppPreferences: async () => ({ value: { theme: 'system', themeFamily: 'cindy', language: context.locale, sidebarPinned: 'text', sidebarTasks: 'list' } }),
 }));
-import { inspectAdditionalSettings } from '../additional.js';
+import { readAdditionalSettings } from '../additional.js';
 import { CLOUD_SETTINGS_LOCALES, normalizeAdditionalSettingsChange } from '../../../shared/settingsEditableCatalog.js';
 import { SETTINGS_DISPLAY_LOCALES } from '../../../shared/settingsReadCatalog.js';
 import { SUPPORTED_LOCALES } from '../../../shared/locale.js';
@@ -35,14 +30,14 @@ it('carries every display language on the cloud wire, and keeps the six every Ho
   expect(() => normalizeAdditionalSettingsChange('desktopGeneral', { locale: 'xx' }, [])).toThrow();
 });
 
-it.each(['ja', 'fr', 'pt-BR', 'zh-Hans-x-lzh'])('reads %s and lists every language the instance accepts', (locale) => {
+it.each(['ja', 'fr', 'pt-BR', 'zh-Hans-x-lzh'])('reads %s and lists every language the instance accepts', async (locale) => {
   context.locale = locale;
-  const state = inspectAdditionalSettings('desktopGeneral') as unknown as { status: string; value: { locale: string }; choices: { locale: Array<{ value: string }> } };
+  const state = await readAdditionalSettings('desktopGeneral') as unknown as { status: string; value: { locale: string }; choices: { locale: Array<{ value: string }> } };
   expect(state).toMatchObject({ status: 'ready', value: { locale }, customizedKeys: ['locale'] });
   expect(state.choices.locale.map((choice) => choice.value)).toEqual([...SETTINGS_DISPLAY_LOCALES]);
 });
 
-it('reports a language outside the cloud wire as unavailable, not as a read failure', () => {
+it('reports a language outside the cloud wire as unavailable, not as a read failure', async () => {
   context.locale = 'xx';
-  expect(inspectAdditionalSettings('desktopGeneral')).toEqual({ status: 'unavailable', revision: null });
+  expect(await readAdditionalSettings('desktopGeneral')).toEqual({ status: 'unavailable', revision: null });
 });

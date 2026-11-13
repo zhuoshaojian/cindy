@@ -35,9 +35,9 @@ Host 是设置唯一权威。网页只读取 CIS 保存的最近一份脱敏快�
 
 ## 正本、迁移与无副作用读取
 
-- **Profile 正本**：主题/语言、sidebar/面板、通知、点击/发送/链接、淡入/推荐/导航条、Agent Island 和持久化网络调试等 20 组进入 `host-desktop-preferences.json`。自定义主题、声音和显示器信息留在 Host 本地。目录中的 `scope: profile` 表示归属，`surface: hostDesktop` 表示应用于执行 Host 桌面，不影响控制端或访问者网页。
+- **桌面偏好**：主题/语言、侧栏、通知、点击/发送/链接、淡入/推荐/导航条、Agent Island 和网络调试与上游一样保存在应用窗口，快照的同步读取拿不到，这些叶子报告 `unavailable`；云设置页经上游 `preferences` 分区实时读写。早期版本的 `host-desktop-preferences.json` 启动后写回一次并改名保留。
 - **Owner 正本**：模型显示、引擎偏好和收藏进入 `host-model-presentation-preferences.json`，保留初始化规则、follow-catalog 记录、收藏顺序/身份和 seed 墓碑；新任务默认值/参数历史及个性化沿用已接入的 owner store。原有各领域保持实际 owner/profile 归属，不为网页另存一套设置。
-- **本机桥**：仅同一执行 Host/profile 的可信本地 Renderer 通过固定 preload/IPC 做一次性导入、CAS 保存和变更订阅。桌面与模型桥均校验可信顶层 frame、profile partition 及 Host 登记窗口的读写权限；写入只允许本机主、副应用窗口，提交前复验，remote viewer 明确排除，同步启动入口只读。控制端、remote Renderer、网页不能复制偏好到执行 Host。profile stamp/revision 与 owner/generation 分别保护对应正本。
+- **本机桥**：仅同一执行 Host/profile 的可信本地 Renderer 通过固定 preload/IPC 对模型偏好做一次性导入、CAS 保存和变更订阅。模型桥校验可信顶层 frame、profile partition 及 Host 登记窗口的读写权限；写入只允许本机主、副应用窗口，提交前复验，remote viewer 明确排除，同步启动入口只读。控制端、remote Renderer、网页不能复制偏好到执行 Host。owner/generation 保护对应正本。
 - **初始化与缓存**：Host 已初始化或恢复默认后，旧 Renderer 数据不得覆盖；多窗口冲突只回读，不换 revision 重放旧表。Renderer 仅有可重建缓存，成功以 Host 回执为准；兼容首帧缓存只能由成功提交单向更新。不能证明全新且尚未导入的旧数据明确 `migrationPending`，不冒充默认值；初始化完成后无窗口也能读取。
 - **Inspection**：`readSnapshot.ts` 调用窄的纯 inspection，复用领域真实类型、枚举、范围和默认解释；不调用会 ensure、修复、删除坏文件、执行迁移/claim、读凭据或探测权限的旧 getter，不联网或启动设备。读取保存事实不套用当前模型写入准入，也不把退役型号换成推荐值。
 - **隔离**：单域错误与其他领域隔离；身份、代次或 profile 改变使整次采样失效，不拼接不同 owner 的数据，不承诺多文件全局事务。原生 UI clamp/round、工具严格拒绝和历史空/null grammar 不因只读 wire 放宽。
@@ -163,7 +163,7 @@ Envelope 为 `schemaVersion: 2`、UUID `reportId`、非负安全整数 `baseRevi
 
 窄 transport 仅允许固定能力 GET 和快照 POST，均设置 `redirect: 'error'`、`credentials: 'omit'`、`referrerPolicy: 'no-referrer'`、`cache: 'no-store'`。一轮请求超时 8 秒，响应流最多读取 4 KiB；不自动刷新身份、不跟随重定向。
 
-启动就绪并完成协商后采样；正常每 **60 秒加最多 6 秒抖动**重新读取。原四域、此次迁入 Host 的 profile 桌面偏好与 owner 模型偏好有现成变更通知，触发 750ms 去抖；身份变化也会请求新一轮采样。其他领域无现成事件时由周期采样覆盖，**不新增文件 watcher、不承诺全部设置即时同步**。新请求至少间隔 10 秒，CIS 另以数据库原子限流兜底。只有一个进行中请求，变化只留下“再采样”意图，不保存旧快照队列。
+启动就绪并完成协商后采样；正常每 **60 秒加最多 6 秒抖动**重新读取。原四域与 owner 模型偏好有现成变更通知，触发 750ms 去抖；身份变化也会请求新一轮采样。其他领域无现成事件时由周期采样覆盖，**不新增文件 watcher、不承诺全部设置即时同步**。新请求至少间隔 10 秒，CIS 另以数据库原子限流兜底。只有一个进行中请求，变化只留下“再采样”意图，不保存旧快照队列。
 
 owner generation、owner、realm、device 或 endpoint 变化会丢弃旧水位/能力缓存并取消旧请求；旧身份晚到回执不能更新新身份状态。读取阶段也复验捕获的 owner/profile 上下文。退出时取消请求、计时器和订阅。
 

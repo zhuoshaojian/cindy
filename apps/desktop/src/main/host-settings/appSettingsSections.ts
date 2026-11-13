@@ -11,7 +11,7 @@ import { getHostSettings, updateHostSettings, HostSettingsError, type HostSettin
  * subagent/auxiliary models, vision bridge, preferences, model tools) are not registered again.
  * Workspace-scoped tools, personal instructions and new-task defaults stay out of this surface.
  */
-interface Entry { title: string; description: string; fields?: readonly string[] }
+interface Entry { title: string; description: string }
 const IM = (brand: string, group = false) => ({ title: `IM 新任务（${brand}）`, description: `${brand} 新任务的默认 Agent、${group ? '私聊与群聊权限' : '权限'}及各 Agent 的模型与推理强度。` });
 const SECTIONS: Partial<Record<HostSettingsDomain, Entry>> = {
   databaseWarning: { title: '数据库体积提醒', description: '数据库体积提醒阈值（GiB）以及是否关闭提醒。' },
@@ -24,8 +24,6 @@ const SECTIONS: Partial<Record<HostSettingsDomain, Entry>> = {
   lsp: { title: '代码智能（LSP）', description: '代码智能（LSP）开关。' },
   linuxWindow: { title: '应用行为', description: '关闭主窗口时的行为。' },
   shortcuts: { title: '键盘快捷键', description: '这台 Cindy 桌面上的键盘快捷键绑定。' },
-  desktopGeneral: { title: '侧栏显示', description: '置顶任务与任务列表的显示样式。语言与主题见 preferences。', fields: ['sidebarPinnedMode', 'sidebarMainMode'] },
-  desktopNotifications: { title: '飞书提醒、切回防误触与网络诊断', description: '任务完成或需要回复时发送飞书 / Lark 消息、切回窗口时防误触、网络诊断日志。系统通知见 preferences。', fields: ['feishuNotificationsEnabled', 'swallowActivationClick', 'networkDebugEnabled'] },
   builtinTools: { title: '内置工具', description: '内置工具开关：飞书机器人、微信、Slack、SSH、文档工坊、协同模式等。' },
   browserTools: { title: '自动操作浏览器', description: '是否允许 Agent 自动操作浏览器。' },
   browserBackend: { title: '浏览器自动化目标', description: '浏览器自动化使用的目标。' },
@@ -59,9 +57,6 @@ const EFFECTIVE = { next_task: 'next-task', next_agent_start: 'next-agent-start'
 const databaseWarningSchema = z.strictObject({ thresholdGiB: z.number().min(1).max(1024), disabled: z.boolean() });
 const caller: HostSettingsCaller = { id: 'app-settings', assertCurrent() {} };
 
-const pick = (record: unknown, fields: readonly string[]) =>
-  Object.fromEntries(Object.entries(record as Record<string, unknown>).filter(([key]) => fields.includes(key)));
-
 async function write(domain: HostSettingsDomain, change: { set?: Record<string, unknown>; clear?: string[] }) {
   try {
     const state = await getHostSettings(caller, domain);
@@ -75,10 +70,7 @@ async function write(domain: HostSettingsDomain, change: { set?: Record<string, 
 }
 
 function section(domain: HostSettingsDomain, entry: Entry): AppSettingsSection {
-  const full = (domain === 'databaseWarning' ? databaseWarningSchema : additionalSettingsSchemas[domain as AdditionalSettingsDomain]) as z.ZodObject<z.ZodRawShape>;
-  const picked = entry.fields ? full.pick(Object.fromEntries(entry.fields.map(field => [field, true]))) : full;
-  const schema = picked.partial();
-  const fields = Object.keys(schema.shape);
+  const schema = ((domain === 'databaseWarning' ? databaseWarningSchema : additionalSettingsSchemas[domain as AdditionalSettingsDomain]) as z.ZodObject<z.ZodRawShape>).partial();
   return {
     id: domain,
     title: entry.title,
@@ -88,20 +80,14 @@ function section(domain: HostSettingsDomain, entry: Entry): AppSettingsSection {
     read: async () => {
       const state = await getHostSettings(caller, domain);
       if (state.status !== 'ready') return { status: state.status };
-      // Choices only for fields this section exposes, so none invite a write it refuses.
-      const choices = 'choices' in state && state.choices ? pick(state.choices, fields) : {};
-      return {
-        value: pick(state.value, fields), defaults: pick(state.defaults, fields),
-        customizedKeys: state.customizedKeys.filter(key => fields.includes(key)),
-        ...(Object.keys(choices).length ? { choices } : {}),
-      };
+      return { value: state.value, defaults: state.defaults, customizedKeys: state.customizedKeys,
+        ...('choices' in state && state.choices ? { choices: state.choices } : {}) };
     },
     update: patch => write(domain, { set: patch }),
     reset: async () => {
       const state = await getHostSettings(caller, domain);
       if (state.status !== 'ready') return { ok: false, code: state.status === 'unavailable' ? 'UNAVAILABLE' : 'UNREADABLE' };
-      const clear = state.customizedKeys.filter(key => fields.includes(key));
-      return clear.length ? write(domain, { clear }) : undefined;
+      return state.customizedKeys.length ? write(domain, { clear: state.customizedKeys }) : undefined;
     },
   };
 }

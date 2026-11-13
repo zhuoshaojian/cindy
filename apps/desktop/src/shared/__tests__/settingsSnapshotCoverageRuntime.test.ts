@@ -52,7 +52,6 @@ vi.mock('../../main/maker-host/newMakerDefaultsCache.js', () => ({ getSelectedNe
 // 四域及桌面 profile 使用显式 DI；默认入口若被误用立即失败。
 vi.mock('../../main/host-settings/personalization.js', () => ({ currentSettingsOwner: state.forbidden, inspectPersonalizationForSnapshot: state.forbidden }));
 vi.mock('../../main/host-settings/new-task-defaults.js', () => ({ inspectNewTaskDefaultsForSnapshot: state.forbidden }));
-vi.mock('../../main/host-settings/desktop-preferences.js', () => ({ inspectDesktopPreferences: state.forbidden }));
 vi.mock('../../main/appearance-settings-store.js', () => ({ inspectAppearanceSettings: state.forbidden }));
 vi.mock('../../main/database-size-warning-settings.js', () => ({ inspectDatabaseSizeWarningSettings: state.forbidden }));
 vi.mock('../../main/host-settings/readContext.js', () => ({
@@ -73,7 +72,6 @@ import { projectSettingsSnapshotV2 } from '../../main/host-settings/snapshotProj
 import type { ReadonlySettingsInspection } from '../../main/host-settings/readTypes.js';
 import { SETTINGS_READ_FIELD_IDS, SETTINGS_READ_COLLECTION_IDS } from '../settingsReadCatalog.js';
 import { settingsSnapshotReportV2Schema, SETTINGS_SNAPSHOT_V2_COMPATIBILITY_FIXTURE, SETTINGS_SNAPSHOT_V2_FIELD_IDS } from '../settingsSnapshot.js';
-import { desktopPreferenceDefaults } from '../desktopPreferences.js';
 import { DEFAULT_APPEARANCE_SETTINGS } from '../appearanceSettings.js';
 import { emptyModelPresentationPreferences } from '../modelPresentationPreferences.js';
 import { encodeCatalogModelPin } from '../catalogModelPin.js';
@@ -90,8 +88,6 @@ function preferenceReaders(): PreferenceSettingsReaders {
   return {
     newTaskDefaults: () => ready(defaults), personalization: () => ready({ isCustomized: false }),
     databaseWarning: () => ready({ thresholdGiB: 1, disabled: false }), appearance: () => ready(DEFAULT_APPEARANCE_SETTINGS),
-    desktop: () => ({ status: 'ready', profileStamp: 'fixture-profile', revision: 'fixture-revision',
-      value: desktopPreferenceDefaults(), defaults: desktopPreferenceDefaults(), customizedKeys: [], isCustomized: false }),
   };
 }
 function read(preferences = preferenceReaders()) {
@@ -151,7 +147,8 @@ describe('production reader to v2 coverage seam', () => {
     const { parts, inspection, report } = noWrites(() => read());
     assertCoverage(parts);
     for (const [id, field] of Object.entries(inspection.fields)) {
-      expect(['value', 'unsupported', 'private'], id).toContain(field.status);
+      // Desktop preferences live in the app window, as upstream keeps them, out of this synchronous read.
+      expect(id.startsWith('desktop.') ? ['unavailable', 'unsupported'] : ['value', 'unsupported', 'private'], id).toContain(field.status);
     }
     expect(Object.keys(report.fields)).toEqual([...SETTINGS_SNAPSHOT_V2_FIELD_IDS]);
     expect(Object.keys(inspection.fields).filter(id => !Object.hasOwn(report.fields, id)).sort())
@@ -236,12 +233,10 @@ describe('production reader to v2 coverage seam', () => {
   it('propagates preference migration and read failures instead of turning them into default values', () => {
     const readers = preferenceReaders();
     readers.newTaskDefaults = () => ({ status: 'migrationPending', revision: null });
-    readers.desktop = () => ({ status: 'migrationPending', profileStamp: 'fixture-profile', revision: 'pending' });
     readers.personalization = () => ({ status: 'unreadable', revision: null });
     const { parts, report } = noWrites(() => read(readers));
     assertCoverage(parts);
     expect(report.fields['newTaskDefaults.harness']).toEqual({ status: 'migrationPending' });
-    expect(report.fields['desktop.theme']).toEqual({ status: 'migrationPending' });
     expect(report.fields['personalization.customized']).toEqual({ status: 'unreadable' });
     expect(report.fields['appearance.uiFontSize'].status).toBe('value');
   });

@@ -10,18 +10,6 @@ import {
 import { onLocalThemesChange } from '../themes/local-themes';
 import { themeService } from '../themes/theme-service';
 import type { ThemeType } from '../themes/types';
-import * as host from '@/state/hostDesktop/useTheme';
-import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
-
-/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
-const hostDesktop = hasHostDesktopPreferences();
-export const getStoredTheme = hostDesktop ? host.getStoredTheme : getStoredThemeLocal;
-export const getStoredFamilyId = hostDesktop ? host.getStoredFamilyId : getStoredFamilyIdLocal;
-export const getInitialThemeVariant = hostDesktop ? host.getInitialThemeVariant : getInitialThemeVariantLocal;
-export const loginFirstLaunchLightActive = hostDesktop ? host.loginFirstLaunchLightActive : loginFirstLaunchLightActiveLocal;
-export const endLoginFirstLaunchLightGate = hostDesktop ? host.endLoginFirstLaunchLightGate : endLoginFirstLaunchLightGateLocal;
-export const ThemeProvider = hostDesktop ? host.ThemeProvider : ThemeProviderLocal;
-export const useTheme = hostDesktop ? host.useTheme : useThemeLocal;
 
 export type Theme = 'system' | 'light' | 'dark';
 
@@ -56,7 +44,7 @@ export function resolveIsDark(theme: Theme): boolean {
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
-function getStoredThemeLocal(): Theme {
+export function getStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'light' || stored === 'dark' || stored === 'system') {
@@ -87,7 +75,7 @@ function migrateLegacyThemeIds(): string | null {
   return null;
 }
 
-function getStoredFamilyIdLocal(): string {
+export function getStoredFamilyId(): string {
   try {
     const stored = localStorage.getItem(FAMILY_KEY);
     if (stored && tryGetFamily(stored)) return stored;
@@ -166,7 +154,7 @@ export function followLocalThemeChanges(): () => void {
 /** index.tsx bootstrap 用 —— 不依赖 React context。首启亮色门在此生效:
  * 真首启(见 initLoginFirstLaunchLightGate)整个 pre-login 会话按亮色解析,
  * 品牌舞台首帧即亮色,无暗→亮闪变。 */
-function getInitialThemeVariantLocal() {
+export function getInitialThemeVariant() {
   return resolveActiveTheme(initLoginFirstLaunchLightGate() ? 'light' : getStoredTheme());
 }
 
@@ -235,12 +223,12 @@ function initLoginFirstLaunchLightGate(): boolean {
 }
 
 /** 首启亮色门当前是否激活(无副作用读取,供登录页卸载钩子判断)。 */
-function loginFirstLaunchLightActiveLocal(): boolean {
+export function loginFirstLaunchLightActive(): boolean {
   return firstLaunchLightSession === true;
 }
 
 /** 结束首启亮色门(登录页卸载 = 登录完成/离开时调用),恢复存储主题解析。 */
-function endLoginFirstLaunchLightGateLocal(): void {
+export function endLoginFirstLaunchLightGate(): void {
   if (firstLaunchLightSession !== true) return;
   firstLaunchLightSession = false;
   const mode = getStoredTheme();
@@ -263,7 +251,7 @@ export function __resetLoginFirstLaunchLightGateForTest(): void {
   firstLaunchLightSession = null;
 }
 
-function ThemeProviderLocal({
+export function ThemeProvider({
   children,
   syncWindowVibrancy = true,
 }: {
@@ -426,7 +414,7 @@ function ThemeProviderLocal({
   );
 }
 
-function useThemeLocal(): ThemeContextValue {
+export function useTheme(): ThemeContextValue {
   const context = useContext(ThemeContext);
   if (context === undefined) {
     throw new Error('useTheme must be used within a ThemeProvider');

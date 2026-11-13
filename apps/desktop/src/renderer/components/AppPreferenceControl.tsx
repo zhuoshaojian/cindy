@@ -19,7 +19,6 @@ import { useFeishuNotificationSettings } from '@/hooks/useFeishuNotificationSett
 import { useSwallowActivationClickSettings } from '@/hooks/useSwallowActivationClickSettings';
 import { useExperimentalFlag } from '@/hooks/useExperimentalFeatures';
 import { getThemeFamilies, tryGetFamily } from '@/themes/families';
-import { hostedPreferenceReadback, withHostedPreferences } from '@/state/hostDesktop/appPreferenceReadback';
 
 /** Validate persistence separately from hook memory: legacy setters may swallow quota errors. */
 const persisted: Record<keyof AppPreferencePatch, { key: string; absent?: unknown }> = {
@@ -110,16 +109,14 @@ export function AppPreferenceControl() {
         if (request.operation === 'update') {
           const patch = appPreferenceSchema.parse(request.patch);
           flushSync(() => current.current.apply(patch));
-          const hosted = await hostedPreferenceReadback(persisted);
           for (const [key, expected] of Object.entries(patch)) {
             const storage = persisted[key as keyof AppPreferencePatch];
-            const confirmed = hosted?.(key as keyof AppPreferencePatch);
-            const raw = confirmed ? null : localStorage.getItem(storage.key);
-            const actual = confirmed ? confirmed.value : raw === null ? storage.absent : typeof expected === 'boolean' ? raw === 'true' : raw;
+            const raw = localStorage.getItem(storage.key);
+            const actual = raw === null ? storage.absent : typeof expected === 'boolean' ? raw === 'true' : raw;
             if (actual !== expected) throw new Error('PERSISTENCE_NOT_CONFIRMED');
           }
         }
-        bridge.reply({ requestId: request.requestId, ok: true, state: withHostedPreferences(current.current.state, await hostedPreferenceReadback(persisted)),
+        bridge.reply({ requestId: request.requestId, ok: true, state: current.current.state,
           themeFamilies: getThemeFamilies().map(family => family.id), ...(modelVisibility ? { modelVisibility } : {}) });
       } catch { bridge.reply({ requestId: request.requestId, ok: false }); }
     });

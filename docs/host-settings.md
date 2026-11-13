@@ -47,7 +47,7 @@
 
 本服务只有两个写入口：CIS 设置会话（云设置页与网页）和 Host 本机设置页的可信 Renderer IPC。两者都按单领域白名单、revision 与 Host 发行的 `operationId` 提交，`set` 等于默认值也记录明确的自定义意图，`clear` 删除 override 后跟随版本默认值。一次请求不能跨领域，也不承诺多个配置文件的全局事务。
 
-Agent 不使用本服务的独立工具。云实例上的 Agent 通过上游 `cindy_helper` 的 `settings` 类目（`list_app_settings` / `get_app_settings` / `update_app_settings` / `reset_app_settings`）读改设置，授权与确认沿用上游规则。上游没有的 Host 领域在云实例启动时登记为上游设置分区（`host-settings/appSettingsSections.ts`，分区 ID 与领域名相同），读写仍走本服务的单领域校验、CAS 与文件锁；普通桌面不登记。已有上游分区或模型工具的领域（外观、Git 安全、运行资源、记忆、子代理/辅助模型、视觉桥、语言主题等偏好、模型显示/上下文/准入/名称/价格）不重复登记；按工作区区分的工具设置、个性化正文和新任务默认值不进入这组工具。外观、Git 安全、运行资源、记忆、子代理模型、视觉桥、辅助模型这 7 个领域的网页/云设置页保存仍按本服务的 revision 比对与回执，但写入和生效统一调用上游对应分区（`host-settings/upstreamSections.ts` → `manageAppSettings`），保存后会触发上游的设置变更通知。单字段恢复默认写入该字段默认值（上游存储会删除等于默认值的覆盖）；视觉桥目标模型、Git 安全、辅助模型这类无法靠写值恢复默认的字段改用整组恢复，再写回其余仍自定义的字段。IM 渠道路由默认变化前沿用设置页的 `prepareImDefaultSettingsChange`，补录失败则不保存。早期版本投放的 `cindy-settings` Skill 已撤回；云实例和 Dev 包启动时只删除仍指向 profile 内 `host-settings-skills` 的链接及该目录（`host-settings/retiredSettingsSkill.ts`），用户自建的同名 Skill 保持不动。
+Agent 不使用本服务的独立工具。云实例上的 Agent 通过上游 `cindy_helper` 的 `settings` 类目（`list_app_settings` / `get_app_settings` / `update_app_settings` / `reset_app_settings`）读改设置，授权与确认沿用上游规则。上游没有的 Host 领域在云实例启动时登记为上游设置分区（`host-settings/appSettingsSections.ts`，分区 ID 与领域名相同），读写仍走本服务的单领域校验、CAS 与文件锁；普通桌面不登记。已有上游分区或模型工具的领域（外观、Git 安全、运行资源、记忆、子代理/辅助模型、视觉桥、语言主题等偏好、模型显示/上下文/准入/名称/价格）不重复登记；按工作区区分的工具设置、个性化正文和新任务默认值不进入这组工具。外观、Git 安全、运行资源、记忆、子代理模型、视觉桥、辅助模型这 7 个领域，以及桌面通用、聊天、通知 3 组偏好（上游 `preferences` 分区），网页/云设置页保存仍按本服务的 revision 比对与回执，但写入和生效统一调用上游对应分区（`host-settings/upstreamSections.ts` → `manageAppSettings`），保存后会触发上游的设置变更通知。单字段恢复默认写入该字段默认值（上游存储会删除等于默认值的覆盖）；视觉桥目标模型、Git 安全、辅助模型这类无法靠写值恢复默认的字段改用整组恢复，再写回其余仍自定义的字段。IM 渠道路由默认变化前沿用设置页的 `prepareImDefaultSettingsChange`，补录失败则不保存。早期版本投放的 `cindy-settings` Skill 已撤回；云实例和 Dev 包启动时只删除仍指向 profile 内 `host-settings-skills` 的链接及该目录（`host-settings/retiredSettingsSkill.ts`），用户自建的同名 Skill 保持不动。
 
 - 读取和保存都从可信上下文核对当前 owner；参数不能自报 owner 或目标实例。保存前、等文件锁后、发布文件前重验身份与 revision。
 - 个性化读取只返回是否自定义，不返回正文；正文只经 `cloud:personalization:v1` 提供给实例主人。
@@ -89,12 +89,12 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 ### 本次新增的 profile 与 owner 正本
 
-- **Profile 桌面偏好（仅托管云实例）**：主题/主题族、语言、sidebar 与 ghost panel 布局、桌面/飞书通知、点击/发送/链接行为、淡入、推荐、消息导航条、Agent Island 启用/音效/皮肤/显示目标、持久化网络调试，共 20 组、25 个公开叶子。正本迁入 `host-desktop-preferences.json`；自定义主题、音效文件和显示器身份仍仅存本机。目录以 `scope: profile` 和 `surface: hostDesktop` 区分所属 profile 与应用到 Host 桌面的展示语义。普通桌面沿用上游 hook 的 localStorage，不迁移、不写这个文件，设置读取报告 `unavailable`；preload 只在云实例暴露 `desktopPreferences`。上游 hook 保持原文件，只把读写偏好或持有状态的导出在云实例转交 `state/hostDesktop` 的同名实现；纯函数不转交。云实例上设回默认值即清除 override，与本机规则一致。Agent Island 仅 macOS 可用，不进入云实例，保持上游实现。
+- **桌面偏好（与上游一致）**：主题/主题族、语言、侧栏样式、桌面/飞书通知、点击/发送/链接行为、淡入、推荐、消息导航条与网络调试，在云实例上也由应用窗口按上游方式保存（localStorage），不另存 Host 正本。云设置页的 `desktopGeneral` / `desktopChat` / `desktopNotifications` 经上游 `preferences` 分区读写（`host-settings/desktopPreferenceDomains.ts`）：读取须应用窗口应答，未应答时该组为 `unreadable`；是否自定义按值与默认值比较，单字段恢复默认即写回默认值；`ghostPanelRestoreMode` 没有对应偏好，固定读默认值且不可写。上游 `preferences` 分区为此补齐侧栏样式、飞书提醒、切回防误触与网络诊断字段，Agent 与本机设置共用同一入口。早期云版本写下的 `host-desktop-preferences.json` 在启动后经同一分区逐项写回一次，随后改名为 `host-desktop-preferences.returned.json` 保留（`host-settings/retiredDesktopPreferences.ts`）。只读快照无法同步读取窗口里的偏好，这些叶子与普通桌面一样报告 `unavailable`。
 - **Owner 模型偏好（仅托管云实例）**：云实例上模型显示 override、引擎偏好和收藏迁入 `host-model-presentation-preferences.json`，让设置通道、网页控制台和设置工具在没有窗口时也能读写。保留初始化默认规则、follow-catalog 记录、收藏顺序/身份与 seed 墓碑；不把它们错误迁为 profile，也不重复迁移已接入的 `providerModelMemory`。普通桌面沿用上游 Renderer localStorage 与 Main 内存镜像，不迁移、不写这个文件，设置读取对这三项报告 `unavailable`。上游三个 store 保持原签名，只在云实例转交 Host：收藏与引擎写入和本机一样不等待回执，失败时提示并回到 Host 正本；云实例的 device-link 收藏请求由 Main 按 revision 直接读写该文件。
-- **本机桥**：仅执行 Host 同一 profile 的可信本地 Renderer，可经固定 preload/IPC 通道读取、一次性导入和保存。桌面与模型桥同时校验可信顶层 frame、实际 profile partition 与 Host 注册的窗口身份；仅本机主、副应用窗口可写，登记为只读的辅助窗不可写，remote viewer 明确排除，提交前重新校验。同步启动桥只读，避免重建缓存时闪回默认主题/语言。控制端、远控窗口、网页或工具参数不能冒充本机导入者。
+- **本机桥**：仅执行 Host 同一 profile 的可信本地 Renderer，可经固定 preload/IPC 通道读取、一次性导入和保存模型偏好。模型桥校验可信顶层 frame、实际 profile partition 与 Host 注册的窗口身份；仅本机主、副应用窗口可写，登记为只读的辅助窗不可写，remote viewer 明确排除，提交前重新校验。控制端、远控窗口、网页或工具参数不能冒充本机导入者。
 - **提交与缓存**：profile 写入受 profile stamp/revision 保护，owner 写入另受 owner/generation 保护；都在真实锁内 CAS 与原子提交。多窗口冲突只回读，不换 revision 重放旧整表。初始化标记不随恢复默认删除，旧 Renderer 数据不能重新覆盖；首次导入也尊重旧 owner 的 follow-catalog 墓碑和目标显式选择。兼容首帧缓存只能由成功 Host 提交单向更新，不是第二正本。remote viewer 不经过 Host 存储，沿用上游 localStorage hook。
 - **待迁移**：未能证明全新且尚未完成导入的旧 profile/owner 数据返回 `migrationPending`；只有有依据的新 profile 才解释为默认。inspection 不执行导入、不删旧键；完成初始化后，即使没有 Renderer 窗口也能从 Host 读取。
-- **运行态消费**：桌面通知最终发送入口和窗口创建期点击行为直接消费已就绪的 Host 值，迟到的旧 Renderer payload 不能覆盖正本。Agent Island 仅在既有受支持初始化分支订阅偏好，应用前检查已提交身份与切换边界；登出/reset 后暂停自动应用，待合法会话的原有启用入口恢复。headless/不支持的平台不因保存的开关启动原生岛，退出时解绑订阅。
+- **运行态消费**：桌面通知、窗口创建期点击行为与 Agent Island 沿用上游：由应用窗口的偏好同步给 Main，云实例不另设读取路径。
 
 ### 云设置页的私有通道（仅托管云实例）
 
@@ -113,7 +113,7 @@ revision 是进程 HMAC 的不透明内容比较标记，包含 override、当�
 
 只读快照传输保持有时效的白名单报告，不承担设置写入。能力 GET 确认后使用 v2，旧端明确 404 或明确仅支持 v1 时保留四域降级。v1 仍为 8 KiB，v2 为 128 KiB（固定 96 KiB / 动态 24 KiB / envelope 8 KiB），fresh TTL 仍为 180 秒；完整协商形状和版本兼容见 [云设置脱敏快照](./cloud-settings-snapshot.md)。
 
-正常每 60 秒加最多 6 秒抖动采样。原四域、此次新增 profile 桌面正本和 owner 模型偏好已有即时变更通知，可触发 750ms 去抖重采样，但仍受最短 10 秒间隔限制。其它领域没有现成事件时由周期采样覆盖，不为只读展示新增文件 watcher，也不承诺所有设置实时刷新。
+正常每 60 秒加最多 6 秒抖动采样。原四域和 owner 模型偏好已有即时变更通知，可触发 750ms 去抖重采样，但仍受最短 10 秒间隔限制。其它领域没有现成事件时由周期采样覆盖，不为只读展示新增文件 watcher，也不承诺所有设置实时刷新。
 
 ## 验证范围与发布边界
 

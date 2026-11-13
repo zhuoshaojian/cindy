@@ -1275,7 +1275,6 @@ interface ElectronAPI {
   cloudSettings: import('../shared/cloudSettingsClient').CloudSettingsRendererApi;
   cloudLoginWindow: import('../shared/cloudLoginWindow').CloudLoginWindowApi;
   hostSettings: import('../shared/hostSettings').HostSettingsRendererApi;
-  desktopPreferences?: import('../shared/desktopPreferences').DesktopPreferencesRendererApi;
   /** Only on a managed cloud instance; see renderer/state/hostModelPresentationStores. */
   modelPresentationPreferences?: import('../shared/modelPresentationPreferences').ModelPresentationPreferencesApi;
 

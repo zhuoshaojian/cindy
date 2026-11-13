@@ -48,18 +48,15 @@ import {
   type SessionEventKind,
 } from './sessionNotificationCopy';
 
-import { hostDesktopPreference } from './host-settings/desktop-preferences.js';
-
 export type { SessionEventKind } from './sessionNotificationCopy';
 
 const log = createLogger('notificationService');
 let desktopNotificationsEnabled = true;
 let shouldSilenceTaskNotification: (kind: SessionEventKind) => boolean = () => false;
 
-/** Renderer owns persistence; main keeps the current value for scheduler-originated toasts.
- * A managed cloud instance reads the committed Host profile value instead. */
+/** Renderer owns persistence; main keeps the current value for scheduler-originated toasts. */
 export function getDesktopNotificationsEnabled(): boolean {
-  return hostDesktopPreference('notificationsEnabled') ?? desktopNotificationsEnabled;
+  return desktopNotificationsEnabled;
 }
 
 /** Chat uses the same system permission and global desktop preference as task notifications. */
@@ -530,7 +527,7 @@ export function showDeviceSessionDesktopEvent(
   getWindow: () => BrowserWindow | null,
   event: { sessionId: string; deviceId: string; title: string | null; deviceName: string | null; kind: SessionEventKind },
 ): void {
-  if (!getDesktopNotificationsEnabled()) return;
+  if (!desktopNotificationsEnabled) return;
   showDesktopSessionEvent(getWindow, {
     sessionId: event.sessionId,
     deviceId: event.deviceId,

@@ -15,20 +15,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import * as host from '@/state/hostDesktop/useNotificationSettings';
-import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
-
-/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
-const hostDesktop = hasHostDesktopPreferences();
-export const getNotificationsEnabled = hostDesktop ? host.getNotificationsEnabled : getNotificationsEnabledLocal;
-export const useNotificationSettings = hostDesktop ? host.useNotificationSettings : useNotificationSettingsLocal;
 
 const STORAGE_KEY = 'notifications.enabled';
 const DEFAULT_ENABLED = true;
 const CHANGE_EVENT = 'notifications-enabled-changed';
 
 /** 同步读 localStorage——主要给非 hook 路径用。坏数据当默认值。 */
-function getNotificationsEnabledLocal(): boolean {
+export function getNotificationsEnabled(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === 'true') return true;
@@ -44,7 +37,7 @@ export function syncNotificationsEnabledToMain(enabled = getNotificationsEnabled
   void window.electronAPI?.notificationSetDesktopEnabled?.(enabled);
 }
 
-function useNotificationSettingsLocal(): {
+export function useNotificationSettings(): {
   enabled: boolean;
   setEnabled: (next: boolean) => void;
 } {

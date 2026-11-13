@@ -1,5 +1,6 @@
 import { manageAppSettings } from '../app-settings/sections.js';
 import { HostSettingsError } from './operations.js';
+import { desktopPreferencePatch, isDesktopPreferenceDomain } from './desktopPreferenceDomains.js';
 
 /**
  * Host domains that upstream already owns as settings sections. The remote settings page keeps
@@ -9,6 +10,7 @@ import { HostSettingsError } from './operations.js';
 const SECTION_OF = {
   appearance: 'appearance', gitSafety: 'git-safety', agentResource: 'agent-resources', memory: 'memory',
   subagentModel: 'subagent-models', visionBridge: 'vision-bridge', auxiliaryModel: 'auxiliary-models',
+  desktopGeneral: 'preferences', desktopChat: 'preferences', desktopNotifications: 'preferences',
 } as const;
 export type UpstreamSectionDomain = keyof typeof SECTION_OF;
 export const isUpstreamSectionDomain = (domain: string): domain is UpstreamSectionDomain => Object.hasOwn(SECTION_OF, domain);
@@ -44,7 +46,7 @@ async function run(input: Parameters<typeof manageAppSettings>[0], assertCurrent
 export async function commitThroughUpstreamSection(
   domain: UpstreamSectionDomain,
   change: { set: Values; clear: string[] },
-  before: { value: Values; defaults: Values; customizedKeys: string[] },
+  before: { value: Values; defaults: Values; customizedKeys: string[]; choices?: Record<string, Array<{ value: unknown; label: string }>> },
   assertCurrent: () => void,
 ): Promise<void> {
   const section = SECTION_OF[domain];
@@ -57,6 +59,7 @@ export async function commitThroughUpstreamSection(
     // Upstream stores drop a value equal to its default, which is how a single field follows the default again.
     values = { ...Object.fromEntries(change.clear.map(key => [key, before.defaults[key]])), ...change.set };
   }
-  const patch = toSectionPatch(domain, values);
+  const patch = isDesktopPreferenceDomain(domain)
+    ? desktopPreferencePatch(domain, values as never, before as never) : toSectionPatch(domain, values);
   if (Object.keys(patch).length) await run({ operation: 'update', section, patch }, assertCurrent);
 }

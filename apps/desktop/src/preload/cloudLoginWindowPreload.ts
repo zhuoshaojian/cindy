@@ -1,7 +1,6 @@
 /** Cloud login only: window chrome, read-only appearance and scoped login actions. */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import { createDesktopPreferencesReadApi } from './desktopPreferences';
 
 import { createAppearanceSnapshotBridge } from './appearanceSnapshot';
 import type { LocalThemesResult } from '../shared/local-themes';
@@ -40,7 +39,6 @@ const fanOutFullscreenChange = (cb: (isFullscreen: boolean) => void): (() => voi
   onPayload('fullscreen-change', cb);
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  desktopPreferences: createDesktopPreferencesReadApi(ipcRenderer),
   platform: process.platform,
   onWindowHiddenChange: (cb: (hidden: boolean) => void): (() => void) => {
     const off = onPayload('window-hidden-change', cb);

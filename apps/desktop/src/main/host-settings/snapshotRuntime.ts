@@ -7,7 +7,6 @@ import { readHostSettings, onHostSettingsChanged } from './index.js';
 import { projectSettingsSnapshot } from './snapshotProjection.js';
 import { readSettingsSnapshotV2 } from './readSnapshot.js';
 import { getSettingsPublicIdentifiers } from './publicIdentifiers.js';
-import { onDesktopPreferencesChanged } from './desktop-preferences.js';
 import { onModelPresentationPreferencesChanged } from './model-presentation-preferences.js';
 import { createSettingsSnapshotPublisher, settingsSnapshotPublishUrl, type SnapshotPublishContext } from './snapshotPublisher.js';
 
@@ -52,7 +51,6 @@ export function startCloudSettingsSnapshotPublisher(): () => void {
   });
   const stopAuth = authManager.onAuthStateChange(() => publisher.requestPublish());
   const stopSettings = onHostSettingsChanged(() => publisher.requestPublish());
-  const stopDesktop = onDesktopPreferencesChanged(() => publisher.requestPublish());
   const stopModelPresentation = onModelPresentationPreferencesChanged(() => publisher.requestPublish());
   publisher.start();
   let stopped = false;
@@ -62,7 +60,6 @@ export function startCloudSettingsSnapshotPublisher(): () => void {
     publisher.stop();
     stopAuth();
     stopSettings();
-    stopDesktop();
     stopModelPresentation();
   };
 }

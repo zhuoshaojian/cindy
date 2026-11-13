@@ -17,19 +17,12 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import * as host from '@/state/hostDesktop/useSwallowActivationClickSettings';
-import { hasHostDesktopPreferences } from '@/state/hostDesktopPreferences';
-
-/** 托管云实例除外:Host profile 文件是正本,导出转交 state/hostDesktop 的同名实现。 */
-const hostDesktop = hasHostDesktopPreferences();
-export const getSwallowActivationClickEnabled = hostDesktop ? host.getSwallowActivationClickEnabled : getSwallowActivationClickEnabledLocal;
-export const useSwallowActivationClickSettings = hostDesktop ? host.useSwallowActivationClickSettings : useSwallowActivationClickSettingsLocal;
 
 const STORAGE_KEY = 'input.swallowActivationClick';
 const DEFAULT_ENABLED = false;
 
 /** 同步读 localStorage——DOM adapter 的事件回调用它。坏数据当默认值。 */
-function getSwallowActivationClickEnabledLocal(): boolean {
+export function getSwallowActivationClickEnabled(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === 'true') return true;
@@ -40,7 +33,7 @@ function getSwallowActivationClickEnabledLocal(): boolean {
   return DEFAULT_ENABLED;
 }
 
-function useSwallowActivationClickSettingsLocal(): {
+export function useSwallowActivationClickSettings(): {
   enabled: boolean;
   setEnabled: (next: boolean) => void;
 } {

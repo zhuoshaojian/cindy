@@ -14,22 +14,16 @@ vi.mock('../../appSessionState.js', () => ({
 vi.mock('../snapshotRuntime.js', () => ({ getCloudSettingsSnapshotContext: () => null }));
 vi.mock('../../maker-host/model-visibility-mirror.js', () => ({ getModelVisibilityOverride: () => undefined }));
 vi.mock('../catalog.js', () => ({ refreshSettingsModelRecommendation: async () => ({ providers: [], agents: [], assertCurrent() {} }) }));
-// Desktop preferences come from the running app; a ready read lets desktopGeneral list its choices.
-vi.mock('../desktop-preferences.js', async (original) => {
-  const { desktopPreferenceDefaults } = await import('../../../shared/desktopPreferences.js');
-  return { ...(await original<object>()), inspectDesktopPreferences: () => ({ status: 'ready', profileStamp: 'profile', revision: 'r1',
-    value: desktopPreferenceDefaults(), defaults: desktopPreferenceDefaults(), customizedKeys: [], isCustomized: false }) };
-});
 import { createAppSettingsService } from '../../app-settings/service.js';
 import { runtimeSettingsSections } from '../../app-settings/runtime.js';
-import { configureHostSettingsApplication, getHostSettings } from '../index.js';
+import { configureHostSettingsApplication } from '../index.js';
 import { registerHostAppSettingsSections, HOST_APP_SETTINGS_SECTION_IDS } from '../appSettingsSections.js';
 
 // Sections upstream already registers, and Host domains that map onto them or stay out of the Agent surface.
 const UPSTREAM = ['preferences', 'appearance', 'git-safety', 'goal-defaults', 'agent-resources', 'subagent-models', 'vision-bridge', 'memory', 'auxiliary-models'];
 const NOT_REGISTERED = ['appearance', 'gitSafety', 'agentResource', 'memory', 'subagentModel', 'auxiliaryModel', 'visionBridge',
   'modelVisibility', 'modelContext', 'modelAccess', 'providerNames', 'modelPrices', 'newTaskDefaults', 'personalization',
-  'workspaceTools', 'contacts', 'contactsSync', 'desktopChat'];
+  'workspaceTools', 'contacts', 'contactsSync', 'desktopGeneral', 'desktopChat', 'desktopNotifications'];
 const current = async () => {};
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const manage = (input: Parameters<ReturnType<typeof createAppSettingsService>>[0]) => createAppSettingsService(runtimeSettingsSections())(input, current) as Promise<any>;
@@ -58,18 +52,5 @@ describe('Host settings as upstream sections on a cloud instance', () => {
     expect(JSON.parse(fs.readFileSync(path.join(isolated.root, 'database-size-warning-settings.json'), 'utf8'))).toMatchObject({ thresholdGiB: 20 });
     expect(await manage({ operation: 'update', section: 'databaseWarning', patch: { thresholdGiB: 0 } })).toMatchObject({ ok: false, errorCode: 'INVALID_ARGS' });
     expect(await manage({ operation: 'reset', section: 'databaseWarning' })).toMatchObject({ state: { value: { thresholdGiB: 10 }, customizedKeys: [] } });
-  });
-
-  it('offers only the desktop fields that upstream preferences do not cover', async () => {
-    const listed = await manage({ operation: 'list' });
-    expect(listed.sections.map((section: { id: string }) => section.id)).toEqual(expect.arrayContaining(['desktopGeneral', 'desktopNotifications']));
-    expect(await manage({ operation: 'update', section: 'desktopNotifications', patch: { notificationsEnabled: false } })).toMatchObject({ ok: false, errorCode: 'INVALID_ARGS' });
-    expect(await manage({ operation: 'update', section: 'desktopGeneral', patch: { locale: 'en' } })).toMatchObject({ ok: false, errorCode: 'INVALID_ARGS' });
-    // The Host lists language and theme choices; the section must not offer fields it refuses.
-    const host = await getHostSettings({ id: 'test', assertCurrent() {} }, 'desktopGeneral');
-    expect(host.status === 'ready' && 'choices' in host && host.choices && Object.keys(host.choices)).toEqual(expect.arrayContaining(['locale']));
-    const { state } = await manage({ operation: 'get', section: 'desktopGeneral' });
-    expect(Object.keys(state.value).sort()).toEqual(['sidebarMainMode', 'sidebarPinnedMode']);
-    expect(Object.keys(state.choices ?? {}).filter(key => !['sidebarMainMode', 'sidebarPinnedMode'].includes(key))).toEqual([]);
   });
 });

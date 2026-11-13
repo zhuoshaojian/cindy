@@ -78,9 +78,6 @@ describe('settings read catalog independent coverage anchors', () => {
       'swallowActivationClick', 'composerSendShortcut', 'webLinkOpenPreference', 'localLinkOpenPreference', 'streamFadePreference', 'promptRecommendationEnabled',
       'messageNavRailEnabled', 'feishuNotificationsEnabled', 'agentIslandEnabled', 'agentIslandSoundSettings', 'agentIslandMascotSkin', 'agentIslandDisplayTargetConfigured', 'networkDebugEnabled'];
     expect(groups).toHaveLength(20);
-    const nativeInterface = text('shared/desktopPreferences.ts').match(/export interface DesktopPreferences \{([\s\S]*?)\n\}/)![1]!;
-    const actualGroups = [...nativeInterface.matchAll(/^  ([A-Za-z]+):/gm)].map(match => match[1]);
-    expect(groups.map(group => group.replace(/Configured$/, '')).sort()).toEqual(actualGroups.sort());
     expectIds(groups.filter(group => group !== 'agentIslandSoundSettings').map(group => `desktop.${group}`));
     expectIds(['desktop.agentIslandSoundSettings.enabled', ...SETTINGS_READ_ISLAND_EVENTS.map(event => `desktop.agentIslandSoundSettings.sounds.${event}`)]);
     expect(SETTINGS_READ_FIELD_IDS.filter(id => id.startsWith('desktop.'))).toHaveLength(25);
