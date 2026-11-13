@@ -8,7 +8,7 @@ import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer.js
 import { isAppContentWindow } from '../windowFocusClassifier.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 import { readHostSettings, getHostSettings, updateHostSettings, onHostSettingsChanged, configureHostSettingsApplication, type HostSettingsCaller } from './index.js';
-import { currentSettingsOwner, assertSettingsOwner, inspectPersonalization, importLegacyPersonalization } from './personalization.js';
+import { currentSettingsOwner, assertSettingsOwner } from './personalization.js';
 import { hostOwnsNewTaskDefaults, readNewTaskPreferenceHistory, saveNewTaskPreferenceHistory } from './new-task-defaults.js';
 import { validateSettingsModelSelection, refreshSettingsModelRecommendation } from './catalog.js';
 import { registerHostAppSettingsSections } from './appSettingsSections.js';
@@ -28,7 +28,8 @@ async function snapshot(caller: HostSettingsCaller, modelCatalogReady = true): P
   caller.assertCurrent();
   const operationIds: NativeHostSettingsSnapshot['operationIds'] = {};
   for (const domain of NATIVE_HOST_SETTINGS_DOMAINS) {
-    if (domain === 'newTaskDefaults' && !modelCatalogReady) continue;
+    // The window edits its own custom instructions; only other domains need an operation here.
+    if (domain === 'personalization' || (domain === 'newTaskDefaults' && !modelCatalogReady)) continue;
     const state = await getHostSettings(caller, domain);
     if ('operationId' in state) operationIds[domain] = state.operationId;
   }
@@ -36,7 +37,7 @@ async function snapshot(caller: HostSettingsCaller, modelCatalogReady = true): P
   const state = readHostSettings();
   if (!modelCatalogReady) state.newTaskDefaults = { status: 'unavailable', revision: null };
   // 新任务文件不可读时保留该领域状态，不让辅助历史读取阻断其它独立领域。
-  return { ...state, userPrompt: inspectPersonalization(), history: state.newTaskDefaults.status === 'ready' ? readNewTaskPreferenceHistory() : null, operationIds };
+  return { ...state, history: state.newTaskDefaults.status === 'ready' ? readNewTaskPreferenceHistory() : null, operationIds };
 }
 const object = (raw: unknown): raw is Record<string, unknown> => !!raw && typeof raw === 'object' && !Array.isArray(raw);
 function rejectInvalid(): never { throwIpcError('INVALID_PARAMS', 'invalid Host settings request'); }
@@ -70,13 +71,6 @@ export function registerHostSettingsIpc(databaseWarningChanged: () => void): voi
     if (!object(raw) || Object.keys(raw).some(k => !['ownerStamp', 'expectedRevision', 'history', 'importOnly'].includes(k)) || !raw.ownerStamp || typeof raw.expectedRevision !== 'string' || typeof raw.importOnly !== 'boolean') rejectInvalid();
     const caller = nativeCaller(event, raw.ownerStamp);
     await saveNewTaskPreferenceHistory(raw.history, raw.ownerStamp as SettingsOwnerStamp, raw.expectedRevision, raw.importOnly);
-    caller.assertCurrent();
-    return snapshot(caller);
-  }));
-  ipcMain.handle('host-settings:import-prompt', (event, raw: unknown) => safe(async () => {
-    if (!object(raw) || Object.keys(raw).some(k => !['ownerStamp', 'expectedRevision', 'userPrompt'].includes(k)) || !raw.ownerStamp || typeof raw.expectedRevision !== 'string') rejectInvalid();
-    const caller = nativeCaller(event, raw.ownerStamp);
-    await importLegacyPersonalization(raw.userPrompt, raw.ownerStamp as SettingsOwnerStamp, raw.expectedRevision);
     caller.assertCurrent();
     return snapshot(caller);
   }));

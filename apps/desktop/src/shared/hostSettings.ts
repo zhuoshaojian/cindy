@@ -36,7 +36,6 @@ export interface HostSettingsSnapshot {
   appearance: HostSettingState<AppearanceSettings>;
 }
 export interface NativeHostSettingsSnapshot extends HostSettingsSnapshot {
-  userPrompt: HostSettingState<PersonalizationSettings>;
   history: import('./newTaskPreferenceHistory.js').NewTaskPreferenceHistory | null;
   operationIds: Partial<Record<HostSettingsDomain, string>>;
 }
@@ -46,7 +45,6 @@ export interface HostSettingsRendererApi {
   get(): Promise<NativeHostSettingsSnapshot>;
   update(input: HostSettingsUpdate & { ownerStamp: SettingsOwnerStamp }): Promise<HostSettingsReceipt>;
   saveHistory(input: { ownerStamp: SettingsOwnerStamp; expectedRevision: string; history: import('./newTaskPreferenceHistory.js').NewTaskPreferenceHistory; importOnly: boolean }): Promise<NativeHostSettingsSnapshot>;
-  importPrompt(input: { ownerStamp: SettingsOwnerStamp; expectedRevision: string; userPrompt: string }): Promise<NativeHostSettingsSnapshot>;
   onChanged(callback: (stamp: SettingsOwnerStamp | null) => void): () => void;
 }
 export interface HostSettingsChange {

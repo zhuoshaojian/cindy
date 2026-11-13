@@ -56,12 +56,12 @@ async function setup() {
   const service = await import('../../main/host-settings/new-task-defaults');
   service.setNewTaskDefaultRecommendation(stamp(), recommendation);
   const snapshot = (): NativeHostSettingsSnapshot => ({ ownerStamp: stamp(), newTaskDefaults: service.inspectNewTaskDefaults(), history: service.readNewTaskPreferenceHistory(),
-    personalization: { status: 'unavailable', revision: null }, databaseWarning: { status: 'unavailable', revision: null }, appearance: { status: 'unavailable', revision: null }, userPrompt: { status: 'unavailable', revision: null }, operationIds: {} });
+    personalization: { status: 'unavailable', revision: null }, databaseWarning: { status: 'unavailable', revision: null }, appearance: { status: 'unavailable', revision: null }, operationIds: {} });
   const save = async (input: Parameters<HostSettingsRendererApi['saveHistory']>[0]) => {
     await service.saveNewTaskPreferenceHistory(input.history, input.ownerStamp, input.expectedRevision, input.importOnly);
     return snapshot();
   };
-  const api = { hostOwned: true, get: vi.fn(async () => snapshot()), saveHistory: vi.fn(save), update: vi.fn(), importPrompt: vi.fn(),
+  const api = { hostOwned: true, get: vi.fn(async () => snapshot()), saveHistory: vi.fn(save), update: vi.fn(),
     onChanged: (callback: Parameters<HostSettingsRendererApi['onChanged']>[0]) => service.onNewTaskDefaultsChanged(() => callback(stamp())) };
   (window as unknown as { electronAPI: unknown }).electronAPI = { hostSettings: api };
   const draft = await import('../state/newMakerDraft');

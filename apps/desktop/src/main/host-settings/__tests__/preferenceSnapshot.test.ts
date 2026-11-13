@@ -6,7 +6,6 @@ const forbidden = vi.hoisted(() => vi.fn(() => { throw new Error('不得越过�
 vi.mock('../../appearance-settings-store.js', () => ({ inspectAppearanceSettings: forbidden }));
 vi.mock('../../database-size-warning-settings.js', () => ({ inspectDatabaseSizeWarningSettings: forbidden }));
 vi.mock('../new-task-defaults.js', () => ({ inspectNewTaskDefaultsForSnapshot: forbidden }));
-vi.mock('../personalization.js', () => ({ inspectPersonalizationForSnapshot: forbidden }));
 import { inspectPreferenceSettingsForSnapshot, type PreferenceSettingsReaders } from '../readers/preferences.js';
 
 function ready<T>(value: T, customizedKeys: string[] = []): Extract<HostSettingState<T>, { status: 'ready' }> {

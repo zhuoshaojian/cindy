@@ -14,15 +14,6 @@
  * 跟 model/effort 完全同模式，main 不需要知道 storage 实现。
  */
 
-import * as host from '@/state/hostPersonalization';
-
-/** 托管云实例除外:个性化正文以 Host 为正本,导出转交 state/hostPersonalization。 */
-const hostPrompt = host.hasHostPersonalization();
-export const setUserPromptOwner = hostPrompt ? host.setUserPromptOwner : setUserPromptOwnerLocal;
-export const getUserPrompt = hostPrompt ? host.getUserPrompt : getUserPromptLocal;
-export const setUserPrompt = hostPrompt ? host.setUserPrompt : setUserPromptLocal;
-export const subscribeUserPrompt = hostPrompt ? host.subscribeUserPrompt : subscribeUserPromptLocal;
-
 const STORAGE_KEY_PREFIX = 'userPrompt.value';
 const LEGACY_STORAGE_KEY = STORAGE_KEY_PREFIX;
 let activeOwnerId: string | null = null;
@@ -45,7 +36,7 @@ function migrateLegacyPrompt(ownerId: string): void {
 }
 
 /** Select the owner namespace used by this renderer's personal prompt cache. */
-function setUserPromptOwnerLocal(ownerId: string | null): void {
+export function setUserPromptOwner(ownerId: string | null): void {
   if (activeOwnerId === ownerId) return;
   activeOwnerId = ownerId;
   if (ownerId) migrateLegacyPrompt(ownerId);
@@ -57,7 +48,7 @@ type Subscriber = (value: string) => void;
 const subscribers = new Set<Subscriber>();
 
 /** 同步读 —— 给 hook 之外路径用（ChatInput 启 session 时透传等）。坏数据兜底空串。 */
-function getUserPromptLocal(): string {
+export function getUserPrompt(): string {
   try {
     const raw = localStorage.getItem(storageKey());
     return typeof raw === 'string' ? raw : '';
@@ -67,7 +58,7 @@ function getUserPromptLocal(): string {
 }
 
 /** 同步写 —— 落盘 + 通知本 tab 内所有 subscriber（storage 事件本身不会触发当前 tab）。 */
-function setUserPromptLocal(next: string): void {
+export function setUserPrompt(next: string): void {
   try {
     localStorage.setItem(storageKey(), next);
   } catch {
@@ -77,7 +68,7 @@ function setUserPromptLocal(next: string): void {
 }
 
 /** 订阅变化 —— hook 用，也可以给非 React 路径用。返回 unsubscribe。 */
-function subscribeUserPromptLocal(cb: Subscriber): () => void {
+export function subscribeUserPrompt(cb: Subscriber): () => void {
   subscribers.add(cb);
 
   // 监听跨实例 storage 事件（多窗口兜底；Electron 单窗口下几乎不触发）。

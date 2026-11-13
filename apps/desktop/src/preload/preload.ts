@@ -1368,7 +1368,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     get: () => ipcRenderer.invoke('host-settings:get'),
     update: (input) => ipcRenderer.invoke('host-settings:update', input),
     saveHistory: (input) => ipcRenderer.invoke('host-settings:save-history', input),
-    importPrompt: (input) => ipcRenderer.invoke('host-settings:import-prompt', input),
     onChanged: (callback) => {
       const listener = (
         _event: Electron.IpcRendererEvent,

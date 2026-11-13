@@ -4,7 +4,6 @@ import type { SettingsSnapshotFieldId } from '../../../shared/settingsReadCatalo
 import { inspectAppearanceSettings } from '../../appearance-settings-store.js';
 import { inspectDatabaseSizeWarningSettings } from '../../database-size-warning-settings.js';
 import { inspectNewTaskDefaultsForSnapshot } from '../new-task-defaults.js';
-import { inspectPersonalizationForSnapshot } from '../personalization.js';
 import { inspectedValue, type ReadonlySettingsInspection, type ReadonlySettingInspection } from '../readTypes.js';
 
 const firstDomains = {
@@ -28,12 +27,13 @@ export const PREFERENCE_SETTINGS_FIELD_IDS = [
 type NativeState = HostSettingState<object> | { status: 'migrationPending'; revision: null };
 export interface PreferenceSettingsReaders {
   newTaskDefaults: typeof inspectNewTaskDefaultsForSnapshot;
-  personalization: typeof inspectPersonalizationForSnapshot;
+  personalization: () => NativeState;
   databaseWarning: typeof inspectDatabaseSizeWarningSettings;
   appearance: typeof inspectAppearanceSettings;
 }
 const stores: PreferenceSettingsReaders = {
-  newTaskDefaults: inspectNewTaskDefaultsForSnapshot, personalization: inspectPersonalizationForSnapshot,
+  // The custom instructions live in the app window, out of this synchronous read.
+  newTaskDefaults: inspectNewTaskDefaultsForSnapshot, personalization: () => ({ status: 'unavailable', revision: null }),
   databaseWarning: inspectDatabaseSizeWarningSettings, appearance: inspectAppearanceSettings,
 };
 

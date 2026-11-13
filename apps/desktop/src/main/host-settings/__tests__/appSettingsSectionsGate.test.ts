@@ -8,7 +8,7 @@ vi.mock('../../appearance-settings-ipc.js', () => ({ applySavedAppearance: vi.fn
 vi.mock('../catalog.js', () => ({ validateSettingsModelSelection: vi.fn(), refreshSettingsModelRecommendation: vi.fn() }));
 // An ordinary desktop: the Host does not own these settings.
 vi.mock('../new-task-defaults.js', () => ({ hostOwnsNewTaskDefaults: () => false, readNewTaskPreferenceHistory: vi.fn(), saveNewTaskPreferenceHistory: vi.fn() }));
-vi.mock('../personalization.js', () => ({ currentSettingsOwner: vi.fn(), assertSettingsOwner: vi.fn(), importLegacyPersonalization: vi.fn(), inspectPersonalization: vi.fn() }));
+vi.mock('../personalization.js', () => ({ currentSettingsOwner: vi.fn(), assertSettingsOwner: vi.fn() }));
 vi.mock('../additionalModels.js', () => ({ readModelSettings: vi.fn(), validateModelSettingsChange: vi.fn(), commitModelSettings: vi.fn() }));
 vi.mock('../additionalApplication.js', () => ({ applyAdditionalSettings: vi.fn() }));
 vi.mock('../additionalNative.js', () => ({ nativeSettingsOperations: {} }));

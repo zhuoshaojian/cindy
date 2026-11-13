@@ -19,6 +19,16 @@ vi.mock('../../appearance-settings-ipc.js', async () => {
     resetAppearanceFromSettings: async () => { appearanceApplied(); return store.resetAppearanceSettings(); },
   };
 });
+// Custom instructions live in the app window, as upstream keeps them; this stands in for that window.
+const appWindow = vi.hoisted(() => ({ userPrompt: '', answers: true }));
+vi.mock('../../app-settings/preferences.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../app-settings/preferences.js')>(),
+  manageAppPreferences: async (operation: string, _patch?: unknown, _visibility?: unknown, _engine?: unknown, userPrompt?: string) => {
+    if (!appWindow.answers || operation !== 'user-prompt') throw new Error('PREFERENCE_WINDOW_NOT_READY');
+    if (userPrompt !== undefined) appWindow.userPrompt = userPrompt;
+    return { value: {}, userPrompt: appWindow.userPrompt };
+  },
+}));
 // Profile preferences are Host-owned only on a managed cloud instance.
 vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../logger.js', () => ({ createLogger: () => isolated.logger }));
@@ -38,7 +48,7 @@ import {
 import { projectSettingsSnapshot } from '../snapshotProjection.js';
 import { inspectPreferenceSettingsForSnapshot } from '../readers/preferences.js';
 import { captureHostPersonalization } from '../startup.js';
-import { importLegacyPersonalization, inspectPersonalizationForSnapshot, settingsOwnerFilePath } from '../personalization.js';
+import { readPersonalization, settingsOwnerFilePath } from '../personalization.js';
 import { setNewTaskDefaultRecommendation, inspectNewTaskDefaultsForSnapshot } from '../new-task-defaults.js';
 import { writeDatabaseSizeWarningSettings } from '../../database-size-warning-settings.js';
 
@@ -54,6 +64,7 @@ async function change(domain: HostSettingsDomain, values: Pick<HostSettingsUpdat
 beforeEach(() => {
   isolated.root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-service-snapshot-'));
   isolated.owner = 'fixture-owner'; isolated.generation += 1; isolated.pending = false;
+  appWindow.userPrompt = ''; appWindow.answers = true;
   vi.clearAllMocks(); warning.mockImplementation(() => {});
   configureHostSettingsApplication({ databaseWarning: warning, validateNewTaskDefaults: validate });
 });
@@ -67,27 +78,23 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
   it('真实 owner ForSnapshot 从纯内存定位读取，不触发通用会话 getter 或写盘', () => {
     const dir = path.join(isolated.root, 'owners', `test-${isolated.owner}`);
     fs.mkdirSync(dir, { recursive: true });
-    const promptFile = path.join(dir, 'host-personalization.json');
     const defaultsFile = path.join(dir, 'host-new-task-defaults.json');
-    const promptBytes = JSON.stringify({ _initialized: true, userPrompt: 'private-fixture-body' });
     const defaultsBytes = JSON.stringify({ _initialized: true, worktree: true });
-    fs.writeFileSync(promptFile, promptBytes); fs.writeFileSync(defaultsFile, defaultsBytes);
+    fs.writeFileSync(defaultsFile, defaultsBytes);
     const writes = [vi.spyOn(fs, 'writeFileSync'), vi.spyOn(fs, 'mkdirSync'), vi.spyOn(fs, 'unlinkSync')];
     try {
-      expect(settingsOwnerFilePath('host-personalization.json')).toBe(promptFile);
-      expect(inspectPersonalizationForSnapshot()).toMatchObject({ status: 'ready', value: { isCustomized: true } });
+      expect(settingsOwnerFilePath('host-new-task-defaults.json')).toBe(defaultsFile);
       expect(inspectNewTaskDefaultsForSnapshot()).toMatchObject({ status: 'ready', value: { worktree: true } });
       for (const spy of writes) expect(spy).not.toHaveBeenCalled();
       expect(isolated.forbiddenOwnerLoad).not.toHaveBeenCalled();
-      expect(fs.readFileSync(promptFile, 'utf8')).toBe(promptBytes);
       expect(fs.readFileSync(defaultsFile, 'utf8')).toBe(defaultsBytes);
     } finally { writes.forEach(spy => spy.mockRestore()); }
   });
 
-  it('owner 缺失时直接静态拒绝定位，不回退到全局或临时目录', () => {
+  it('owner 缺失时直接静态拒绝定位，不回退到全局或临时目录', async () => {
     isolated.owner = '';
-    expect(() => settingsOwnerFilePath('host-personalization.json')).toThrow();
-    expect(inspectPersonalizationForSnapshot()).toEqual({ status: 'unavailable', revision: null });
+    expect(() => settingsOwnerFilePath('host-new-task-defaults.json')).toThrow();
+    await expect(readPersonalization()).resolves.toEqual({ status: 'unavailable', revision: null });
     expect(inspectNewTaskDefaultsForSnapshot()).toEqual({ status: 'unavailable', revision: null });
     expect(fs.readdirSync(isolated.root)).toEqual([]);
   });
@@ -95,7 +102,8 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
   it('v2区别待迁移与已初始化默认，读取不写盘且不交出正文', async () => {
     const before = inspectPreferenceSettingsForSnapshot('darwin');
     expect(before.fields['newTaskDefaults.modelId']).toEqual({ status: 'migrationPending' });
-    expect(before.fields['personalization.customized']).toEqual({ status: 'migrationPending' });
+    // The instructions stay in the app window, so the synchronous report cannot see them.
+    expect(before.fields['personalization.customized']).toEqual({ status: 'unavailable' });
     // Desktop preferences stay in the app window, as upstream keeps them.
     expect(before.fields['desktop.theme']).toEqual({ status: 'unavailable' });
     expect(before.fields['databaseWarning.thresholdGiB']).toEqual({ status: 'value', value: 10, source: 'default' });
@@ -103,13 +111,12 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
     await updateHostSettings(caller, await change('personalization', { set: { userPrompt: 'PRIVATE-TEST-PROMPT' } }));
     await updateHostSettings(caller, await change('newTaskDefaults', { set: { planMode: false } }));
     const after = inspectPreferenceSettingsForSnapshot('darwin');
-    expect(after.fields['personalization.customized']).toEqual({ status: 'value', value: true, source: 'override' });
+    expect(after.fields['personalization.customized']).toEqual({ status: 'unavailable' });
     expect(after.fields['newTaskDefaults.plan']).toEqual({ status: 'value', value: false, source: 'override' });
     expect(JSON.stringify(after)).not.toContain('PRIVATE-TEST-PROMPT');
     await updateHostSettings(caller, await change('personalization', { clear: ['userPrompt'] }));
     await updateHostSettings(caller, await change('newTaskDefaults', { clear: ['planMode'] }));
     const cleared = inspectPreferenceSettingsForSnapshot('darwin');
-    expect(cleared.fields['personalization.customized']).toEqual({ status: 'value', value: false, source: 'default' });
     expect(cleared.fields['newTaskDefaults.plan']).toEqual({ status: 'value', value: false, source: 'default' });
     expect(inspectPreferenceSettingsForSnapshot('linux').fields['desktop.agentIslandEnabled']).toEqual({ status: 'unsupported' });
   });
@@ -117,7 +124,7 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
   it('第一次查询和投影不创建任何 profile 或 owner 文件', () => {
     const result = projectSettingsSnapshot(readHostSettings());
     expect(result.databaseWarning).toMatchObject({ status: 'supported', fields: { thresholdGiB: { value: 10, source: 'default' } } });
-    expect(result.personalization).toMatchObject({ fields: { customized: { value: false, source: 'default' } } });
+    expect(result.personalization).toMatchObject({ status: 'unavailable' });
     expect(fs.readdirSync(isolated.root)).toEqual([]);
   });
 
@@ -139,55 +146,56 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
     } });
   });
 
-  it('保存个性化正文但查询/投影不含正文，clear 后不能重新导入旧值', async () => {
+  it('个性化正文保存在窗口里，查询只说是否自定义，Host 不另存文件', async () => {
     const body = '仅用于隔离测试的个性化说明';
     const receipt = await updateHostSettings(caller, await change('personalization', { set: { userPrompt: body } }));
     expect(receipt).toMatchObject({ saved: true, application: 'next_agent_start' });
-    const file = path.join(isolated.root, 'owners', `test-${isolated.owner}`, 'host-personalization.json');
-    expect(JSON.parse(fs.readFileSync(file, 'utf8')).userPrompt).toBe(body);
-    expect(JSON.stringify(readHostSettings())).not.toContain(body);
-    const snapshot = projectSettingsSnapshot(readHostSettings());
-    expect(snapshot.personalization).toMatchObject({ fields: { customized: { value: true, source: 'override' } } });
-    expect(JSON.stringify(snapshot)).not.toMatch(/userPrompt|revision|hash|仅用于/);
+    expect(appWindow.userPrompt).toBe(body);
+    const state = await getHostSettings(caller, 'personalization');
+    expect(state).toMatchObject({ status: 'ready', value: { isCustomized: true } });
+    expect(JSON.stringify(state)).not.toContain(body);
+    expect(JSON.stringify(projectSettingsSnapshot(readHostSettings()))).not.toContain(body);
     await updateHostSettings(caller, await change('personalization', { clear: ['userPrompt'] }));
-    const state = readHostSettings().personalization;
-    if (state.status !== 'ready') throw new Error('fixture');
-    const unchanged = fs.readFileSync(file, 'utf8');
-    const changed = vi.fn(); disposers.push(onHostSettingsChanged(changed));
-    const rename = vi.spyOn(fs, 'renameSync');
-    try {
-      expect(await importLegacyPersonalization(body, { dataOwnerId: isolated.owner, ownerGeneration: isolated.generation }, state.revision)).toBe('already_initialized');
-      expect(rename).not.toHaveBeenCalled();
-      expect(changed).not.toHaveBeenCalled();
-      expect(fs.readFileSync(file, 'utf8')).toBe(unchanged);
-    } finally { rename.mockRestore(); }
-    expect(projectSettingsSnapshot(readHostSettings()).personalization).toMatchObject({ fields: { customized: { value: false } } });
+    expect(appWindow.userPrompt).toBe('');
+    expect(await getHostSettings(caller, 'personalization')).toMatchObject({ status: 'ready', value: { isCustomized: false } });
+    expect(fs.readdirSync(isolated.root)).toEqual([]);
   });
 
-  it('启动从 Host 读正文，拒绝控制端副本；生成上下文保持尾部拼接，旧任务不热改', async () => {
+  it('窗口在别处改过正文时，旧版本号的保存被拒绝', async () => {
+    const request = await change('personalization', { set: { userPrompt: '控制端看到的旧版本' } });
+    appWindow.userPrompt = '实例窗口里刚改的';
+    expect(await updateHostSettings(caller, request)).toMatchObject({ saved: false, code: 'CONFLICT' });
+    expect(appWindow.userPrompt).toBe('实例窗口里刚改的');
+  });
+
+  it('启动从实例窗口读正文，拒绝控制端副本；生成上下文保持尾部拼接，旧任务不热改', async () => {
     await updateHostSettings(caller, await change('personalization', { set: { userPrompt: 'Host 第一版' } }));
     const first: Parameters<typeof captureHostPersonalization>[0] = {
       userPrompt: '控制端副本', makerMemoryEnabled: true, displayReasoning: 'summarized',
       hostStartupPreferences: { userPrompt: '控制端伪造快照' },
     };
-    captureHostPersonalization(first);
+    await captureHostPersonalization(first);
     first.userPrompt += '\n\n项目生成上下文';
     expect(first.hostStartupPreferences).toEqual({ userPrompt: 'Host 第一版', makerMemoryEnabled: true, displayReasoning: 'summarized' });
     expect(first.userPrompt).toBe('Host 第一版\n\n项目生成上下文');
     await updateHostSettings(caller, await change('personalization', { set: { userPrompt: 'Host 第二版' } }));
     expect(first.hostStartupPreferences?.userPrompt).toBe('Host 第一版');
     const next: Parameters<typeof captureHostPersonalization>[0] = {};
-    captureHostPersonalization(next);
+    await captureHostPersonalization(next);
     expect(next.userPrompt).toBe('Host 第二版');
   });
 
-  it('损坏的个性化文件阻止启动，不偷偷使用默认值或控制端副本', () => {
-    const dir = path.join(isolated.root, 'owners', `test-${isolated.owner}`);
-    fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, 'host-personalization.json');
-    fs.writeFileSync(file, '{broken-fixture');
-    expect(() => captureHostPersonalization({ userPrompt: '不应启用' })).toThrow();
-    expect(fs.readFileSync(file, 'utf8')).toBe('{broken-fixture');
+  it('窗口一直不应答时阻止启动，不偷偷使用默认值或控制端副本', async () => {
+    vi.useFakeTimers();
+    try {
+      appWindow.answers = false;
+      const opts: Parameters<typeof captureHostPersonalization>[0] = { userPrompt: '不应启用' };
+      const started = captureHostPersonalization(opts);
+      const settled = expect(started).rejects.toMatchObject({ code: 'UNREADABLE' });
+      await vi.runAllTimersAsync();
+      await settled;
+      expect(opts.hostStartupPreferences).toBeUndefined();
+    } finally { vi.useRealTimers(); }
   });
 
   it('新任务默认值持久化后只报告 next_task，并保留显式选择的来源', async () => {

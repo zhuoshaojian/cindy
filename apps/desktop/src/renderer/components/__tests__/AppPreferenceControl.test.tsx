@@ -71,6 +71,20 @@ describe('AppPreferenceControl', () => {
     expect(cleared).toMatchObject({ ok: true, modelEngines: {} });
   });
 
+  it('reads and saves the custom instructions in the same store as the Settings editor', async () => {
+    const { setUserPromptOwner, getUserPrompt } = await import('@/lib/userPromptStore');
+    setUserPromptOwner('owner');
+    render(<AppPreferenceControl />);
+    expect((await send(request('user-prompt'))).userPrompt).toBe('');
+    const saved = await send(request('user-prompt', undefined, { userPrompt: '实例说明' }));
+    expect(saved).toMatchObject({ ok: true, userPrompt: '实例说明' });
+    expect(getUserPrompt()).toBe('实例说明');
+    expect(localStorage.getItem('userPrompt.value.owner')).toBe('实例说明');
+    const cleared = await send(request('user-prompt', undefined, { userPrompt: '' }));
+    expect(cleared).toMatchObject({ ok: true, userPrompt: '' });
+    setUserPromptOwner(null);
+  });
+
   it('refuses a value outside the preference grammar', async () => {
     render(<AppPreferenceControl />);
     const result = await send(request('update', { sidebarTasks: 'card' } as never));

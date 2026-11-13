@@ -13,13 +13,8 @@ import {
   setUserPrompt,
   subscribeUserPrompt,
 } from '@/lib/userPromptStore';
-import * as host from '@/state/hostPersonalization';
 
-/** 托管云实例除外:设置页改读 Host 正本的显示缓存。 */
-const hostPrompt = host.hasHostPersonalization();
-export const useUserPrompt = hostPrompt ? host.useUserPrompt : useUserPromptLocal;
-
-function useUserPromptLocal(): {
+export function useUserPrompt(): {
   value: string;
   setValue: (next: string) => void;
 } {

@@ -10,7 +10,7 @@ export interface PersonalizationChannelDeps {
   /** The managed instance exists and its signed-in member is the instance owner. */
   isInstanceOwner(): boolean;
   owner(): SettingsOwnerStamp | null;
-  inspect(): HostSettingState<PersonalizationSettings>;
+  inspect(): Promise<HostSettingState<PersonalizationSettings>>;
   commit(mutation: OverrideSettingsMutation<PersonalizationSettings>, options: OverrideSettingsCommitOptions): Promise<unknown>;
 }
 
@@ -27,8 +27,8 @@ export function createPersonalizationChannel(deps: PersonalizationChannelDeps) {
     if (!deps.isInstanceOwner()) fail('PERMISSION_DENIED', 'not the instance owner');
     return deps.owner() ?? fail('OWNER_CHANGED', 'the instance account is changing');
   };
-  const state = (owner: SettingsOwnerStamp): CloudPersonalizationState => {
-    const current = deps.inspect();
+  const state = async (owner: SettingsOwnerStamp): Promise<CloudPersonalizationState> => {
+    const current = await deps.inspect();
     return current.status === 'ready'
       ? {
           status: 'ready',

@@ -4,7 +4,7 @@ import { isHostSettingsDomain, normalizeHostSettingsChange, type HostSettingsSna
 import { inspectAppearanceSettings, onAppearanceSettingsChanged } from '../appearance-settings-store.js';
 import { commitThroughUpstreamSection, isUpstreamSectionDomain } from './upstreamSections.js';
 import { inspectDatabaseSizeWarningSettings, onDatabaseSizeWarningSettingsChanged, commitDatabaseSizeWarningSettings } from '../database-size-warning-settings.js';
-import { inspectPersonalization, onPersonalizationChanged, commitPersonalization, currentSettingsOwner, assertSettingsOwner, settingsOwnerKey } from './personalization.js';
+import { readPersonalization, commitPersonalization, currentSettingsOwner, assertSettingsOwner, settingsOwnerKey } from './personalization.js';
 import { inspectNewTaskDefaults, onNewTaskDefaultsChanged, commitNewTaskDefaults } from './new-task-defaults.js';
 import { SettingsOperationJournal, HostSettingsError } from './operations.js';
 import { OverrideSettingsError } from '../maker-host/override-settings-file.js';
@@ -12,17 +12,17 @@ import { OverrideSettingsError } from '../maker-host/override-settings-file.js';
 /** Synchronous fresh read. No auth loading, repairs, network, defaults writes or prompt bodies. */
 export function readHostSettings(): HostSettingsSnapshot {
   const ownerStamp = currentSettingsOwner();
-  const personalization = inspectPersonalization();
   return {
     ownerStamp,
     newTaskDefaults: inspectNewTaskDefaults(),
-    personalization: personalization.status === 'ready' ? { ...personalization, value: { isCustomized: personalization.isCustomized }, defaults: { isCustomized: false } } : personalization,
+    // The custom instructions live in the app window and are read asynchronously (inspectDomain).
+    personalization: { status: 'unavailable', revision: null },
     databaseWarning: inspectDatabaseSizeWarningSettings(),
     appearance: inspectAppearanceSettings(),
   };
 }
 export function onHostSettingsChanged(listener: () => void): () => void {
-  const off = [onNewTaskDefaultsChanged(listener), onPersonalizationChanged(listener), onDatabaseSizeWarningSettingsChanged(listener), onAppearanceSettingsChanged(listener)];
+  const off = [onNewTaskDefaultsChanged(listener), onDatabaseSizeWarningSettingsChanged(listener), onAppearanceSettingsChanged(listener)];
   return () => off.forEach(dispose => dispose());
 }
 export interface HostSettingsCaller {
@@ -44,6 +44,11 @@ export function configureHostSettingsApplication(value: Application): void { app
 const journal = new SettingsOperationJournal();
 async function inspectDomain(domain: HostSettingsDomain, workspaceId?: string) {
   if (isModelSettingsDomain(domain)) return application?.models ? application.models.read(domain) : { status: 'unavailable' as const, revision: null };
+  if (domain === 'personalization') {
+    // Reading only reports whether instructions are set, never the text.
+    const state = await readPersonalization();
+    return state.status === 'ready' ? { ...state, value: { isCustomized: state.isCustomized }, defaults: { isCustomized: false } } : state;
+  }
   return isAdditionalSettingsDomain(domain) ? readAdditionalSettings(domain, workspaceId) : readHostSettings()[domain];
 }
 function validateScope(domain: HostSettingsDomain, workspaceId: unknown, writing = false): void {

@@ -20,8 +20,7 @@ vi.mock('../catalog.js', () => ({ validateSettingsModelSelection: vi.fn(), refre
 vi.mock('../new-task-defaults.js', () => ({ hostOwnsNewTaskDefaults: () => true, readNewTaskPreferenceHistory: fixture.history, saveNewTaskPreferenceHistory: vi.fn() }));
 vi.mock('../personalization.js', () => ({
   currentSettingsOwner: () => fixture.snapshot?.ownerStamp,
-  assertSettingsOwner: vi.fn(), importLegacyPersonalization: vi.fn(),
-  inspectPersonalization: () => ({ status: 'ready', value: { userPrompt: 'fixture-body' }, defaults: { userPrompt: '' }, customizedKeys: ['userPrompt'], revision: 'prompt-revision', isCustomized: true }),
+  assertSettingsOwner: vi.fn(),
 }));
 vi.mock('../additionalModels.js', () => ({ readModelSettings: vi.fn(), validateModelSettingsChange: vi.fn(), commitModelSettings: vi.fn() }));
 vi.mock('../additionalApplication.js', () => ({ applyAdditionalSettings: vi.fn() }));
@@ -45,20 +44,20 @@ beforeEach(() => {
     ownerStamp: { dataOwnerId: 'fixture-owner', ownerGeneration: 1 },
     newTaskDefaults: { status: 'unreadable', revision: null },
     personalization: { status: 'ready', value: { isCustomized: true }, defaults: { isCustomized: false }, customizedKeys: ['userPrompt'], revision: 'prompt-revision', isCustomized: true },
-    databaseWarning: { status: 'unavailable', revision: null },
+    databaseWarning: { status: 'ready', value: { thresholdGiB: 10, disabled: false }, defaults: { thresholdGiB: 10, disabled: false }, customizedKeys: [], revision: 'warning-revision', isCustomized: false },
     appearance: { status: 'unavailable', revision: null },
   };
 });
 
 describe('原生 Host 设置快照的领域隔离', () => {
-  it('默认值坏文件保留不可读状态，不让历史读取阻断个性化查询', async () => {
+  it('默认值坏文件保留不可读状态，不让历史读取阻断其它领域', async () => {
     const result = await fixture.handlers.get('host-settings:get')!({ sender: { id: 1 } }) as NativeHostSettingsSnapshot;
     expect(fixture.trusted).toHaveBeenCalled();
     expect(fixture.history).not.toHaveBeenCalled();
     expect(result.newTaskDefaults).toEqual({ status: 'unreadable', revision: null });
     expect(result.history).toBeNull();
-    expect(result.userPrompt).toMatchObject({ status: 'ready', value: { userPrompt: 'fixture-body' } });
-    expect(result.operationIds).toEqual({ personalization: 'operation-personalization' });
+    // Custom instructions are edited in the window itself, so they get no Host operation.
+    expect(result.operationIds).toEqual({ databaseWarning: 'operation-databaseWarning' });
   });
 
   it('模型目录不可用仅封闭新任务领域，其它设置仍可读取', async () => {
@@ -67,7 +66,7 @@ describe('原生 Host 设置快照的领域隔离', () => {
     expect(result.newTaskDefaults).toEqual({ status: 'unavailable', revision: null });
     expect(result.history).toBeNull();
     expect(fixture.history).not.toHaveBeenCalled();
-    expect(result.userPrompt.status).toBe('ready');
+    expect(result.databaseWarning.status).toBe('ready');
     expect(result.operationIds.newTaskDefaults).toBeUndefined();
   });
 

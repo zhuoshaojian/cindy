@@ -50,7 +50,7 @@ vi.mock('../../main/maker-host/createDesktopProviderService.js', () => ({ getDes
 vi.mock('../../main/maker-host/model-visibility-mirror.js', () => ({ getModelVisibilityOverride: state.forbidden, waitForModelVisibilityMirror: state.forbidden }));
 vi.mock('../../main/maker-host/newMakerDefaultsCache.js', () => ({ getSelectedNewMakerRoute: state.forbidden }));
 // 四域及桌面 profile 使用显式 DI；默认入口若被误用立即失败。
-vi.mock('../../main/host-settings/personalization.js', () => ({ currentSettingsOwner: state.forbidden, inspectPersonalizationForSnapshot: state.forbidden }));
+vi.mock('../../main/host-settings/personalization.js', () => ({ currentSettingsOwner: state.forbidden }));
 vi.mock('../../main/host-settings/new-task-defaults.js', () => ({ inspectNewTaskDefaultsForSnapshot: state.forbidden }));
 vi.mock('../../main/appearance-settings-store.js', () => ({ inspectAppearanceSettings: state.forbidden }));
 vi.mock('../../main/database-size-warning-settings.js', () => ({ inspectDatabaseSizeWarningSettings: state.forbidden }));

@@ -9327,8 +9327,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         });
       });
     }
-    // 托管云实例由执行 Host 提供个性化正文，不接受控制端或 Renderer 传来的副本。
-    captureHostPersonalization(o);
+    // 托管云实例用实例自己保存的个性化正文，不用控制端传来的副本。
+    await captureHostPersonalization(o);
     assertAccess?.();
     await options.waitForAccountProviderModelsReady();
     assertAccess?.();

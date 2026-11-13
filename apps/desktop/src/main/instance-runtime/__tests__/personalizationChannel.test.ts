@@ -108,7 +108,7 @@ describe('cloud personalization channel', () => {
   it('hides storage failures behind PRECONDITION_FAILED', async () => {
     const { channel } = setup({
       commit: async () => {
-        throw new Error('EACCES /home/cindy/.config/host-personalization.json');
+        throw new Error('PREFERENCE_CONFIRMATION_TIMEOUT');
       },
     });
     await expect(

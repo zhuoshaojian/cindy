@@ -14,6 +14,16 @@ vi.mock('../../appearance-settings-ipc.js', async () => {
     resetAppearanceFromSettings: async () => { return store.resetAppearanceSettings(); },
   };
 });
+// Custom instructions live in the app window, as upstream keeps them; this stands in for that window.
+const appWindow = vi.hoisted(() => ({ userPrompt: '' }));
+vi.mock('../../app-settings/preferences.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../app-settings/preferences.js')>(),
+  manageAppPreferences: async (operation: string, _patch?: unknown, _visibility?: unknown, _engine?: unknown, userPrompt?: string) => {
+    if (operation !== 'user-prompt') throw new Error('PREFERENCE_WINDOW_NOT_READY');
+    if (userPrompt !== undefined) appWindow.userPrompt = userPrompt;
+    return { value: {}, userPrompt: appWindow.userPrompt };
+  },
+}));
 // New-task defaults are Host-owned only on a managed cloud instance.
 vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../logger.js', () => ({ createLogger: () => ({ info() {}, warn() {}, error() {}, debug() {} }) }));
@@ -35,6 +45,7 @@ import { settingsWebResultSchema, type SettingsWebCommand, type SettingsWebEnvel
 const input = (command: SettingsWebCommand, sessionKey = 'a'.repeat(64)): SettingsWebEnvelope => ({ requestId: randomUUID(), runtimeId: randomUUID(), sessionKey, expiresAtMs: Date.now() + 30_000, command });
 beforeEach(() => {
   isolated.root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-web-settings-')); isolated.generation += 1;
+  appWindow.userPrompt = '';
   configureHostSettingsApplication({ databaseWarning() {}, validateNewTaskDefaults: async () => {} });
 });
 afterEach(() => fs.rmSync(isolated.root, { recursive: true, force: true }));
@@ -74,7 +85,10 @@ describe('web adapter uses actual Host settings files', () => {
     expect(settingsWebResultSchema.parse(receipt)).toMatchObject({ receipt: { saved: true } });
     const after = settingsWebResultSchema.parse(await executeWebSettingsRequest(input({ kind: 'read', domain }), () => {}));
     expect(after).toMatchObject({ settings: { customizedKeys: Object.keys(set), isCustomized: true } });
-    if (domain === 'personalization') expect(JSON.stringify(after)).not.toContain('fixture custom prompt');
+    if (domain === 'personalization') {
+      expect(JSON.stringify(after)).not.toContain('fixture custom prompt');
+      expect(appWindow.userPrompt).toBe('fixture custom prompt');
+    }
   });
   it('rejects a revision from another browser session and never changes the file', async () => {
     const before = await executeWebSettingsRequest(input({ kind: 'read', domain: 'databaseWarning' }), () => {});

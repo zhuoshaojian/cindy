@@ -11,7 +11,7 @@ import {
   applyHostModelEffort,
   readNewTaskPreferenceHistory,
 } from '../host-settings/new-task-defaults.js';
-import { commitPersonalization, currentSettingsOwner, inspectPersonalization } from '../host-settings/personalization.js';
+import { commitPersonalization, currentSettingsOwner, readPersonalization } from '../host-settings/personalization.js';
 import { createLogger } from '../logger.js';
 import { getCustomProvider } from '../maker-host/custom-provider-store.js';
 import { activeDataOwnerId, ownerScopedPath } from '../ownerContext.js';
@@ -92,7 +92,7 @@ export function registerCloudProviderSettings(): () => void {
     createPersonalizationChannel({
       isInstanceOwner,
       owner: currentSettingsOwner,
-      inspect: inspectPersonalization,
+      inspect: readPersonalization,
       commit: commitPersonalization,
     }),
   );

@@ -11,18 +11,17 @@ import { USER_PROMPT_MAX_LENGTH } from '@/lib/userPrompt.constants';
 import { toast } from '@/lib/toast';
 
 export function UserPromptSection() {
-  const state = useUserPrompt();
-  if ('ready' in state) return <UserPromptEditor {...state} />;
-  // 普通桌面沿用上游 localStorage：随时可写、同步保存，外部值变化即刷新草稿。
+  const { value, setValue } = useUserPrompt();
+  // 与上游一样存在 localStorage：随时可写、同步保存，外部值变化即刷新草稿。
   return (
     <UserPromptEditor
-      value={state.value}
+      value={value}
       ready
       unavailable={false}
-      customized={state.value !== ''}
+      customized={value !== ''}
       revision="local"
-      ownerKey={`local:${state.value}`}
-      setValue={state.setValue}
+      ownerKey={`local:${value}`}
+      setValue={setValue}
     />
   );
 }

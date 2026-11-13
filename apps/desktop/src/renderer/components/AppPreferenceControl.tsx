@@ -1,5 +1,6 @@
 import { setModelVisibility, resetModelVisibilities, isModelEnabled, isModelVisibilityCustomized } from '@/state/modelVisibilityPrefs';
 import { clearModelEngineOverride, getModelEngineOverride, listModelEngineOverrides, setModelEngineOverride } from '@/state/modelEnginePrefs';
+import { getUserPrompt, setUserPrompt } from '@/lib/userPromptStore';
 import { setMakerMemoryEnabled } from '@/lib/memorySettingsStore';
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
@@ -116,6 +117,14 @@ export function AppPreferenceControl() {
           }
           modelEngines = listModelEngineOverrides();
         }
+        let userPrompt: string | undefined;
+        if (request.operation === 'user-prompt') {
+          if (request.userPrompt !== undefined) {
+            setUserPrompt(request.userPrompt);
+            if (getUserPrompt() !== request.userPrompt) throw new Error('USER_PROMPT_NOT_SAVED');
+          }
+          userPrompt = getUserPrompt();
+        }
         if (request.operation === 'reset') throw new Error('RESET_NOT_SUPPORTED');
         if (request.operation === 'update') {
           const patch = appPreferenceSchema.parse(request.patch);
@@ -129,7 +138,7 @@ export function AppPreferenceControl() {
         }
         bridge.reply({ requestId: request.requestId, ok: true, state: current.current.state,
           themeFamilies: getThemeFamilies().map(family => family.id), ...(modelVisibility ? { modelVisibility } : {}),
-          ...(modelEngines ? { modelEngines } : {}) });
+          ...(modelEngines ? { modelEngines } : {}), ...(userPrompt !== undefined ? { userPrompt } : {}) });
       } catch { bridge.reply({ requestId: request.requestId, ok: false }); }
     });
   }, []);

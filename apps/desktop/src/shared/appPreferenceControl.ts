@@ -29,10 +29,12 @@ export interface AppPreferenceRequest {
   requestId: string;
   ownerStamp: DataOwnerPushStamp;
   expiresAt: number;
-  operation: 'get' | 'update' | 'reset' | 'model-visibility' | 'model-engine';
+  operation: 'get' | 'update' | 'reset' | 'model-visibility' | 'model-engine' | 'user-prompt';
   modelVisibility?: { target: { providerId: string; agent: 'claude-code' | 'codex' | 'pi'; modelId: string }; visible: boolean | null; defaultEnabled?: boolean };
   /** With operation `model-engine`: the engine to remember for a model, or null to follow the recommendation again; omitted to only read. */
   modelEngine?: { providerId: string; modelId: string; agent: 'cc' | 'codex' | 'pi' | null };
+  /** With operation `user-prompt`: the custom instructions to save (empty clears them); omitted to only read. */
+  userPrompt?: string;
   patch?: AppPreferencePatch;
 }
 export interface AppPreferenceReply {
@@ -43,6 +45,8 @@ export interface AppPreferenceReply {
   modelVisibility?: { visible: boolean; customized: boolean };
   /** Remembered engines by `providerId:modelId`. */
   modelEngines?: Record<string, 'cc' | 'codex' | 'pi'>;
+  /** The saved custom instructions. */
+  userPrompt?: string;
 }
 export interface AppPreferenceControlBridge {
   onSettingsChanged(listener: (event: { section: string; ownerStamp: DataOwnerPushStamp }) => void): () => void;
