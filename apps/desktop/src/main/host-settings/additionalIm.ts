@@ -42,6 +42,15 @@ export function inspectImSettings(domain: ImSettingsDomain): State {
   } catch { return { status: 'unreadable', revision: null }; }
 }
 export async function commitImSettings(domain: ImSettingsDomain, change: { set: Values; clear: string[] }, options: OverrideSettingsCommitOptions): Promise<State & { status: 'ready' }> {
+  const routeChannel = channels[domain];
+  // As on the settings page: before a channel's route default changes, older tasks still on the
+  // old default get their follow records; a failed backfill blocks the save.
+  if (routeChannel && [...Object.keys(change.set), ...change.clear].some(key => key === 'agentKind' || Object.hasOwn(agents, key))) {
+    const { prepareImDefaultSettingsChange } = await import('../im/index.js');
+    try { await prepareImDefaultSettingsChange(routeChannel); }
+    catch { throw new HostSettingsError('SAVE_FAILED'); }
+    options.assertCurrent?.();
+  }
   const store = createHostImDefaultsStore();
   const result = await store.commitAtomic(state => {
     if (inspectImSettings(domain).status !== 'ready') throw new HostSettingsError('UNREADABLE');

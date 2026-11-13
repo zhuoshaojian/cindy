@@ -168,7 +168,6 @@ export async function commitAdditionalSettings(domain: AdditionalSettingsDomain,
   }
   const result = await storeFor(domain).commitAtomic(state => {
     const next = { ...state.value, ...Object.fromEntries(change.clear.map(key => [key, state.defaults[key]])), ...change.set };
-    if (domain === 'gitSafety') return { set: Object.hasOwn(change.set, 'autoSnapshotEnabled') ? { mode: change.set.autoSnapshotEnabled ? 'all-projects' : 'off' } : {}, clear: change.clear.includes('autoSnapshotEnabled') ? ['mode', 'autoSnapshotEnabled'] : ['autoSnapshotEnabled'] };
     if (domain === 'collaboration' && Number(next.workerHardLimit) < Number(next.workerSoftLimit)) throw new HostSettingsError('INVALID_PARAMS');
     if (domain === 'terminal' && change.set.defaultShellPref !== undefined && change.set.defaultShellPref !== 'auto'
       && !probeAvailableShells().some(shell => shell.id === change.set.defaultShellPref)) throw new HostSettingsError('INVALID_PARAMS');

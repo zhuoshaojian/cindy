@@ -6,7 +6,7 @@ import { classifyVisionCapability, isModelSelectableForNewRoute, isModelVisible 
 import { additionalSettingsSchemas, settingsValuesEqual, isImSettingsDomain, isModelPreferenceDomain, type ModelSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import { getSubagentModelSettingsStore } from '../maker-host/subagent-model-settings-store.js';
-import { getAuxiliaryModelSettingsStore, commitAuxiliaryModelSettings, inspectAuxiliaryModelSettings } from '../utility-model/auxiliary-model-settings-store.js';
+import { getAuxiliaryModelSettingsStore, inspectAuxiliaryModelSettings } from '../utility-model/auxiliary-model-settings-store.js';
 import { getVisionBridgeSettingsStore } from '../vision-bridge/vision-bridge-settings-store.js';
 import { getBotModelChainSettingsStore, readBotModelChainSettingsState } from '../maker-host/bot-model-chain-settings-store.js';
 import { ownerScopedUserDataPath } from '../appSessionState.js';
@@ -140,19 +140,8 @@ export async function validateModelSettingsChange(domain: ModelSettingsDomain, c
 export async function commitModelSettings(domain: ModelSettingsDomain, change: { set: Values; clear: string[] }, options: OverrideSettingsCommitOptions): Promise<State & { status: 'ready' }> {
   if (isModelPreferenceDomain(domain)) return commitModelPreferences(domain, change, options);
   if (isImSettingsDomain(domain)) return commitImSettings(domain, change, options);
-  let mutation = change;
-  if (domain === 'subagentModel') {
-    const set = { ...change.set }; const clear = [...change.clear];
-    if (Object.hasOwn(set, 'claudeCode')) {
-      const route = set.claudeCode as { providerId: string | null; modelId: string } | null;
-      set.claudeCode = route?.modelId ?? null; set.claudeCodeProviderId = route?.providerId ?? null;
-    }
-    if (clear.includes('claudeCode')) clear.push('claudeCodeProviderId');
-    mutation = { set, clear };
-  }
-  const result = domain === 'auxiliaryModel'
-    ? await commitAuxiliaryModelSettings(mutation as never, options)
-    : await storeFor(domain).commitAtomic(mutation, options);
+  // subagentModel, auxiliaryModel and visionBridge are saved through their upstream sections.
+  const result = await storeFor(domain).commitAtomic(change, options);
   return project(domain, result as State) as State & { status: 'ready' };
 }
 

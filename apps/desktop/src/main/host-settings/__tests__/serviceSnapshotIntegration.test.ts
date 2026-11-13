@@ -10,6 +10,15 @@ const isolated = vi.hoisted(() => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('electron', () => ({ app: { getPath: () => isolated.root } }));
+const appearanceApplied = vi.hoisted(() => vi.fn());
+// Appearance saves through its upstream section; keep the real store write without window side effects.
+vi.mock('../../appearance-settings-ipc.js', async () => {
+  const store = await vi.importActual<typeof import('../../appearance-settings-store.js')>('../../appearance-settings-store.js');
+  return {
+    updateAppearanceFromSettings: async (patch: never) => { appearanceApplied(); return store.writeAppearanceSettingsPatch(patch); },
+    resetAppearanceFromSettings: async () => { appearanceApplied(); return store.resetAppearanceSettings(); },
+  };
+});
 // Profile preferences are Host-owned only on a managed cloud instance.
 vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../logger.js', () => ({ createLogger: () => isolated.logger }));
@@ -33,7 +42,6 @@ import { importLegacyPersonalization, inspectPersonalizationForSnapshot, setting
 import { setNewTaskDefaultRecommendation, inspectNewTaskDefaultsForSnapshot } from '../new-task-defaults.js';
 import { writeDatabaseSizeWarningSettings } from '../../database-size-warning-settings.js';
 
-const appearance = vi.fn();
 const warning = vi.fn();
 const validate = vi.fn(async () => {});
 const caller = { id: 'fixture-session', assertCurrent: () => {} };
@@ -46,8 +54,8 @@ async function change(domain: HostSettingsDomain, values: Pick<HostSettingsUpdat
 beforeEach(() => {
   isolated.root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-service-snapshot-'));
   isolated.owner = 'fixture-owner'; isolated.generation += 1; isolated.pending = false;
-  vi.clearAllMocks(); appearance.mockImplementation(() => {}); warning.mockImplementation(() => {});
-  configureHostSettingsApplication({ appearance, databaseWarning: warning, validateNewTaskDefaults: validate });
+  vi.clearAllMocks(); warning.mockImplementation(() => {});
+  configureHostSettingsApplication({ databaseWarning: warning, validateNewTaskDefaults: validate });
 });
 afterEach(() => {
   for (const dispose of disposers.splice(0)) dispose();
@@ -198,7 +206,7 @@ describe('真实 Host 领域保存到脱敏快照的集成', () => {
 
   it('字体正文只留 Host，快照只带自定义标志和数值', async () => {
     await updateHostSettings(caller, await change('appearance', { set: { uiFamily: '仅本地测试字体', uiSize: 16, windowZoom: 1.2 } }));
-    expect(appearance).toHaveBeenCalledOnce();
+    expect(appearanceApplied).toHaveBeenCalledOnce();
     const snapshot = projectSettingsSnapshot(readHostSettings());
     expect(snapshot.appearance).toMatchObject({ fields: { uiFontCustomized: { value: true, source: 'override' }, uiFontSize: { value: 16 }, zoomFactor: { value: 1.2 } } });
     expect(JSON.stringify(snapshot)).not.toContain('仅本地测试字体');

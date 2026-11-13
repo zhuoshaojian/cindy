@@ -35,6 +35,7 @@ import { readMemorySettings } from '../../maker-host/memory-settings-store.js';
 import { readCollaborationSettings } from '../../maker-host/collaboration-settings-store.js';
 import { getDefaultShellPref } from '../../terminal/terminalPrefsStore.js';
 import { configureUserDataDir } from '../../userDataPath.js';
+import { registerUpstreamRuntimeSectionsForTest } from './upstreamSectionFixture.js';
 
 const caller = { id: 'test-session', assertCurrent() {} };
 async function request(domain: HostSettingsDomain, values: { set?: Record<string, unknown>; clear?: string[] }) {
@@ -42,6 +43,7 @@ async function request(domain: HostSettingsDomain, values: { set?: Record<string
   if (state.status !== 'ready' || !('operationId' in state)) throw new Error(`Not ready: ${domain}`);
   return { domain, expectedRevision: state.revision, operationId: state.operationId, ...values };
 }
+registerUpstreamRuntimeSectionsForTest();
 beforeEach(() => { context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-catalog-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; vi.clearAllMocks(); });
 afterEach(() => fs.rmSync(context.root, { recursive: true, force: true }));
 

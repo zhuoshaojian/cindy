@@ -7,7 +7,6 @@ import { NATIVE_HOST_SETTINGS_DOMAINS, isHostSettingsDomain, type HostSettingsUp
 import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer.js';
 import { isAppContentWindow } from '../windowFocusClassifier.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
-import { applySavedAppearance } from '../appearance-settings-ipc.js';
 import { readHostSettings, getHostSettings, updateHostSettings, onHostSettingsChanged, configureHostSettingsApplication, type HostSettingsCaller } from './index.js';
 import { currentSettingsOwner, assertSettingsOwner, inspectPersonalization, importLegacyPersonalization } from './personalization.js';
 import { hostOwnsNewTaskDefaults, readNewTaskPreferenceHistory, saveNewTaskPreferenceHistory } from './new-task-defaults.js';
@@ -49,7 +48,7 @@ export function registerHostSettingsIpc(databaseWarningChanged: () => void): voi
   if (registered) return;
   registered = true;
   configureAdditionalNativeOperations(nativeSettingsOperations);
-  configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, additional: applyAdditionalSettings, appearance: state => applySavedAppearance(state.value), databaseWarning: databaseWarningChanged, validateNewTaskDefaults: validateSettingsModelSelection });
+  configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, additional: applyAdditionalSettings, databaseWarning: databaseWarningChanged, validateNewTaskDefaults: validateSettingsModelSelection });
   ipcMain.on('host-settings:host-owned', event => { event.returnValue = hostOwnsNewTaskDefaults(); });
   // Ordinary desktops keep the new-task draft and personalization in renderer localStorage.
   if (!hostOwnsNewTaskDefaults()) return;

@@ -1,7 +1,8 @@
 import { isAdditionalSettingsDomain, isModelSettingsDomain, additionalSettingsMetadata } from '../../shared/settingsEditableCatalog.js';
 import { readAdditionalSettings, commitAdditionalSettings } from './additional.js';
 import { isHostSettingsDomain, normalizeHostSettingsChange, type HostSettingsSnapshot, type HostSettingsDomain, type HostSettingsUpdate, type NewTaskDefaultSettings, type HostSettingsReceipt } from '../../shared/hostSettings.js';
-import { inspectAppearanceSettings, onAppearanceSettingsChanged, commitAppearanceSettings } from '../appearance-settings-store.js';
+import { inspectAppearanceSettings, onAppearanceSettingsChanged } from '../appearance-settings-store.js';
+import { commitThroughUpstreamSection, isUpstreamSectionDomain } from './upstreamSections.js';
 import { inspectDatabaseSizeWarningSettings, onDatabaseSizeWarningSettingsChanged, commitDatabaseSizeWarningSettings } from '../database-size-warning-settings.js';
 import { inspectPersonalization, onPersonalizationChanged, commitPersonalization, currentSettingsOwner, assertSettingsOwner, settingsOwnerKey } from './personalization.js';
 import { inspectNewTaskDefaults, onNewTaskDefaultsChanged, commitNewTaskDefaults } from './new-task-defaults.js';
@@ -34,7 +35,6 @@ interface Application {
     validate: typeof import('./additionalModels.js').validateModelSettingsChange;
     commit: typeof import('./additionalModels.js').commitModelSettings;
   };
-  appearance: (value: HostSettingsSnapshot['appearance'] & { status: 'ready' }) => void;
   databaseWarning: () => void;
   additional?: (domain: import('../../shared/settingsEditableCatalog.js').AdditionalSettingsDomain, revision: string, changedKeys?: readonly string[]) => Promise<void>;
   validateNewTaskDefaults: (value: NewTaskDefaultSettings) => Promise<void>;
@@ -98,14 +98,18 @@ export async function updateHostSettings(caller: HostSettingsCaller, input: Host
     const options = { expectedRevision: input.expectedRevision, assertCurrent: () => { assertCurrent(); modelValidation?.assertCurrent(); } };
     let revision: string | undefined;
     let applicationFailed = false;
+    const upstreamSection = isUpstreamSectionDomain(change.domain);
     try {
       // Runtime validation above closes the grammar; these casts only express the correlated domain to TS.
-      if (modelAdapter && isModelSettingsDomain(change.domain)) revision = (await modelAdapter.commit(change.domain, change, options)).revision;
+      if (upstreamSection) {
+        await commitThroughUpstreamSection(change.domain as never, change, before as never, options.assertCurrent);
+        const after = await inspectDomain(input.domain, input.workspaceId);
+        revision = after.status === 'ready' ? after.revision : undefined;
+      } else if (modelAdapter && isModelSettingsDomain(change.domain)) revision = (await modelAdapter.commit(change.domain, change, options)).revision;
       else if (isAdditionalSettingsDomain(change.domain)) {
         const result = await commitAdditionalSettings(change.domain, change, options, input.workspaceId);
         revision = result.revision; applicationFailed = result.applicationFailed === true;
       }
-      else if (change.domain === 'appearance') revision = (await commitAppearanceSettings(change as never, options)).revision;
       else if (change.domain === 'databaseWarning') revision = (await commitDatabaseSizeWarningSettings(change as never, options)).revision;
       else if (change.domain === 'personalization') revision = (await commitPersonalization(change as never, options)).revision ?? undefined;
       else revision = (await commitNewTaskDefaults(change as never, options)).revision;
@@ -118,12 +122,10 @@ export async function updateHostSettings(caller: HostSettingsCaller, input: Host
     let applied: HostSettingsReceipt['application'] = additionalEffect === 'next_agent_start' ? 'next_agent_start' : additionalEffect === 'next_task' || additionalEffect === 'next_connection' ? 'next_task' : change.domain === 'newTaskDefaults' ? 'next_task' : change.domain === 'personalization' ? 'next_agent_start' : 'applied';
     try {
       assertCurrent();
-      if (isAdditionalSettingsDomain(change.domain) && application?.additional && revision) await application.additional(change.domain, revision, [...Object.keys(change.set), ...change.clear]);
-      else if (change.domain === 'appearance') {
-        const state = inspectAppearanceSettings();
-        if (state.status !== 'ready' || !application) throw new Error('not ready');
-        application.appearance(state);
-      } else if (change.domain === 'databaseWarning') {
+      // Upstream sections apply their own changes.
+      if (upstreamSection) { /* applied by the section */ }
+      else if (isAdditionalSettingsDomain(change.domain) && application?.additional && revision) await application.additional(change.domain, revision, [...Object.keys(change.set), ...change.clear]);
+      else if (change.domain === 'databaseWarning') {
         if (!application) throw new Error('not ready');
         application.databaseWarning();
       }

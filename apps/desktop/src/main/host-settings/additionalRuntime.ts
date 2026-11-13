@@ -10,11 +10,6 @@ let modelRuntime: { refreshContext(): Promise<void>; accessChanged(): void; refr
 export function configureAdditionalModelRuntime(value: NonNullable<typeof modelRuntime>) { modelRuntime = value; }
 export function additionalModelRuntime() { return modelRuntime; }
 
-type LiveApplication = Pick<typeof import('../maker-ipc/register.js'), 'applyMemoryChangeWithCodexRestart' | 'applyCodexSpawnConfigChangeWithRestart' | 'shutdownAgentMcpEnvironmentsBestEffort'>;
-let liveApplication: LiveApplication | null = null;
-export function configureAdditionalLiveApplication(value: LiveApplication) { liveApplication = value; }
-export function additionalLiveApplication() { return liveApplication; }
-
 type NativeOperations = typeof import('./additionalNative.js').nativeSettingsOperations;
 let nativeOperations: NativeOperations | null = null;
 export function configureAdditionalNativeOperations(value: NativeOperations) { nativeOperations = value; }

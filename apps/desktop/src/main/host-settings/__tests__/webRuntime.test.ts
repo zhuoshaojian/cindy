@@ -6,6 +6,14 @@ import { randomUUID } from 'node:crypto';
 
 const isolated = vi.hoisted(() => ({ root: '', generation: 1 }));
 vi.mock('electron', () => ({ app: { getPath: () => isolated.root }, net: { fetch: vi.fn() } }));
+// Appearance saves through its upstream section; keep the real store write without window side effects.
+vi.mock('../../appearance-settings-ipc.js', async () => {
+  const store = await vi.importActual<typeof import('../../appearance-settings-store.js')>('../../appearance-settings-store.js');
+  return {
+    updateAppearanceFromSettings: async (patch: never) => { return store.writeAppearanceSettingsPatch(patch); },
+    resetAppearanceFromSettings: async () => { return store.resetAppearanceSettings(); },
+  };
+});
 // New-task defaults are Host-owned only on a managed cloud instance.
 vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../logger.js', () => ({ createLogger: () => ({ info() {}, warn() {}, error() {}, debug() {} }) }));
@@ -27,7 +35,7 @@ import { settingsWebResultSchema, type SettingsWebCommand, type SettingsWebEnvel
 const input = (command: SettingsWebCommand, sessionKey = 'a'.repeat(64)): SettingsWebEnvelope => ({ requestId: randomUUID(), runtimeId: randomUUID(), sessionKey, expiresAtMs: Date.now() + 30_000, command });
 beforeEach(() => {
   isolated.root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-web-settings-')); isolated.generation += 1;
-  configureHostSettingsApplication({ appearance() {}, databaseWarning() {}, validateNewTaskDefaults: async () => {} });
+  configureHostSettingsApplication({ databaseWarning() {}, validateNewTaskDefaults: async () => {} });
 });
 afterEach(() => fs.rmSync(isolated.root, { recursive: true, force: true }));
 describe('web adapter uses actual Host settings files', () => {

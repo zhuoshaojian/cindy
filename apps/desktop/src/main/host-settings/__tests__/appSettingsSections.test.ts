@@ -30,7 +30,7 @@ const manage = (input: Parameters<ReturnType<typeof createAppSettingsService>>[0
 
 beforeEach(() => {
   isolated.root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-app-sections-')); isolated.generation += 1;
-  configureHostSettingsApplication({ appearance() {}, databaseWarning() {}, validateNewTaskDefaults: async () => {} });
+  configureHostSettingsApplication({ databaseWarning() {}, validateNewTaskDefaults: async () => {} });
   registerHostAppSettingsSections();
 });
 afterEach(() => fs.rmSync(isolated.root, { recursive: true, force: true }));

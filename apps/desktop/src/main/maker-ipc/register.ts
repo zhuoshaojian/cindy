@@ -156,7 +156,7 @@ import { configureAppDefaultModelSelection, inspectAppDefaultModel } from './app
 import { configureCloudMemoryManagement, configureCloudMcpCredentials } from '../host-settings/managementData.js';
 import { cloudMcpCredentialStore } from '../secrets/providerSecretStore.js';
 import { cloudManagementProviderRegistry, isCloudManagementInvocation, cloudManagementExecution, registerPrivateCloudManagementCall } from '../host-settings/managementCalls.js';
-import { configureAdditionalModelRuntime, configureAdditionalLiveApplication } from '../host-settings/additionalRuntime.js';
+import { configureAdditionalModelRuntime } from '../host-settings/additionalRuntime.js';
 import { installHostNewMakerDefaultsSource } from '../host-settings/cache.js';
 import { hostOwnsNewTaskDefaults, onNewTaskDefaultsChanged, commitNewTaskDefaults, applyHostRemoteDraftPreference } from '../host-settings/new-task-defaults.js';
 import { onModelPresentationPreferencesChanged } from '../host-settings/model-presentation-preferences.js';
@@ -2511,7 +2511,7 @@ function memorySettingsWire() {
  * bridge」的顺序约束, 并用翻转守卫包住 (同值调用不白杀 bridge)。失败只记
  * warn — 设置已落盘, 旧 bridge 的失配窗口由下一次 bridge 重建收敛。
  */
-export async function shutdownAgentMcpEnvironmentsBestEffort(reason: string): Promise<void> {
+async function shutdownAgentMcpEnvironmentsBestEffort(reason: string): Promise<void> {
   // Codex 与 Pi 各有一个懒启动的 MCP bridge 单例,server 集合在 doStart 时冻结。MCP /
   // contacts / memory 开关变更后两者都要 invalidate,否则新会话仍连到旧 bridge:被禁用的
   // 工具没被真正撤销、新启用的工具不可用(Pi 侧 codex review P1)。best-effort:失败只 warn,
@@ -2527,7 +2527,7 @@ export async function shutdownAgentMcpEnvironmentsBestEffort(reason: string): Pr
   invalidatePiEnvironment();
 }
 
-export async function applyMemoryChangeWithCodexRestart<T extends object>(
+async function applyMemoryChangeWithCodexRestart<T extends object>(
   parts: MemoryChangeParts<T>,
 ): Promise<T & { codexRestartDeferred: boolean }> {
   // 本次变更若覆盖了一个 pending 登记,被门挡住的会话队列必须在 clear 后补
@@ -6758,7 +6758,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     contextRefresh = next.catch(() => {});
     return next;
   };
-  configureAdditionalLiveApplication({ applyMemoryChangeWithCodexRestart, applyCodexSpawnConfigChangeWithRestart, shutdownAgentMcpEnvironmentsBestEffort });
   configureAdditionalModelRuntime({ pricingChanged: broadcastReferenceModelPricing, refreshTools: async () => { await refreshCodexMcpEnvironment({ restartCodex: restartCodexAfterAuthModeChange, shutdownCodexEnvironment, onDeferred: () => deferredCodexRestartHolder?.schedule('Codex Browser capability routing changed'), logger: log }); }, refreshContext: () => refreshContextSettings(), accessChanged: () => { broadcastToAllWindows(MAKER_PUSH.PROVIDER_CHANGED, {}); refreshTaskRecommendation(); } });
   /**
    * 预算对账（**锁内**，调用方已持 send 锁）：把偏好文件里的当前预算落到活实例。

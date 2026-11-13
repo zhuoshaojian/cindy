@@ -6,6 +6,8 @@ const context = vi.hoisted(() => ({ root: '', owner: 'first', generation: 1, pen
   connected: true, modelsPerAgent: 1, routeStamp: '1:0',
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('electron', () => ({ app: { getPath: () => context.root } }));
+const prepareImDefaults = vi.hoisted(() => vi.fn(async (_channel?: string) => {}));
+vi.mock('../../im/index.js', () => ({ prepareImDefaultSettingsChange: prepareImDefaults }));
 // Model preference axes are Host settings only on a managed cloud instance.
 vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => ({}) }));
 vi.mock('../../logger.js', () => ({ createLogger: () => context.log }));
@@ -67,6 +69,7 @@ import { nativePluginSettings } from '../additionalPlugins.js';
 import { configureAdditionalNativeOperations } from '../additionalRuntime.js';
 import { commitHostModelPrices, getHostModelPriceStore, readModelPriceOverrideView, inspectModelPriceOverrides } from '../../usage/modelPriceOverrideStore.js';
 import { configureUserDataDir } from '../../userDataPath.js';
+import { registerUpstreamRuntimeSectionsForTest } from './upstreamSectionFixture.js';
 const caller = { id: 'model-test', assertCurrent() {} };
 const route = { providerId: 'fixture-provider', modelId: 'fixture-model' };
 async function request(domain: HostSettingsDomain, values: Pick<HostSettingsUpdate, 'set' | 'clear'>) {
@@ -74,7 +77,8 @@ async function request(domain: HostSettingsDomain, values: Pick<HostSettingsUpda
   if (state.status !== 'ready' || !('operationId' in state)) throw new Error(`Not ready: ${domain}`);
   return { domain, expectedRevision: state.revision, operationId: state.operationId, ...values };
 }
-beforeEach(() => { configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, appearance() {}, databaseWarning() {}, async validateNewTaskDefaults() {} }); context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-models-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; context.connected = true; context.modelsPerAgent = 1; vi.clearAllMocks(); });
+registerUpstreamRuntimeSectionsForTest();
+beforeEach(() => { configureHostSettingsApplication({ models: { read: readModelSettings, validate: validateModelSettingsChange, commit: commitModelSettings }, databaseWarning() {}, async validateNewTaskDefaults() {} }); context.root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-models-')); configureUserDataDir(context.root); context.owner = 'first'; context.generation++; context.pending = false; context.connected = true; context.modelsPerAgent = 1; vi.clearAllMocks(); });
 afterEach(() => fs.rmSync(context.root, { recursive: true, force: true }));
 describe('model and IM settings native persistence', () => {
   // A saved remote-Agent route is not representable in this wire version. Reading
@@ -158,11 +162,19 @@ describe('model and IM settings native persistence', () => {
   it('preserves per-channel IM overrides and explicitly chosen defaults', async () => {
     await updateHostSettings(caller, await request('imFeishu', { set: { permissionMode: 'auto' } }));
     expect(await getHostSettings(caller, 'imFeishu')).toMatchObject({ customizedKeys: ['permissionMode'] });
+    // Permission-only saves keep older tasks as they are; a route change records them first.
+    expect(prepareImDefaults).not.toHaveBeenCalled();
     await updateHostSettings(caller, await request('imSlack', { set: { codex: { ...route, effort: 'low' } } }));
+    expect(prepareImDefaults).toHaveBeenCalledExactlyOnceWith('slack');
     expect(readImDefaultSettings('slack').agents.codex).toEqual({ providerId: route.providerId, model: route.modelId, effort: 'low' });
     await updateHostSettings(caller, await request('imFeishu', { clear: ['permissionMode'] }));
     expect((await getHostSettings(caller, 'imFeishu')).status).toBe('ready');
     expect(readImDefaultSettings('slack').agents.codex.model).toBe(route.modelId);
+  });
+  it('does not save a channel route default when older tasks cannot be recorded first', async () => {
+    prepareImDefaults.mockRejectedValueOnce(new Error('fixture backfill failure'));
+    expect(await updateHostSettings(caller, await request('imSlack', { set: { agentKind: 'codex' } }))).toMatchObject({ saved: false, code: 'SAVE_FAILED' });
+    expect(readImDefaultSettings('slack').agentKind).not.toBe('codex');
   });
   it('keeps the existing WeChat agent and permission boundaries', async () => {
     expect(await updateHostSettings(caller, await request('imWechat', { set: { agentKind: 'pi' } }))).toMatchObject({ saved: false });
