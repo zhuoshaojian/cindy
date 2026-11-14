@@ -30,6 +30,7 @@ import { SilentEncryptedRetryCell } from './SilentEncryptedRetryCell';
 import { additionalSettings } from './AdditionalSettings.settings-search';
 
 export function TipsSection() {
+  const { t } = useTranslation();
   const { mode } = useAuth();
   const { enabled: recommendationEnabled, setEnabled: setRecommendationEnabled } =
     usePromptRecommendationPreference();
@@ -42,18 +43,42 @@ export function TipsSection() {
   );
 
   return (
-    <TipsSectionView>
-      <PromptRecommendationCellView
-        enabled={recommendationEnabled}
-        onChange={handleRecommendationToggle}
-      />
-      <SilentEncryptedRetryCell />
-      {additionalSettings.chatEmbedding.isVisible({ mode }) ? <ChatEmbeddingCell /> : null}
-      <MessageNavRailCell />
-    </TipsSectionView>
+    <SettingsSection
+      title={t(personalizationDetailsSettings.compatModeTitle.titleKey)}
+      description={t('settings.compatMode.description')}
+    >
+      <SettingsCard>
+        {/* 输入框推荐提示词:turn 结束后自动预测用户下一步输入 */}
+        <SettingsRow
+          lead={
+            <span
+              className={cn(
+                'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                'bg-[var(--settings-input-bg)]',
+              )}
+            >
+              <Sparkles size={18} className="text-[var(--settings-section-title)]" />
+            </span>
+          }
+          title={<span id={tipsSettings.promptRecommendationLabel.targetId}>{t(tipsSettings.promptRecommendationLabel.titleKey)}</span>}
+          hint={t(tipsSettings.promptRecommendationLabel.descriptionKey)}
+          trailing={
+            <Switch data-setting-id={tipsSettings.promptRecommendationLabel.id}
+              checked={recommendationEnabled}
+              onCheckedChange={handleRecommendationToggle}
+              aria-label={t('settings.promptRecommendation.toggleAria')}
+            />
+          }
+        />
+        <SilentEncryptedRetryCell />
+        {additionalSettings.chatEmbedding.isVisible({ mode }) ? <ChatEmbeddingCell /> : null}
+        <MessageNavRailCell />
+      </SettingsCard>
+    </SettingsSection>
   );
 }
 
+/** The same section frame for the cloud settings page, which supplies its own cells. */
 export function TipsSectionView({
   children,
   headingStatus,
@@ -63,53 +88,13 @@ export function TipsSectionView({
   headingStatus?: React.ReactNode;
 }) {
   const { t } = useTranslation();
-
   return (
     <SettingsSection
       title={t(personalizationDetailsSettings.compatModeTitle.titleKey)}
       description={t('settings.compatMode.description')}
       action={headingStatus}
     >
-      <SettingsCard>
-        {children}
-      </SettingsCard>
+      <SettingsCard>{children}</SettingsCard>
     </SettingsSection>
-  );
-}
-
-/** 输入框推荐提示词:turn 结束后自动预测用户下一步输入 */
-export function PromptRecommendationCellView({
-  enabled,
-  onChange,
-  disabled = false,
-}: {
-  enabled: boolean;
-  onChange(next: boolean): void;
-  disabled?: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <SettingsRow
-      lead={
-        <span
-          className={cn(
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-            'bg-[var(--settings-input-bg)]',
-          )}
-        >
-          <Sparkles size={18} className="text-[var(--settings-section-title)]" />
-        </span>
-      }
-      title={<span id={tipsSettings.promptRecommendationLabel.targetId}>{t(tipsSettings.promptRecommendationLabel.titleKey)}</span>}
-      hint={t(tipsSettings.promptRecommendationLabel.descriptionKey)}
-      trailing={
-        <Switch data-setting-id={tipsSettings.promptRecommendationLabel.id}
-          checked={enabled}
-          onCheckedChange={onChange}
-          disabled={disabled}
-          aria-label={t('settings.promptRecommendation.toggleAria')}
-        />
-      }
-    />
   );
 }

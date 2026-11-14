@@ -40,6 +40,7 @@ import { toast } from '@/lib/toast';
 import { Switch } from '@/components/ui/switch';
 import { Spinner } from '@/components/ui/spinner';
 import { SETTINGS_HINT, SettingsBlock, SettingsCard, SettingsField, SettingsPageHeader, SettingsRow, SettingsSection } from '@/components/ui/settings-rows';
+import { withDefaultOverride, type DefaultOverrideReset } from './DefaultOverrideControls';
 import { useOptionalConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import {
   DropdownMenu,
@@ -78,7 +79,6 @@ import {
   isComputerPermissionReady,
   shouldStartComputerPermissionGuide,
 } from './computerPermissionFlow';
-import { withDefaultOverride, type DefaultOverrideReset } from './DefaultOverrideControls';
 import {
   confirmEnableRealProfile,
   guideFullDiskAccessAfterReadDenied,
@@ -1542,8 +1542,33 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
       description={t('settings.computerUse.description')}
     >
       <SettingsSection>
-        <AutomationCard id="automation-browser">
-          <BrowserAutomationHeader checked={browserEnabled ?? false} disabled={browserEnabled === null || togglePending} onChange={handleToggleBrowser} />
+        <SettingsCard id="automation-browser">
+          <SettingsRow
+            lead={
+              <span
+                className={cn(
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                  'bg-[var(--settings-input-bg)]',
+                )}
+              >
+                <Globe size={16} className="text-[var(--settings-section-title)]" />
+              </span>
+            }
+            title={
+              <span id={computerUseSettings.browserTitle.targetId}>
+                {t(computerUseSettings.browserTitle.titleKey)}
+              </span>
+            }
+            hint={t(computerUseSettings.browserTitle.descriptionKey)}
+            trailing={
+              <Switch data-setting-id={computerUseSettings.browserTitle.id}
+                checked={browserEnabled ?? false}
+                disabled={browserEnabled === null || togglePending}
+                onCheckedChange={handleToggleBrowser}
+                aria-label={t('settings.computerUse.browser.toggleAria')}
+              />
+            }
+          />
           <ConfigurationReadStatus
             label={t(computerUseSettings.browserTitle.titleKey)}
             status={browserRead.status}
@@ -1630,7 +1655,7 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
               )}
             </SettingsBlock>
           ) : null}
-        </AutomationCard>
+        </SettingsCard>
 
         {browserBackendKind === 'external' && availability?.detected ? (
           <p className={SETTINGS_HINT}>
@@ -1643,8 +1668,33 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
       </SettingsSection>
 
       <SettingsSection>
-        <AutomationCard id="automation-computer">
-          <ComputerAutomationHeader checked={computerSwitchChecked} disabled={computerSwitchDisabled} onChange={handleToggleComputer} />
+        <SettingsCard id="automation-computer">
+          <SettingsRow
+            lead={
+              <span
+                className={cn(
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                  'bg-[var(--settings-input-bg)]',
+                )}
+              >
+                <MonitorCog size={16} className="text-[var(--settings-section-title)]" />
+              </span>
+            }
+            title={
+              <span id={computerUseSettings.directControlTitle.targetId}>
+                {t(computerUseSettings.directControlTitle.titleKey)}
+              </span>
+            }
+            hint={t(computerUseSettings.directControlTitle.descriptionKey)}
+            trailing={
+              <Switch data-setting-id={computerUseSettings.directControlTitle.id}
+                checked={computerSwitchChecked}
+                disabled={computerSwitchDisabled}
+                onCheckedChange={handleToggleComputer}
+                aria-label={t('settings.computerUse.directControl.toggleAria')}
+              />
+            }
+          />
           <ConfigurationReadStatus
             label={t(computerUseSettings.directControlTitle.titleKey)}
             status={computerRead.status}
@@ -1938,15 +1988,36 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
               ) : null}
             </>
           )}
-        </AutomationCard>
+        </SettingsCard>
       </SettingsSection>
 
       <SettingsSection>
-        <AutomationCard id="automation-android">
-          <AndroidAutomationHeader
-            checked={androidEnabled ?? false}
-            disabled={androidEnabled === null || androidTogglePending}
-            onChange={handleToggleAndroid}
+        <SettingsCard id="automation-android">
+          <SettingsRow
+            lead={
+              <span
+                className={cn(
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                  'bg-[var(--settings-input-bg)]',
+                )}
+              >
+                <Smartphone size={16} className="text-[var(--settings-section-title)]" />
+              </span>
+            }
+            title={
+              <span id={computerUseSettings.androidTitle.targetId}>
+                {t(computerUseSettings.androidTitle.titleKey)}
+              </span>
+            }
+            hint={t(computerUseSettings.androidTitle.descriptionKey)}
+            trailing={
+              <Switch data-setting-id={computerUseSettings.androidTitle.id}
+                checked={androidEnabled ?? false}
+                disabled={androidEnabled === null || androidTogglePending}
+                onCheckedChange={handleToggleAndroid}
+                aria-label={t('settings.computerUse.android.toggleAria')}
+              />
+            }
           />
           <SettingsRow
             wrap
@@ -2137,7 +2208,7 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
               </div>
             }
           />
-        </AutomationCard>
+        </SettingsCard>
 
         <p className={SETTINGS_HINT}>
           {t('settings.computerUse.android.toggleHint')}
@@ -2147,7 +2218,7 @@ export function ComputerUseSection({ workingDir }: ComputerUseSectionProps) {
   );
 }
 
-
+// The cloud settings page shows the browser and computer cards with an optional reset and read status.
 export function BrowserAutomationHeader({
   checked,
   disabled,
@@ -2242,46 +2313,6 @@ export function ComputerAutomationHeader({
   );
 }
 
-export function AndroidAutomationHeader({
-  checked,
-  disabled,
-  onChange,
-}: {
-  checked: boolean;
-  disabled: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <SettingsRow
-      lead={
-        <span
-          className={cn(
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-            'bg-[var(--settings-input-bg)]',
-          )}
-        >
-          <Smartphone size={16} className="text-[var(--settings-section-title)]" />
-        </span>
-      }
-      title={
-        <span id={computerUseSettings.androidTitle.targetId}>
-          {t(computerUseSettings.androidTitle.titleKey)}
-        </span>
-      }
-      hint={t(computerUseSettings.androidTitle.descriptionKey)}
-      trailing={
-        <Switch data-setting-id={computerUseSettings.androidTitle.id}
-          checked={checked}
-          disabled={disabled}
-          onCheckedChange={onChange}
-          aria-label={t('settings.computerUse.android.toggleAria')}
-        />
-      }
-    />
-  );
-}
-
 /** 自动操作页标题与说明。 */
 export function ComputerUseSectionHeader() {
   const { t } = useTranslation();
@@ -2291,9 +2322,4 @@ export function ComputerUseSectionHeader() {
       description={t('settings.computerUse.description')}
     />
   );
-}
-
-/** 浏览器 / 电脑 / Android 自动化各自的卡片外框。 */
-export function AutomationCard({ id, children }: { id: string; children: ReactNode }) {
-  return <SettingsCard id={id}>{children}</SettingsCard>;
 }

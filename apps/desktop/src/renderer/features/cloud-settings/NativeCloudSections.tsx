@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Tip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
-import { SettingsSection } from '@/components/ui/settings-rows';
+import { SettingsCard, SettingsSection } from '@/components/ui/settings-rows';
 import { toast } from '@/lib/toast';
 import { AgentResourceSectionView } from '@/components/settings/AgentResourceSection';
 import { CollaborationSectionView } from '@/components/settings/CollaborationSection';
@@ -18,7 +18,6 @@ import type { LocalePreference } from '@/i18n';
 import { LspBetaCellView } from '@/components/settings/LspBetaCell';
 import { BuiltinToolsSectionView } from '@/components/settings/BuiltinToolsSection';
 import {
-  AutomationCard,
   BrowserAutomationHeader,
   ComputerAutomationHeader,
   ComputerUseSectionHeader,
@@ -764,7 +763,7 @@ export function NativeCloudSections(props: Props) {
         {unreadableHere(['browserTools', 'browserBackend'], 'automation-browser', '')}
         {ready('browserTools') && (
           <>
-            <AutomationCard id="automation-browser">
+            <SettingsCard id="automation-browser">
               <BrowserAutomationHeader
                 headingStatus={keptStatus(['browserTools', 'browserBackend'])}
                 checked={bool(s('browserTools'), 'browser')}
@@ -785,7 +784,7 @@ export function NativeCloudSections(props: Props) {
                   reset={keyReset('browserBackend', 'kind')}
                 />
               )}
-            </AutomationCard>
+            </SettingsCard>
             <p className="text-12 leading-[1.5] text-[var(--settings-section-desc)]">
               {t('settings.computerUse.browser.toggleHint')}
             </p>
@@ -795,7 +794,7 @@ export function NativeCloudSections(props: Props) {
         {ready('computerTools') && (
           <>
             <div aria-hidden="true" className="h-px bg-[var(--settings-theme-card-border)]" />
-            <AutomationCard id="automation-computer">
+            <SettingsCard id="automation-computer">
               <ComputerAutomationHeader
                 headingStatus={keptStatus(['computerTools'])}
                 checked={bool(s('computerTools'), 'computer')}
@@ -803,7 +802,7 @@ export function NativeCloudSections(props: Props) {
                 onChange={(next) => void attempt('computerTools', { computer: next })}
                 reset={keyReset('computerTools', 'computer')}
               />
-            </AutomationCard>
+            </SettingsCard>
           </>
         )}
       </div>
