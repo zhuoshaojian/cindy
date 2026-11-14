@@ -80,7 +80,6 @@ export const cloudImSettingsRequestSchema = z
     args: z.array(z.unknown()).max(4).default([]),
   })
   .strict();
-export type CloudImSettingsRequest = z.input<typeof cloudImSettingsRequestSchema>;
 
 export const cloudImSettingsReplySchema = z
   .object({ ownerGeneration: z.number().int().nonnegative(), result: z.unknown() })

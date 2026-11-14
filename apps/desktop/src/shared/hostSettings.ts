@@ -17,12 +17,6 @@ export interface NewTaskDefaultSettings {
 }
 export interface PersonalizationSettings { userPrompt: string }
 export interface DatabaseWarningSettings { thresholdGiB: number; disabled: boolean }
-export interface HostSettingsValues {
-  newTaskDefaults: NewTaskDefaultSettings;
-  personalization: PersonalizationSettings;
-  databaseWarning: DatabaseWarningSettings;
-  appearance: AppearanceSettings;
-}
 export interface SettingsOwnerStamp { dataOwnerId: string | null; ownerGeneration: number }
 /** value is the saved override + current defaults, NOT proof of application to a running task/window. */
 export type HostSettingState<T> =

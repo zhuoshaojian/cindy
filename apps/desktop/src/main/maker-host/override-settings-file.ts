@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { readBoundedFileNoFollowSync } from '../utils/readBoundedFile.js';
-import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 
 // Process-local comparison keys: restarting invalidates all outstanding expectations.
 const revisionKey = randomBytes(32);
@@ -106,12 +106,9 @@ export function createOverrideSettingsFile<T>(options: {
   logLoadedValue?: boolean;
   /** 读取错误可能带出原文件片段时，不把错误详情写入日志。 */
   logReadErrorDetails?: boolean;
-  /** Opted-in domains disallow unlocked legacy writers and suppress settings/path logs. */
-  atomicOnly?: boolean;
   validateOverrides?: (overrides: Record<string, unknown>) => void;
 }): OverrideSettingsFile<T> {
   const listeners = new Set<() => void>();
-  let atomicDepth = 0;
   let cached: CachedState<T> | null = null;
   let cachedResolvedPath: string | null = null;
   /** 缓存装载时文件的 mtimeMs;null = 装载时文件不存在(默认态)。 */
@@ -130,11 +127,6 @@ export function createOverrideSettingsFile<T>(options: {
   }
 
   function readState(): OverrideSettingsState<T> {
-    if (options.atomicOnly) {
-      const snapshot = inspect();
-      if (snapshot.status !== 'ready') throw new OverrideSettingsError('UNREADABLE');
-      return { value: snapshot.value, defaults: snapshot.defaults, isCustomized: snapshot.isCustomized, customizedKeys: snapshot.customizedKeys };
-    }
     invalidateIfPathChanged();
     if (cached) return toPublicState(cached);
     const file = options.filePath();
@@ -276,8 +268,7 @@ export function createOverrideSettingsFile<T>(options: {
       const receipt = { ...clone(toPublicState(prepared)), status: 'ready' as const,
         revision: createHmac('sha256', revisionKey).update(stableStringify({ file, scope, defaults: before.defaults, overrides })).digest('base64url') };
       commitOptions.assertCurrent?.();
-      atomicDepth++;
-      try { writeOverrides(overrides, prepared); } finally { atomicDepth--; }
+      writeOverrides(overrides, prepared);
       return receipt;
     });
   }
@@ -297,8 +288,7 @@ export function createOverrideSettingsFile<T>(options: {
     }
   }
 
-  function writePatch(patch: Partial<T>, writeOptions?: { preserveDefaults?: boolean }): T {
-    if (options.atomicOnly && atomicDepth === 0) throw new OverrideSettingsError('BUSY');
+  function writePatch(patch: Partial<T>, writeOptions?: { preserveDefaults?: boolean }): void {
     const current = readWritableState();
     const next = options.normalize({ ...current.value, ...patch });
     const currentDefaults = defaults();
@@ -322,7 +312,7 @@ export function createOverrideSettingsFile<T>(options: {
           }
           return overrides;
         })();
-    return writeOverrides(nextOverrides);
+    writeOverrides(nextOverrides);
   }
 
   async function writePatchAtomic(
@@ -345,8 +335,7 @@ export function createOverrideSettingsFile<T>(options: {
           );
         }
         invalidate();
-        atomicDepth++;
-        try { writePatch(patch, writeOptions); } finally { atomicDepth--; }
+        writePatch(patch, writeOptions);
       },
     );
   }
@@ -372,8 +361,8 @@ export function createOverrideSettingsFile<T>(options: {
         }
         invalidate();
         const current = readWritableState();
-        atomicDepth++;
-        try { return writePatch(updater(current), writeOptions); } finally { atomicDepth--; }
+        writePatch(updater(current), writeOptions);
+        return readState().value;
       },
     );
   }
@@ -389,9 +378,11 @@ export function createOverrideSettingsFile<T>(options: {
     };
   }
 
-  function writeOverrides(overrides: Record<string, unknown>, prepared = prepareState(overrides)): T {
-    // Validation belongs to the cloud commit path (commitAtomic); ordinary writes keep upstream semantics.
-    if (Object.keys(overrides).length === 0) return reset();
+  function writeOverrides(overrides: Record<string, unknown>, prepared = prepareState(overrides)): void {
+    if (Object.keys(overrides).length === 0) {
+      reset();
+      return;
+    }
     const file = options.filePath();
     const tmp = `${file}.tmp`;
     const serialized = JSON.stringify(overrides, null, 2);
@@ -402,38 +393,22 @@ export function createOverrideSettingsFile<T>(options: {
       throw new Error(`file exceeds ${options.maxBytes} byte limit`);
     }
     fs.mkdirSync(pathDirname(file), { recursive: true });
-    if (options.atomicOnly) {
-      // Cloud-only Host stores: private, unique temp file that never outlives a failed publish.
-      const privateTmp = `${file}.${randomUUID()}.tmp`;
-      try {
-        fs.writeFileSync(privateTmp, serialized, { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
-        fs.renameSync(privateTmp, file);
-      } finally {
-        try { fs.unlinkSync(privateTmp); } catch { /* rename consumed it */ }
-      }
-    } else {
-      fs.writeFileSync(tmp, serialized, 'utf-8');
-      fs.renameSync(tmp, file);
-    }
+    fs.writeFileSync(tmp, serialized, 'utf-8');
+    fs.renameSync(tmp, file);
     cachedFileMtimeMs = statFileMtimeMs();
-    cachedResolvedPath = file;
     cached = prepared;
     notifyChanged();
-    return clone(prepared.value);
   }
 
   function reset(): T {
-    if (options.atomicOnly && atomicDepth === 0) throw new OverrideSettingsError('BUSY');
     const file = options.filePath();
-    const resetDefaults = defaults();
-    const result = clone(resetDefaults);
     cachedResolvedPath = file;
     try {
       if (fs.existsSync(file)) {
         fs.unlinkSync(file);
       }
     } catch (err) {
-      options.log.warn(`${options.label} settings reset failed`, options.atomicOnly ? {} : {
+      options.log.warn(`${options.label} settings reset failed`, {
         error: err instanceof Error ? err.message : String(err),
         path: file,
       });
@@ -441,16 +416,16 @@ export function createOverrideSettingsFile<T>(options: {
     }
     cachedFileMtimeMs = null;
     cached = {
-      value: resetDefaults,
+      value: defaults(),
       isCustomized: false,
-      defaults: resetDefaults,
+      defaults: defaults(),
       customizedKeys: [],
       overrides: {},
       readStatus: 'missing',
     };
-    if (!options.atomicOnly) options.log.info(`${options.label} settings reset to defaults`, { path: file });
+    options.log.info(`${options.label} settings reset to defaults`, { path: file });
     notifyChanged();
-    return result;
+    return cached.value;
   }
 
   async function resetAtomic(): Promise<T> {
@@ -470,8 +445,7 @@ export function createOverrideSettingsFile<T>(options: {
           );
         }
         invalidate();
-        atomicDepth++;
-        try { return reset(); } finally { atomicDepth--; }
+        return reset();
       },
     );
   }

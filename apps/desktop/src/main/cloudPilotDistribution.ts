@@ -9,13 +9,9 @@ export const CLOUD_DEV_PROFILE = 'CindyCloudDev-cn';
 export const CLOUD_DEV_APP_NAME = 'CindyCloudDev-cn';
 let active = false;
 let managedHome: string | null = null;
-let activeAppName = 'CindyCloudPilot-cn-r2';
 let endpointManifestPath: string | null = null;
 /** Only Cindy-managed state uses this root; never replace the OS user's HOME. */
 export function cindyManagedHomeDir(): string { return managedHome ?? os.homedir(); }
-export function cloudPilotKeychainService(normal: string): string {
-  return active ? `${activeAppName}:${normal}` : normal;
-}
 export function isCloudPilotDistribution(): boolean { return active; }
 export function cloudPilotEndpointManifestPath(): string | null { return endpointManifestPath; }
 /** The official CLI owns credentials; a pilot must give it its own configuration root. */
@@ -90,7 +86,6 @@ export function resolveCloudPilotDistribution(input: {
   if (!appDataStat.isDirectory() || appDataStat.isSymbolicLink()
     || process.platform !== 'win32' && (appDataStat.uid !== process.getuid!() || (appDataStat.mode & 0o077) !== 0)) reject();
   managedHome = privateHome;
-  activeAppName = appName;
   endpointManifestPath = endpoints;
   active = true;
   return { userData, deviceId: identity.deviceId, managedHome: privateHome, appName, appData: privateAppData };

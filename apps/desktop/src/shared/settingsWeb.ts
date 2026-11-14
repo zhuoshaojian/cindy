@@ -7,9 +7,6 @@ export const settingsWebDomainSchema = z.enum(['newTaskDefaults', 'personalizati
 export const SETTINGS_WEB_MAX_BYTES = 64 * 1024;
 /** Catalog routes include every supported engine; saved override limits remain separate. */
 export const SETTINGS_WEB_MAX_CHOICES = 512;
-export const SETTINGS_WEB_COMMAND_TTL_MS = 30_000;
-export const SETTINGS_WEB_RUNTIME_TTL_MS = 15_000;
-export const SETTINGS_WEB_RETENTION_MS = 10 * 60_000;
 const id = z.string().uuid();
 const revision = z.string().min(1).max(128);
 const routeId = z.string().trim().min(1).max(256).regex(/^[^\x00-\x1f]+$/u);
@@ -83,9 +80,6 @@ export const settingsWebCommandSchema = z.discriminatedUnion('kind', [
 ]).refine(value => value.kind !== 'read' || value.workspaceId === undefined || value.domain === 'workspaceTools', 'invalid workspace scope');
 export type SettingsWebCommand = z.infer<typeof settingsWebCommandSchema>;
 /** Commands only a signed-in browser may send; the native client already has DeviceLink. */
-export const BROWSER_ONLY_SETTINGS_WEB_KINDS: ReadonlySet<SettingsWebCommand['kind']> = new Set(['channel', 'desktop', 'desktopIce']);
-export const settingsWebSubmitSchema = z.object({ requestId: id, runtimeId: id, command: settingsWebCommandSchema }).strict();
-export const settingsWebPollSchema = z.object({ runtimeId: id }).strict();
 export const settingsWebConnectSchema = z.object({ runtimeId: id, domains: batchDomains, readBatch: z.literal(true).optional(), managementV1: z.literal(true).optional(),
   channels: z.array(channelName).min(1).max(SETTINGS_WEB_CHANNELS.length).refine(names => new Set(names).size === names.length).optional(),
   desktopV1: z.literal(true).optional() }).strict();
@@ -151,9 +145,4 @@ export const settingsWebResultSchema = z.union([
 ]).refine(value => new TextEncoder().encode(JSON.stringify(value)).byteLength
   <= (largeResult(value) ? SETTINGS_WEB_LARGE_RESULT_MAX_BYTES : SETTINGS_WEB_MAX_BYTES) - 512, 'settings response exceeds its budget');
 export type SettingsWebResult = z.infer<typeof settingsWebResultSchema>;
-export const settingsWebCompleteSchema = z.object({ runtimeId: id, result: settingsWebResultSchema }).strict();
 export type SettingsWebEnvelope = { requestId: string; runtimeId: string; sessionKey: string; expiresAtMs: number; command: SettingsWebCommand };
-
-export function parseSettingsWeb<S extends z.ZodTypeAny>(schema: S, value: unknown): z.infer<S> {
-  return schema.parse(value);
-}

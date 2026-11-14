@@ -24,7 +24,6 @@ function createTempStore(
     logReadErrorDetails?: boolean;
     maxBytes?: number;
     preserveUnreadableFile?: boolean;
-    atomicOnly?: boolean;
     scopeKey?: () => string;
     validateOverrides?: (raw: Record<string, unknown>) => void;
   } = {},
@@ -64,7 +63,6 @@ function createTempStore(
     preserveUnreadableFile: options.preserveUnreadableFile,
     logLoadedValue: options.logLoadedValue,
     logReadErrorDetails: options.logReadErrorDetails,
-    atomicOnly: options.atomicOnly,
     scopeKey: options.scopeKey,
     validateOverrides: options.validateOverrides,
   });
@@ -74,11 +72,10 @@ function createTempStore(
 
 describe('host settings CAS and pure inspection', () => {
   it('preserves unreadable bytes without logging or silently supplying defaults', async () => {
-    const { dir, file, store, log } = createTempStore(undefined, { atomicOnly: true });
+    const { dir, file, store, log } = createTempStore();
     try {
       fs.writeFileSync(file, '{private-invalid');
       expect(store.inspect()).toEqual({ status: 'unreadable', revision: null });
-      expect(() => store.read()).toThrow(/unreadable/);
       await expect(store.commitAtomic({ set: { limit: 7 } })).rejects.toMatchObject({ code: 'UNREADABLE' });
       expect(fs.readFileSync(file, 'utf8')).toBe('{private-invalid');
       expect(log.info).not.toHaveBeenCalled();
@@ -87,8 +84,8 @@ describe('host settings CAS and pure inspection', () => {
   });
 
   it('keeps explicit default values and clears individual keys with same-lock CAS', async () => {
-    const first = createTempStore(undefined, { atomicOnly: true });
-    const second = createTempStore(first, { atomicOnly: true });
+    const first = createTempStore();
+    const second = createTempStore(first);
     try {
       const initial = first.store.inspect();
       if (initial.status !== 'ready') throw new Error('test setup');
@@ -102,14 +99,12 @@ describe('host settings CAS and pure inspection', () => {
       expect(state.customizedKeys).toEqual(expect.arrayContaining(['enabled', 'limit']));
       const cleared = await first.store.commitAtomic({ clear: ['enabled'] }, { expectedRevision: state.revision });
       expect(cleared.customizedKeys).toEqual(['limit']);
-      expect(() => first.store.writePatch({ limit: 6 })).toThrow();
-      expect(() => first.store.reset()).toThrow();
     } finally { fs.rmSync(first.dir, { recursive: true, force: true }); }
   });
 
   it('rechecks the owner and caller inside the write lock and notifies only saved writes', async () => {
     let owner = 'owner-a:1';
-    const { dir, file, store } = createTempStore(undefined, { atomicOnly: true, scopeKey: () => owner });
+    const { dir, file, store } = createTempStore(undefined, { scopeKey: () => owner });
     const listener = vi.fn();
     const unsubscribe = store.onChanged(listener);
     try {
@@ -154,7 +149,7 @@ describe('shared final validation and bounded inspection', () => {
   });
 
   it.each(['null', '[1]', '{bad-json', '{"limit":123456789}'])('rejects malformed or oversized bytes %s without repair', (raw) => {
-    const { dir, file, store, log } = createTempStore(undefined, { atomicOnly: true, maxBytes: 16 });
+    const { dir, file, store, log } = createTempStore(undefined, { maxBytes: 16 });
     try {
       fs.writeFileSync(file, raw);
       expect(store.inspect()).toEqual({ status: 'unreadable', revision: null });
@@ -165,7 +160,7 @@ describe('shared final validation and bounded inspection', () => {
   });
 
   it('distinguishes a missing file from a permission failure without an unbounded read', () => {
-    const { dir, file, store } = createTempStore(undefined, { atomicOnly: true });
+    const { dir, file, store } = createTempStore();
     try {
       expect(store.inspect()).toMatchObject({ status: 'ready', value: DEFAULTS, customizedKeys: [] });
       fs.writeFileSync(file, '{"limit":7}');
@@ -182,7 +177,7 @@ describe('shared final validation and bounded inspection', () => {
   });
 
   it('rejects a symbolic-link settings file without changing the link or target', ({ skip }) => {
-    const { dir, file, store } = createTempStore(undefined, { atomicOnly: true });
+    const { dir, file, store } = createTempStore();
     const target = path.join(dir, 'target.json');
     try {
       fs.writeFileSync(target, '{"limit":7}');
@@ -199,7 +194,7 @@ describe('shared final validation and bounded inspection', () => {
   });
 
   it('rejects a directory without trying to read it as settings', () => {
-    const { dir, file, store } = createTempStore(undefined, { atomicOnly: true });
+    const { dir, file, store } = createTempStore();
     try {
       fs.mkdirSync(file);
       expect(store.inspect()).toEqual({ status: 'unreadable', revision: null });
@@ -208,7 +203,7 @@ describe('shared final validation and bounded inspection', () => {
   });
 
   it('bounds allocation and discards a file that grows after its handle stat', () => {
-    const { dir, file, store } = createTempStore(undefined, { atomicOnly: true, maxBytes: 32 });
+    const { dir, file, store } = createTempStore(undefined, { maxBytes: 32 });
     const original = '{"limit":7}'; const appended = ' '.repeat(1024);
     fs.writeFileSync(file, original);
     const actualFstat = fs.fstatSync;

@@ -8,8 +8,6 @@ export const SETTINGS_SNAPSHOT_MAX_BYTES = 8 * 1024;
 export const SETTINGS_SNAPSHOT_PUBLISH_INTERVAL_MS = 60_000;
 export const SETTINGS_SNAPSHOT_MIN_WRITE_INTERVAL_MS = 10_000;
 export const SETTINGS_SNAPSHOT_FRESHNESS_MS = 180_000;
-export const SETTINGS_SNAPSHOT_FUTURE_SKEW_MS = 30_000;
-
 export const settingsSnapshotSourceSchema = z.enum(['default', 'override']);
 const field = <T extends z.ZodTypeAny>(value: T) => z.object({
   value, source: settingsSnapshotSourceSchema,
@@ -76,14 +74,6 @@ export interface SettingsSnapshotReceipt {
   receivedAtMs: number;
   expiresAtMs: number;
 }
-export type SettingsSnapshotView = {
-  status: 'notReported' | 'fresh' | 'expired' | 'stopped';
-  revision: number;
-  capturedAtMs: number | null;
-  receivedAtMs: number | null;
-  expiresAtMs: number | null;
-  snapshot?: SettingsSnapshotReport;
-};
 
 /** 两仓共同的非秘密 fixture，不加入身份、路径、指令正文或原始错误。 */
 export const SETTINGS_SNAPSHOT_COMPATIBILITY_FIXTURE: SettingsSnapshotReport = {

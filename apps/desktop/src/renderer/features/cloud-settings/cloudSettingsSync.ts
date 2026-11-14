@@ -17,8 +17,6 @@ export interface CloudSyncFailure {
   /** Rereads the group, then submits the same change as a new write on the fresh revision. */
   retry(): void;
 }
-export type CloudSettingsSync = ReturnType<typeof createCloudSettingsSync>;
-
 /** Steppers and number fields wait this long so consecutive edits become one write. */
 export const CLOUD_SYNC_DEBOUNCE_MS = 400;
 

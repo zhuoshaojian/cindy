@@ -92,7 +92,6 @@ export const additionalSettingsSchemas = {
 export type AdditionalSettingsDomain = keyof typeof additionalSettingsSchemas;
 /** Smart Contacts moved to the cindy-contacts plugin upstream; these domains stay in the wire catalog only. */
 export const RETIRED_ADDITIONAL_SETTINGS_DOMAINS = ['contacts', 'contactsSync'] as const satisfies readonly AdditionalSettingsDomain[];
-export type ActiveAdditionalSettingsDomain = Exclude<AdditionalSettingsDomain, (typeof RETIRED_ADDITIONAL_SETTINGS_DOMAINS)[number]>;
 export const ADDITIONAL_SETTINGS_DOMAINS = Object.keys(additionalSettingsSchemas) as AdditionalSettingsDomain[];
 export const isAdditionalSettingsDomain = (value: unknown): value is AdditionalSettingsDomain =>
   typeof value === 'string' && Object.hasOwn(additionalSettingsSchemas, value);

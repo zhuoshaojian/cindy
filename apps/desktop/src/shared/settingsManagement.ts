@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 /** Optional cloud web capability; independent of the frozen v3 settings DTOs. */
-export const MANAGEMENT_CAPABILITY = '@settings-web/management-v1';
 export const managementSectionSchema = z.enum(['bots', 'providers', 'mcp', 'contacts', 'memory']);
 const id = z.string().uuid();
 const text = z.string().max(512);

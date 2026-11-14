@@ -87,7 +87,7 @@ import {
 type CindyImCard = 'slack' | 'telegram' | 'x' | 'feishu';
 
 /** 渠道卡状态徽章的色调档(映射到「个人」栏同款 --settings-badge-* token)。 */
-export type ChannelBadgeTone = 'ok' | 'progress' | 'attention' | 'error';
+type ChannelBadgeTone = 'ok' | 'progress' | 'attention' | 'error';
 
 function badgeToneColor(tone: ChannelBadgeTone): string {
   switch (tone) {
