@@ -40,9 +40,13 @@ export function applyReturnedNewTaskHistory(history: NewTaskPreferenceHistory, o
       ...(typeof saved.planMode === 'boolean' ? { planMode: saved.planMode } : {}) };
     if (history.modelChosenByVendor[vendor]) patchVendorPrefs(vendor, patch);
     else patchVendorPrefsPreservingModelChoice(vendor, patch);
-    // A remembered permission is not a new explicit choice.
-    if (saved.permissionMode)
-      patchVendorPrefsPreservingModelChoice(vendor, { permissionMode: saved.permissionMode as PermissionMode });
+    // Same rule the draft applies to unmarked saved permissions: anything other than auto (or the
+    // legacy plan value) was chosen in the picker, so it is kept as that explicit choice.
+    if (saved.permissionMode && saved.permissionMode !== 'plan') {
+      const permission = { permissionMode: saved.permissionMode as PermissionMode };
+      if (saved.permissionMode === 'auto') patchVendorPrefsPreservingModelChoice(vendor, permission);
+      else patchVendorPrefs(vendor, permission);
+    }
   }
   switchVendor(history.vendor);
   if (history.defaultTupleCustomized) markDefaultTupleCustomized(history.defaultTupleSelectionCustomized);

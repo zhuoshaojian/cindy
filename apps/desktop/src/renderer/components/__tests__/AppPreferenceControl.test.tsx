@@ -109,7 +109,8 @@ describe('AppPreferenceControl', () => {
     render(<AppPreferenceControl />);
     const newTaskHistory = {
       vendor: 'codex' as const, modelChosenByVendor: { codex: true }, defaultTupleCustomized: true, defaultTupleSelectionCustomized: true,
-      lastByVendor: { codex: { model: 'gpt', providerId: 'xd', effort: 'high', planMode: true } },
+      lastByVendor: { codex: { model: 'gpt', providerId: 'xd', effort: 'high', planMode: true, permissionMode: 'ask' },
+        cc: { model: 'opus', providerId: 'xd', effort: 'medium', permissionMode: 'auto' } },
       effortByModel: {}, fastModeByModel: { gpt: true }, worktreeEnabled: true, worktreePreferenceCustomized: true,
       providerModelMemory: { 'codex:xd': { lastModel: 'gpt', effortByModel: { gpt: 'high' }, fastByModel: { gpt: true }, thinkingByModel: { gpt: false } } },
     };
@@ -123,7 +124,10 @@ describe('AppPreferenceControl', () => {
     expect(memory.getProviderModelThinking('codex', 'xd', 'gpt')).toBe(false);
     expect(memory.getProviderModelEffort('codex', 'xd', 'cleared-there')).toBeUndefined();
     expect(localStorage.getItem('xdt:newMakerDraft:v1:owner:workspace')).toBeNull();
-    expect(JSON.parse(localStorage.getItem('xdt:newMakerDraft:v1:owner') ?? '{}')).toMatchObject({ vendor: 'codex' });
+    // What the draft reloads from: the chosen permission survives, the default one stays a default.
+    expect(JSON.parse(localStorage.getItem('xdt:newMakerDraft:v1:owner') ?? '{}')).toMatchObject({ vendor: 'codex', lastByVendor: {
+      codex: { permissionMode: 'ask', permissionModeCustomized: true },
+      cc: { permissionModeCustomized: false } } });
     expect((await send(request('new-task-history', undefined, { newTaskHistory: { vendor: 'nope' } as never }))).ok).toBe(false);
     draft.setNewMakerDraftOwner(null); memory.setProviderModelMemoryOwner(null);
   });
