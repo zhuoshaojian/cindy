@@ -73,6 +73,7 @@ import { LocalPackagingTag } from './LocalPackagingTag';
 import { getModelEngineOverride, useModelEnginePrefsVersion } from '@/state/modelEnginePrefs';
 import { getProviderModelEffort, getProviderModelFast, getProviderModelThinking, useProviderModelMemoryVersion } from '@/state/providerModelMemory';
 import { ModelAdvancedDrawer } from './ModelAdvancedDrawer';
+import { useModelSettingsSource } from './modelSettingsSource';
 import {
   groupModelsForManagement,
   MANAGEMENT_KIND_ORDER,
@@ -328,11 +329,12 @@ function rowEnabled(
   row: UnionModelRow,
   agent: AgentKind,
   userProvider: boolean,
+  enabled: typeof isModelEnabled = isModelEnabled,
 ): boolean | null {
   const m = row.byAgent[agent];
   if (!m) return null;
   if (isAgentSelectableModel(m, { userProvider }) || rowHasVisibilitySwitch(row, userProvider)) {
-    return isModelEnabled(agent, providerId, m);
+    return enabled(agent, providerId, m);
   }
   return null;
 }
@@ -410,8 +412,13 @@ export function modelVisibilityTargets(
 }
 
 /** 普通模式的单开关显示值:任一可用 agent 开启即视为开(拨动才归一)。 */
-function rowAnyEnabled(providerId: string, row: UnionModelRow, userProvider: boolean): boolean {
-  return row.avail.some((a) => rowEnabled(providerId, row, a, userProvider) === true);
+function rowAnyEnabled(
+  providerId: string,
+  row: UnionModelRow,
+  userProvider: boolean,
+  enabled: typeof isModelEnabled = isModelEnabled,
+): boolean {
+  return row.avail.some((a) => rowEnabled(providerId, row, a, userProvider, enabled) === true);
 }
 
 /** 该行全部 avail agent 的真实目录 id(桥接投影两端 id 不同,写停用要两端一起写)。 */
@@ -476,6 +483,7 @@ export function UnifiedModelList({
   compact,
   focusModelId,
   focusAgent,
+  visibilityControls = true,
 }: {
   provider: ProviderView;
   /** 「刷新模型」；内置供应商走各自真源，自定义供应商走 additions-only 发现。 */
@@ -495,8 +503,12 @@ export function UnifiedModelList({
   /** Settings deep link target: reveal, focus, and scroll this model row into view. */
   focusModelId?: string;
   focusAgent?: AgentKind;
+  /** Which models are offered is left to the caller: no count, hint, bulk menu or row switches. */
+  visibilityControls?: boolean;
 }) {
   const { t } = useTranslation();
+  /** Another device's model settings (cloud instance page); null for this device. */
+  const source = useModelSettingsSource();
   const { confirm } = useConfirmDialog();
   const [query, setQuery] = useState('');
   const [managementView, setManagementView] = useState<ManagementView>('brand');
@@ -611,21 +623,35 @@ export function UnifiedModelList({
   }, []);
   // 订阅可见性 version:开关变更后 counts memo 必须重算(否则「全部开启/关闭」
   // 按钮方向与计数陈旧)。行内开关读取不 memo,天然新鲜;只有 counts 依赖它。
-  const visibilityVersion = useModelVisibilityVersion();
-  const aliasEngineVersion = useModelEnginePrefsVersion();
-  const aliasMemoryVersion = useProviderModelMemoryVersion();
+  const localVisibilityVersion = useModelVisibilityVersion();
+  const visibilityVersion = source ? source.visibilityVersion : localVisibilityVersion;
+  const aliasEngineVersion = useModelEnginePrefsVersion(!source);
+  const aliasMemoryVersion = useProviderModelMemoryVersion(!source);
+  const isEnabled = source?.isModelEnabled ?? isModelEnabled;
+  const writeModelDisable = useCallback(
+    (input: Parameters<Window['electronAPI']['maker']['setModelDisable']>[0]) =>
+      source ? source.setModelDisable(input) : window.electronAPI.maker.setModelDisable(input),
+    [source],
+  );
+  const localModels = provider.id === MANAGED_OLLAMA_PROVIDER_ID && !source;
 
   const selectionAvailable = provider.connected && !provider.suspended;
   const multiAgent = provider.agents.length > 1;
-  const unionRows = useMemo(() => buildUnionRows(provider, (agent, modelId) => ({
+  const unionRows = useMemo(() => buildUnionRows(provider, (agent, modelId) => source ? {
+    // The instance reports visibility and effort; engine, thinking and Fast stay with its own panel.
+    customPrice: (() => { const model = provider.models[agent]!.find((m) => m.id === modelId)!;
+      const p = pricePresentationOf(agent, model); return p?.kind === 'priced' && p.current.source === 'user-override'; })(),
+    effort: source.getEffort(agent, provider.id, modelId),
+    visible: isEnabled(agent, provider.id, provider.models[agent]!.find((m) => m.id === modelId)!),
+  } : ({
     engine: getModelEngineOverride(provider.id, modelId),
     customThinking: getProviderModelThinking(agent, provider.id, modelId) !== undefined,
     customPrice: (() => { const model = provider.models[agent]!.find((m) => m.id === modelId)!;
       const p = pricePresentationOf(agent, model); return p?.kind === 'priced' && p.current.source === 'user-override'; })(),
     effort: getProviderModelEffort(agent, provider.id, modelId),
     fast: getProviderModelFast(agent, provider.id, modelId),
-    visible: isModelEnabled(agent, provider.id, provider.models[agent]!.find((m) => m.id === modelId)!),
-  })), [provider, visibilityVersion, aliasEngineVersion, aliasMemoryVersion, pricePresentationOf]);
+    visible: isEnabled(agent, provider.id, provider.models[agent]!.find((m) => m.id === modelId)!),
+  })), [provider, visibilityVersion, aliasEngineVersion, aliasMemoryVersion, pricePresentationOf, source, isEnabled]);
   const currentAdvancedRow = unionRows.find((row) => row.id === advancedRow?.id ||
     row.aliasRows?.some((member) => member.id === advancedRow?.id)) ?? advancedRow;
 
@@ -638,11 +664,11 @@ export function UnifiedModelList({
       modelManagementState(provider, {
         ids: rowModelIds(row),
         capability: isCapabilityRow(row, provider.source === 'user'),
-        savedSelected: rowAnyEnabled(provider.id, row, provider.source === 'user'),
+        savedSelected: rowAnyEnabled(provider.id, row, provider.source === 'user', isEnabled),
         disabled: rowDisabledEffective(row),
         paymentRequired: isRowPaymentRequired(row),
       }),
-    [provider, rowDisabledEffective, visibilityVersion],
+    [provider, rowDisabledEffective, visibilityVersion, isEnabled],
   );
   const focusedRow = useMemo(() => {
     if (!focusModelId) return null;
@@ -676,13 +702,12 @@ export function UnifiedModelList({
     (row: UnionModelRow, disabled: boolean) => {
       if (!disabled && !selectionAvailable) return Promise.resolve(false);
       setPendingDisabled((prev) => ({ ...prev, [row.id]: disabled }));
-      return window.electronAPI.maker
-        .setModelDisable({
-          kind: 'model',
-          providerId: provider.id,
-          modelIds: rowModelIds(row),
-          disabled,
-        })
+      return writeModelDisable({
+        kind: 'model',
+        providerId: provider.id,
+        modelIds: rowModelIds(row),
+        disabled,
+      })
         .then(() => true)
         .catch(() => {
           setPendingDisabled((prev) => {
@@ -699,7 +724,7 @@ export function UnifiedModelList({
           return false;
         });
     },
-    [provider.id, selectionAvailable, t],
+    [provider.id, selectionAvailable, t, writeModelDisable],
   );
 
   const deleteInstalledModel = useCallback(
@@ -742,19 +767,25 @@ export function UnifiedModelList({
       for (const r of rows) next[r.id] = false;
       return next;
     });
-    void window.electronAPI.maker
-      .setModelDisable({ kind: 'reset', providerId: provider.id })
-      .catch(() => {
-        setPendingDisabled((prev) => {
-          const next = { ...prev };
-          for (const r of rows) {
-            if (next[r.id] === false) delete next[r.id];
-          }
-          return next;
-        });
-        toast.error(t('settings.providers.models.accessWriteFailed'));
+    void writeModelDisable({ kind: 'reset', providerId: provider.id }).catch(() => {
+      setPendingDisabled((prev) => {
+        const next = { ...prev };
+        for (const r of rows) {
+          if (next[r.id] === false) delete next[r.id];
+        }
+        return next;
       });
-  }, [hasLockedDisabledRow, unionRows, pendingDisabled, provider.id, selectionAvailable, t]);
+      toast.error(t('settings.providers.models.accessWriteFailed'));
+    });
+  }, [
+    hasLockedDisabledRow,
+    unionRows,
+    pendingDisabled,
+    provider.id,
+    selectionAvailable,
+    t,
+    writeModelDisable,
+  ]);
 
   /**
    * 该来源真实存在的**输出类型**:对话 + 各能力类型(图像 / 视频 / 语音…)。
@@ -905,13 +936,14 @@ export function UnifiedModelList({
       ) {
         return;
       }
-      const next = !rowAnyEnabled(provider.id, row, userProvider);
+      const next = !rowAnyEnabled(provider.id, row, userProvider, isEnabled);
       const targets = modelVisibilityTargets(provider, row, next);
-      if ((await setModelVisibilities(provider.id, targets, next)) === false) {
+      const write = source?.setModelVisibilities ?? setModelVisibilities;
+      if ((await write(provider.id, targets, next)) === false) {
         showVisibilityWriteFailure();
       }
     },
-    [provider, rowState, showVisibilityWriteFailure],
+    [provider, rowState, showVisibilityWriteFailure, isEnabled, source],
   );
 
   // Separate commands have stable meanings even when the selection is mixed. Adding all
@@ -920,13 +952,15 @@ export function UnifiedModelList({
     if (!visibilityWriteAvailable) return;
     const next = action === 'show';
     const rows = next
-      ? writableRows.filter((row) => !rowAnyEnabled(provider.id, row, provider.source === 'user'))
+      ? writableRows.filter(
+          (row) => !rowAnyEnabled(provider.id, row, provider.source === 'user', isEnabled),
+        )
       : writableRows;
     const targets = rows.flatMap((row) => modelVisibilityTargets(provider, row, next));
     const success =
       action === 'reset'
-        ? await resetModelVisibilities(provider.id, targets)
-        : await setModelVisibilities(provider.id, targets, next);
+        ? await (source?.resetModelVisibilities ?? resetModelVisibilities)(provider.id, targets)
+        : await (source?.setModelVisibilities ?? setModelVisibilities)(provider.id, targets, next);
     if (!success) showVisibilityWriteFailure();
   };
 
@@ -1048,7 +1082,7 @@ export function UnifiedModelList({
             />
           );
         })()}
-        {provider.id === MANAGED_OLLAMA_PROVIDER_ID && <LocalPackagingTag libraryName={row.id} />}
+        {localModels && <LocalPackagingTag libraryName={row.id} />}
         {capNote && (
           <Tip text={capNote}>
             <button
@@ -1086,10 +1120,10 @@ export function UnifiedModelList({
             1,048,576 / 1,050,000 都印成 1M)。 */}
         {rowAdvancedButton(row)}
         {/* 其余音频/向量能力行没有显示开关。语音合成、图像/视频、决策/重排复用显示轴。 */}
-        {capability && !rowHasVisibilitySwitch(row, provider.source === 'user') && (
+        {visibilityControls && capability && !rowHasVisibilitySwitch(row, provider.source === 'user') && (
           <span className="w-9 shrink-0" />
         )}
-        {rowHasVisibilitySwitch(row, provider.source === 'user') && (
+        {visibilityControls && rowHasVisibilitySwitch(row, provider.source === 'user') && (
           <Switch
             disabled={!state.canSelect}
             checked={anyOn}
@@ -1121,17 +1155,21 @@ export function UnifiedModelList({
                 <span className="text-13 font-medium text-[var(--text-primary)]">
                   {t('settings.providers.models.manage.title')}
                 </span>
-                <span className="text-11 text-[var(--text-tertiary)]">
-                  {t('settings.providers.models.manage.selected', { count: selectedCount })}
-                </span>
-              </div>
-              <p className="mt-0.5 text-11 text-[var(--text-tertiary)]">
-                {t(
-                  selectionAvailable
-                    ? 'settings.providers.models.manage.hint'
-                    : 'settings.providers.models.manage.connectionRequired',
+                {visibilityControls && (
+                  <span className="text-11 text-[var(--text-tertiary)]">
+                    {t('settings.providers.models.manage.selected', { count: selectedCount })}
+                  </span>
                 )}
-              </p>
+              </div>
+              {visibilityControls && (
+                <p className="mt-0.5 text-11 text-[var(--text-tertiary)]">
+                  {t(
+                    selectionAvailable
+                      ? 'settings.providers.models.manage.hint'
+                      : 'settings.providers.models.manage.connectionRequired',
+                  )}
+                </p>
+              )}
             </div>
             {onRefresh && (
               <button
@@ -1166,7 +1204,7 @@ export function UnifiedModelList({
                 ]}
               />
             )}
-            {(unionRows.length > 0 || onAddSpeechModels) && (
+            {visibilityControls && (unionRows.length > 0 || onAddSpeechModels) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="secondary" size="sm" compact type="button" className="shrink-0">
@@ -1330,7 +1368,7 @@ export function UnifiedModelList({
                     </button>
                   )}
                   {/* 能力模型组:不进对话选择器;图像/视频开关控制对应功能清单。 */}
-                  {wholeGroupCapability && !collapsed && (
+                  {visibilityControls && wholeGroupCapability && !collapsed && (
                     <span
                       className={cn('pb-1 text-11 leading-snug', showGroupHeaders && 'pl-[24px]')}
                       style={{ color: 'var(--text-tertiary)' }}
@@ -1479,7 +1517,7 @@ export function UnifiedModelList({
                               {t('settings.providers.models.enableModel')}
                             </Button>
                           )}
-                          {provider.id === MANAGED_OLLAMA_PROVIDER_ID && (
+                          {localModels && (
                             <Button
                               variant="secondary"
                               size="xs"
@@ -1516,7 +1554,7 @@ export function UnifiedModelList({
           // 抽屉里的停用/启用与列表行同一条写入路径(乐观覆盖 + IPC),不另开一套。
           if (await setRowDisabled(row, !rowDisabledEffective(row))) setAdvancedOpen(false);
         }}
-        {...(provider.id === MANAGED_OLLAMA_PROVIDER_ID
+        {...(localModels
           ? {
               onDeleteLocal: (row: UnionModelRow) => {
                 setAdvancedOpen(false);

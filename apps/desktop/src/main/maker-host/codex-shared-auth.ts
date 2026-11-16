@@ -1,6 +1,6 @@
+import { cindyManagedHomeDir, isCloudPilotDistribution } from '../cloudPilotDistribution.js';
 import { app } from 'electron';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 import { brandUserDataDirName } from '@cindy/maker-shared/brand-identity';
@@ -15,7 +15,7 @@ import { codexWorkspaceIdFromTokens } from './codex-auth-identity.js';
  * `shared/codexHome.ts`，凭证发现、远端同步与设置页扫描共用同一处 (#8258)。
  */
 function resolveCodexCliHome(): string {
-  return codexHomeDir(process.env, os.homedir());
+  return codexHomeDir(isCloudPilotDistribution() ? {} : process.env, cindyManagedHomeDir());
 }
 
 /** 本机 Codex CLI 维护的 OpenAI 登录态（默认 `~/.codex/auth.json`，随 `CODEX_HOME`）。 */

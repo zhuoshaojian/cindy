@@ -23,7 +23,28 @@ import {
 
 import { getModelVisibilityOverride, waitForModelVisibilityMirror } from './model-visibility-mirror.js';
 
+import { inspectSettingsFile, isSettingsObject, validateOptionalSettingsFields } from './settings-inspection.js';
+
 const log = desktopMakerLogger.child('bot-model-chain-settings-store');
+
+/** 只取保存的链；缺少 override 时保留存储默认 []，不求解依赖凭据的运行时链。 */
+export function inspectBotModelChainSettings(ownerRoot: string) {
+  return inspectSettingsFile({ filePath: () => settingsFilePath(ownerRoot), defaults: DEFAULTS, normalize,
+    validate: (raw) => validateOptionalSettingsFields(raw, {
+      modelChain: (value) => Array.isArray(value) && value.every((route) => {
+        if (!isSettingsObject(route) || typeof route.model !== 'string' || !route.model.trim()) return false;
+        try {
+          validateOptionalSettingsFields(route, {
+            harness: (v) => v === 'claude' || v === 'codex' || v === 'pi',
+            providerId: (v) => v === null || typeof v === 'string',
+            effort: (v) => typeof v === 'string', fastMode: (v) => typeof v === 'boolean',
+          });
+          return true;
+        } catch { return false; }
+      }),
+    }),
+  });
+}
 
 export interface BotModelChainSettings {
   modelChain: BotModelRoute[];

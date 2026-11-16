@@ -350,6 +350,7 @@ import {
   type RemoteDraftDefaults,
 } from './deviceLinkDraftDefaults';
 import { recallAgentDeviceSelection, rememberAgentDeviceSelection } from './agentDeviceDraftMemory';
+import { isCloudDeviceId } from '@/features/cloud-settings/cloudDeviceId';
 import { makeMirrorAccessors, replaceScope, clearScope } from '@/state/deviceLinkModelMirror';
 import type { ModelMemoryAccessors } from '@/components/new-chat/ModelSelector';
 import { remoteAgentProviders } from '@/components/new-chat/unifiedModelSelection';
@@ -1931,7 +1932,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
   useRemoteDraftSelection({
     remoteDefaults, usesDeviceCatalog, catalogDeviceId, capabilityAgentKind, agentCatalogProviders,
     capabilities, capabilitiesLoading, deviceProvidersLoading, deviceProvidersUnsupported,
-    deviceDraftDefaultsReady, deviceDraftDefaults, isAgentDeviceDraft,
+    deviceDraftDefaultsReady, deviceDraftDefaults, isAgentDeviceDraft, deviceProvidersError,
   });
 
   // 记住这次对运行 Agent 的电脑的选择(仅本次运行)，切走再切回时恢复。
@@ -1964,6 +1965,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
         undefined,
         capabilityAgentKind,
         agentCatalogProviders,
+        catalogDeviceId,
       );
     }
     return null;
@@ -1973,6 +1975,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
     capabilities,
     capabilityAgentKind,
     agentCatalogProviders,
+    catalogDeviceId,
   ]);
 
   // 用户为这个目标**明确选过**的来源:被控端草稿里记着的那家(agent-device 则是本机为
@@ -3009,6 +3012,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
               undefined,
               capabilityAgentKind,
               freshProviders,
+              req.deviceId,
             ),
           );
           dlRuntimeTouchedRef.current = false;
@@ -3035,6 +3039,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
                   undefined,
                   capabilityAgentKind,
                   freshProviders,
+                  req.deviceId,
                 )
               : resolveDeviceLinkDraftDefaults(
                   freshCaps,
@@ -3042,6 +3047,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
                   undefined,
                   capabilityAgentKind,
                   freshProviders,
+                  req.deviceId,
                 ),
           );
         }
@@ -3432,12 +3438,23 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
           newModelId,
           capabilityAgentKind,
           agentCatalogProviders,
+          catalogDeviceId,
         );
         setDlSel((prev) => ({
           ...resolved,
           permissionMode: prev?.permissionMode,
           providerId: prev?.providerId ?? null,
         }));
+        // 托管云实例的新建任务记忆跟随这次换模型;其它电脑只改控制端草稿。
+        if (isCloudDeviceId(effectiveDeviceLinkDeviceId)) {
+          pushActiveDraftPref({ effort: resolved.effort ?? undefined, fast: resolved.fastMode }, {
+            agent: capabilityAgentKind,
+            providerId: dlSel?.providerId ?? deviceLinkInitial?.providerId ?? null,
+            modelId: newModelId,
+            effort: resolved.effort ?? undefined,
+            explicitModelChoice: true,
+          });
+        }
         return;
       }
       markDefaultTupleCustomized();
@@ -3453,6 +3470,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
       deviceDraftDefaults,
       patchActiveTuplePrefs,
       capabilityAgentKind,
+      pushActiveDraftPref, dlSel, deviceLinkInitial, effectiveDeviceLinkDeviceId, catalogDeviceId,
       agentCatalogProviders,
     ],
   );
@@ -3724,6 +3742,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
                 selection.modelId,
                 capabilityAgentKind,
                 agentCatalogProviders,
+                catalogDeviceId,
               )
             : previous;
           // 能力与镜像都还没到:推不出任何一档,保持原状而不是编一个默认值。

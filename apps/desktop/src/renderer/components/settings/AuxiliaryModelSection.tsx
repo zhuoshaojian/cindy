@@ -19,7 +19,10 @@ import {
   AUTO_AUXILIARY_MODEL_CHAIN,
   AUTO_AUXILIARY_MODEL_CHAIN_I18N_KEYS,
 } from '../../../shared/auxiliaryModelChain';
-import type { AuxiliaryModelSettingsState } from '../../../shared/auxiliaryModelSettings';
+import type {
+  AuxiliaryModelOption,
+  AuxiliaryModelSettingsState,
+} from '../../../shared/auxiliaryModelSettings';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 
 const log = createLogger('AuxiliaryModelSection');
@@ -102,14 +105,55 @@ export function AuxiliaryModelSection() {
 
   if (!settings) return null;
 
-  const models = Array.isArray(settings.models) ? settings.models : [];
+  return (
+    <AuxiliaryModelSectionView
+      models={settings.models}
+      options={options}
+      pending={pending}
+      signInHint={authMode !== 'cloud'}
+      drafting={drafting}
+      setDrafting={setDrafting}
+      persistModels={persistModels}
+    />
+  );
+}
+
+export interface AuxiliaryModelSectionViewProps {
+  /** Persisted custom chain; empty = follow the automatic chain. */
+  models: readonly string[];
+  /** Slot catalog with availability already resolved by the owner (local: model visibility prefs). */
+  options: readonly AuxiliaryModelOption[];
+  pending: boolean;
+  /** No Cindy AI routes (local / signed-out): show the sign-in hint and do not seed them into a draft. */
+  signInHint: boolean;
+  /** First-time Custom is a draft only; owners clear it after a successful empty save. */
+  drafting: boolean;
+  setDrafting: (drafting: boolean) => void;
+  persistModels: (models: string[]) => Promise<boolean>;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: React.ReactNode;
+}
+
+/** Shared native view. Local and cloud controllers provide the same state/actions. */
+export function AuxiliaryModelSectionView({
+  models: savedModels,
+  options,
+  pending,
+  signInHint,
+  drafting,
+  setDrafting,
+  persistModels,
+  headingStatus,
+}: AuxiliaryModelSectionViewProps) {
+  const { t } = useTranslation();
+  const models = Array.isArray(savedModels) ? savedModels : [];
   const customized = models.length > 0;
   const showCustom = customized || drafting;
   // Keep the default/override split intact: first-time Custom is only a draft.
   // Local and signed-out sessions cannot use Cindy AI routes, so do not seed
   // those unavailable catalog pins into a draft that the user cannot select.
   const automaticDraftModels =
-    authMode === 'cloud'
+    !signInHint
       ? AUTO_AUXILIARY_MODEL_CHAIN.filter((ref) =>
           options.some((option) => option.id === ref && option.available),
         )
@@ -161,6 +205,7 @@ export function AuxiliaryModelSection() {
     <SettingsSection
       title={t(personalizationDetailsSettings.auxiliaryModelsTitle.titleKey)}
       description={t(personalizationDetailsSettings.auxiliaryModelsTitle.descriptionKey)}
+      action={headingStatus}
     >
       <SettingsCard>
         <SettingsRow
@@ -245,7 +290,7 @@ export function AuxiliaryModelSection() {
             })}
 
             <p className={cn('px-4 pb-4', SETTINGS_HINT)}>
-              {authMode !== 'cloud' ? (
+              {signInHint ? (
                 <span className="mb-1 block text-[var(--text-tertiary)]">
                   {t('settings.auxiliaryModels.signInHint')}
                 </span>
@@ -258,7 +303,7 @@ export function AuxiliaryModelSection() {
             <p className="text-12 leading-[1.5] text-[var(--text-tertiary)]">
               {automaticChain}
             </p>
-            {authMode !== 'cloud' ? (
+            {signInHint ? (
               <p className="mt-1 text-12 leading-[1.5] text-[var(--text-tertiary)]">
                 {t('settings.auxiliaryModels.signInHint')}
               </p>

@@ -114,8 +114,8 @@ function transportBadgeTone(status: SlackHookView['status']): ChannelBadgeTone {
   }
 }
 
-/** 收起行状态徽章(结构与 FeishuBotSection 的状态 pill 逐字对齐)。 */
-function ChannelStatusBadge({ tone, label }: { tone: ChannelBadgeTone; label: string }) {
+/** 收起行状态徽章(结构与 FeishuBotSection 的状态 pill 逐字对齐)。云实例设置的官方卡复用。 */
+export function ChannelStatusBadge({ tone, label }: { tone: ChannelBadgeTone; label: string }) {
   const color = badgeToneColor(tone);
   return (
     <span
@@ -1504,9 +1504,7 @@ export function HookConnectionsSection({ companion, projectsOnly = false }: {
 
   return (
     <div className="flex flex-col gap-3">
-      {!companion ? <p className="text-12 text-[var(--text-tertiary)]">
-        {t('settings.remoteControl.hook.description')}
-      </p> : null}
+      {!companion ? <HookConnectionsDescription /> : null}
 
       {/* ── Slack 渠道卡 ─────────────────────────────────────────────── */}
       {!companion ? <ImChannelSettingsCard
@@ -1949,5 +1947,15 @@ export function HookConnectionsSection({ companion, projectsOnly = false }: {
       {/* ── 项目与模型(所有官方机器人共用, 只此一处) ─────────────────── */}
       {projectsSectionVisible ? renderProjectsSection() : null}
     </div>
+  );
+}
+
+/** 官方渠道分组说明;云实例设置的官方分组复用。 */
+export function HookConnectionsDescription() {
+  const { t } = useTranslation();
+  return (
+    <p className="text-12 text-[var(--text-tertiary)]">
+      {t('settings.remoteControl.hook.description')}
+    </p>
   );
 }
