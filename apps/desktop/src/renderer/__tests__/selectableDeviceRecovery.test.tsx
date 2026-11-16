@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useSelectableDevices } from '@/hooks/useControllableDevices';
+import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDeviceList';
 
 type LinkStatus = 'stopped' | 'connecting' | 'online';
 type Directory = { devices: DeviceLinkDeviceView[] };
@@ -15,6 +17,8 @@ function device(overrides: Partial<DeviceLinkDeviceView> = {}): DeviceLinkDevice
   };
 }
 
+// The device directory is one store per renderer, started once and bound to the preload bridge for
+// the renderer's lifetime, so the file installs one bridge and starts the store once.
 function bridge() {
   const statuses = new Set<(payload: { status: LinkStatus }) => void>();
   const presences = new Set<(payload: DeviceLinkPresenceSnapshot) => void>();
@@ -46,6 +50,7 @@ function bridge() {
     }))),
   };
 }
+let api: ReturnType<typeof bridge>;
 
 async function flush(): Promise<void> {
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
@@ -58,19 +63,36 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-beforeEach(() => { vi.resetModules(); vi.useFakeTimers(); });
-afterEach(() => {
-  cleanup(); vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals();
+beforeAll(async () => {
+  api = bridge();
+  api.listDevices.mockResolvedValue({ devices: [] });
+  const { unmount } = renderHook(useDeviceLinkDeviceList);
+  await flush();
+  unmount();
 });
+afterAll(() => { vi.unstubAllGlobals(); });
+// Every case starts from a signed-out account (the relay stopped) and then mounts the picker and
+// brings the relay online, as signing in does.
+beforeEach(() => {
+  vi.useFakeTimers();
+  api.status('stopped');
+  api.listDevices.mockReset();
+});
+afterEach(() => {
+  cleanup(); vi.clearAllTimers(); vi.useRealTimers();
+});
+async function mountOnline<T>(hook: () => T) {
+  const rendered = renderHook(hook);
+  api.status('online');
+  await flush();
+  return rendered;
+}
 
 describe('new-task device picker recovery', () => {
   it('refreshes a stale offline row on relay reconnect without a new presence event', async () => {
-    const api = bridge();
     api.listDevices.mockResolvedValueOnce({ devices: [device()] })
       .mockResolvedValue({ devices: [device({ online: true, remoteControlEnabled: true })] });
-    const { useSelectableDevices } = await import('@/hooks/useControllableDevices');
-    const { result } = renderHook(useSelectableDevices);
-    await flush();
+    const { result } = await mountOnline(useSelectableDevices);
     expect(result.current.devices[0]?.online).toBe(false);
     api.status('online');
     await flush();
@@ -79,13 +101,10 @@ describe('new-task device picker recovery', () => {
   });
 
   it('retains cached rows on failure and retries without another push', async () => {
-    const api = bridge();
     api.listDevices.mockResolvedValueOnce({ devices: [device()] })
       .mockRejectedValueOnce(new Error('temporary directory failure'))
       .mockResolvedValue({ devices: [device({ online: true, remoteControlEnabled: true })] });
-    const { useSelectableDevices } = await import('@/hooks/useControllableDevices');
-    const { result } = renderHook(useSelectableDevices);
-    await flush();
+    const { result } = await mountOnline(useSelectableDevices);
     api.onlinePresence();
     await flush();
     expect(result.current.loaded).toBe(false);
@@ -96,17 +115,13 @@ describe('new-task device picker recovery', () => {
   });
 
   it('shares one authoritative directory with the sidebar and keeps another peer usable', async () => {
-    const api = bridge();
     const mac = device({ deviceId: 'peer-mac', name: 'Mac', platform: 'darwin',
       online: true, remoteControlEnabled: true });
     api.listDevices.mockResolvedValueOnce({ devices: [device(), mac] })
       .mockResolvedValue({ devices: [device({ online: true, remoteControlEnabled: true }), mac] });
-    const { useSelectableDevices } = await import('@/hooks/useControllableDevices');
-    const { useDeviceLinkDeviceList } = await import('@/features/device-link/useDeviceLinkDeviceList');
-    const { result } = renderHook(() => ({
+    const { result } = await mountOnline(() => ({
       picker: useSelectableDevices(), sidebar: useDeviceLinkDeviceList(),
     }));
-    await flush();
     expect(api.listDevices).toHaveBeenCalledTimes(1);
     expect(result.current.picker.devices.find((d) => d.deviceId === 'peer-mac')?.online).toBe(true);
     api.onlinePresence();
@@ -117,13 +132,10 @@ describe('new-task device picker recovery', () => {
   });
 
   it('clears a stopped account and rejects its late directory response', async () => {
-    const api = bridge();
     const pending = deferred();
     api.listDevices.mockResolvedValueOnce({ devices: [device()] })
       .mockReturnValueOnce(pending.promise);
-    const { useSelectableDevices } = await import('@/hooks/useControllableDevices');
-    const { result } = renderHook(useSelectableDevices);
-    await flush();
+    const { result } = await mountOnline(useSelectableDevices);
     api.controls();
     await flush();
     api.status('stopped');
@@ -136,12 +148,9 @@ describe('new-task device picker recovery', () => {
   });
 
   it.each(['resolve', 'reject'] as const)('ignores a superseded response that later %ss', async (finish) => {
-    const api = bridge();
     const old = deferred();
     api.listDevices.mockReturnValueOnce(old.promise).mockResolvedValue({ devices: [] });
-    const { useSelectableDevices } = await import('@/hooks/useControllableDevices');
-    const { result } = renderHook(useSelectableDevices);
-    await flush();
+    const { result } = await mountOnline(useSelectableDevices);
     api.controls();
     await flush();
     expect(result.current).toEqual({ devices: [], loaded: true });
@@ -152,12 +161,9 @@ describe('new-task device picker recovery', () => {
   });
 
   it('does not treat a failed first read as an authoritative empty directory', async () => {
-    const api = bridge();
     api.listDevices.mockRejectedValueOnce(new Error('unavailable'))
       .mockResolvedValue({ devices: [] });
-    const { useSelectableDevices } = await import('@/hooks/useControllableDevices');
-    const { result } = renderHook(useSelectableDevices);
-    await flush();
+    const { result } = await mountOnline(useSelectableDevices);
     expect(result.current).toEqual({ devices: [], loaded: false });
     api.controls();
     await flush();

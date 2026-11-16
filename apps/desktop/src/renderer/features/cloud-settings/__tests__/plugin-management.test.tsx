@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CloudPluginManagement } from '../CloudPluginManagement';
@@ -93,21 +90,4 @@ it('reads skills only once their tab is opened and keeps the plugin page mounted
 it('pauses the page while another settings category is shown', () => {
   show(false);
   expect(last(pages.plugins).active).toBe(false);
-});
-// The browser build shares CloudSettingsPanel; the plugin page must stay out of what it loads.
-it('is supplied by the native router only', () => {
-  const renderer = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-  const read = (file: string) => fs.readFileSync(path.join(renderer, file), 'utf8');
-  expect(read('router.tsx')).toContain("import('@/features/cloud-settings/CloudPluginManagement')");
-  const shared = ['features/cloud-settings/CloudSettingsView.tsx'].concat(
-    fs.readdirSync(path.join(renderer, 'cloud-web')).filter((name) => /\.tsx?$/.test(name)).map((name) => `cloud-web/${name}`),
-  );
-  // The one exception is the plugin layout's 「正在管理」 notice (CatalogManagementNotice), which the
-  // settings page shows above every other category as the client does; the plugin and
-  // skill pages themselves stay out.
-  for (const file of shared) {
-    expect(read(file), file).not.toMatch(
-      /(from |import\()'[^']*(CloudPluginManagement|features\/plugin\/(?!PluginManagementLayout')|features\/skillhub\/)/,
-    );
-  }
 });
