@@ -137,7 +137,7 @@ describe('model and IM settings native persistence', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toMatchObject({ ...previous, inflightLimits: { 'fixture-plugin': 3 } });
   });
   it('passive reads do not claim legacy files or create defaults', async () => {
-    for (const domain of ['subagentModel', 'auxiliaryModel', 'visionBridge', 'botModelChain', 'imGlobal', 'imFeishu', 'imWechat'] as const) {
+    for (const domain of ['subagentModel', 'auxiliaryModel', 'visionBridge', 'imGlobal', 'imFeishu', 'imWechat'] as const) {
       expect(await getHostSettings(caller, domain)).toMatchObject({ status: 'ready', customizedKeys: [] });
     }
     expect(fs.readdirSync(context.root)).toEqual([]);
@@ -188,10 +188,13 @@ describe('model and IM settings native persistence', () => {
     expect(await updateHostSettings(caller, input)).toMatchObject({ saved: false, code: 'MODEL_UNAVAILABLE' });
     expect(readSubagentModelSettings().claudeCode).toBeNull();
   });
-  it('rejects unsupported effort and duplicate bot routes even if other parameters differ', async () => {
-    const item = { harness: 'codex', providerId: route.providerId, model: route.modelId, effort: 'ultra', fastMode: false };
-    expect(await updateHostSettings(caller, await request('botModelChain', { set: { modelChain: [item] } }))).toMatchObject({ saved: false, code: 'EFFORT_UNSUPPORTED' });
-    expect(() => normalizeHostSettingsChange({ domain: 'botModelChain', set: { modelChain: [item, { ...item, effort: 'low' }] } })).toThrow();
+  // Upstream v0.1.136 removed the global teammate model chain editor; the cloud Host follows it.
+  it('keeps the global teammate model chain read-only and still rejects duplicate routes on the wire', async () => {
+    expect(await getHostSettings(caller, 'botModelChain')).toMatchObject({ status: 'unavailable', revision: null });
+    const item = { harness: 'codex', providerId: route.providerId, model: route.modelId, effort: 'low', fastMode: false };
+    await expect(validateModelSettingsChange('botModelChain', { set: { modelChain: [item] }, clear: [] })).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+    expect(() => normalizeHostSettingsChange({ domain: 'botModelChain', set: { modelChain: [item, { ...item, effort: 'high' }] } })).toThrow();
+    expect(fs.readdirSync(context.root)).toEqual([]);
   });
   it('preserves per-channel IM overrides and explicitly chosen defaults', async () => {
     await updateHostSettings(caller, await request('imFeishu', { set: { permissionMode: 'auto' } }));

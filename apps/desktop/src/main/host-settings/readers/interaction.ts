@@ -9,7 +9,7 @@ import { inspectTelegramBehavior, inspectTelegramPersona } from '../../im/telegr
 import { inspectOfficialHookSettings, DEFAULT_SLACK_LIFECYCLE_ANNOUNCEMENT } from '../../hook-control/store.js';
 import { SettingsReader } from '../../maker-host/plugins/settings-reader.js';
 import { DEFAULT_DISABLED_PLUGIN_IDS } from '../../maker-host/plugins/types.js';
-import { inspectBrowserBackendSettings } from '../../browser-backend-settings-store.js';
+import { inspectBrowserBackendSettings } from '../../browser-backend-settings-store.desktop.js';
 import { inspectAndroidAutomationSettings } from '../../android-automation-settings-store.js';
 import { APP_SHORTCUT_DEFINITIONS, getEffectiveAppShortcuts, isAppShortcutAvailableOnPlatform } from '../../../shared/appShortcuts.js';
 import { IM_DEFAULT_SETTINGS_CHANNELS } from '../../../shared/imDefaultSettings.js';

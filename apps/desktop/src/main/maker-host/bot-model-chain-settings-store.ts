@@ -1,4 +1,3 @@
-import { validateAdditionalSettingsOverrides } from '../../shared/settingsEditableCatalog.js';
 import { app } from 'electron';
 import path from 'node:path';
 import {
@@ -91,7 +90,6 @@ function currentStore(rootPath?: string) {
     current = createOverrideSettingsFile<BotModelChainSettings>({
       filePath: () => settingsFilePath(ownerRoot ?? undefined),
       defaults: DEFAULTS,
-  validateOverrides: raw => validateAdditionalSettingsOverrides('botModelChain', raw),
       normalize,
       log,
       label: 'bot-model-chain',
@@ -237,5 +235,3 @@ export async function readEffectiveBotModelChain(
 ): Promise<BotModelRoute[]> {
   return (await readEffectiveBotModelSelection(config, options)).chain;
 }
-
-export function getBotModelChainSettingsStore() { return currentStore(); }

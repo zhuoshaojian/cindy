@@ -122,7 +122,7 @@ const store = createOverrideSettingsFile<BrowserBackendSettings>({
   label: 'browser-backend',
 });
 
-export function inspectBrowserBackendSettings(root: string) {
+function inspectBrowserBackendSettings(root: string) {
   return inspectSettingsJson(path.join(root, 'browser-backend-settings.json'), raw => {
     validateOptionalSettingsFields(raw, { kind: value => VALID_KINDS.includes(value as BackendKind), useRealProfile: value => typeof value === 'boolean' });
     return normalize(raw);
@@ -133,7 +133,7 @@ function readBrowserBackendSettings(): BrowserBackendSettings {
   return store.read();
 }
 
-export function getHostBrowserBackendStore() { return store; }
+function getHostBrowserBackendStore() { return store; }
 
 function readBrowserBackendSettingsState(): OverrideSettingsState<BrowserBackendSettings> {
   return store.readState();
@@ -155,5 +155,5 @@ function resetBrowserBackendSettings(): BrowserBackendSettings {
 }
 
 const __testing = { normalize, DEFAULTS };
-return { readBrowserBackendSettings, readBrowserBackendSettingsState, writeBrowserBackendKind, writeBrowserUseRealProfile, resetBrowserBackendSettings, __testing };
+return { readBrowserBackendSettings, readBrowserBackendSettingsState, writeBrowserBackendKind, writeBrowserUseRealProfile, resetBrowserBackendSettings, __testing, inspectBrowserBackendSettings, getHostBrowserBackendStore };
 }

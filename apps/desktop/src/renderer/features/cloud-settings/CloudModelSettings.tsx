@@ -1,12 +1,8 @@
 import { useState, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
-import { toast } from '@/lib/toast';
-import { BotsGlobalSettingsSectionView } from '@/features/bots/BotsGlobalSettingsSection';
 import { SubagentModelSectionView } from '@/components/settings/SubagentModelSection';
 import { VisionBridgeSectionView } from '@/components/settings/VisionBridgeSection';
 import { AuxiliaryModelSectionView } from '@/components/settings/AuxiliaryModelSection';
 import { useDeviceProviders } from '@/hooks/useDeviceProviders';
-import { normalizeBotModelChain } from '../../../shared/botModelChain';
 import { decodeCatalogModelPin } from '../../../shared/catalogModelPin';
 import type { AuxiliaryModelOption } from '../../../shared/auxiliaryModelSettings';
 import type { VisionBackendRef } from '../../../shared/visionBridgeSettings';
@@ -24,57 +20,6 @@ const isRoute = (value: unknown): value is Route =>
   typeof value === 'object' &&
   !Array.isArray(value) &&
   typeof (value as Route).modelId === 'string';
-
-/**
- * Bot default model chain on the target. Model pickers read the target's catalog
- * through `deviceId`; the Host validates every route. Cross-device routes and
- * finer speed tiers have no field in the settings contract, so they are refused
- * rather than silently dropped.
- */
-export function CloudBotsSettings({
-  state,
-  deviceId,
-  disabled,
-  attempt,
-  headingStatus,
-}: {
-  state: CloudSettingsState;
-  deviceId: string;
-  disabled: boolean;
-  attempt: Attempt;
-  /** The group could not be read: the status in its heading row. */
-  headingStatus?: ReactNode;
-}) {
-  const { t } = useTranslation();
-  const chain = normalizeBotModelChain(state.value?.modelChain);
-  return (
-    <BotsGlobalSettingsSectionView
-      headingStatus={headingStatus}
-      modelChain={chain}
-      pending={disabled}
-      notice={null}
-      deviceId={deviceId}
-      onChange={(next) => {
-        if (next.some((route) => route.agentDeviceId || route.fastMode === 'ultrafast')) {
-          toast.error(t('bots.remoteSettings.unsupported'));
-          return;
-        }
-        void attempt('botModelChain', {
-          modelChain: next.map((route) => ({
-            harness: route.harness,
-            providerId: route.providerId ?? null,
-            model: route.model,
-            effort: route.effort ?? '',
-            fastMode: route.fastMode === true,
-          })),
-        });
-      }}
-      onRestoreDefault={
-        state.isCustomized ? () => void attempt('botModelChain', {}, ['modelChain']) : undefined
-      }
-    />
-  );
-}
 
 export function CloudSubagentSettings({
   state,

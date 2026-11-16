@@ -20,9 +20,9 @@ const text = (path: string) => readFileSync(src(path), 'utf8');
 function expectIds(expected: string[]) { for (const id of expected) expect(ids.has(id), id).toBe(true); }
 
 describe('settings read catalog independent coverage anchors', () => {
-  it('classifies the actual 20 tabs and every SettingsView child instead of comparing the catalog to itself', () => {
+  it('classifies the actual 21 tabs and every SettingsView child instead of comparing the catalog to itself', () => {
     expect(SETTINGS_READ_TABS).toEqual(TAB_IDS);
-    expect(TAB_IDS).toHaveLength(20);
+    expect(TAB_IDS).toHaveLength(21);
     const represented = new Set([...Object.values(SETTINGS_READ_CATALOG).map(field => field.tab), ...SETTINGS_READ_EXTERNAL_CATALOG.map(item => item.tab)]);
     expect([...represented].sort()).toEqual([...TAB_IDS].sort());
     const actualSections = [...text('renderer/components/settings/SettingsView.tsx').matchAll(/<([A-Z][A-Za-z]*(?:Section|Cell|Card|Panel))\b/g)].map(match => match[1]);

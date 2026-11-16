@@ -13,7 +13,6 @@ export const CLOUD_SETTINGS_GROUPS = {
   // desktop, per the 2026-11-04 product review.
   general: [
     'desktopGeneral',
-    'botModelChain',
     'collaboration',
     'agentResource',
     'gitSafety',

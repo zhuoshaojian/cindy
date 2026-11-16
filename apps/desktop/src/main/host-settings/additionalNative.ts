@@ -1,7 +1,7 @@
 import { nativeProjectToolSettings } from './additionalProjectTools.js';
-import { getHostBrowserBackendStore } from '../browser-backend-settings-store.js';
+import { getHostBrowserBackendStore } from '../browser-backend-settings-store.desktop.js';
 import { nativeWorkspaceProviderSettings } from './additionalWorkspaceProviders.js';
-import { commitHostBrowserBackendKind } from '../mcp-integrations/browser.js';
+import { commitHostBrowserBackendKind } from '../mcp-integrations/browser.desktop.js';
 import type { OverrideSettingsCommitOptions } from '../maker-host/override-settings-file.js';
 import type { SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import { HostSettingsError } from './operations.js';

@@ -47,7 +47,6 @@ import { CloudStorageUsage } from './CloudStorageUsage';
 import { CloudDesktopFallback } from './CloudDesktopFallback';
 import {
   CloudAuxiliarySettings,
-  CloudBotsSettings,
   CloudSubagentSettings,
   CloudVisionBridgeSettings,
 } from './CloudModelSettings';
@@ -142,7 +141,6 @@ function StaleFade({ target }: { target: string }) {
  */
 export const CLOUD_GROUP_TITLE_KEYS: Partial<Record<CloudSettingsDomain, string>> = {
   desktopGeneral: 'settings.language.title',
-  botModelChain: 'settings.sections.bots',
   collaboration: 'settings.sections.collaboration',
   agentResource: 'settings.agentResource.title',
   gitSafety: 'settings.sections.gitSafety',
@@ -448,18 +446,6 @@ export function NativeCloudSections(props: Props) {
             </div>,
           )}
         {unreadableHere(['desktopGeneral'], 'settings-search-target-general-language', 'py-[18px]')}
-        {ready('botModelChain') &&
-          generalSection(
-            'settings-bots',
-            <CloudBotsSettings
-              headingStatus={keptStatus(['botModelChain'])}
-              state={s('botModelChain')}
-              deviceId={deviceId}
-              disabled={disabled}
-              attempt={confirmSave}
-            />,
-          )}
-        {unreadableHere(['botModelChain'], 'settings-bots', 'py-[18px]')}
         {ready('collaboration') &&
           generalSection(
             'settings-collaboration',
@@ -594,17 +580,6 @@ export function NativeCloudSections(props: Props) {
                 attempt('memory', { [kind === 'claude-code' ? 'claudeCode' : kind]: next })
               }
               agentRows={memoryAgentRows}
-            />,
-          )}
-        {ready('botModelChain') &&
-          section(
-            'settings-bots',
-            <CloudBotsSettings
-              headingStatus={keptStatus(['botModelChain'])}
-              state={s('botModelChain')}
-              deviceId={deviceId}
-              disabled={disabled}
-              attempt={confirmSave}
             />,
           )}
         {unreadableHere(['subagentModel'], 'settings-search-target-personalization-subagents')}

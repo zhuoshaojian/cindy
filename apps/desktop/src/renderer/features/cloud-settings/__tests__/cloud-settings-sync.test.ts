@@ -295,14 +295,12 @@ describe('optimistic cloud settings sync', () => {
       });
       it('still writes a new order of a list whose order matters', async () => {
         const { save, sync } = await vision([]);
-        const [chain] = await createTrialCloudSettingsClient().read(['botModelChain']);
-        const a = { providerId: 'p', agentKind: 'pi', model: 'a' };
-        const b = { providerId: 'p', agentKind: 'pi', model: 'b' };
-        sync.ingest([{ ...chain!, value: { modelChain: [a, b] } }], sync.stamp());
-        sync.change('botModelChain', { modelChain: [b, a] });
+        const [auxiliary] = await createTrialCloudSettingsClient().read(['auxiliaryModel']);
+        sync.ingest([{ ...auxiliary!, value: { models: ['a', 'b'] } }], sync.stamp());
+        sync.change('auxiliaryModel', { models: ['b', 'a'] });
         await vi.advanceTimersByTimeAsync(0);
         expect(save).toHaveBeenCalledTimes(1);
-        expect(save.mock.calls[0][1]).toEqual({ modelChain: [b, a] });
+        expect(save.mock.calls[0][1]).toEqual({ models: ['b', 'a'] });
       });
     });
 

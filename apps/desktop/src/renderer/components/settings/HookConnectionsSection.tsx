@@ -1589,12 +1589,12 @@ export function HookConnectionsSection({ companion }: { companion?: { id: string
                 onClick={() => void handleCopyProviderLink('feishu')}>{t('settings.remoteControl.hook.binding.copyLink')}</Button> : null}
               {own?.actions.includes('cancel') ? <Button variant="secondary" size="xs" compact type="button"
                 data-settings-search-action="Start or cancel linking this bot account"
-                onClick={() => runHookAction(() => window.electronAPI.hookControl.providerBindCancel('feishu'))}>{t('settings.remoteControl.hook.feishu.cancel')}</Button> : null}
+                onClick={() => runHookAction(() => hookControl.providerBindCancel('feishu'))}>{t('settings.remoteControl.hook.feishu.cancel')}</Button> : null}
             </> : <>
               {(app.appType === 'store' && view.multiBindAvailable) || accounts.length === 0 ? <Button variant={accounts.length === 0 ? 'primary' : 'secondary'} size="xs" compact type="button"
                 data-settings-search-action="Start or cancel linking this bot account"
                 disabled={busy || !view.enabled || !view.available || view.status !== 'connected'}
-                onClick={() => runHookAction(() => window.electronAPI.hookControl.providerBindStart('feishu', app.appId))}>{t(`settings.remoteControl.hook.feishu.${accounts.length > 0 ? 'linkAnotherAccount' : 'connectBot'}`)}</Button> : null}
+                onClick={() => runHookAction(() => hookControl.providerBindStart('feishu', app.appId))}>{t(`settings.remoteControl.hook.feishu.${accounts.length > 0 ? 'linkAnotherAccount' : 'connectBot'}`)}</Button> : null}
             </>}
 
           </div>

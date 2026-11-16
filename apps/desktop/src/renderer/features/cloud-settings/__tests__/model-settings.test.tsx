@@ -3,15 +3,9 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CloudSettingsState } from '../../../../shared/cloudSettings';
 
-const views = vi.hoisted(() => ({ bots: vi.fn(), subagent: vi.fn(), vision: vi.fn(), auxiliary: vi.fn(), catalog: vi.fn() }));
+const views = vi.hoisted(() => ({ subagent: vi.fn(), vision: vi.fn(), auxiliary: vi.fn(), catalog: vi.fn() }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-vi.mock('@/features/bots/BotsGlobalSettingsSection', () => ({
-  BotsGlobalSettingsSectionView: (props: Record<string, unknown>) => {
-    views.bots(props);
-    return <div data-testid="bots" />;
-  },
-}));
 vi.mock('@/components/settings/SubagentModelSection', () => ({
   SubagentModelSectionView: (props: Record<string, unknown>) => {
     views.subagent(props);
@@ -36,10 +30,8 @@ vi.mock('@/hooks/useDeviceProviders', () => ({
     return { providers: [{ id: 'target-provider' }], loading: false, error: null, unsupported: false };
   },
 }));
-import { toast } from '@/lib/toast';
 import {
   CloudAuxiliarySettings,
-  CloudBotsSettings,
   CloudSubagentSettings,
   CloudVisionBridgeSettings,
 } from '../CloudModelSettings';
@@ -48,45 +40,10 @@ import { act } from '@testing-library/react';
 const state = (domain: string, value: Record<string, unknown>, extra = {}) =>
   ({ domain, status: 'ready', revision: '1', value, defaults: {}, customizedKeys: [], ...extra }) as unknown as CloudSettingsState;
 const last = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls.at(-1)![0];
-const route = { harness: 'claude', providerId: 'provider-a', model: 'model-a', effort: 'high', fastMode: false };
 
 describe('cloud model settings', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(cleanup);
-
-  it('edits the bot chain on the target catalog and writes the settings contract shape', () => {
-    const attempt = vi.fn(async () => true);
-    render(
-      <CloudBotsSettings
-        state={state('botModelChain', { modelChain: [route] }, { isCustomized: true })}
-        deviceId="cloud-device-a"
-        disabled={false}
-        attempt={attempt}
-      />,
-    );
-    const props = last(views.bots);
-    expect(props.deviceId).toBe('cloud-device-a');
-    expect(props.modelChain).toMatchObject([{ harness: 'claude', model: 'model-a' }]);
-    props.onChange([{ ...route, providerId: undefined, effort: undefined, fastMode: true }]);
-    expect(attempt).toHaveBeenCalledWith('botModelChain', {
-      modelChain: [{ harness: 'claude', providerId: null, model: 'model-a', effort: '', fastMode: true }],
-    });
-    props.onRestoreDefault();
-    expect(attempt).toHaveBeenLastCalledWith('botModelChain', {}, ['modelChain']);
-  });
-
-  it('refuses routes the settings contract cannot carry instead of dropping their device', () => {
-    const attempt = vi.fn(async () => true);
-    render(
-      <CloudBotsSettings state={state('botModelChain', { modelChain: [] })} deviceId="d" disabled={false} attempt={attempt} />,
-    );
-    const props = last(views.bots);
-    expect(props.onRestoreDefault).toBeUndefined();
-    props.onChange([{ ...route, agentDeviceId: 'other-device' }]);
-    props.onChange([{ ...route, fastMode: 'ultrafast' }]);
-    expect(attempt).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledTimes(2);
-  });
 
   it('saves the Claude Subagent route and restores each field independently', async () => {
     const attempt = vi.fn(async () => true);

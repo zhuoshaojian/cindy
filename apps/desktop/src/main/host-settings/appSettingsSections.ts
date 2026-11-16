@@ -32,7 +32,6 @@ const SECTIONS: Partial<Record<HostSettingsDomain, Entry>> = {
   pluginErrand: { title: '插件 Agent 任务', description: '插件发起的 Agent 任务使用的模型、权限与工作目录。' },
   pluginCindy: { title: '插件 AI 能力', description: '插件调用图片、视频、文本与向量能力时的模型与并发数。' },
   pluginSidebar: { title: '隐藏的插件', description: '在侧栏隐藏的插件。' },
-  botModelChain: { title: '机器人模型', description: '机器人使用的模型及备用顺序。' },
   modelEngines: { title: '模型偏好 Agent', description: '各模型优先使用的 Agent。' },
   modelFavorites: { title: '收藏模型', description: '收藏的模型及其推理强度与 Fast 设置。' },
   imGlobal: { title: 'IM 新任务（全局默认）', description: '所有 IM 渠道新任务共用的默认 Agent、权限及各 Agent 的模型与推理强度。' },

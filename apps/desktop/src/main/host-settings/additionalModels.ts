@@ -9,7 +9,6 @@ import type { HostSettingState } from '../../shared/hostSettings.js';
 import { getSubagentModelSettingsStore } from '../maker-host/subagent-model-settings-store.js';
 import { getAuxiliaryModelSettingsStore, inspectAuxiliaryModelSettings } from '../utility-model/auxiliary-model-settings-store.js';
 import { getVisionBridgeSettingsStore } from '../vision-bridge/vision-bridge-settings-store.js';
-import { getBotModelChainSettingsStore, readBotModelChainSettingsState } from '../maker-host/bot-model-chain-settings-store.js';
 import { ownerScopedUserDataPath } from '../appSessionState.js';
 import { currentSettingsOwner } from './personalization.js';
 import { readSettingsModelCatalog } from './catalog.js';
@@ -29,7 +28,7 @@ type Values = Record<string, SettingsEditableValue>;
 type State = HostSettingState<Values>;
 export type SettingsChoice = { value: SettingsEditableValue; label: string; efforts?: string[]; supportsFast?: boolean };
 const stores = { subagentModel: getSubagentModelSettingsStore, auxiliaryModel: getAuxiliaryModelSettingsStore,
-  visionBridge: getVisionBridgeSettingsStore, botModelChain: getBotModelChainSettingsStore, readBotModelChainSettingsState };
+  visionBridge: getVisionBridgeSettingsStore };
 function storeFor(domain: ModelSettingsDomain) { return stores[domain as keyof typeof stores]() as unknown as OverrideSettingsFile<Values>; }
 function project(domain: ModelSettingsDomain, state: State): State {
   if (state.status !== 'ready') return state;
@@ -117,6 +116,7 @@ export function captureSettingsModelGuard() {
   return assertCurrent;
 }
 export async function validateModelSettingsChange(domain: ModelSettingsDomain, change: { set: Values; clear: string[] }) {
+  if (domain === 'botModelChain') throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
   const assertCurrent = captureSettingsModelGuard();
   const choices = await modelSettingsChoices(domain);
   assertCurrent();
@@ -125,14 +125,14 @@ export async function validateModelSettingsChange(domain: ModelSettingsDomain, c
   for (const [key, value] of Object.entries(change.set)) {
     if (!(key in choices) || value === null) continue;
     const selected = Array.isArray(value) ? value : [value];
-    if ((domain === 'auxiliaryModel' || domain === 'botModelChain') && !selected.length) throw new HostSettingsError('INVALID_PARAMS');
+    if (domain === 'auxiliaryModel' && !selected.length) throw new HostSettingsError('INVALID_PARAMS');
     const previous = Array.isArray(before.value[key]) ? before.value[key] as SettingsEditableValue[] : [before.value[key]];
     for (const item of selected) {
       const match = (candidate: SettingsEditableValue) => settingsValuesEqual(candidate, item);
       if (previous.some(match)) continue;
-      if ((domain === 'botModelChain' || isImSettingsDomain(domain) || isModelPreferenceDomain(domain)) && typeof item === 'object' && item && !Array.isArray(item)) {
+      if ((isImSettingsDomain(domain) || isModelPreferenceDomain(domain)) && typeof item === 'object' && item && !Array.isArray(item)) {
         if (isImSettingsDomain(domain) && item.modelId === '' && item.providerId === null) continue;
-        const selectedRoute = choices[key]!.find(option => (domain === 'botModelChain' ? ['harness', 'providerId', 'model'] : domain === 'modelAccess' || isImSettingsDomain(domain) ? ['providerId', 'modelId'] : ['harness', 'providerId', 'modelId']).every(part =>
+        const selectedRoute = choices[key]!.find(option => (domain === 'modelAccess' || isImSettingsDomain(domain) ? ['providerId', 'modelId'] : ['harness', 'providerId', 'modelId']).every(part =>
           (option.value as Values)[part] === item[part]));
         if (!selectedRoute) throw new HostSettingsError('MODEL_UNAVAILABLE');
         if (item.effort && selectedRoute.efforts?.length && !selectedRoute.efforts.includes(String(item.effort))) throw new HostSettingsError('EFFORT_UNSUPPORTED');
@@ -153,6 +153,8 @@ export async function commitModelSettings(domain: ModelSettingsDomain, change: {
 
 /** Interpret dynamic defaults without writing them as overrides. */
 export async function readModelSettings(domain: ModelSettingsDomain) {
+  // Upstream v0.1.136 removed the global teammate model chain editor; it stays read-only.
+  if (domain === 'botModelChain') return { status: 'unavailable' as const, revision: null };
   const before = await currentModelSettings(domain);
   if (before.status !== 'ready') return before;
   const choices = await modelSettingsChoices(domain);
@@ -161,10 +163,6 @@ export async function readModelSettings(domain: ModelSettingsDomain) {
     const targetModels = choices.targetModels!.map(choice => choice.value as string).filter(id => classifyVisionCapability(id) === 'no-vision');
     defaults = { ...defaults, targetModels };
     if (!before.customizedKeys.includes('targetModels')) value = { ...value, targetModels };
-  } else if (domain === 'botModelChain') {
-    const native = await readBotModelChainSettingsState();
-    defaults = native.defaults as unknown as Values;
-    if (!before.customizedKeys.includes('modelChain')) value = native.value as unknown as Values;
   } else if (domain === 'auxiliaryModel') {
     const native = inspectAuxiliaryModelSettings({ ownerId: currentSettingsOwner()!.dataOwnerId!, ownerRoot: ownerScopedUserDataPath(), userDataPath: app.getPath('userData') });
     if (native.status !== 'ready') throw new HostSettingsError('UNREADABLE');

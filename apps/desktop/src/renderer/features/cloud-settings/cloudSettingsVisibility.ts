@@ -77,7 +77,7 @@ export function cloudTabFromLink(
 ): CloudSettingsTab | 'more' | undefined {
   if ((visibility.tabs as readonly (string | null)[]).includes(tab)) return tab as CloudSettingsTab;
   if (tab === 'more' && visibility.more) return 'more';
-  // General's one remaining setting, the bot model chain, moved here.
+  // Links to General, whose settings now sit under Personalization, land there.
   if (tab === 'general' && visibility.tabs.includes('personalization')) return 'personalization';
   return visibility.more && isSettingsTab(tab) ? 'more' : undefined;
 }
@@ -89,8 +89,5 @@ export function cloudSearchEntryTab(
 ): CloudSettingsTab | null {
   if ((visibility.tabs as readonly string[]).includes(entry.tab))
     return entry.tab as CloudSettingsTab;
-  return entry.targetId === 'settings-bots' &&
-    visibility.domains.personalization?.includes('botModelChain')
-    ? 'personalization'
-    : null;
+  return null;
 }
