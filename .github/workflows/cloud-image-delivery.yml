@@ -56,6 +56,7 @@ jobs:
             /packages/*/package.json
             /packages/maker-shared/src/
             /packages/voice-input-core/src/
+            /packages/plugin-protocol/src/
             /apps/desktop/package.json
             /apps/desktop/src/main/authManager.ts
             /apps/desktop/src/main/bootstrap-electron.ts
