@@ -369,184 +369,6 @@ export function MyDevicesPanel({
 
   const cardClass = 'rounded-xl border border-[var(--border-default)] px-4 py-3';
 
-  const renderDevice = (d: DeviceLinkDeviceView) => {
-            const peerRevoked = revokedByPeer.has(d.deviceId);
-            const control = controlToggleState(d);
-            const inbound = inboundToggleState(s.enabled, revokedControllers.has(d.deviceId));
-            const isControlling = controlling.has(d.deviceId);
-            const cloudStatus = cloud?.status(d.deviceId) ?? null;
-            // A cloud instance's own name (one per instance, as everywhere else it shows).
-            const title =
-              cloud?.displayName?.(d) ?? deviceLabel({ ...d, name: deviceDisplayName(d.deviceId, d.name, s.devices ?? []) }, t);
-            const controlReason =
-              control.reason === 'peer-off'
-                ? t('settings.remoteControl.myDevices.peerControlOff')
-                : null;
-            return (
-              <li
-                key={d.deviceId}
-                ref={bindRow(d.deviceId)}
-                data-device-id={d.deviceId}
-                className={cardClass}
-              >
-                {/* header: 状态点 + 名字(可编辑) + 元信息 + 重命名/删除 */}
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${isControlling ? 'animate-pulse' : ''}`}
-                    style={{
-                      backgroundColor: isControlling
-                        ? 'var(--status-bar-accent)'
-                        : cloudStatus?.progress
-                          ? 'var(--remote-status-progress)'
-                          : (cloudStatus ? cloudStatus.live : d.online)
-                            ? 'var(--remote-status-ready)'
-                            : 'var(--remote-status-disconnected)',
-                    }}
-                    aria-hidden
-                  />
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    {editingId === d.deviceId ? (
-                      <div className="flex items-center gap-1.5">
-                        <input data-setting-id={remoteControlSettings.devices.id}
-                          value={editingName}
-                          autoFocus
-                          maxLength={64}
-                          onChange={(e) => setEditingName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void handleRename(d.deviceId);
-                            if (e.key === 'Escape') setEditingId(null);
-                          }}
-                          className="w-44 rounded-lg border border-[var(--border-default)] bg-transparent px-2 py-0.5 text-13 text-[var(--settings-input-text)] outline-none"
-                        />
-                        <button data-settings-search-action="Save the device display name"
-                          type="button"
-                          onClick={() => void handleRename(d.deviceId)}
-                          aria-label={t('settings.devices.renameConfirm')}
-                          className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                        >
-                          <Check size={14} />
-                        </button>
-                        <button data-settings-search-action="Start or cancel editing the device display name"
-                          type="button"
-                          onClick={() => setEditingId(null)}
-                          aria-label={t('settings.devices.renameCancel')}
-                          className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="truncate text-13 font-medium text-[var(--text-primary)]">
-                        {title}
-                      </span>
-                    )}
-                    {cloudStatus?.pending ? (
-                      // Still being read: the spinner goes right before the state, as the local
-                      // version rows put it before their status (HarnessVersionMenuRow).
-                      <span className="break-words text-11 text-[var(--text-tertiary)]">
-                        {deviceSubtitle(d, t, { isControlling, statusOverride: '' })}
-                        {' · '}
-                        <Spinner size={10} className="mr-1 inline-block align-[-1px]" />
-                        {cloudStatus.label}
-                      </span>
-                    ) : cloudStatus?.action ? (
-                      <span className="flex flex-wrap items-center gap-x-1">
-                        <span className="break-words text-11 text-[var(--text-tertiary)]">
-                          {deviceSubtitle(d, t, { isControlling, statusOverride: cloudStatus.label })}
-                        </span>
-                        {cloudStatus.action}
-                      </span>
-                    ) : (
-                      <span className="break-words text-11 text-[var(--text-tertiary)]">
-                        {deviceSubtitle(d, t, { isControlling, statusOverride: cloudStatus?.label })}
-                      </span>
-                    )}
-                  </div>
-                  {editingId !== d.deviceId && (
-                    <div className="flex shrink-0 items-center gap-1">
-                      {cloud?.headerActions?.(d)}
-                      {canBeControlledPlatform(d.platform, d.app) && !peerRevoked && (
-                        <button data-settings-search-action="Open a remote desktop session for this device" type="button" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-[var(--text-primary)] hover:bg-[var(--surface-chip)] disabled:opacity-40"
-                          disabled={
-                            !d.online ||
-                            !d.remoteControlEnabled ||
-                            !d.controlEnabled ||
-                            (cloud ? !cloud.remoteDesktopReady(d.deviceId) : false)
-                          }
-                          title={t('remoteDesktop.title')} aria-label={t('remoteDesktop.title')}
-                          onClick={() => void window.electronAPI.openRemoteDesktop({deviceId:d.deviceId,name:title}).catch(() => toast.error(t('remoteDesktop.connectionError')))}>
-                          <Monitor size={16}/>
-                        </button>
-                      )}
-                      <button data-settings-search-action="Start or cancel editing the device display name"
-                        type="button"
-                        onClick={() => {
-                          setEditingId(d.deviceId);
-                          setEditingName(cloud?.baseName?.(d) ?? d.name);
-                        }}
-                        aria-label={t('settings.devices.rename')}
-                        className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      {/* CIS 管理的云实例:删除只会移走目录记录,实例下次上线又会回来,故不提供。 */}
-                      {!cloud?.isManaged(d.deviceId) && (
-                        <button data-settings-search-action="Open confirmation to remove this device"
-                          type="button"
-                          onClick={() => setDeleteTarget(d)}
-                          disabled={deleting}
-                          aria-label={t('settings.devices.delete')}
-                          className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {cloud?.extras(d) ?? null}
-
-                {/* 两个方向各一行。手机等「不可被控」的设备、以及对方已拒绝本机的设备,都不展示「我可以」行
-                    (前者永远控不了;后者避免让用户看到一个控不了的选中态而纠结)。 */}
-                <div className="mt-3 grid grid-cols-[max-content_minmax(0,1fr)] items-start gap-x-4 gap-y-2 border-t border-[var(--border-default)] pt-3">
-                  {canBeControlledPlatform(d.platform, d.app) && !peerRevoked && (
-                    <AccessRow label={t('settings.remoteControl.myDevices.iCan')} reason={controlReason}>
-                      <AccessPill
-                        label={t('settings.remoteControl.myDevices.controlIt')}
-                        ariaLabel={t('settings.remoteControl.deviceControlToggleAria', { name: title })}
-                        pressed={control.checked}
-                        onToggle={(v) => void s.setDeviceControlEnabled(d.deviceId, v)}
-                      />
-                    </AccessRow>
-                  )}
-                  <AccessRow
-                    label={t('settings.remoteControl.myDevices.itCan')}
-                    reason={inbound.disabled ? t('settings.remoteControl.myDevices.masterOffHint') : null}
-                  >
-                    <AccessPill
-                      label={t('settings.remoteControl.myDevices.controlThisDevice')}
-                      ariaLabel={t('settings.remoteControl.myDevices.allowInboundAria', { name: title })}
-                      pressed={inbound.checked}
-                      disabled={inbound.disabled}
-                      onToggle={(v) => void onInboundChange(d.deviceId, v)}
-                    />
-                    {/* 「用本机模型」跟着「控制本机」：能控制本机时默认可用，可以单独关掉。手机不借模型，不显示。 */}
-                    {canBeControlledPlatform(d.platform) && (
-                      <AccessPill
-                        label={t('settings.remoteControl.myDevices.useThisDeviceModels')}
-                        ariaLabel={t('settings.remoteControl.myDevices.allowModelUseAria', { name: title })}
-                        pressed={inbound.checked && !modelUseRevoked.has(d.deviceId)}
-                        disabled={inbound.disabled || !inbound.checked}
-                        onToggle={(v) => void s.setModelUse(d.deviceId, v)}
-                      />
-                    )}
-                  </AccessRow>
-                </div>
-              </li>
-            );
-  };
-
   if (variant === 'cloud') {
     if (!cloud) return null;
     return (
@@ -741,4 +563,183 @@ export function MyDevicesPanel({
       />
     </div>
   );
+
+  // One device card, shared by the other-devices list and the cloud instance list.
+  function renderDevice(d: DeviceLinkDeviceView) {
+            const peerRevoked = revokedByPeer.has(d.deviceId);
+            const control = controlToggleState(d);
+            const inbound = inboundToggleState(s.enabled, revokedControllers.has(d.deviceId));
+            const isControlling = controlling.has(d.deviceId);
+            const cloudStatus = cloud?.status(d.deviceId) ?? null;
+            // A cloud instance's own name (one per instance, as everywhere else it shows).
+            const title =
+              cloud?.displayName?.(d) ?? deviceLabel({ ...d, name: deviceDisplayName(d.deviceId, d.name, s.devices ?? []) }, t);
+            const controlReason =
+              control.reason === 'peer-off'
+                ? t('settings.remoteControl.myDevices.peerControlOff')
+                : null;
+            return (
+              <li
+                key={d.deviceId}
+                ref={bindRow(d.deviceId)}
+                data-device-id={d.deviceId}
+                className={cardClass}
+              >
+                {/* header: 状态点 + 名字(可编辑) + 元信息 + 重命名/删除 */}
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${isControlling ? 'animate-pulse' : ''}`}
+                    style={{
+                      backgroundColor: isControlling
+                        ? 'var(--status-bar-accent)'
+                        : cloudStatus?.progress
+                          ? 'var(--remote-status-progress)'
+                          : (cloudStatus ? cloudStatus.live : d.online)
+                            ? 'var(--remote-status-ready)'
+                            : 'var(--remote-status-disconnected)',
+                    }}
+                    aria-hidden
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    {editingId === d.deviceId ? (
+                      <div className="flex items-center gap-1.5">
+                        <input data-setting-id={remoteControlSettings.devices.id}
+                          value={editingName}
+                          autoFocus
+                          maxLength={64}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void handleRename(d.deviceId);
+                            if (e.key === 'Escape') setEditingId(null);
+                          }}
+                          className="w-44 rounded-lg border border-[var(--border-default)] bg-transparent px-2 py-0.5 text-13 text-[var(--settings-input-text)] outline-none"
+                        />
+                        <button data-settings-search-action="Save the device display name"
+                          type="button"
+                          onClick={() => void handleRename(d.deviceId)}
+                          aria-label={t('settings.devices.renameConfirm')}
+                          className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button data-settings-search-action="Start or cancel editing the device display name"
+                          type="button"
+                          onClick={() => setEditingId(null)}
+                          aria-label={t('settings.devices.renameCancel')}
+                          className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="truncate text-13 font-medium text-[var(--text-primary)]">
+                        {title}
+                      </span>
+                    )}
+                    {cloudStatus?.pending ? (
+                      // Still being read: the spinner goes right before the state, as the local
+                      // version rows put it before their status (HarnessVersionMenuRow).
+                      <span className="break-words text-11 text-[var(--text-tertiary)]">
+                        {deviceSubtitle(d, t, { isControlling, statusOverride: '' })}
+                        {' · '}
+                        <Spinner size={10} className="mr-1 inline-block align-[-1px]" />
+                        {cloudStatus.label}
+                      </span>
+                    ) : cloudStatus?.action ? (
+                      <span className="flex flex-wrap items-center gap-x-1">
+                        <span className="break-words text-11 text-[var(--text-tertiary)]">
+                          {deviceSubtitle(d, t, { isControlling, statusOverride: cloudStatus.label })}
+                        </span>
+                        {cloudStatus.action}
+                      </span>
+                    ) : (
+                      <span className="break-words text-11 text-[var(--text-tertiary)]">
+                        {deviceSubtitle(d, t, { isControlling, statusOverride: cloudStatus?.label })}
+                      </span>
+                    )}
+                  </div>
+                  {editingId !== d.deviceId && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      {cloud?.headerActions?.(d)}
+                      {canBeControlledPlatform(d.platform, d.app) && !peerRevoked && (
+                        <button data-settings-search-action="Open a remote desktop session for this device" type="button" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-[var(--text-primary)] hover:bg-[var(--surface-chip)] disabled:opacity-40"
+                          disabled={
+                            !d.online ||
+                            !d.remoteControlEnabled ||
+                            !d.controlEnabled ||
+                            (cloud ? !cloud.remoteDesktopReady(d.deviceId) : false)
+                          }
+                          title={t('remoteDesktop.title')} aria-label={t('remoteDesktop.title')}
+                          onClick={() => void window.electronAPI.openRemoteDesktop({deviceId:d.deviceId,name:title}).catch(() => toast.error(t('remoteDesktop.connectionError')))}>
+                          <Monitor size={16}/>
+                        </button>
+                      )}
+                      <button data-settings-search-action="Start or cancel editing the device display name"
+                        type="button"
+                        onClick={() => {
+                          setEditingId(d.deviceId);
+                          setEditingName(cloud?.baseName?.(d) ?? d.name);
+                        }}
+                        aria-label={t('settings.devices.rename')}
+                        className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      {/* CIS 管理的云实例:删除只会移走目录记录,实例下次上线又会回来,故不提供。 */}
+                      {!cloud?.isManaged(d.deviceId) && (
+                      <button data-settings-search-action="Open confirmation to remove this device"
+                        type="button"
+                        onClick={() => setDeleteTarget(d)}
+                        disabled={deleting}
+                        aria-label={t('settings.devices.delete')}
+                        className="rounded-md p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {cloud?.extras(d) ?? null}
+
+                {/* 两个方向各一行。手机等「不可被控」的设备、以及对方已拒绝本机的设备,都不展示「我可以」行
+                    (前者永远控不了;后者避免让用户看到一个控不了的选中态而纠结)。 */}
+                <div className="mt-3 grid grid-cols-[max-content_minmax(0,1fr)] items-start gap-x-4 gap-y-2 border-t border-[var(--border-default)] pt-3">
+                  {canBeControlledPlatform(d.platform, d.app) && !peerRevoked && (
+                    <AccessRow label={t('settings.remoteControl.myDevices.iCan')} reason={controlReason}>
+                      <AccessPill
+                        label={t('settings.remoteControl.myDevices.controlIt')}
+                        ariaLabel={t('settings.remoteControl.deviceControlToggleAria', { name: title })}
+                        pressed={control.checked}
+                        onToggle={(v) => void s.setDeviceControlEnabled(d.deviceId, v)}
+                      />
+                    </AccessRow>
+                  )}
+                  <AccessRow
+                    label={t('settings.remoteControl.myDevices.itCan')}
+                    reason={inbound.disabled ? t('settings.remoteControl.myDevices.masterOffHint') : null}
+                  >
+                    <AccessPill
+                      label={t('settings.remoteControl.myDevices.controlThisDevice')}
+                      ariaLabel={t('settings.remoteControl.myDevices.allowInboundAria', { name: title })}
+                      pressed={inbound.checked}
+                      disabled={inbound.disabled}
+                      onToggle={(v) => void onInboundChange(d.deviceId, v)}
+                    />
+                    {/* 「用本机模型」跟着「控制本机」：能控制本机时默认可用，可以单独关掉。手机不借模型，不显示。 */}
+                    {canBeControlledPlatform(d.platform) && (
+                      <AccessPill
+                        label={t('settings.remoteControl.myDevices.useThisDeviceModels')}
+                        ariaLabel={t('settings.remoteControl.myDevices.allowModelUseAria', { name: title })}
+                        pressed={inbound.checked && !modelUseRevoked.has(d.deviceId)}
+                        disabled={inbound.disabled || !inbound.checked}
+                        onToggle={(v) => void s.setModelUse(d.deviceId, v)}
+                      />
+                    )}
+                  </AccessRow>
+                </div>
+              </li>
+            );
+  }
 }

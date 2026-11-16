@@ -1532,7 +1532,7 @@ function RailRow({
       {sortable && (
         <button
           type="button"
-          className="provider-order-handle absolute inset-y-0 left-0 z-[1] my-auto flex h-9 w-3 cursor-grab items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring-soft)]"
+          className="provider-order-handle absolute inset-y-0 left-0 z-[1] my-auto flex h-9 w-3 cursor-grab items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring-soft)]"
           aria-label={t('settings.providers.order.handle', { provider: title, position, total })}
           aria-keyshortcuts="ArrowUp ArrowDown"
           onKeyDown={(event) => {
