@@ -9,7 +9,7 @@ import type { ProviderOAuthDeviceCode } from '@/hooks/useProviderOAuthDeviceCode
 export function OAuthBrowserLink({ url, onOpen }: { url: string; onOpen?: (url: string) => Promise<void> }) {
   const { t } = useTranslation();
   return (
-    <Button variant="secondary" size="md" onClick={() => {
+    <Button data-settings-search-action="Reopen the sign-in page of the running authorization" variant="secondary" size="md" onClick={() => {
       if (onOpen) { void onOpen(url).catch(() => toast.error(t('settings.providers.wizard.verificationPageOpenFailed'))); return; }
       void window.electronAPI.openExternal(url).then((result) => {
         if (!result.success) toast.error(t('settings.providers.wizard.verificationPageOpenFailed'));
@@ -78,6 +78,7 @@ export function OAuthDeviceCodeCard({
               {t('settings.providers.wizard.copyDeviceCode')}
             </Button>
             <Button
+              data-settings-search-action="Open the verification page of the device-code sign-in"
               variant="secondary"
               size="md"
               compact

@@ -26,7 +26,7 @@ export const ProviderListEntry = forwardRef<HTMLButtonElement, Props>(function P
   ref,
 ) {
   return (
-    <button
+    <button data-settings-search-action="Select the provider whose details are displayed"
       {...buttonProps}
       ref={ref}
       type="button"

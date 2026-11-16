@@ -3,13 +3,15 @@ import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Tip } from '@/components/ui/tooltip';
 
-/** The same settings frame for local and cloud controllers. */
+/** The same settings frame for local and cloud controllers; the caller names the page. */
 export function SettingsSidebar({
+  title,
   width = 260,
   onBack,
   disabled = false,
   children,
 }: {
+  title: string;
   width?: number;
   onBack(): void;
   disabled?: boolean;
@@ -20,7 +22,7 @@ export function SettingsSidebar({
     <aside
       className="flex h-full min-h-0 shrink-0 flex-col gap-2 overflow-y-auto pl-6 pr-4 pt-7"
       style={{ width }}
-      aria-label={t('settings.title')}
+      aria-label={title}
     >
       <div className="flex items-center gap-2.5 px-3 pb-[18px]">
         <Tip text={t('settings.back')} side="bottom">
@@ -35,7 +37,7 @@ export function SettingsSidebar({
           </button>
         </Tip>
         <h1 className="text-24 font-medium leading-[1.1] text-[var(--settings-back-text)]">
-          {t('settings.title')}
+          {title}
         </h1>
       </div>
       {children}

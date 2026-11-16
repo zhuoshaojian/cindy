@@ -1909,7 +1909,8 @@ export function AddProviderWizard({
                 ) : (
                   <>
                     {setupSource?.localAccountLogin && isSubscriptionProvider(sel.provider.id) && (
-                      <Button variant="secondary" size="lg" type="button" onClick={() => void connectSubscription('default')}>
+                      <Button data-settings-search-action="Sign in with the setup target's own Claude Code or Codex account"
+                        variant="secondary" size="lg" type="button" onClick={() => void connectSubscription('default')}>
                         {t(
                           sel.provider.id === 'anthropic'
                             ? 'settings.providers.localAccount.useClaude'
