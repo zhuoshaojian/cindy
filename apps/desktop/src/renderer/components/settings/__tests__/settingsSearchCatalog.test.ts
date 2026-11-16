@@ -3,6 +3,7 @@ import { createInstance, type TFunction } from 'i18next';
 import { MERGED_SETTINGS_TABS, TAB_IDS, TAB_LABEL_KEY } from '@/lib/tabLabels';
 import zhCN from '../../../i18n/locales/zh-CN/common.json';
 import en from '../../../i18n/locales/en/common.json';
+import { mergeCloudStrings } from '../../../i18n/cloudStrings';
 import { SELECTABLE_WALLPAPER_IDS } from '../../../../shared/appearanceSettings';
 import { AGENT_ISLAND_SOUND_EVENTS, AGENT_ISLAND_SOUND_OPTIONS } from '../../../../shared/agentIsland';
 
@@ -495,7 +496,13 @@ describe('settings search catalog', () => {
       '../../../i18n/locales/*/common.json',
       { eager: true, import: 'default' },
     );
-    for (const [path, translation] of Object.entries(locales)) {
+    // Cloud copy joins the common namespace at load time; search must see it too.
+    const cloud = import.meta.glob<Record<string, unknown>>(
+      '../../../i18n/locales/*/cloud.json',
+      { eager: true, import: 'default' },
+    );
+    for (const [path, common] of Object.entries(locales)) {
+      const translation = mergeCloudStrings(common, cloud[path.replace(/common\.json$/, 'cloud.json')] ?? {});
       const language = path.split('/').at(-2)!;
       const instance = createInstance();
       await instance.init({

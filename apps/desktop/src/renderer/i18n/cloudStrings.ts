@@ -1,0 +1,57 @@
+/**
+ * Cloud Cindy copy lives in `locales/<locale>/cloud.json`, not in upstream's `common.json`.
+ * It joins the `common` namespace when a language loads, so call sites keep their keys.
+ * Upstream wins if it ever ships a key with the same path; `cloudStrings.test` reports that.
+ */
+import enCloud from './locales/en/cloud.json';
+
+type JsonModule = { default: Record<string, unknown> };
+type Bundle = Record<string, unknown>;
+
+// Literal paths so Vite splits each language and the ui:check bundle can resolve them.
+const CLOUD_LOADERS: Record<string, () => Promise<JsonModule>> = {
+  'zh-CN': () => import('./locales/zh-CN/cloud.json'),
+  'zh-TW': () => import('./locales/zh-TW/cloud.json'),
+  ja: () => import('./locales/ja/cloud.json'),
+  ko: () => import('./locales/ko/cloud.json'),
+  es: () => import('./locales/es/cloud.json'),
+  fr: () => import('./locales/fr/cloud.json'),
+  de: () => import('./locales/de/cloud.json'),
+  'pt-PT': () => import('./locales/pt-PT/cloud.json'),
+  'pt-BR': () => import('./locales/pt-BR/cloud.json'),
+  'zh-Hant-x-lzh': () => import('./locales/zh-Hant-x-lzh/cloud.json'),
+  'zh-Hans-x-lzh': () => import('./locales/zh-Hans-x-lzh/cloud.json'),
+};
+
+const isObject = (value: unknown): value is Bundle =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/** Adds cloud keys to a common bundle without mutating either input. Existing keys win. */
+export function mergeCloudStrings(common: Bundle, cloud: Bundle): Bundle {
+  const merged: Bundle = { ...common };
+  for (const [key, value] of Object.entries(cloud)) {
+    const existing = merged[key];
+    if (existing === undefined) merged[key] = value;
+    else if (isObject(existing) && isObject(value)) merged[key] = mergeCloudStrings(existing, value);
+  }
+  return merged;
+}
+
+/** The statically bundled English fallback with its cloud copy. */
+export function withEnglishCloudStrings(common: Bundle): Bundle {
+  return mergeCloudStrings(common, enCloud);
+}
+
+/** Wraps a lazy `common` loader so the language's cloud copy arrives in the same bundle. */
+export function withCloudLoader(
+  locale: string,
+  namespace: string,
+  load: (() => Promise<JsonModule>) | undefined,
+): (() => Promise<JsonModule>) | undefined {
+  const cloud = CLOUD_LOADERS[locale];
+  if (!load || namespace !== 'common' || !cloud) return load;
+  return async () => {
+    const [common, extra] = await Promise.all([load(), cloud()]);
+    return { default: mergeCloudStrings(common.default, extra.default) };
+  };
+}
