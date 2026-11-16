@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { fixture } from './fixture';
 import { CLOUD_LOGIN_WINDOW } from '../../../shared/cloudLoginWindow';
 import { CLOUD_CLIENT_CHANNELS, type CloudClientOpen } from '../../../shared/cloudSettingsClient';
@@ -50,23 +50,38 @@ vi.mock('../../security/trustedAppRenderer', () => ({
     if (!event.trusted) throw Error('PERMISSION_DENIED');
   },
 }));
+import { cloudLoginWindowLifecycle, registerCloudSettingsClientIpc } from '../runtime';
+
 // Window creation fails: the IPC cases must never reach a usable login window.
 const createWindow = vi.fn<() => never>(() => { throw Error('fixture login window unavailable'); });
 let f: ReturnType<typeof fixture>;
 let sender: EventEmitter & { id: number; isDestroyed(): boolean };
 let event: { sender: typeof sender; trusted: boolean };
+// Main registers the bridge once per process; the tests drive the handlers it registered.
+const handlers = new Map<string, (event: unknown, raw: unknown) => unknown>();
+let quit: () => void;
+beforeAll(() => {
+  registerCloudSettingsClientIpc({
+    isOpenSender: (candidate) => candidate === sender,
+    title: () => 'Cloud login',
+    createWindow,
+  });
+  for (const [name, fn] of mock.handle.mock.calls) handlers.set(name, fn);
+  quit = mock.quit.mock.calls.find(([name]) => name === 'before-quit')![1];
+});
+function handler(channel: string) {
+  return handlers.get(channel)!;
+}
 function call(key: 'open', payload: unknown): Promise<CloudClientOpen>;
 function call(
   key: Exclude<keyof typeof CLOUD_CLIENT_CHANNELS, 'open'>,
   payload: unknown,
 ): Promise<unknown>;
 function call(key: keyof typeof CLOUD_CLIENT_CHANNELS, payload: unknown): Promise<unknown> {
-  const handler = mock.handle.mock.calls.find(([name]) => name === CLOUD_CLIENT_CHANNELS[key])![1];
-  return Promise.resolve().then(() => handler(event, payload));
+  return Promise.resolve().then(() => handler(CLOUD_CLIENT_CHANNELS[key])(event, payload));
 }
-beforeEach(async () => {
+beforeEach(() => {
   vi.useFakeTimers();
-  vi.resetModules();
   vi.clearAllMocks();
   Object.assign(mock, {
     pending: false,
@@ -80,6 +95,8 @@ beforeEach(async () => {
     device: 'controller-a',
     baseUrl: 'https://cis.example.test',
   });
+  // The restored account is announced like any auth change, so the bridge binds to it afresh.
+  mock.authChanged!();
   f = fixture();
   sender = Object.assign(new EventEmitter(), { id: 1, isDestroyed: () => false });
   event = { sender, trusted: true };
@@ -94,14 +111,10 @@ beforeEach(async () => {
     );
     return output === undefined ? new Response(null, { status: 204 }) : Response.json(output);
   });
-  (await import('../runtime')).registerCloudSettingsClientIpc({
-    isOpenSender: (candidate) => candidate === sender,
-    title: () => 'Cloud login',
-    createWindow,
-  });
 });
 afterEach(() => {
-  mock.quit.mock.calls.find(([name]) => name === 'before-quit')?.[1]();
+  // Quitting ends every cloud settings session and the login window.
+  quit();
   f.stop();
   vi.useRealTimers();
 });
@@ -110,14 +123,15 @@ afterEach(() => {
 it.each([
   ['without', 0, ''],
   ['with', 1, 'https://cis.example.test'],
-])('a client %s a cloud instance service prewarms %i hidden login window', async (_label, windows, baseUrl) => {
+])('a client %s a cloud instance service prewarms %i hidden login window', (_label, windows, baseUrl) => {
   mock.baseUrl = baseUrl;
-  (await import('../runtime')).cloudLoginWindowLifecycle.prewarm();
+  cloudLoginWindowLifecycle.prewarm();
   expect(createWindow).toHaveBeenCalledTimes(windows);
 });
 it('registers the closed bridge once and rejects untrusted IPC before network access', async () => {
-  (await import('../runtime')).registerCloudSettingsClientIpc();
-  expect(mock.handle).toHaveBeenCalledTimes(Object.keys(CLOUD_CLIENT_CHANNELS).length + 9);
+  registerCloudSettingsClientIpc();
+  expect(mock.handle).not.toHaveBeenCalled();
+  expect(handlers.size).toBe(Object.keys(CLOUD_CLIENT_CHANNELS).length + 9);
   event.trusted = false;
   await expect(call('instanceAccess', {})).rejects.toThrow('PERMISSION_DENIED');
   await expect(call('open', { deviceId: 'cloud-a' })).rejects.toThrow('PERMISSION_DENIED');
@@ -218,10 +232,7 @@ it.each(['destroyed', 'render-process-gone', 'navigation'])(
 // The auxiliary window has its own capability surface: even a trusted main
 // renderer must not submit/poll another window's login or bypass input validation.
 it('rejects cross-window login actions and invalid open parameters before network access', async () => {
-  const invoke = (channel: string, raw: unknown) => {
-    const handler = mock.handle.mock.calls.find(([name]) => name === channel)![1];
-    return handler(event, raw);
-  };
+  const invoke = (channel: string, raw: unknown) => handler(channel)(event, raw);
   await expect(invoke(CLOUD_LOGIN_WINDOW.open, { deviceId: 'cloud-a', owner: 'forged' })).rejects.toThrow('INVALID_PARAMS');
   await expect(invoke(CLOUD_LOGIN_WINDOW.start, { generation: 1 })).rejects.toThrow('SCOPE_CHANGED');
   await expect(invoke(CLOUD_LOGIN_WINDOW.state, {})).rejects.toThrow('SCOPE_CHANGED');
@@ -236,7 +247,7 @@ it('checks the owned login-required target without requesting maintenance or wak
       image: 'registry.example.test/cloud:0.1.113', readiness: { ready: false }, updateAvailable: false,
       latestReleaseTag: null, upgrade: { state: 'idle' }, loginRequired: false } };
   mock.fetch.mockResolvedValueOnce(Response.json({ instances: [target] }));
-  const open = mock.handle.mock.calls.find(([name]) => name === CLOUD_LOGIN_WINDOW.open)![1];
+  const open = handler(CLOUD_LOGIN_WINDOW.open);
   await expect(open(event, { deviceId: 'cloud-a' })).rejects.toThrow('CONFLICT');
   mock.fetch.mockResolvedValueOnce(Response.json({ instances: [{ ...target, status: { ...target.status, loginRequired: true } }] }));
   // Fixture window creation deliberately fails. Reaching that stage proves an

@@ -20,6 +20,7 @@ import { resolveRuntimeDeviceId } from './deviceId.js';
 import { BrowserWindow, net, safeStorage, app, shell, powerMonitor } from 'electron';
 import { getInstanceConfig, instanceRefreshDelay } from './instance-runtime/config.js';
 import { acknowledgeInstanceLogin, assertInstanceAuthMutationAllowed, getInstanceSession, instanceAuthReady } from './instance-runtime/host.js';
+import { projectCommittedAuthIdentity, type CommittedAuthIdentity } from './authCommittedIdentity.js';
 import crypto from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -4069,21 +4070,9 @@ export function getCurrentUserId(): string | null {
   return currentUser?.id ?? null;
 }
 
-export interface CommittedAuthIdentity {
-  userId: string;
-  membershipKind: 'personal' | 'org';
-  isAuthenticated: boolean;
-}
-
 /** 只投影现有内存身份；不初始化鉴权、不读凭据，也不返回令牌或用户资料。 */
 export function peekCommittedAuthIdentity(): CommittedAuthIdentity | null {
-  if (!currentUser || typeof currentUser.id !== 'string' || !currentUser.id
-    || (currentUser.membershipKind !== 'personal' && currentUser.membershipKind !== 'org')) return null;
-  return {
-    userId: currentUser.id,
-    membershipKind: currentUser.membershipKind,
-    isAuthenticated: typeof accessToken === 'string' && accessToken.length > 0,
-  };
+  return projectCommittedAuthIdentity(currentUser, accessToken);
 }
 
 /**

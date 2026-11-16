@@ -20,6 +20,10 @@ vi.mock('../../authManager.js', () => ({ getAuthState: mocks.forbidden, getAcces
 
 import { readKnownWorkspaces } from '../readKnownWorkspaces.js';
 
+// Recorded before any test resets the mocks: importing the module must not inspect anything.
+const callsDuringImport = [mocks.getMakerIfReady, mocks.listActiveSessions, mocks.forbidden]
+  .map((spy) => spy.mock.calls.length);
+
 const firstDir = path.resolve('/memory-only-project-one');
 const secondDir = path.resolve('/memory-only-project-two');
 const local = (workDir: string) => ({ workDir, remoteHostId: null });
@@ -43,11 +47,8 @@ afterEach(() => {
 });
 
 describe('in-memory known workspace observation', () => {
-  it('does not inspect Maker, paths, or sessions at module import time', async () => {
-    vi.resetModules();
-    await import('../readKnownWorkspaces.js');
-    expect(mocks.getMakerIfReady).not.toHaveBeenCalled();
-    expect(mocks.listActiveSessions).not.toHaveBeenCalled();
+  it('does not inspect Maker, paths, or sessions at module import time', () => {
+    expect(callsDuringImport.every((calls) => calls === 0)).toBe(true);
   });
 
   it('returns an incomplete empty scope without constructing an unready Maker', () => {

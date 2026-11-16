@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActiveAppSession } from '../../appSessionState.js';
-import type { CommittedAuthIdentity } from '../../authManager.js';
+import type { CommittedAuthIdentity } from '../../authCommittedIdentity.js';
 
 const mocks = vi.hoisted(() => ({
   session: null as ActiveAppSession | null,
@@ -35,6 +35,10 @@ vi.mock('node:fs', () => ({ readFileSync: mocks.forbidden, mkdirSync: mocks.forb
 
 import { assertSettingsReadContext, getSettingsReadContext } from '../readContext.js';
 
+// Recorded before any test resets the mocks: importing the module must not resolve or read anything.
+const callsDuringImport = [mocks.getPath, mocks.peekSession, mocks.peekAuth, mocks.boundaryPending, mocks.storageKey, mocks.forbidden]
+  .map((spy) => spy.mock.calls.length);
+
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.session = { mode: 'cloud', dataOwnerId: 'membership-test', generation: 7 };
@@ -58,12 +62,8 @@ afterEach(() => {
 });
 
 describe('settings committed read context', () => {
-  it('does not resolve paths, inspect identity, or load state during module import', async () => {
-    vi.resetModules();
-    await import('../readContext.js');
-    for (const spy of [mocks.getPath, mocks.peekSession, mocks.peekAuth, mocks.boundaryPending, mocks.storageKey]) {
-      expect(spy).not.toHaveBeenCalled();
-    }
+  it('does not resolve paths, inspect identity, or load state during module import', () => {
+    expect(callsDuringImport.every((calls) => calls === 0)).toBe(true);
   });
 
   it('captures authenticated owner roots from the profile and pure storage key', () => {

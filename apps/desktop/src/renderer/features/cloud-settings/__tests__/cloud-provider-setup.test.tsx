@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The cloud providers page uses the local add-provider wizard and connection form against the
 // instance: secret-free steps go over the private channel, keys only in the setup ticket.
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProviderView } from '@cindy/model-providers';
 
@@ -328,7 +328,13 @@ describe('adding before the ticket list is read', () => {
 });
 
 describe('cloud provider setup while a keyed detection is running', () => {
+  // The page polls the instance until it is idle; the clock follows real time so the dialog still
+  // renders, and the test advances it to let that poll observe the running detection.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   it('saves after the detection instead of failing on the busy instance', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const { stages, runs, release } = setup({ holdFirstRun: true });
     fireEvent.click(await screen.findByRole('button', { name: /settings.providers.addProvider/ }));
     fireEvent.click(
@@ -365,7 +371,9 @@ describe('cloud provider setup while a keyed detection is running', () => {
     );
     // The save reaches the instance while the detection still holds it.
     await waitFor(() => expect(stages.map((stage) => stage.kind)).toContain('custom-create'));
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Its ticket run waits while the instance is still running the detection.
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    expect(runs).toHaveLength(1);
     release();
     await waitFor(
       () => expect(toasts.success).toHaveBeenCalledWith('settings.providers.custom.toast.created'),

@@ -46,6 +46,10 @@ vi.mock('node:fs', () => ({ readFileSync: mocks.forbidden, mkdirSync: mocks.forb
 
 import { inspectCoreSettingsForSnapshot } from '../readers/coreRuntime.js';
 
+// Recorded before any test resets the mocks: importing the adapter must not read anything.
+const callsDuringImport = [mocks.getContext, mocks.forbidden, ...Object.values(mocks.stores)]
+  .map((spy) => spy.mock.calls.length);
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.context = {
@@ -63,11 +67,8 @@ afterEach(() => {
 });
 
 describe('core production reader adapter', () => {
-  it('performs no read, identity resolution, or runtime initialization when imported', async () => {
-    vi.resetModules();
-    await import('../readers/coreRuntime.js');
-    expect(mocks.getContext).not.toHaveBeenCalled();
-    for (const inspect of Object.values(mocks.stores)) expect(inspect).not.toHaveBeenCalled();
+  it('performs no read, identity resolution, or runtime initialization when imported', () => {
+    expect(callsDuringImport.every((calls) => calls === 0)).toBe(true);
   });
 
   it.each(['darwin', 'win32', 'linux'] as const)('wires the real core aggregate to the correct native inspectors on %s', (platform) => {

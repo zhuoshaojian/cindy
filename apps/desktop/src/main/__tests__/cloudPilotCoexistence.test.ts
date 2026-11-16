@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ home: '', appData: '', userData: '', security: vi.fn() }));
 vi.mock('node:os', async () => {
@@ -23,14 +23,32 @@ vi.mock('../maker-host/nativeProviderAuthBinding.js', () => ({
 }));
 
 let root: string;
-beforeEach(() => {
-  vi.resetModules(); h.security.mockReset();
+let formal: { marker: string; skill: string; codexAuth: string; theme: string; claudeEnv: Record<string, string> };
+let pilot: Awaited<ReturnType<typeof activate>>;
+// Pilot activation is a one-way switch made once at startup (main/index.ts), so the file records what
+// the formal profile sees, places its sentinels, and activates the pilot once.
+beforeAll(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-pilot-coexistence-'));
   h.home = path.join(root, 'formal-home'); h.appData = path.join(root, 'appData');
   h.userData = path.join(h.appData, 'Cindy');
   fs.mkdirSync(h.home); fs.mkdirSync(h.userData, { recursive: true });
+  const boundary = await import('../authBoundaryQuarantine.js');
+  const codex = await import('../maker-host/codex-shared-auth.js');
+  const { cloudPilotClaudeCliEnv } = await import('../cloudPilotDistribution.js');
+  formal = {
+    marker: boundary.__testing.filePath(),
+    skill: path.join(h.home, '.agents', 'skills', 'formal-only', 'SKILL.md'),
+    codexAuth: codex.getCodexCliAuthPath(),
+    theme: path.join(h.home, '.xdmaker', 'themes', 'sentinel'),
+    claudeEnv: cloudPilotClaudeCliEnv(),
+  };
+  for (const [file, content] of [[formal.marker, 'formal-marker-sentinel'], [formal.skill, 'formal-skill-sentinel'],
+    [formal.codexAuth, 'formal-auth-sentinel'], [formal.theme, 'formal-theme']] as const) {
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content);
+  }
+  pilot = await activate();
 });
-afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 async function activate() {
   const module = await import('../cloudPilotDistribution.js');
@@ -44,18 +62,12 @@ async function activate() {
   // Startup injects the pilot roots after Electron's paths are switched (main/index.ts).
   const dirs = await import('../userDataPath.js');
   dirs.configureUserDataDir(resolved.userData); dirs.configureAppDataDir(resolved.appData);
-  return { ...module, ...resolved };
+  return resolved;
 }
 
 it('keeps formal owner markers and Skills untouched through pilot login, fanout and logout', async () => {
   const boundary = await import('../authBoundaryQuarantine.js');
   const skills = await import('../maker-host/shared-global-skills.js');
-  const formalMarker = boundary.__testing.filePath();
-  const formalSkill = path.join(h.home, '.agents', 'skills', 'formal-only', 'SKILL.md');
-  fs.mkdirSync(path.dirname(formalMarker), { recursive: true });
-  fs.writeFileSync(formalMarker, 'formal-marker-sentinel');
-  fs.mkdirSync(path.dirname(formalSkill), { recursive: true }); fs.writeFileSync(formalSkill, 'formal-skill-sentinel');
-  const pilot = await activate();
   // Owner state is instance-scoped (pilot userData); the shared skill-root lock follows the managed home.
   expect(boundary.__testing.filePath()).toBe(path.join(pilot.userData, 'ghost-skill-projection-boundary.json'));
   expect(boundary.__testing.sharedSkillRootsLockPath()).toBe(path.join(pilot.managedHome, '.cindy', 'ghost-skill-projection-boundary.json.lock'));
@@ -69,8 +81,8 @@ it('keeps formal owner markers and Skills untouched through pilot login, fanout 
   expect(fs.realpathSync(path.join(pilot.managedHome, '.claude', 'skills', 'pilot-only'))).toBe(fs.realpathSync(privateSkill));
   await boundary.withGhostSkillProjectionOwnerCommit({ previousOwnerId: 'pilot-owner', nextOwnerId: null,
     prepareTransition: async () => {}, commit: () => {} });
-  expect(fs.readFileSync(formalMarker, 'utf8')).toBe('formal-marker-sentinel');
-  expect(fs.readFileSync(formalSkill, 'utf8')).toBe('formal-skill-sentinel');
+  expect(fs.readFileSync(formal.marker, 'utf8')).toBe('formal-marker-sentinel');
+  expect(fs.readFileSync(formal.skill, 'utf8')).toBe('formal-skill-sentinel');
   expect(fs.existsSync(path.join(h.home, '.claude'))).toBe(false);
   expect(fs.existsSync(path.join(h.appData, 'Cindy', 'shared-skill-mutation-locks'))).toBe(false);
   expect(fs.existsSync(path.join(pilot.userData, 'shared-skill-mutation-locks'))).toBe(true);
@@ -79,8 +91,7 @@ it('keeps formal owner markers and Skills untouched through pilot login, fanout 
 
 it('isolates the official Claude CLI configuration without reading or deleting its credentials', async () => {
   const { cloudPilotClaudeCliEnv } = await import('../cloudPilotDistribution.js');
-  expect(cloudPilotClaudeCliEnv()).toEqual({});
-  const pilot = await activate();
+  expect(formal.claudeEnv).toEqual({});
   expect(cloudPilotClaudeCliEnv()).toEqual({ CLAUDE_CONFIG_DIR: path.join(pilot.managedHome, '.claude') });
   expect(h.security).not.toHaveBeenCalled();
   expect(fs.existsSync(path.join(h.home, '.claude'))).toBe(false);
@@ -88,15 +99,10 @@ it('isolates the official Claude CLI configuration without reading or deleting i
 
 it('does not adopt the formal Codex auth file or migrate formal legacy themes', async () => {
   const codex = await import('../maker-host/codex-shared-auth.js');
-  const formalAuth = codex.getCodexCliAuthPath();
-  fs.mkdirSync(path.dirname(formalAuth), { recursive: true }); fs.writeFileSync(formalAuth, 'formal-auth-sentinel');
-  const legacyTheme = path.join(h.home, '.xdmaker', 'themes', 'sentinel');
-  fs.mkdirSync(path.dirname(legacyTheme), { recursive: true }); fs.writeFileSync(legacyTheme, 'formal-theme');
-  const pilot = await activate();
   const themes = await import('../local-themes/loader.js');
   expect(codex.getPreferredSharedCodexAuthPath('pilot-owner')).toBe(path.join(pilot.managedHome, '.codex', 'auth.json'));
   expect(themes.getLocalThemesDir()).toBe(path.join(pilot.managedHome, '.cindy', 'themes'));
-  expect(fs.readFileSync(formalAuth, 'utf8')).toBe('formal-auth-sentinel');
-  expect(fs.readFileSync(legacyTheme, 'utf8')).toBe('formal-theme');
+  expect(fs.readFileSync(formal.codexAuth, 'utf8')).toBe('formal-auth-sentinel');
+  expect(fs.readFileSync(formal.theme, 'utf8')).toBe('formal-theme');
   expect(fs.existsSync(path.join(h.home, '.cindy', 'themes'))).toBe(false);
 });
