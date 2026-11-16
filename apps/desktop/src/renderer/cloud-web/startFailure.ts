@@ -18,6 +18,8 @@ export function crashReport(error: unknown): { message: string; details: string 
 /**
  * Failures before the pages mount (a script that cannot load, a browser without a needed
  * feature) have no React tree to show them; write the report into the page directly.
+ * Colours use the theme roles when a theme was applied, otherwise the browser's light/dark
+ * system colours: the theme is applied only by the pages that failed to mount.
  */
 export function showStartFailure(error: unknown, root: HTMLElement) {
   if (root.childElementCount) return;
@@ -25,23 +27,23 @@ export function showStartFailure(error: unknown, root: HTMLElement) {
   const { details } = crashReport(error);
   const box = document.createElement('div');
   box.style.cssText =
-    'max-width:560px;margin:15vh auto;padding:0 24px;font-size:14px;line-height:1.6;font-family:system-ui,-apple-system,sans-serif;color:#333';
+    'max-width:560px;margin:15vh auto;padding:0 24px;font-size:14px;line-height:1.6;font-family:system-ui,-apple-system,sans-serif;color-scheme:light dark;color:var(--text-primary,CanvasText)';
   const title = document.createElement('p');
   title.style.cssText = 'font-size:16px;font-weight:600;margin:0 0 8px';
   title.textContent = zh ? '页面加载失败' : 'The page failed to load';
   const hint = document.createElement('p');
-  hint.style.cssText = 'margin:0 0 12px;color:#666';
+  hint.style.cssText = 'margin:0 0 12px;color:var(--text-secondary,GrayText)';
   hint.textContent = zh
     ? '请刷新重试；仍然失败时，把下面的信息发给管理员。'
     : 'Reload to try again. If it still fails, send the details below to your administrator.';
   const pre = document.createElement('pre');
   pre.style.cssText =
-    'white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto;padding:12px;border-radius:8px;background:#f4f4f4;font-size:12px;line-height:1.5;font-family:ui-monospace,monospace;margin:0 0 12px';
+    'white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto;padding:12px;border-radius:8px;background:var(--surface-chip,ButtonFace);font-size:12px;line-height:1.5;font-family:ui-monospace,monospace;margin:0 0 12px';
   pre.textContent = details;
   const reload = document.createElement('button');
   reload.type = 'button';
   reload.style.cssText =
-    'padding:6px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font:inherit;cursor:pointer';
+    'padding:6px 14px;border-radius:8px;border:1px solid var(--border-default,ButtonBorder);background:var(--surface-elevated,ButtonFace);color:inherit;font:inherit;cursor:pointer';
   reload.textContent = zh ? '重新加载' : 'Reload';
   reload.addEventListener('click', () => location.reload());
   box.append(title, hint, pre, reload);
