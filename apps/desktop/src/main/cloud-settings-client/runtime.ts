@@ -29,6 +29,14 @@ import { CloudLoginWindow } from './login-window';
 import { throwIpcError } from '../utils/ipcValidate';
 import type { SupportedLocale } from '../../shared/locale';
 
+/** The region's cloud instance service; null when this client has none configured. */
+function cloudInstanceApiBaseUrl(realm: ReturnType<typeof auth.getActiveAuthRealm>): string | null {
+  try {
+    return getClientEndpointForRealm(realm, 'cloudInstanceApiBaseUrl') || null;
+  } catch {
+    return null;
+  }
+}
 function identity(): CloudClientIdentity | null {
   if (isAppSessionBoundaryPending()) return null;
   const session = peekCommittedAppSession(),
@@ -42,12 +50,7 @@ function identity(): CloudClientIdentity | null {
   )
     return null;
   const realm = auth.getActiveAuthRealm();
-  let baseUrl: string;
-  try {
-    baseUrl = getClientEndpointForRealm(realm, 'cloudInstanceApiBaseUrl');
-  } catch {
-    return null;
-  }
+  const baseUrl = cloudInstanceApiBaseUrl(realm);
   if (!baseUrl) return null;
   return {
     key: JSON.stringify([
@@ -65,7 +68,10 @@ function identity(): CloudClientIdentity | null {
 let registered = false;
 let loginWindow: CloudLoginWindow | undefined;
 export const cloudLoginWindowLifecycle = {
-  prewarm: () => loginWindow?.prewarm(),
+  // A client without a cloud instance service keeps no hidden login window.
+  prewarm: () => {
+    if (cloudInstanceApiBaseUrl(auth.getActiveAuthRealm())) loginWindow?.prewarm();
+  },
   setLocale: (locale: SupportedLocale) => loginWindow?.setLocale(locale),
   reset: () => loginWindow?.reset(),
   destroy: () => loginWindow?.destroy(),
