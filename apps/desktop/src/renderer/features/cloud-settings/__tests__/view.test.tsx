@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CloudSettingsView } from '../CloudSettingsView';
-import { createTrialCloudSettingsClient } from '../trial';
+import { createTrialCloudSettingsClient } from '../trialClient';
 import { createCloudSettingsClient } from '../client';
 import { CloudInstancesSection } from '../CloudInstancesSection';
 const state = vi.hoisted(() => ({

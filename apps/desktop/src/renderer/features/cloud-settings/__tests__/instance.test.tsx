@@ -6,7 +6,7 @@ import { I18nextProvider } from 'react-i18next';
 import { CloudInstanceSection } from '../CloudInstanceSection';
 import { CloudSettingsPanel } from '../CloudSettingsView';
 import { CLOUD_SETTINGS_ALL_SECTIONS } from '../cloudSettingsVisibility';
-import { createTrialCloudSettingsClient } from '../trial';
+import { createTrialCloudSettingsClient } from '../trialClient';
 import type {
   CloudInstanceView,
   CloudMaintenanceCalendar,

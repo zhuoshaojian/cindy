@@ -85,7 +85,6 @@
     "discard": "Descartar ediciones y volver",
     "targetUnavailable": "Error de conexión",
     "upgradingNotice": "«{{name}}» se está actualizando y no se puede administrar ahora. Podrás continuar cuando termine la actualización.",
-    "trialInstance": "Cindy en la nube · Ejemplo",
     "authScope": "Autoriza en esta computadora; la cuenta se conecta a {{name}}.",
     "authAdd": "Agregar {{provider}}",
     "authDisconnect": "¿Desconectar {{provider}} en {{name}}?",

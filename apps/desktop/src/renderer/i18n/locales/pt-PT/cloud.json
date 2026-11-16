@@ -85,7 +85,6 @@
     "discard": "Descartar edições e voltar",
     "targetUnavailable": "Falha na ligação",
     "upgradingNotice": "“{{name}}” está a ser atualizada e não pode ser gerida agora. Pode continuar quando a atualização terminar.",
-    "trialInstance": "Cindy na nuvem · Exemplo",
     "authScope": "Autorize neste computador; a conta fica ligada a {{name}}.",
     "authAdd": "Adicionar {{provider}}",
     "authDisconnect": "Desligar {{provider}} em {{name}}?",

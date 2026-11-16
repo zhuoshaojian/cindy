@@ -85,7 +85,6 @@
     "discard": "Discard Edits and Return",
     "targetUnavailable": "Connection failed",
     "upgradingNotice": "“{{name}}” is updating and can’t be managed now. You can continue when the update finishes.",
-    "trialInstance": "Cloud Cindy · Example",
     "authScope": "Authorize on this computer; the account connects to {{name}}.",
     "authAdd": "Add {{provider}}",
     "authDisconnect": "Disconnect {{provider}} on {{name}}?",

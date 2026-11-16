@@ -2,7 +2,7 @@
 // Why: every cloud write waits 1–3 s for the instance mailbox; the page must not lock or
 // send one write per click, and must not submit a stale patch after leaving the page.
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { createTrialCloudSettingsClient } from '../trial';
+import { createTrialCloudSettingsClient } from '../trialClient';
 import { CLOUD_SYNC_DEBOUNCE_MS, createCloudSettingsSync } from '../cloudSettingsSync';
 import type { CloudSettingsClient } from '../client';
 

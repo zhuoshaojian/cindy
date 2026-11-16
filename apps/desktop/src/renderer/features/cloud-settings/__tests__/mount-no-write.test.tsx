@@ -7,7 +7,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CloudSettingsPanel } from '../CloudSettingsView';
-import { createTrialCloudSettingsClient } from '../trial';
+import { createTrialCloudSettingsClient } from '../trialClient';
 import {
   CLOUD_SETTINGS_ALL_SECTIONS,
   CLOUD_SETTINGS_VISIBILITY,
