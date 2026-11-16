@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 /**
  * One block of settings the instance did not answer: a line and a compact 「重新读取」, as the
  * client's Telegram behaviour settings show a failed read (TelegramBehaviorSettings.tsx,
- * SettingsRequestError, not exported; copied as is, D11 D4 / F12).
+ * SettingsRequestError, not exported; copied as is).
  */
 export function CloudRequestError({
   message,

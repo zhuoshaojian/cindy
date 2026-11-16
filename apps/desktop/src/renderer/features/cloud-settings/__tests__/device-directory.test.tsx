@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// Settings → Remote connections → My devices: cloud instance operations on their device cards
-// (2026-11-05 product decision). Production entry: CloudDeviceDirectory + the real MyDevicesPanel,
+// Settings → Remote connections → My devices: cloud instance operations on their device cards.
+// Production entry: CloudDeviceDirectory + the real MyDevicesPanel,
 // in a data router as in the app. Guards admission (no CIS request or extra controls outside the
 // allowlist), the hidden directory delete for CIS-managed instances, CIS-only rows, the card's
 // actions in the card's ⋯ menu and its state subtitle, and the one-shot policy read (the list
@@ -111,7 +111,7 @@ function renderDevices() {
 }
 const row = (deviceId: string) =>
   document.querySelector<HTMLElement>(`li[data-device-id="${deviceId}"]`)!;
-/** The card's ⋯ menu (owner, 2026-11-12: the card's only actions layout), named Manage. */
+/** The card's ⋯ menu (the card's only actions layout), named Manage. */
 const manage = (deviceId = CLOUD) =>
   within(row(deviceId)).getByRole('button', { name: 'cloudSettings.instance.manage' });
 /** Opens the card's ⋯ menu and returns its items. */
@@ -192,8 +192,8 @@ describe('cloud instances on My devices cards', () => {
     expect(api.instanceList).toHaveBeenCalledTimes(1);
   });
 
-  // 2026-11-09 owner decision: maintenance moved from a form inside the card into a dialog;
-  // direction C (2026-11-10): the switch saves as it changes and only 完成 closes it, never asking.
+  // Maintenance is a dialog, not a form inside the card: the switch saves as it changes and only
+  // 完成 closes it, never asking.
   it('saves maintenance as it changes in the dialog, and closes without asking', async () => {
     api.instancePolicy = vi.fn(async () => withPolicy(CLOUD, false).maintenance);
     const router = renderDevices();
@@ -259,7 +259,7 @@ describe('cloud instances on My devices cards', () => {
   });
 
   // "There is an update": a dot on the ⋯ glyph and the mark on the menu's Updates item; the
-  // trigger keeps its name (T59).
+  // trigger keeps its name.
   it.each([
     [{ updateAvailable: true, latestVersion: '0.1.126-cloud.3-cn-amd64' }, true],
     [{}, false],
@@ -313,8 +313,8 @@ describe('cloud instances on My devices cards', () => {
     expect(settings.textContent).not.toContain('cloudSettings.instance.settingsNotRunning');
   });
 
-  // 2026-11-09 copy review: "available once running" read wrong during an upgrade, so upgrading got
-  // its own reason; an instance that is only starting keeps the generic one.
+  // "Available once running" reads wrong during an upgrade, so upgrading has its own reason; an
+  // instance that is only starting keeps the generic one.
   it('keeps the generic reason for an instance that is starting', async () => {
     api.instanceList!.mockResolvedValue([view(CLOUD, { runtimeState: 'starting', ready: false })]);
     renderDevices();
@@ -324,9 +324,8 @@ describe('cloud instances on My devices cards', () => {
     expect(settings.textContent).not.toContain('cloudSettings.instance.settingsUpgrading');
   });
 
-  // cloud-test, 2026-11-09: during an upgrade DeviceLink was offline while CIS still reported
-  // running/ready from an observation made before the upgrade began (observedAt 13:17:59 against an
-  // operation updated at 13:24:36), and the card said "running".
+  // During an upgrade DeviceLink is offline while CIS can still report running/ready from an
+  // observation made before the upgrade began; the card must not say "running".
   it.each([
     ['an active operation', { upgradeOperation: { operationId: 'op', phase: 'backup-running', active: true, updatedAtMs: 2_000 } }],
     ['a finished operation newer than the last observation', { observedAtMs: 1_000, upgradeOperation: { operationId: 'op', phase: 'completed', active: false, updatedAtMs: 2_000 } }],
@@ -356,9 +355,9 @@ describe('cloud instances on My devices cards', () => {
     await within(row(CLOUD)).findByText(/· cloudSettings\.instance\.state\.running$/);
   });
 
-  // Regression (2026-11-09): an unknown sleep/wake result was only cleared by an explicit refresh,
-  // which the card does not offer, so the card stayed unsettled indefinitely. It now re-reads on
-  // its own with a capped backoff until the state is clear, and never resubmits.
+  // Regression: the card offers no explicit refresh, so an unknown sleep/wake result must not stay
+  // unsettled indefinitely. It re-reads on its own with a capped backoff until the state is clear,
+  // and never resubmits.
   it('re-reads an unconfirmed power result on its own until the state is clear', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
@@ -393,7 +392,7 @@ describe('cloud instances on My devices cards', () => {
   });
 });
 
-// Owner, 2026-11-12: the card's actions sit in one ⋯ menu in the header row, before remote desktop.
+// The card's actions sit in one ⋯ menu in the header row, before remote desktop.
 describe('the card ⋯ menu', () => {
   const cloudRow = () => row(CLOUD);
   it('opens settings, the updates dialog and the sleep confirmation', async () => {
@@ -431,7 +430,7 @@ describe('the card ⋯ menu', () => {
     ]);
     expect(items.map((element) => element.hasAttribute('data-disabled'))).toEqual([true, false, true]);
   });
-  // Owner, 2026-11-09 (5B): entered by a sliders icon named Manage, before remote desktop.
+  // Entered by a sliders icon named Manage, before remote desktop.
   it('is a sliders icon named Manage, before remote desktop and rename', async () => {
     api.instanceList!.mockResolvedValue([view(CLOUD, { updateAvailable: true })]);
     renderDevices();
@@ -454,7 +453,7 @@ describe('the card ⋯ menu', () => {
     await within(cloudRow()).findByText(/· cloudSettings\.instance\.state\.running$/);
     expect(row('mac-1').outerHTML).toBe(before);
   });
-  // Owner, 2026-11-09: the ⋯ stays ⋯; what is in progress spins on its own item.
+  // The ⋯ stays ⋯; what is in progress spins on its own item.
   it('spins on Updates, not on ⋯, while upgrading, and Updates still opens the dialog', async () => {
     api.instanceList!.mockResolvedValue([
       view(CLOUD, { upgradeOperation: { operationId: 'op', phase: 'backup-running', active: true, updatedAtMs: 1 } }),
@@ -473,13 +472,13 @@ describe('the card ⋯ menu', () => {
     renderDevices();
     await within(cloudRow()).findByText(/· cloudSettings\.instance\.state\.stopping$/);
     const power = (await openMenu()).at(-1)!;
-    // Only the user's own sleep or wake spins (owner, 2026-11-11, 32B).
+    // Only the user's own sleep or wake spins.
     expect(power.querySelector('.animate-spinner')).toBeNull();
     expect(power.hasAttribute('data-disabled')).toBe(true);
   });
 
-  // Lead T21, 2026-11-09: between confirming sleep (or clicking wake) and CIS listing the request,
-  // the card still said running or asleep, and with the menu closed nothing on it moved.
+  // Between confirming sleep (or clicking wake) and CIS listing the request, the card already shows
+  // it under way, also with the menu closed.
   const asleep = () => view(CLOUD, { desiredState: 'stopped', runtimeState: 'stopped', ready: false });
   const running = () => view(CLOUD);
   // before → shown, then under way, then CIS lists after → settled.
@@ -522,7 +521,7 @@ describe('the card ⋯ menu', () => {
     },
   );
   // A failed request has an unknown result: it is read back, never sent again, and when CIS still
-  // lists the old state the card returns to it and says it did not happen, with a retry (T54).
+  // lists the old state the card returns to it and says it did not happen, with a retry.
   it.each(powerCases)(
     'returns to the state CIS lists when the $action request fails',
     async ({ action, before, shown, under }) => {

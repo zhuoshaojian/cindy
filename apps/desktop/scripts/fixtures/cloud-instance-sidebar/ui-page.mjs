@@ -4,7 +4,7 @@ export default {
   entry: './fixture.tsx',
   cases: {
     default: {
-      about: 'Project area lists no separate cloud instance entries; an online instance header is any device header, with no cloud settings shortcut (T63)',
+      about: 'Project area lists no separate cloud instance entries; an online instance header is any device header, with no cloud settings shortcut',
     },
   },
   viewport: { width: 320, height: 240 },
@@ -22,7 +22,7 @@ export default {
   },
   async check(page, ui) {
     const name = '我的云端 Cindy';
-    // Owner, 2026-11-12: cloud settings are opened from My devices, not the task sidebar. The header
+    // Cloud settings are opened from My devices, not the task sidebar. The header
     // renders as for any remote device: no settings link, at rest or on hover.
     assert.equal(await page.getByRole('link').count(), 0);
     await ui.capture('resting');

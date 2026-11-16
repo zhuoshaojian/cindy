@@ -9,8 +9,7 @@ import { SETTINGS_WEB_MAX_CHOICES, settingsWebReadResultSchema } from './setting
 // UI projection only. Remote commands use settingsWeb/settingsManagement.
 export const CLOUD_SETTINGS_GROUPS = {
   // Settings that only change the instance's own window (notifications, the send shortcut,
-  // appearance, link opening, prompt suggestions, the message rail) are left to its remote
-  // desktop, per the 2026-11-04 product review.
+  // appearance, link opening, prompt suggestions, the message rail) are left to its remote desktop.
   general: [
     'desktopGeneral',
     'collaboration',

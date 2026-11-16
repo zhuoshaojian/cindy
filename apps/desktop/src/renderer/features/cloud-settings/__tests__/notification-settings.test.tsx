@@ -208,7 +208,7 @@ it('opens the cloud desktop for notifications on a target without notification i
   });
   render(<CloudBotAuthorization deviceId="cloud-test-device" client={client} online active name="Cloud" trial />);
   const section = await panel('wecom');
-  // The client's 「请在「X」上完成此设置。」 (D11 D3; was cloudSettings.desktopFallback).
+  // The client's 「请在「X」上完成此设置。」
   expect(within(section).getByText('bots.remoteSettings.finishOnHost')).toBeTruthy();
   const openRemoteDesktop = vi.fn(async () => {});
   Object.assign(window, { electronAPI: { openRemoteDesktop } });

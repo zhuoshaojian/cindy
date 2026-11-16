@@ -9,8 +9,7 @@ import { CloudInstanceSection, type CloudInstanceFeed } from './CloudInstanceSec
 import { createCloudSettingsClient } from './client';
 
 /**
- * Updates and maintenance of one cloud instance, opened from its device card (2026-11-09 owner
- * decision: a dialog instead of a form expanded inside the card). Direction C (2026-11-10): the
+ * Updates and maintenance of one cloud instance, in a dialog opened from its device card: the
  * version state on top, the automatic updates saved as they change, and only Done in the footer.
  * DESIGN.md "Dialog & Modal": min(460px, 100vw-32px), no ×, the scrim does not close it, Esc is
  * Done, and focus returns to the card's button.
@@ -45,7 +44,7 @@ export function CloudMaintenanceDialog({
           }),
     [open, deviceId],
   );
-  // Changes are saved as they are made (direction C): closing never asks.
+  // Changes are saved as they are made: closing never asks.
   const finish = () => onOpenChange(false);
   return (
     <Dialog.Root open={open} onOpenChange={(next) => (next ? onOpenChange(true) : finish())}>

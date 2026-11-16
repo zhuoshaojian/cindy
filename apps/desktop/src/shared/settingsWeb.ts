@@ -54,7 +54,7 @@ export const SETTINGS_WEB_CHANNELS = [
   'maker:get-capabilities',
   'maker:model-catalog:read',
   'maker:provider:list',
-  // cloud.4: account quota, model favorites and the owner's provider management.
+  // Account quota, model favorites and the owner's provider management.
   'maker:usage:account',
   'maker:usage:codex-rate-limits',
   'maker:model-favorites:get',

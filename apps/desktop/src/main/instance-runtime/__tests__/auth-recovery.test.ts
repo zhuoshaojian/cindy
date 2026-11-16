@@ -1,4 +1,4 @@
-// Integration: the former login bridge could report ready without a durable
+// Integration: the login bridge must not report ready without a durable
 // runtime receipt. Exercise the actual local transport (synthetic credentials)
 // to cover identity rejection, concurrent writes, lost replies and stale sockets.
 import fs from 'node:fs';

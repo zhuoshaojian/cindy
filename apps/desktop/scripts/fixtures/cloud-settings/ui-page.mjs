@@ -51,7 +51,7 @@ export default {
     },
     shown: {
       about:
-        'Every supported category in the local order, then More settings (plan C), against the instance catalog',
+        'Every supported category in the local order, then More settings, against the instance catalog',
       data: { shown: true },
     },
     'shown-narrow': {
@@ -78,7 +78,7 @@ export default {
     },
     appearance: {
       about:
-        'Window-only appearance stays with the remote desktop (2026-11-04 review); per-field override and reset on a built-in tool',
+        'Window-only appearance stays with the remote desktop; per-field override and reset on a built-in tool',
       data: { appearance: true },
     },
     pages: {
@@ -89,7 +89,7 @@ export default {
     bots: { about: 'All six personal bot channels and credential forms', data: { bots: true } },
     default: {
       about:
-        'Cloud language reuses native settings; the send shortcut stays with the remote desktop (2026-11-04 review); LSP override and reset',
+        'Cloud language reuses native settings; the send shortcut stays with the remote desktop; LSP override and reset',
     },
     personalization: {
       about: 'Cloud shell, tips and reset controls reuse native settings; link opening stays with the remote desktop',
@@ -157,7 +157,7 @@ export default {
     }
     if (ui.data.providersUnreadable) {
       await page.getByRole('tab', { name: await ui.t('settings.tabs.providers'), exact: true }).click();
-      // The local page's notice for a model list it cannot update (D11 C3).
+      // The local page's notice for a model list it cannot update.
       const notice = page.getByRole('status').filter({
         hasText: await ui.t('settings.providers.catalogRecovery.catalog'),
       });
@@ -170,8 +170,8 @@ export default {
       return;
     }
     if (ui.data.shown) {
-      // Plan C (owner, 2026-11-09): no overview (it is the device card's Update dialog). Plugins
-      // shows the upstream remote plugin page (2026-11-10).
+      // No overview (it is the device card's Update dialog). Plugins shows the upstream remote
+      // plugin page.
       assert.deepEqual(
         await page.getByRole('tab').allInnerTexts(),
         await Promise.all(
@@ -232,7 +232,7 @@ export default {
         names: ` ${await ui.t('settings.agentResource.title')}`,
       });
       const place = page.locator('#settings-agent-resource-unreadable');
-      // The failure sits in the group's heading row, with an icon-only retry (D10, D9).
+      // The failure sits in the group's heading row, with an icon-only retry.
       const notice = place.locator('[data-cloud-group-status]');
       // Not before the three automatic reads (about seven seconds).
       await page.waitForTimeout(1_000);
@@ -281,7 +281,7 @@ export default {
       const search = page.getByRole('combobox', { name: await ui.t('settings.search.ariaLabel') });
       await search.fill(await ui.t('settings.personalization.subtitle'));
       await page.locator('[id="settings-search-result-personalization.instructions"]').click();
-      // As on the local settings page (cloud-test R5, 2026-11-09): the shared section hook marks the
+      // As on the local settings page: the shared section hook marks the
       // prompt field and scrolls it to 8 px below the top of the scroll area, which lies under the
       // page header rather than behind it.
       await page.waitForFunction(() => {
@@ -468,7 +468,7 @@ export default {
       await terminal.click();
       await ui.capture('shell-choices');
       await page.keyboard.press('Escape');
-      // Link opening only changes the instance's own window (2026-11-04 review).
+      // Link opening only changes the instance's own window.
       assert.equal(
         await page.locator('#settings-search-target-personalization-link-open').count(),
         0,
@@ -508,7 +508,7 @@ export default {
       );
       await ui.capture('languages');
       await page.keyboard.press('Escape');
-      // The send shortcut only changes the instance's own window (2026-11-04 review).
+      // The send shortcut only changes the instance's own window.
       assert.equal(await page.locator('#settings-composer').count(), 0);
       const lsp = page.getByRole('switch', { name: await ui.t('settings.lspMode.toggleAria') });
       const before = await lsp.getAttribute('aria-checked');

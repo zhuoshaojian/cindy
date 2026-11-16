@@ -58,7 +58,7 @@ export const localProviderSetup: Omit<ProviderSetupSource, 'localAccountLogin'> 
   testProviderConnection: (input) => window.electronAPI.maker.testProviderConnection(input),
   builtinApiKeyStore: (providerId, apiKey) =>
     window.electronAPI.builtinApiKeyStore(providerId, apiKey),
-  // Resolved at call time, like the components' own imports were.
+  // Resolved at call time, like the components' own imports.
   createCustomProvider: (...args) => createCustomProvider(...args),
   updateCustomProvider: (...args) => updateCustomProvider(...args),
   deleteCustomProvider: (providerId) => deleteCustomProvider(providerId),

@@ -372,7 +372,7 @@ describe('cloud provider settings channel', () => {
     });
     await share({ action: 'leave', memberId: 'm1' });
     expect(f.deps.shareCommand).toHaveBeenCalledTimes(2);
-    // cloud.4: the share's quota and usage as this instance (the member) reads them.
+    // The share's quota and usage as this instance (the member) reads them.
     await expect(share({ action: 'insights', shareId: 's1', includeUsage: false })).resolves.toMatchObject({
       value: { command: { action: 'insights', shareId: 's1', includeUsage: false } },
     });

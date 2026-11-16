@@ -78,9 +78,9 @@ function fixture() {
 }
 
 describe("explicit deployed resource-only contract", () => {
-  // Regression: a denied canonical refresh permanently blocked the instance.
+  // Regression: a denied canonical refresh must not permanently block the instance.
   // Tier unit: exercise the real session writer/publication boundary, including
-  // a lost write and replay; no previous test supplied a fresh owner grant.
+  // a lost write and replay, with a fresh owner grant.
   it("recovers a rejected canonical session, retains a failed write, and resumes from the rotated credential", async () => {
     const h = fixture();
     h.session.acknowledge(await h.session.rotate());

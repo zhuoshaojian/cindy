@@ -79,8 +79,8 @@ test('missing future schedule time is not silently discarded', () => {
   assert.equal(nextScheduleWake([{status:'active',manual:false,nextFireAt:10},{status:'active',manual:false,nextFireAt:20}]),10);
 });
 // Unit regression: an automatic claim clears nextFireAt for the whole run.
-// Existing tests covered malformed schedules, not this legitimate busy state;
-// unknown=1 made CIS fail its post-release observation after 15 seconds.
+// Beyond malformed schedules, this covers a legitimate busy state; unknown=1
+// makes CIS fail its post-release observation after 15 seconds.
 test('a long automatic run stays known busy while its claimed wake is empty', async () => {
   const s = setup();
   s.sources.anySchedulerRunRunning = async () => true;
@@ -117,8 +117,8 @@ test('an executing schedule cannot hide an unrelated missing or malformed wake',
     assert.equal(observation.idle.nextWakeAtMs, s.state.now + 60_000);
   }
 });
-// Same unit regression, through the real scheduler adapter: before/after snapshots
-// were previously absent, so a finish during listActive could lose claim evidence.
+// Same unit regression, through the real scheduler adapter: without before/after
+// snapshots, a finish during listActive could lose claim evidence.
 test('scheduler snapshots retain automatic claims across the asynchronous schedule read', async () => {
   for (const direction of ['finishes', 'starts', 'manual']) {
     const pending = deferred();

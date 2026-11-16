@@ -70,7 +70,7 @@ describe('native cloud MCP credentials', () => {
     const save = screen.getAllByRole('button', { name: 'settings.mcp.save' })[0];
     fireEvent.click(save);
     fireEvent.click(save);
-    // How it ended is a toast, as the client's MCP page says a save (D11 F4–F8).
+    // How it ended is a toast, as the client's MCP page says a save.
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('settings.mcp.toast.updated'));
     expect(toast.success).toHaveBeenCalledTimes(1);
     expect(f.manage.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1);
@@ -105,7 +105,7 @@ describe('native cloud MCP credentials', () => {
     });
     fireEvent.change(f.token, { target: { value: 'synthetic-secret' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'settings.mcp.save' })[0]);
-    // Read back on its own from the operation 2 s later (S3; no 「检查授权状态」 button any more).
+    // Read back on its own from the operation 2 s later (no 「检查授权状态」 button).
     await waitFor(
       () => expect(spy.mock.calls.some(([c]) => c.operation === 'status')).toBe(true),
       { timeout: 4_000 },
@@ -116,7 +116,7 @@ describe('native cloud MCP credentials', () => {
   }, 10_000);
 });
 
-// 2026-11-04 product review: add, edit and delete use the local dialog and delete confirmation.
+// Add, edit and delete use the local dialog and delete confirmation.
 describe('native cloud MCP servers', () => {
   const open = async () => {
     Object.assign(window, {

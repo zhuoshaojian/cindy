@@ -150,7 +150,7 @@ export function CloudBotAuthorization(
           </p>
           {failure && failure !== 'readFailed' && (
             <p role="alert" className="text-13 text-[var(--text-secondary)]">
-              {/* A binding that did not complete, in the reused card's words (D11 D6). */}
+              {/* A binding that did not complete, in the reused card's words. */}
               {t(
                 failure === 'authNotDone'
                   ? 'settings.remoteControl.hook.binding.state.failed'
@@ -166,13 +166,13 @@ export function CloudBotAuthorization(
               onReload={(readFailure ?? native.readFailure)!.reload}
             />
           )}
-          {/* While reading, nothing: the page's notice says it (D11 D3). */}
+          {/* While reading, nothing: the page's notice says it. */}
         </>
       }
     >
       {(['cindy', 'personal'] as const).map((group) => {
         // The instance's IM channel is not answering: its cards wait for it instead of falling
-        // back to the earlier ticket cards (T27).
+        // back to the ticket cards.
         if (nativeFailed) return null;
         const entries = items.filter(
           (item) =>
@@ -182,7 +182,7 @@ export function CloudBotAuthorization(
         if (group === 'cindy' && nativeIm)
           return (
             <ImBotGroupSection key={group} group={group} idPrefix="cloud-">
-              {/* The reused cards show their own binding state (D11 D6): only the sign-in prompt. */}
+              {/* The reused cards show their own binding state: only the sign-in prompt. */}
               {officialOperation && prompt && (
                 <div className="flex flex-col gap-2">
                   {prompt &&
@@ -451,7 +451,7 @@ export function CloudBotAuthorization(
           </ImBotGroupSection>
         );
       })}
-      {/* No channel offered by this instance (D11 D5, as RemoteBotSettings). */}
+      {/* No channel offered by this instance (as RemoteBotSettings). */}
       {!loading && !failure && !items.length && !nativeIm && !nativeFailed && (
         <p className="py-3 text-13 text-[var(--text-secondary)]">{t('bots.remoteSettings.unsupported')}</p>
       )}

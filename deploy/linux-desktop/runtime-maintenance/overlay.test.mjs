@@ -58,7 +58,7 @@ test('quit chain faults and completion are wired exactly, and drift fails the bu
 });
 
 // Integration tier: execute the actual overlaid scheduler, with in-memory storage
-// and a fake clock. Regression: startup used to skip a fire due during shutdown.
+// and a fake clock. Regression: startup must not skip a fire due during shutdown.
 // Existing gate-only tests cannot detect schedule normalization dropping that fire.
 test('sealed replacement preserves due schedules and executes each once after release', { skip: !source }, async () => {
   const require = createRequire(path.join(source, 'package.json')), esbuild = require('esbuild');

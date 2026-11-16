@@ -58,8 +58,8 @@ mountPage({
     deviceLink,
     cloudSettings: {
       instanceAccess: async () => ({ schemaVersion: 1, allowed: true }),
-      // Since 2026-11-05 the project area lists no CIS instances of its own (an asleep
-      // instance missing from the device list used to get an extra entry here).
+      // The project area lists no CIS instances of its own, not even an asleep instance
+      // missing from the device list.
       instanceList: forbid('cloudSettings.instanceList'),
     },
   },

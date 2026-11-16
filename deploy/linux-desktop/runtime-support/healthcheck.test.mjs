@@ -65,7 +65,7 @@ test("CIS probe requires fresh, matching, complete readiness", () => {
 });
 
 // Regression: a live runtime waiting for owner SSO must pass startup while
-// readiness remains false. The old CLI-only checks covered authenticated
+// readiness remains false. CLI-only checks cover authenticated
 // readiness, not this startup state. Runtime-support integration tier; synthetic
 // status and a private local socket, no account/network credentials.
 test("startup accepts a live login receiver without making the instance ready", async () => {

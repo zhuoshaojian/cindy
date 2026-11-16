@@ -13,7 +13,7 @@ export type SettingsReadPrivacy = 'value' | 'configured' | 'publicReference' | '
 export const SETTINGS_READ_PLATFORMS = ['darwin', 'win32', 'linux'] as const;
 export const SETTINGS_READ_HARNESSES = ['claude-code', 'codex', 'pi'] as const;
 export const SETTINGS_READ_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
-/** Native IM default channels. `imessage` (upstream 0.1.130) is newer than the frozen v2 wire and stays native-only. */
+/** Native IM default channels. `imessage` is newer than the frozen v2 wire and stays native-only. */
 export const SETTINGS_READ_IM_CHANNELS = ['global', 'feishu', 'slack', 'discord', 'wechat', 'telegram', 'dingtalk', 'wecom', 'imessage'] as const;
 export const SETTINGS_READ_SHORTCUT_IDS = [
   'session-history-back', 'session-history-forward', 'region-screenshot',
@@ -174,7 +174,7 @@ const core = {
   ...group('auxiliaryModel', { models: z.array(modelRoute).max(3) }, 'personalization', 'AuxiliaryModelSection', 'shared/auxiliaryModelSettings.ts#AuxiliaryModelSettings', 'owner', 'nextTask', 'safeProjection'),
   ...group('botModelChain', { modelChain: z.array(route).max(5) }, 'general', 'BotsGlobalSettingsSection', 'shared/botModelChain.ts#BotModelRoute', 'owner', 'nextTask', 'safeProjection'),
   ...group('visionBridge', { enabled: bool, primary: modelRoute.nullable(), fallback: modelRoute.nullable() }, 'personalization', 'VisionBridgeSection', 'shared/visionBridgeSettings.ts#VisionBridgeSettings', 'profile', 'nextTask', 'safeProjection'),
-  // Smart Contacts moved to the cindy-contacts plugin; the frozen v2 fields always read unsupported.
+  // Smart Contacts lives in the cindy-contacts plugin; the frozen v2 fields always read unsupported.
   ...group('contacts', { enabled: bool, deviceSyncEnabled: bool }, 'personalization', 'ContactsSection', 'main/host-settings/readers/core.ts', 'owner'),
   ...group('silentEncryptedRetry', { enabled: bool }, 'general', 'SilentEncryptedRetryCell', 'main/maker-host/silent-encrypted-retry-store.ts'),
   ...group('chatEmbedding', { enabled: bool }, 'general', 'ChatEmbeddingCell', 'main/maker-host/chat-embedding-settings-store.ts', 'owner'),
@@ -327,15 +327,15 @@ export const SETTINGS_READ_EXTERNAL_CATALOG = [
   { id: 'account.logout', tab: 'general', control: 'LogoutSection', kind: 'action', entry: 'account' },
   // The new-task default permission is renderer-local and not part of the deployed v2 snapshot.
   { id: 'general.newChatDefaultPermission', tab: 'general', control: 'NewChatDefaultPermissionSection', kind: 'external', entry: 'newTask' },
-  // Upstream v0.1.133's default new-task folder is renderer-local per data owner; not a v2 snapshot field.
+  // Upstream's default new-task folder is renderer-local per data owner; not a v2 snapshot field.
   { id: 'general.defaultNewTaskWorkingDir', tab: 'general', control: 'DefaultNewTaskWorkingDirSection', kind: 'external', entry: 'newTask' },
   // Setup migration from another computer is an action on that computer's own window, not a v2 snapshot field.
   { id: 'general.setupMigration', tab: 'general', control: 'SetupMigrationSection', kind: 'action', entry: 'setupMigration' },
-  // Upstream v0.1.136's get-started guide is reopened on the window itself; it holds no setting.
+  // Upstream's get-started guide is reopened on the window itself; it holds no setting.
   { id: 'general.firstRunGuide', tab: 'general', control: 'FirstRunGuideSection', kind: 'action', entry: 'help' },
   { id: 'billing.account', tab: 'billing', control: 'BillingSettingsSection', kind: 'external', entry: 'billing' },
   { id: 'usage.history', tab: 'usage', control: 'UsageHistorySection', kind: 'resource', entry: 'usage' },
-  // Upstream v0.1.136's model groups are a provider resource, not a v2 snapshot field.
+  // Upstream's model groups are a provider resource, not a v2 snapshot field.
   { id: 'modelGroups.groups', tab: 'model-groups', control: 'ModelGroupsSection', kind: 'resource', entry: 'providers' },
   { id: 'personalization.memoryContent', tab: 'personalization', control: 'MemorySection', kind: 'resource', entry: 'memory' },
   { id: 'providers.connections', tab: 'providers', control: 'ProvidersSection', kind: 'authorization', entry: 'providers' },

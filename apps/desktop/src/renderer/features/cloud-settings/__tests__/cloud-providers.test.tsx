@@ -398,7 +398,7 @@ describe('cloud instance providers page', () => {
   });
 });
 
-// 2026-11-09 (C4): an unreadable list says so with its own reload. D11 C3: the notice is the
+// An unreadable list says so with its own reload. The notice is the
 // local model catalog's (LocalModelCatalogNotice), its retry reloads only the list.
 describe('a provider list that cannot be read', () => {
   it('says so under the title and reloads only the list', async () => {
@@ -569,7 +569,7 @@ describe('cloud model panel', () => {
 describe('instance CLI suggestions', () => {
   it('suggests the instance CLI provider and starts its sign-in on the instance', async () => {
     const { manage } = setup();
-    // 2026-11-09: the local page's "CLI on this computer" copy named the wrong computer here.
+    // The local page's "CLI on this computer" copy would name the wrong computer here.
     const suggestion = await screen.findByRole('button', { name: /cloudSettings\.cliDetect\.action/ });
     expect(screen.getByText('cloudSettings.cliDetect.groupLabel')).toBeTruthy();
     expect(screen.queryByText('settings.providers.detect.groupLabel')).toBeNull();
@@ -583,7 +583,8 @@ describe('instance CLI suggestions', () => {
   });
 });
 
-// 2026-11-06 plan B preview. Local-page parity is covered by the tests above, which use the default.
+// A preview without provider management. Local-page parity is covered by the tests above,
+// which use the default.
 describe('without provider management', () => {
   it('shows the management controls by default', async () => {
     setup();
@@ -613,9 +614,9 @@ describe('without provider management', () => {
   });
 });
 
-// cloud-test, 2026-11-09: with plan B's management hidden, a model's display switch turned off and
-// back on stayed an explicit override ({…: true} where it started as {}), and nothing restored it.
-// The model panel's own restore-default control must reset it through the same channel.
+// With provider management hidden, a model's display switch turned off and back on stays an
+// explicit override ({…: true} where it started as {}). The model panel's own restore-default
+// control must reset it through the same channel.
 describe('model panel without provider management', () => {
   it('restores a customized model display to the instance default from the panel', async () => {
     const { invoke } = setup({ management: false });

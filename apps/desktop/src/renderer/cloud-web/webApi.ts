@@ -172,7 +172,7 @@ export function createWebCloudApi(session: CisSession, onSignedOut: () => void) 
       try {
         reply = await deviceLink.invoke(raw.deviceId, 'provider-group:remote', [raw.request]);
       } catch (error) {
-        // An instance before cloud.4 does not take it from the browser yet.
+        // An instance that predates browser provider management does not take it from the browser.
         if ((error as { code?: unknown }).code === 'DEVICE_LINK_CHANNEL_NOT_ALLOWED')
           throw createIpcError('UNSUPPORTED_CAPABILITY', 'Provider management requires an update on the instance');
         throw error;

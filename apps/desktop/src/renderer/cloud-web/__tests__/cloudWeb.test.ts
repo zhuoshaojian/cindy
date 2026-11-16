@@ -14,8 +14,8 @@ const identity = { key: 'web:fixture', generation: 1, baseUrl: 'https://cloud.ex
 
 afterEach(() => vi.unstubAllGlobals());
 
-// Regression: the web login button omitted the organization, so a second claim
-// failed before CIS could create a login attempt. Existing transport tests did not
+// Regression: the web login button must send the organization, or a second claim
+// fails before CIS can create a login attempt. The transport tests do not
 // exercise this entry. Minimal input: two owned instances and an org session.
 // Unit tier: real browser adapter, in-memory HTTP, observable body and navigation.
 describe('signing in a selected cloud instance from the web page', () => {
@@ -225,7 +225,7 @@ describe('DeviceLink calls from the cloud pages', () => {
     expect(() => routeDeviceLinkCall('share:abc', 'maker:provider:list', [], null)).toThrow('DEVICE_LINK_DEVICE_OFFLINE');
     expect(() => routeDeviceLinkCall('share:abc', 'maker:session:delete', [], deviceId)).toThrow('DEVICE_LINK_CHANNEL_NOT_ALLOWED');
     expect(() => routeDeviceLinkCall(deviceId, 'maker:session:delete', [], deviceId)).toThrow('DEVICE_LINK_CHANNEL_NOT_ALLOWED');
-    // cloud.4 instances also answer account quota, favorites and provider management.
+    // Account quota, favorites and provider management also go to the instance.
     expect(routeDeviceLinkCall(deviceId, 'maker:usage:account', ['claude-code'], deviceId).channel).toBe('maker:usage:account');
     expect(routeDeviceLinkCall(deviceId, 'provider-group:remote', [{}], deviceId).channel).toBe('provider-group:remote');
   });

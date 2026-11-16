@@ -63,10 +63,10 @@ export function useCloudAuthorization(
   const settled = useRef(new Map<string, (phase: Operation['phase']) => void>());
   const itemsRef = useRef<ManagementItem[]>([]);
   /**
-   * How a provider sign-in ends, as the client's provider wizard says it (D11 F4–F8): 「已登录 X」,
+   * How a provider sign-in ends, as the client's provider wizard says it: 「已登录 X」,
    * or 「X 登录失败，请重试」 for a failure or an expiry; a cancel says nothing. A caller that waits
    * for the outcome (the shared wizard, the native login) says it itself. Bots keep their card's
-   * own line (D6).
+   * own line.
    */
   const report = (phase: Operation['phase'], operationId: string, itemId?: string) => {
     if (section !== 'providers' || settled.current.has(operationId)) return;
@@ -151,7 +151,7 @@ export function useCloudAuthorization(
       if (current() && sequence.current === seq) setLoading(false);
     }
   };
-  // S3: progress that could not be read is read back with a backoff, from the operation or, if
+  // Progress that could not be read is read back with a backoff, from the operation or, if
   // that cannot be read, from the item's own state. A sign-in opened in the browser is waited for
   // until it expires. Nothing is run or cancelled again on the user's behalf.
   const viaList = useRef(false);
@@ -231,7 +231,7 @@ export function useCloudAuthorization(
     )
       return options.settled?.('cancelled');
     if (action.expiresAt <= Date.now()) {
-      // A provider says it as a failed sign-in (D11 F7); a bot card keeps its line.
+      // A provider says it as a failed sign-in; a bot card keeps its line.
       if (section === 'providers' && !options.settled)
         toast.error(t('settings.providers.wizard.authorizeFailed', { name: item.label }));
       else if (section === 'bots') setFailure('authExpired');
@@ -293,7 +293,7 @@ export function useCloudAuthorization(
       );
       accept(result, id);
       if (kind === 'cancel' && current()) {
-        // A cancel says nothing on the provider page (D11 F6).
+        // A cancel says nothing on the provider page.
         if (section === 'bots') setFailure('authCancelled');
         setOperation(undefined);
       }
@@ -302,7 +302,7 @@ export function useCloudAuthorization(
       if (!current()) return;
       // A stop whose result is unknown is read back like any other.
       if (kind === 'cancel') settle({ operationId: id, itemId: operationItem });
-      // A code that could not be sent is a failed sign-in (D11 F8).
+      // A code that could not be sent is a failed sign-in.
       else if (section === 'providers') report('failed', id, operationItem);
       else setFailure('authResponseFailed');
     } finally {
@@ -383,7 +383,7 @@ export function useCloudAuthorization(
     paused: pageFailed,
   });
   // A provider's progress that could not be read: a warning toast whose button reads it once
-  // more (D11 F9, as the client's remote page when a result is not confirmed).
+  // more (as the client's remote page when a result is not confirmed).
   const unreadableNow = section === 'providers' && unknown.state === 'unreadable';
   useEffect(() => {
     if (!unreadableNow) return;
@@ -396,10 +396,10 @@ export function useCloudAuthorization(
     t,
     /**
      * What the authorization is doing, for the line under its buttons. While an unknown result is
-     * read back nothing is said (2026-11-11), except that a sign-in opened in the browser is
+     * read back nothing is said, except that a sign-in opened in the browser is
      * waited for, which the owner has to finish there.
      */
-    // As the client (D11 F1–F3, D6): no line while it runs, waits or is read back; a provider's end
+    // As the client: no line while it runs, waits or is read back; a provider's end
     // is a toast (report). A bot card says only how a binding failed, in the card's own words.
     phaseText:
       section === 'bots' && !unknown.state && (operation?.phase === 'failed' || operation?.phase === 'expired')

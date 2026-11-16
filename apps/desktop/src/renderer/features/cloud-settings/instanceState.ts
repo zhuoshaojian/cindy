@@ -32,8 +32,7 @@ export const instanceStatus = (view: CloudInstanceView) =>
 const UPGRADE_ENDED_PHASES = new Set(['completed', 'cancelled', 'backup-deferred', 'recovery-hold']);
 /**
  * CIS keeps its last runtime observation while an upgrade has the runtime down, so running/ready
- * can date from before the upgrade (cloud-test 2026-11-09: observedAtMs 13:17:59, upgrade operation
- * updated 13:24:36, DeviceLink offline). Upgrading means CIS says so (an active operation or
+ * can date from before the upgrade. Upgrading means CIS says so (an active operation or
  * verification), or DeviceLink does not have the instance while it should run and its last upgrade
  * operation is still under way or changed after CIS last observed the runtime.
  */
@@ -75,9 +74,9 @@ export const upgradeNoticeVisible = (
     now - operation.updatedAtMs < UPGRADE_NOTICE_MS);
 
 /**
- * Where the instance's last upgrade stands, as the update dialog and the card say it (update
- * dialog v2, direction A, 2026-11-11). Read from CIS's operation phase and the instance's
- * upgradeState; null when there is nothing to say about an upgrade.
+ * Where the instance's last upgrade stands, as the update dialog and the card say it. Read from
+ * CIS's operation phase and the instance's upgradeState; null when there is nothing to say about
+ * an upgrade.
  * - queued: phase requested (waits for the running tasks)
  * - updating: any other active phase, or verifying; offline while DeviceLink does not have the
  *   instance (it restarts during the update), which is not an error

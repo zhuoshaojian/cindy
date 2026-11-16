@@ -132,7 +132,7 @@ test('clean-shutdown evidence is issued only for an orderly, fault-free quit of 
   assert.equal(shutdownEvidence({ ...sealed, counts: { ...sealed.counts, inFlight: 1 } }, { reason: 'signal:SIGTERM', faults: 0, now: 1 }), null);
 });
 
-// Regression: a persisted, unstarted schedule used to reset quiet forever.
+// Regression: a persisted, unstarted schedule must not reset quiet forever.
 // Unit tier; real gate.accept/receipt with fake clock, no sleeps or task abortion.
 test('pending schedules do not block seal, including overdue and near-future wakes', t => {
   for (const offset of [-1, 0, 30_000, 1_199_999]) {

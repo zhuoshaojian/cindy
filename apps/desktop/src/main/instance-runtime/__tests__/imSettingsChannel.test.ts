@@ -51,8 +51,8 @@ describe('cloud IM settings channel', () => {
     expect(call).not.toHaveBeenCalled();
   });
 
-  // Unit: the Feishu card already declares select_device, but the cloud channel previously
-  // rejected its native handler. The reply must follow the actual acknowledged selection.
+  // Unit: the Feishu card declares select_device, and the cloud channel must accept its
+  // native handler. The reply must follow the actual acknowledged selection.
   it('waits for the native working-computer selection and preserves its owner stamp', async () => {
     let finish!: (value: unknown) => void;
     const { channel } = setup(undefined, {

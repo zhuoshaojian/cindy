@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CloudLoginWindow } from '../login-window';
 import { CLOUD_LOGIN_WINDOW } from '../../../shared/cloudLoginWindow';
 
-// Unit: route-based login previously covered the entire workspace. Exercise the
+// Unit: login is its own window, never a route covering the entire workspace. Exercise the
 // real auxiliary controller composition, including close vs minimize, identity
 // fencing and recovery; neither local login nor resource-monitor tests do this.
 function createWindow(id: number) {

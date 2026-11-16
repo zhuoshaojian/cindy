@@ -128,7 +128,7 @@ describe('shared native cloud settings', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'settings.agentResource.presets.balanced' }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     await ready(input);
-    // Keys the instance already holds are not written again (cloud-test R3); the result is the preset.
+    // Keys the instance already holds are not written again; the result is the preset.
     expect(save.mock.calls[0][1]).toEqual({ processPriority: 'low' });
     const [stored] = await client.read(['agentResource']);
     expect(stored?.value).toEqual({
@@ -156,7 +156,7 @@ describe('shared native cloud settings', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.personalization' }));
     await waitFor(() => expect(read!.mock.calls.length).toBe(before + 1));
   });
-  // T23 (merge onto 44e575ec44): the prompt's explicit save holds the page while it writes; when it
+  // The prompt's explicit save holds the page while it writes; when it
   // finishes, only its own group is current again, and the category is not read again for it.
   it('confirms a prompt save without rereading the category', async () => {
     let read: MockInstance<CloudSettingsClient['read']>;
@@ -184,7 +184,7 @@ describe('shared native cloud settings', () => {
     expect((input as HTMLTextAreaElement).value).toBe('cloud-only draft');
     expect(save).not.toHaveBeenCalled();
   });
-  // 2026-11-09 (C9): a prompt save with an unknown outcome is read back once, never sent again,
+  // A prompt save with an unknown outcome is read back once, never sent again,
   // and the page keeps reading instead of waiting for a reload.
   describe('a prompt save with an unknown outcome', () => {
     beforeEach(() => {
@@ -232,7 +232,7 @@ describe('shared native cloud settings', () => {
       vi.spyOn(client, 'read').mockRejectedValue(Error('CLOUD_SETTINGS_UNAVAILABLE'));
       fireEvent.change(input, { target: { value: 'unknown' } });
       fireEvent.click(screen.getByRole('button', { name: 'settings.personalization.save' }));
-      // The page's 「正在管理」 notice says so, with its retry (D11 A3–A7).
+      // The page's 「正在管理」 notice says so, with its retry.
       await screen.findByText('bots.remoteSettings.loadFailed');
       expect(save).toHaveBeenCalledTimes(1);
       expect(screen.getByRole('button', { name: 'settings.ghosts.remote.retry' })).toBeTruthy();
@@ -296,7 +296,7 @@ describe('shared native cloud settings', () => {
     expect(shell.textContent).toContain('settings.terminalShell.unavailable');
     expect(save).not.toHaveBeenCalled();
   });
-  // 2026-11-04 product review: these only change the instance's own window.
+  // These only change the instance's own window.
   it('leaves instance-window-only preferences to the remote desktop', async () => {
     const { save } = setup();
     await screen.findByText('settings.memory.title');
@@ -418,7 +418,7 @@ describe('shared native cloud settings', () => {
     );
     fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.about' }));
     await screen.findByText('settings.about.appVersionLabel');
-    // Since v0.1.130 an info row is a SettingsRow: the value sits in the row's trailing slot.
+    // An info row is a SettingsRow: the value sits in the row's trailing slot.
     expect(screen.getByText('0.1.120-cloud.1-cn-amd64')).toBeTruthy();
   });
   it('removes cached controls when the cloud withdraws a capability', async () => {
@@ -437,7 +437,7 @@ describe('shared native cloud settings', () => {
     await waitFor(() => expect(screen.queryByText('settings.terminalShell.title')).toBeNull());
     expect(save).not.toHaveBeenCalled();
   });
-  // 2026-11-04 product review: without a plugin page (a browser), the category is not a dead end.
+  // Without a plugin page (a browser), the category is not a dead end.
   it('opens the cloud desktop for plugins when the page cannot manage them', async () => {
     setup();
     await screen.findByText('settings.memory.title');
@@ -483,7 +483,7 @@ describe('shared native cloud settings', () => {
       ).toBe(false);
     }
   });
-  // cloud-test, 2026-11-09: searching 提示词 found nothing. A real instance answers the prompt over
+  // Searching 提示词 must find the prompt. A real instance answers the prompt over
   // DeviceLink, so its open never lists the personalization domain; the entry needs no domain there.
   it('finds the personal instructions on a real instance, where the prompt has no CIS domain', () => {
     for (const id of ['personalization.userPrompt', 'personalization.instructions']) {
@@ -553,7 +553,7 @@ describe('cloud settings page chrome', () => {
     delete (client as Partial<CloudSettingsClient>).instance;
     return client;
   };
-  // The page's 「正在管理」 notice says what it is doing (D11 A3–A7).
+  // The page's 「正在管理」 notice says what it is doing.
   it('says it is loading until the instance has been read, and offline only after that', () => {
     const first = panel({ online: false, connecting: true });
     expect(screen.getByText('settings.ghosts.remote.configurationLoading')).toBeTruthy();
@@ -584,8 +584,8 @@ describe('cloud settings page chrome', () => {
     expect(screen.queryByRole('tab', { name: 'settings.tabs.imBot' })).toBeNull();
   });
 });
-// Owner, 2026-11-09 (plan C): every supported category, in the local page's order, then More
-// settings. The overview lives on the device card; Plugins only opened the remote desktop.
+// Every supported category, in the local page's order, then More settings. The overview lives on
+// the device card.
 describe('the shown cloud settings', () => {
   const SHOWN = [
     'settings.tabs.general',
@@ -633,7 +633,7 @@ describe('the shown cloud settings', () => {
     await waitFor(() => expect(screen.queryByRole('tab', { name: 'settings.tabs.providers' })).toBeNull());
     await waitFor(() => expect(selected('settings.tabs.general')).toBe('true'));
   });
-  // Upstream v0.1.136 removed the global teammate model chain editor, so General no longer shows it.
+  // Upstream has no global teammate model chain editor, so General does not show it.
   it('shows each category whole and reads only the open one, without the removed teammate model chain', async () => {
     const client = createTrialCloudSettingsClient();
     const domains = readDomains(client);
@@ -765,7 +765,7 @@ describe('the shown cloud settings', () => {
       'settings.remoteControl.sections.ssh',
     ])
       expect(options(hidden), hidden).toHaveLength(0);
-    // Categories plan B left out are found again.
+    // Shown categories are found.
     for (const shown of [
       'settings.sections.collaboration',
       'settings.about.analyticsLabel',
@@ -779,11 +779,10 @@ describe('the shown cloud settings', () => {
   });
 });
 
-// User report 2026-11-09: every cloud change locked the page for 1–3 s ("每次+1都会卡一会").
-// Each change shows at once and syncs in the background; failures fall back to the instance.
-// cloud-test R2, 2026-11-09: a setting changed and changed back stays an explicit value, as on this
-// computer, so every cloud group that can be customized needs the local reset. Through the real
-// page: change → "customized" → reset → the instance stores no key for it again.
+// A cloud change never locks the page: each change shows at once and syncs in the background;
+// failures fall back to the instance. A setting changed and changed back stays an explicit value,
+// as on this computer, so every cloud group that can be customized needs the local reset. Through
+// the real page: change → "customized" → reset → the instance stores no key for it again.
 describe('restoring defaults on the instance', () => {
   const restore = 'settings.defaults.restore';
   // The control's own row: the nearest ancestor that holds a reset button.
@@ -866,7 +865,7 @@ describe('optimistic cloud writes', () => {
     expect(maker.getAttribute('aria-checked')).toBe('false');
     expect(toast.error).not.toHaveBeenCalled();
   });
-  // D11 B2, B3 (as the client's settings): a change that did not save says so in a toast without a
+  // As the client's settings: a change that did not save says so in a toast without a
   // button, and the control shows what the instance holds.
   it('reverts a refused change and shows the latest value, without a retry', async () => {
     const { save } = setup();
@@ -912,7 +911,7 @@ describe('optimistic cloud writes', () => {
     expect(save).toHaveBeenCalledTimes(2);
     expect(toast.error).not.toHaveBeenCalled();
   });
-  // 2026-11-09 owner decision: a number changed just before leaving is saved, not dropped:
+  // A number changed just before leaving is saved, not dropped:
   // one write with the latest value, sent at once, and the session closes after it.
   it('saves a stepper change made right before leaving the page, once, with the latest value', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -934,8 +933,8 @@ describe('optimistic cloud writes', () => {
     await vi.advanceTimersByTimeAsync(CLOUD_SYNC_DEBOUNCE_MS * 2);
     expect(save).toHaveBeenCalledTimes(1);
   });
-  // cloud-test, 2026-11-09: three ↑ presses on the Worker hard limit only added 1. Each save
-  // used to disable the page, so the focused field lost focus and the next presses went nowhere.
+  // Three quick ↑ presses on the Worker hard limit add 3: a save must not disable the page, or the
+  // focused field loses focus and the next presses go nowhere.
   it('keeps a stepper focused and mounted through quick ↑ presses, in at most two writes', async () => {
     const user = userEvent.setup();
     const { save } = setup();
@@ -986,7 +985,7 @@ describe('optimistic cloud writes', () => {
   });
 });
 
-// 2026-11-09 (C1): no reload button on the page. A failed read rebuilds the session on its own;
+// No reload button on the page. A failed read rebuilds the session on its own;
 // only when that keeps failing does a notice with a reload appear.
 describe('reading after the session broke', () => {
   // A test above leaves a matchMedia without listeners; model providers subscribe to it.
@@ -1035,7 +1034,7 @@ describe('reading after the session broke', () => {
     await screen.findByText('settings.memory.title');
     read.mockRejectedValue(Error('CLOUD_SETTINGS_SCOPE_CHANGED'));
     fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.general' }));
-    // In the page's 「正在管理」 notice, with its retry (D11 A3–A7).
+    // In the page's 「正在管理」 notice, with its retry.
     const notice = () => screen.queryByText('bots.remoteSettings.loadFailed');
     for (let second = 0; second < 30 && !notice(); second++) {
       // Not before the last reconnect has failed too.
@@ -1078,7 +1077,7 @@ describe('reading after the session broke', () => {
     await waitFor(() => expect(reconnect).toHaveBeenCalledTimes(1));
     expect(reconnect.mock.invocationCallOrder[0]).toBeGreaterThan(save.mock.invocationCallOrder[0]!);
   });
-  // 2026-11-09: "Reading…" stayed on top of content already shown.
+  // "Reading…" never stays on top of content already shown.
   it('says it is reading only before anything has been shown', async () => {
     setup();
     await screen.findByText('settings.memory.title');
@@ -1091,9 +1090,9 @@ describe('reading after the session broke', () => {
   });
 });
 
-// 2026-11-09 (T17b): a group or list the instance does not answer is read again on its own, three
-// times; only then does it say so. Reading only, never writing. A settings group says so in its
-// heading row (T39, D10 position 1); a list keeps its notice.
+// A group or list the instance does not answer is read again on its own, three times; only then
+// does it say so. Reading only, never writing. A settings group says so in its heading row; a list
+// keeps its notice.
 describe('a part of the page that cannot be read', () => {
   beforeEach(() => {
     Object.assign(window, {
@@ -1102,7 +1101,7 @@ describe('a part of the page that cannot be read', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     onTestFinished(() => void vi.useRealTimers());
   });
-  // In the group's heading row, named as on the page (owner, 2026-11-09).
+  // In the group's heading row, named as on the page.
   const NOTICE = 'cloudSettings.groupReadFailed settings.agentResource.title';
   /** Runs the automatic tries until the notice shows (or 30 s), checking it waits for all three. */
   const untilNotice = async (title: string, tries: () => number) => {

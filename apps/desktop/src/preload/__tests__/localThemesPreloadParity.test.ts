@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const PRELOAD_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // The shared renderer entry subscribes to localThemes.onChanged in every window, so a window
-// preload that exposes listSync without onChanged fails to load its page (cloud login window, 0.1.130).
+// preload that exposes listSync without onChanged fails to load its page (e.g. the cloud login window).
 function localThemesBlocks(): Array<{ file: string; block: string }> {
   return fs.readdirSync(PRELOAD_DIR)
     .filter(file => file.endsWith('.ts'))

@@ -7,7 +7,7 @@ import { remoteControlSettings } from './RemoteControlSection.settings-search';
  *      「我控制它 / 允许它控制本机」+ 重命名 / 删除(MyDevicesPanel)
  *   2. SSH:原 RemoteSection 原样嵌入(showTitle=false,标题由本页统一给)
  * 云实例就是「我的设备」里的一台设备:白名单账号(instanceAccess.allowed)在它的设备卡上多一组
- * 实例运维(CloudDeviceDirectory,2026-11-05),且云实例卡与本机卡一起常驻,「我的设备」收起时
+ * 实例运维(CloudDeviceDirectory),且云实例卡与本机卡一起常驻,「我的设备」收起时
  * 也可见;其余账号的页面与请求不变。
  * (Slack 连接子块已迁至「IM 机器人」页 Cindy 栏, 见 ImBotSection.tsx + HookConnectionsSection.tsx)
  *

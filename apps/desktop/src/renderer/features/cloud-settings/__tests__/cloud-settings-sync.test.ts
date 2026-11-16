@@ -70,7 +70,7 @@ describe('optimistic cloud settings sync', () => {
     expect(sync.busy()).toBe(false);
   });
 
-  // 2026-11-09 owner decision: leaving sends a waiting change at once instead of dropping it.
+  // Leaving sends a waiting change at once instead of dropping it.
   // Each change still goes out exactly once, and its result no longer touches the page.
   it('sends waiting changes once when leaving, and leaves the page alone afterwards', async () => {
     const { client, save, original, sync, onChange, onFailure } = await setup();
@@ -121,8 +121,8 @@ describe('optimistic cloud settings sync', () => {
     expect(onFailure).not.toHaveBeenCalled();
   });
 
-  // Lead T22, 2026-11-09 (owner: no "not sure whether it saved"): an unknown outcome is read back,
-  // never resent, and the page says only what it found or what it will do.
+  // Never "not sure whether it saved": an unknown outcome is read back, never resent, and the
+  // page says only what it found or what it will do.
   describe('a write whose outcome is unknown', () => {
     const unknown = () => Error('CLOUD_SETTINGS_SAVE_UNCONFIRMED');
     it('says it was not saved, shows the instance value, and retries the same change once asked', async () => {
@@ -201,8 +201,8 @@ describe('optimistic cloud settings sync', () => {
     });
   });
 
-  // cloud-test R3, 2026-11-09: a quick on → off → on merged into a write of the original value,
-  // leaving an explicit override and a "customized" mark. Nothing changed, so nothing is written.
+  // A quick on → off → on merges into a write of the original value, which would leave an explicit
+  // override and a "customized" mark. Nothing changed, so nothing is written.
   describe('changes that end where they started', () => {
     async function setupGroups() {
       const client = createTrialCloudSettingsClient();
@@ -259,8 +259,8 @@ describe('optimistic cloud settings sync', () => {
       expect(memory().customizedKeys).toEqual(['maker']);
     });
 
-    // cloud-test R5, 2026-11-09: the shared vision bridge view writes its whole list and appends a
-    // model turned back on, so off → on gave the same models in a new order as an override.
+    // The shared vision bridge view writes its whole list and appends a model turned back on, so
+    // off → on gives the same models in a new order, which is not an override.
     describe('vision bridge models, which are a set', () => {
       const MODELS = ['deepseek-v4', 'glm-5.2', 'kimi-k3'];
       async function vision(customizedKeys: string[], targetModels = MODELS) {

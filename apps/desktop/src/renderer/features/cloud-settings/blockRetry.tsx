@@ -6,8 +6,8 @@ import { ErrorNotice } from '@/components/ui/error-notice';
 import { Tip } from '@/components/ui/tooltip';
 
 /**
- * How a failed read is tried again on its own (owner, 2026-11-09: what the page can do itself, it
- * does first): at once, after 2 s and after 5 s. The page reconnects its session on the same rhythm.
+ * How a failed read is tried again on its own (what the page can do itself, it does first): at
+ * once, after 2 s and after 5 s. The page reconnects its session on the same rhythm.
  */
 export const CLOUD_RETRY_DELAYS_MS = [0, 2_000, 5_000] as const;
 
@@ -65,7 +65,7 @@ export function useBlockRetry({
   };
 }
 
-/** The block's own read failure, where the block would be (C3 and C4 use the same notice). */
+/** The block's own read failure, where the block would be (the same notice for every block). */
 export function BlockReadFailure({
   title,
   code,
@@ -97,8 +97,8 @@ export function BlockReadFailure({
 }
 
 /**
- * Beside a read failure that asks to try again, on a compact text line (owner, 2026-11-11: the
- * retry goes next to 「请重试」): the icon-only quiet button the local restore control uses
+ * Beside a read failure that asks to try again, on a compact text line (the retry goes next to
+ * 「请重试」): the icon-only quiet button the local restore control uses
  * (DefaultOverrideControls), as the settings group heading does. It does not make the line taller.
  */
 export function InlineRetry({

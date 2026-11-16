@@ -310,7 +310,7 @@ describe('RemoteControlSection with Agent-Net on', () => {
   });
 });
 
-// 2026-11-05: cloud instances are device cards in "My devices"; the retired category's deep
+// Cloud instances are device cards in "My devices"; the retired category's deep
 // link and search entry open that list and focus the instance. Admission and the card's own
 // controls are covered in features/cloud-settings/__tests__/device-directory.test.tsx.
 describe('RemoteControlSection cloud instance deep link', () => {

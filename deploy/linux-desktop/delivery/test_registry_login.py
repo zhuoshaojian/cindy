@@ -123,7 +123,7 @@ class RegistryLoginTest(unittest.TestCase):
 
 class WorkflowRunnerBoundaryTest(unittest.TestCase):
     def test_docs_cannot_provision_runners_but_packaged_guidance_remains_eligible(self):
-        # Guard: README-only pushes used to enter the private runner pool.
+        # Guard: README-only pushes must not enter the private runner pool.
         # Keep runtime Markdown eligible; this protects the workflow scheduling
         # boundary, not a source-format preference. Real doc-push proof is separate.
         root = Path(__file__).resolve().parents[3]

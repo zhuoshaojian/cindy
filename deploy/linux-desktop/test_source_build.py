@@ -29,8 +29,8 @@ timestamps = importlib.util.module_from_spec(timestamp_spec)
 timestamp_spec.loader.exec_module(timestamps)
 
 class SourceLfsTest(unittest.TestCase):
-    # Unit / real export entry: cloud.29 shipped an LFS pointer and fresh DBs
-    # failed migration 0034. Existing tests covered graph/cache, not source bytes.
+    # Unit / real export entry: an exported LFS pointer makes fresh DBs fail
+    # migration 0034. Graph/cache tests do not cover source bytes.
     # A tiny pointer archive must hydrate exact oid/size or abort before packaging.
     def test_export_hydrates_frozen_pointer_and_rejects_missing_or_corrupt_objects(self):
         payload = b'\x7fELF fixture'
@@ -65,8 +65,8 @@ class SourceLfsTest(unittest.TestCase):
                         self.assertEqual((root/'README').read_bytes(), b'ordinary source')
 
 class BuildTransportTest(unittest.TestCase):
-    # Unit / run_build: cloud.16 failed before building when the pinned Docker
-    # frontend download reset. Existing graph tests cannot observe retries or
+    # Unit / run_build: a reset of the pinned Docker frontend download fails
+    # before building. Graph tests cannot observe retries or
     # retained failure evidence. A single metadata transport failure followed
     # by success must resume; deterministic failures and repeated resets stop.
     def test_source_transport_retry_preserves_failure_and_is_bounded(self):

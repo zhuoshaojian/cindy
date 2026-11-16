@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// cloud-test R2, 2026-11-09: memory.maker and subagentModel.codexSmartSubagentRouting became
-// explicit overrides equal to their defaults while the dev build remounted the cloud settings
-// page. Opening the page, every category and a remount must never write. Unlike panel.test, the
+// Remounting the cloud settings page must not turn memory.maker or
+// subagentModel.codexSmartSubagentRouting into explicit overrides equal to their defaults.
+// Opening the page, every category and a remount must never write. Unlike panel.test, the
 // model sections here are the real ones (only the target's model catalog read is a fixture).
 // Unit tier; ~2 s.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';

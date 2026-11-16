@@ -249,7 +249,7 @@ export function useCloudProviderSetup({
         } catch (error) {
           if (!(error instanceof Error) || error.message !== 'SETUP_FAILED') throw error;
           // The sign-in did not finish: a real failure, which the shared wizard says in its own
-          // words, 「X 登录失败，请重试」 (D11 F5).
+          // words, 「X 登录失败，请重试」.
           return { ok: false, reason: 'login_failed' };
         }
       },
@@ -327,7 +327,7 @@ export function CloudLoginPrompt({ auth, disabled = false }: { auth: Auth; disab
         )}
       </div>
     );
-  // Progress read back after an unknown result (S3): what it is doing, or that it cannot be read.
+  // Progress read back after an unknown result: what it is doing, or that it cannot be read.
   if (auth.settling)
     return (
       <CloudAuthProgress
