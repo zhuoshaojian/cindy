@@ -616,6 +616,7 @@ export function CloudSettingsPanel({
       >
         <div className="flex h-full min-h-0 w-full justify-start pb-5">
           <SettingsSidebar
+            title={t('settings.title')}
             width={outlet?.sidebarWidth}
             onBack={() => void leave()}
             disabled={writing}

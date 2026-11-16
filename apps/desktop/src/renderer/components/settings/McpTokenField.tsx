@@ -36,6 +36,7 @@ export function McpTokenField({
     >
       {(control) => (
         <SettingsTextInput
+          data-settings-search-action="Enter the token of the MCP server being edited"
           {...control}
           surface="ivory"
           value={value}

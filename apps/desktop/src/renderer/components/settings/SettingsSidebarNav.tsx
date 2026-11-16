@@ -160,7 +160,7 @@ export function SettingsSidebarNav({
       <nav role="tablist" aria-label={t('settings.title')} className="flex flex-col gap-0.5">
         {items.map(({ id: tabId, label, icon: Icon, selected, onSelect }) => {
           return (
-            <button
+            <button data-settings-search-action="Open the settings category of this sidebar tab"
               key={tabId}
               id={`settings-tab-${tabId}`}
               type="button"

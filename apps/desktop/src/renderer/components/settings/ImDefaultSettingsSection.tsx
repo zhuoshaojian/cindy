@@ -478,7 +478,8 @@ export function ImDefaultSettingsSectionView({
               )}
             </span>
             {!automaticModel && (
-              <Button size="sm" tone="quiet" disabled={pending} onClick={() => void useAutomatic()}>
+              <Button data-settings-search-action="Return the default IM model to automatic selection"
+                size="sm" tone="quiet" disabled={pending} onClick={() => void useAutomatic()}>
                 {t('settings.imBot.defaults.useAutomatic')}
               </Button>
             )}

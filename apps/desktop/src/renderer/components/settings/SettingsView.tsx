@@ -416,7 +416,7 @@ function SettingsViewContent() {
           左侧保留原来的页头位置；右侧不再为页头预留 56px，贴着 46px 标题栏起排。 */}
       <div className="flex h-full min-h-0 w-full justify-start pb-5">
         {/* Inner sidebar mirrors the main sidebar width for a stable route transition. */}
-        <SettingsSidebar width={menuWidth} onBack={exitSettings}>
+        <SettingsSidebar title={t('settings.title')} width={menuWidth} onBack={exitSettings}>
           <SettingsSidebarNav
             requestedQuery={searchParams.get('query') ?? ''}
             tabIds={visibleTabIds}
