@@ -20,6 +20,7 @@ import { resolveGhostAttachmentUrl } from './ghostAttachmentResolve.js';
 import { forkForgeIconConversionHost } from './forgeIconConversionHost.js';
 import { t } from '../i18n.desktop.js';
 import { openGithubSignIn, readGithubConnection } from '../git-context/githubSetupIpc.js';
+import { getInstanceConfig } from '../instance-runtime/config.js';
 import { createGhostGateway } from './ghost.js';
 export type { GhostGrantLiveSessionState, ToolResultImageDescription, CindyGhostsHostDeps } from './ghost.js';
 
@@ -40,7 +41,8 @@ const gateway = createGhostGateway({
   publishImage: (...args) => publishImage(...args),
   getSessionFsSnapshot: (...args) => getSessionFsSnapshot(...args),
   getGhostCardService: (...args) => getGhostCardService(...args),
-  connectGhostGithubAccount: (...args) => connectGhostGithubAccount(...args),
+  // Only the managed cloud image ships the GitHub device login helper.
+  connectGhostGithubAccount: (...args) => getInstanceConfig() ? connectGhostGithubAccount(...args) : Promise.resolve(null),
   getGhostManager: (...args) => getGhostManager(...args),
   listInstalledGhostsAsync: (...args) => listInstalledGhostsAsync(...args),
   getGhostPipeDispatcher: (...args) => getGhostPipeDispatcher(...args),
