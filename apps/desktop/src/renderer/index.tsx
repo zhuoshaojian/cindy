@@ -12,6 +12,7 @@
 import { i18nReady } from './i18n';
 
 const urlParams = new URLSearchParams(window.location.search);
+const isCloudLoginWindow = urlParams.get('cloudLoginWindow') === '1';
 const isRecordingPreview = urlParams.get('recordingPreview') === '1';
 const isRemoteDesktopViewer = urlParams.get('remoteDesktopViewer') === '1';
 const isResourceUsageWindow = urlParams.get('resourceUsageWindow') === '1';
@@ -22,7 +23,7 @@ const isRegionScreenshotPin = urlParams.get('regionScreenshotPin') === '1';
 
 void i18nReady
   .then(() =>
-    urlParams.get('cloudLoginWindow') === '1'
+    isCloudLoginWindow
       ? import('./cloud-login-entry')
       : isRecordingPreview
       ? import('./recording-preview-entry')
