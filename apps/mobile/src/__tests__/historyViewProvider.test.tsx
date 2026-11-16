@@ -115,6 +115,7 @@ const transport = vi.hoisted(() => {
     serverCapabilities: string[] = [];
     hasServerCapability = (capability: string) => this.serverCapabilities.includes(capability);
     isOutboundExplicitlyClosed = vi.fn((_deviceId: string) => false);
+    needsLinkRecovery = (_deviceId: string) => false;
     // No background recovery owner; each test explicitly starts the fresh read.
     hasPendingRequestsTo = vi.fn((_deviceId: string) => false);
     onStatusChange(listener: Client['statusChanged']) { this.statusChanged = listener; return () => {}; }
