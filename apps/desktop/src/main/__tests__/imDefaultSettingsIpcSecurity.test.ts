@@ -28,12 +28,7 @@ describe('im default settings IPC security contract', () => {
   ] as const)('guards %s before any backfill or settings write', (channel, writeCall) => {
     const handler = source.indexOf(`MAKER_IPC_INVOKE.${channel},`);
     expect(handler).toBeGreaterThanOrEqual(0);
-    // RESET also serves the owner's cloud IM page; only that in-process caller skips the check.
-    const guard = source.indexOf('assertTrustedAppRendererEvent(event', handler);
-    const guardLine = source.slice(source.lastIndexOf('\n', guard), source.indexOf('\n', guard));
-    expect(guardLine.trim()).toMatch(
-      /^(assertTrustedAppRendererEvent\(event\);|if \(!isCloudManagementInvocation\(event\)\) assertTrustedAppRendererEvent\(event as Electron\.IpcMainInvokeEvent\);)$/,
-    );
+    const guard = source.indexOf('assertTrustedAppRendererEvent(event);', handler);
     const backfill = source.indexOf('prepareImDefaultSettingsChange(', handler);
     const write = source.indexOf(writeCall, handler);
     expect(guard).toBeGreaterThan(handler);

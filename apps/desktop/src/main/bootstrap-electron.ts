@@ -5637,10 +5637,9 @@ const registerIpcHandlers = () => {
       return imDefaultSettingsWire(channel);
     },
   );
-  cloudManagementProviderRegistry({ handle: (channel, handler) => ipcMain.handle(channel, handler) }).handle(MAKER_IPC_INVOKE.IM_DEFAULT_SETTINGS_RESET, async (event, rawChannel: unknown) => {
+  ipcMain.handle(MAKER_IPC_INVOKE.IM_DEFAULT_SETTINGS_RESET, async (event, rawChannel: unknown) => {
     // 同 SET: 回填会批量改任务记录, 必须先验证调用方(PR #5155 review P1)。
-    // The owner's cloud IM page (cloud:im-settings:v1) is the only other caller.
-    if (!isCloudManagementInvocation(event)) assertTrustedAppRendererEvent(event as Electron.IpcMainInvokeEvent);
+    assertTrustedAppRendererEvent(event);
     // 同 SET: 进入时快照 owner scope, 写设置前校验 scope 未变且无 boundary 在途。
     const ownerScopeKey = activeOwnerScopeKey();
     const channel = parseImDefaultSettingsChannel(rawChannel);

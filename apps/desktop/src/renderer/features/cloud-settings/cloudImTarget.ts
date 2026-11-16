@@ -202,7 +202,6 @@ export function createCloudImTarget(
         setGroupActivation: (payload) => call('telegramBot:set-group-activation', payload),
       },
       imDefaultSettingsGet: (channel) => call('maker:im-default-settings:get', channel),
-      imDefaultSettingsReset: (channel) => call('maker:im-default-settings:reset', channel),
       showOpenDirectoryDialog: async () => {
         const path = await deps.pickDirectory();
         return path ? { canceled: false, path } : { canceled: true };

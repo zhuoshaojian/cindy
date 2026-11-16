@@ -13,7 +13,6 @@ export interface SettingsTargetApi {
     'getBehavior' | 'setBehavior' | 'getPersona' | 'setPersona' | 'listGroups' | 'setGroupActivation'
   >;
   imDefaultSettingsGet: Api['maker']['imDefaultSettingsGet'];
-  imDefaultSettingsReset: Api['maker']['imDefaultSettingsReset'];
   showOpenDirectoryDialog: Api['showOpenDirectoryDialog'];
 }
 
@@ -31,7 +30,6 @@ const localApi: SettingsTargetApi = {
     return window.electronAPI.telegramBot;
   },
   imDefaultSettingsGet: (channel) => window.electronAPI.maker.imDefaultSettingsGet(channel),
-  imDefaultSettingsReset: (channel) => window.electronAPI.maker.imDefaultSettingsReset(channel),
   showOpenDirectoryDialog: () => window.electronAPI.showOpenDirectoryDialog(),
 };
 const LOCAL_TARGET: SettingsTarget = { deviceId: null, api: localApi };

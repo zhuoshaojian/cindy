@@ -46,7 +46,6 @@ export const CLOUD_IM_SETTINGS_CALLS = [
   'maker:hook-control:provider-bind-select',
   // Effective values of directory rows and the legacy default notice.
   'maker:im-default-settings:get',
-  'maker:im-default-settings:reset',
   // Personal Telegram persona, behaviour and groups.
   'telegramBot:get-persona',
   'telegramBot:set-persona',
