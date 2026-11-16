@@ -269,7 +269,8 @@ export interface GhostGatewayPorts {
   publishImage: typeof import('../cindy-media/publishImage.js').publishImage;
   getSessionFsSnapshot: typeof import('../localDb/ipc/sessions.js').getSessionFsSnapshot;
   getGhostCardService: typeof import('../cindy-brain/index.js').getGhostCardService;
-  connectGhostGithubAccount: typeof import('../cindy-brain/index.js').connectGhostGithubAccount;
+  /** GitHub device login of a managed cloud instance; absent or null keeps Cindy's GitHub sign-in. */
+  connectGhostGithubAccount?: typeof import('../cindy-brain/index.js').connectGhostGithubAccount;
   getGhostManager: typeof import('../cindy-brain/index.js').getGhostManager;
   listInstalledGhostsAsync: typeof import('../cindy-brain/index.js').listInstalledGhostsAsync;
   getGhostPipeDispatcher: typeof import('../cindy-brain/index.js').getGhostPipeDispatcher;
@@ -2260,7 +2261,7 @@ function getCindyGhostsMcpDeps(
       const visible = classifyGhostVisibility(target.id, workingDir, ghostVisibilityDeps,
         target.kind === 'plugin' ? target.namespace : undefined);
       if (!visible.ok) return visible;
-      if (target.id === 'cindy-github') {
+      if (target.id === 'cindy-github' && connectGhostGithubAccount) {
         const result = await connectGhostGithubAccount({ sessionId, signal,
           ...(target.reauthorize ? { reauthorize: true } : {}),
           assertCurrent: () => {
