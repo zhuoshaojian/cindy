@@ -13,11 +13,17 @@ import type {
   CloudMaintenanceEdit,
   CloudUpgradeOperation,
 } from '../../../../shared/cloudInstanceControl';
-import zhCN from '@/i18n/locales/zh-CN/common.json';
-import zhTW from '@/i18n/locales/zh-TW/common.json';
-import en from '@/i18n/locales/en/common.json';
-import ja from '@/i18n/locales/ja/common.json';
-import ko from '@/i18n/locales/ko/common.json';
+import zhCNCommon from '@/i18n/locales/zh-CN/common.json';
+import zhTWCommon from '@/i18n/locales/zh-TW/common.json';
+import enCommon from '@/i18n/locales/en/common.json';
+import jaCommon from '@/i18n/locales/ja/common.json';
+import koCommon from '@/i18n/locales/ko/common.json';
+import zhCNCloud from '@/i18n/locales/zh-CN/cloud.json';
+import zhTWCloud from '@/i18n/locales/zh-TW/cloud.json';
+import enCloud from '@/i18n/locales/en/cloud.json';
+import jaCloud from '@/i18n/locales/ja/cloud.json';
+import koCloud from '@/i18n/locales/ko/cloud.json';
+import { mergeCloudStrings } from '@/i18n/cloudStrings';
 const mock = vi.hoisted(() => ({
   confirm: vi.fn<(input: { title?: string; description?: string }) => Promise<boolean>>().mockResolvedValue(true),
 }));
@@ -42,6 +48,14 @@ afterEach(() => {
   vi.clearAllMocks();
   mock.confirm.mockResolvedValue(true);
 });
+// The common namespace as the app loads it: upstream copy plus the cloud copy.
+const withCloud = <A extends object, B extends object>(common: A, cloud: B) =>
+  mergeCloudStrings(common as Record<string, unknown>, cloud as Record<string, unknown>) as A & B;
+const zhCN = withCloud(zhCNCommon, zhCNCloud);
+const zhTW = withCloud(zhTWCommon, zhTWCloud);
+const en = withCloud(enCommon, enCloud);
+const ja = withCloud(jaCommon, jaCloud);
+const ko = withCloud(koCommon, koCloud);
 const resources = { 'zh-CN': zhCN, 'zh-TW': zhTW, en, ja, ko };
 const DEFAULT_EFFECTIVE = {
   source: 'inherit' as const,
