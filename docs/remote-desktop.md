@@ -483,9 +483,8 @@ or the capture bridge. Main destroys the capture host when its authority ends.
 If eight input batches are still awaiting the capture renderer's Main IPC replies,
 the next valid batch releases held input and drops further input until that release
 settles. Video, the lease, control requests and viewing heartbeats stay alive;
-malformed input still ends the session. This recovery must be installed on the
-controlled computer, including a cloud desktop; updating only the viewer cannot
-change an older host's behavior.
+malformed input still ends the session. The recovery runs on the controlled
+computer, including a cloud desktop, not in the viewer.
 
 The phone runs a dedicated trusted inline WebView document; the untrusted HTML
 preview's restrictions are unchanged. The mobile presentation module requests scene rotation and a playback audio session
@@ -826,11 +825,9 @@ including listing-only subscriptions. First-use legacy listing subscriptions nee
 no handshake. Recovery reuses the existing peer-scoped single flight and original
 pending frame IDs; it does not restart the shared relay or retry an already-sent
 business write. Close, revocation, subscription ownership and account changes are
-rechecked before sending. Wire messages and server requirements are unchanged.
-The automated recovery test uses two controllers sharing one host; loss of one
-controller's connection leaves the healthy controller's link and requests intact.
-Physical iPhone keyboard and system clipboard acceptance remain separate from
-these automated tests.
+rechecked before sending. No wire messages or server requirements are added.
+When two controllers share one host, losing one controller's connection leaves
+the other controller's link and requests intact.
 
 ## X11 native input
 
@@ -840,7 +837,7 @@ text through its authenticated X11/XTest helper. Text uses the system `libxdo.so
 before advertising control. Cindy, personal Chrome (including the address bar),
 managed browser windows and terminals share this path. No CDP connection,
 renderer script, app allowlist or implicit clipboard write is used for typing.
-The wire protocol and existing peer/lease opt-ins remain unchanged.
+It uses the existing wire protocol and peer/lease opt-ins.
 
 A logical text packet retains input ownership and queue ordering. The existing
 4096 UTF-16-unit limit and control-character checks apply before delivery; native
@@ -855,9 +852,7 @@ consume events; physical bindings are never taken, and still-owned mappings are
 restored on helper exit. Cancellation terminates only that
 lease's helper. Posting native events does not prove application consumption, and
 physical input from another device is outside Cindy's input ownership lock.
-
-Native Linux tests and real DeviceLink tests are separate acceptance gates.
-Wayland/compositor input and macOS/Windows adapters are unchanged.
+Wayland/compositor input and the macOS/Windows adapters do not use this path.
 
 ## Wayland capture lifetime
 

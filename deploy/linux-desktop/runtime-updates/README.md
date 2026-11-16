@@ -1,20 +1,22 @@
 # Cloud-managed application updates
 
-Apply `cloudManagedUpdatesPlugin({ sourceRoot })` only when building the cloud
-runtime, together with `runtime-window-controls`. Native desktop source and
-ordinary builds remain unchanged. Runtime activation additionally requires Linux
-and a validated instance configuration.
+Cloud packaging overlay. CIS owns application upgrades on cloud instances, so the
+desktop updater stays inactive there. Native desktop source and ordinary builds
+remain unchanged. Runtime activation additionally requires Linux and a valid
+instance configuration.
 
-CIS owns cloud application upgrades. This overlay suppresses the desktop updater's
-startup/background checks, staged-patch restoration, installer/relaunch paths and
-automatic beta enrollment. The cloud main window does not show the automatic
-release-notes dialog or desktop auto-update preference. The cloud build also omits
-that preference from the static settings-search catalog, including its deep-link
-aliases, in every language. Manual release history and
-agent/plugin updates remain separate capabilities. No new environment variables,
-stored preferences or wire protocol are introduced.
+The overlay suppresses the desktop updater's startup/background checks,
+staged-patch restoration, installer/relaunch paths, update-channel relaunch and
+automatic beta enrollment. The cloud main window shows neither the automatic
+release-notes dialog nor the desktop auto-update preference. The static
+settings-search catalog also omits that preference, including its deep-link
+aliases, in every language. Manual release history and agent/plugin updates are not
+affected. No environment variables, stored preferences or wire protocol are added.
 
-Every source anchor is checked; drift fails the build. Run the tests with
-`CLOUD_UPDATE_TEST_SOURCE=/path/to/client node --test deploy/linux-desktop/runtime-updates/overlay.test.mjs`.
-Verify the final cloud image before approving it for any instance. A single-instance
-acceptance does not authorize changing other instances or fleet defaults.
+The renderer flag comes from the `--cindy-cloud-main-window` argument added by
+`runtime-window-controls`, so both overlays must be applied; `stage-cloud-overlays.mjs`
+applies both. Every source anchor is checked; drift fails the build.
+
+```sh
+CLOUD_UPDATE_TEST_SOURCE=/absolute/path/to/client node --test deploy/linux-desktop/runtime-updates/overlay.test.mjs
+```

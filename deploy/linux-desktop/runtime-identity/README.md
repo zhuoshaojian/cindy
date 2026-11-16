@@ -1,23 +1,39 @@
 # 云实例身份入口
 
-云镜像构建时隐藏设置个人资料卡的“退出登录”“登录更多账号”，以及侧栏中的账号切换入口。复用原组件和布局；普通客户端不应用这层覆盖。
+云镜像打包覆盖层。在云实例主窗口中隐藏设置页个人资料卡的“退出登录”“登录更多账号”，
+以及侧栏账号菜单中的已保存账号切换和本地模式登录项。复用原组件和布局；普通客户端不应用。
 
-主进程已有 `assertInstanceAuthMutationAllowed`：退出、增加/切换账号、直接登录及切换本地模式均拒绝；仅 CIS 会话拥有的令牌对可提交。此处不复制校验、不屏蔽资源令牌刷新和 CIS bootstrap，也不限制 OpenAI、MCP 等第三方连接的授权/登出。
+覆盖层只改 UI。主进程 `assertInstanceAuthMutationAllowed` 已拒绝退出、增加/切换账号、
+直接登录及切换本地模式，仅 CIS 会话拥有的令牌对可提交。覆盖层不复制该校验，不影响资源
+令牌刷新和 CIS bootstrap，也不限制 OpenAI、MCP 等第三方连接的授权/登出。
 
-已创建实例的登录恢复由 `instance-runtime/auth-recovery.ts` 提供 Pod 内 Unix socket，
-仅 resource-v1 模式启动；它不是 renderer 登录接口。CIS 使用原 deviceId 重新获得主人
-授权，通过 Kubernetes exec stdin 交付新资源凭证。运行中的 auth manager 校验固定
-membership/device，原子更新加密 canonical session，再走 `completeLogin` 恢复数据库和
-设备连接。原会话数据、Keyring 和第三方账号不迁移、不重建。
+界面标记 `cloudIdentityManaged` 由 preload 根据 `--cindy-cloud-main-window` 参数得出；该参数
+只在 Linux 且实例配置有效时由主进程添加（见 `runtime-window-controls`）。它只是展示提示，
+不构成授权依据。
 
-`status.json` 的可选 `authRecovery` 描述能力及 `login-required/pending/ready` 状态；
-云 activity publisher 必须保留此字段。CIS 只有收到持久化回执且完整就绪后才能显示成功。
-回执按 requestId 和凭证摘要去重，网络重试、写盘失败、进程重启均不能再次花费旧输入。
-实际提交沿既有 `remote-input` 维护门禁；未完成写入不能被停机封存。该能力独立于
-冻结的 v3 profile 迁移协议，旧镜像不具备此恢复入口。
+## 登录恢复
 
-回归入口：`instance-runtime/__tests__/resourceSession.test.ts` 与 `auth-recovery.test.ts`，
-覆盖真实本地 socket、合成凭证、身份拒绝、写盘失败、回执丢失和残留 socket。
-这些测试不代表真实认证服务或用户实例已经恢复；需另行记录线上验收。
+已创建实例的登录恢复由客户端 `instance-runtime/auth-recovery.ts` 提供，不属于此覆盖层，
+也不是 renderer 登录接口：
 
-`stage-cloud-overlays.mjs` 对冻结源码应用覆盖，锚点漂移立即失败。回归测试编译真实覆盖源码、执行资料卡渲染和主进程身份门禁；在同一 `CLOUD_UPDATE_TEST_SOURCE` 下与其他覆盖测试一同运行。UI 提示来自 Main 根据有效实例配置写入的参数，不构成授权依据。
+- 仅 `resource-v1` 模式启动，监听 Pod 内仅属主可访问的 Unix socket
+  `/tmp/cindy-auth-recovery/control.sock`（`POST /v1/recover`），没有 TCP 监听。
+- 请求的 membership/device 必须与实例一致。运行中的 auth manager 原子更新加密 canonical
+  session，再走 `completeLogin` 恢复数据库和设备连接。原会话数据、Keyring 和第三方账号不迁移、
+  不重建。
+- 按 requestId 和凭证摘要去重，网络重试、写盘失败、进程重启都不会再次花费旧输入。凭证持久化
+  后 socket 才返回 `applied`。
+- 提交走维护门禁的 `remote-input` 入口，未完成的写入不会被停机封存。
+- `status.json` 的可选 `authRecovery` 报告 `login-required` / `pending` / `ready`。云 activity
+  publisher 必须保留此字段；`cindy-cloud-healthcheck.mjs --startup` 也读取它。
+
+## 测试
+
+```sh
+CLOUD_UPDATE_TEST_SOURCE=/absolute/path/to/client node --test deploy/linux-desktop/runtime-identity/overlay.test.mjs
+```
+
+`stage-cloud-overlays.mjs` 对构建用的源码导出应用覆盖，锚点漂移或重复注入立即失败。回归测试
+编译真实覆盖源码，执行资料卡渲染和主进程身份门禁。登录恢复的回归在客户端
+`instance-runtime/__tests__/resourceSession.test.ts` 与 `auth-recovery.test.ts`，使用本地 socket
+和合成凭证，不代表真实认证服务或用户实例已经恢复。

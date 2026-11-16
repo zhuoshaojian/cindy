@@ -1,29 +1,35 @@
 # 运行健康观测
 
-镜像最终打包须遵守 [IMAGE-PACKAGING.md](IMAGE-PACKAGING.md)：保留运行依赖和安全
-入口，压平历史层，每次发布只保留一份应用；瘦身后仍须通过本页的运行验收。
+`profile-supervisor.mjs` 安装为 `/usr/local/lib/cindy/profile-supervisor.mjs`，由 PID 1
+包装脚本启动。它以 UID 10001 运行 Cindy，校验 Cindy 发出的遥测，测量沙箱后发布运行证据。
+它导入的 `profile-runtime-wire.mjs` 由 `apps/desktop/src/main/instance-runtime/profile-runtime-wire.ts`
+在同一次镜像构建中打包。两者须一起更新：只更新 ASAR 不会替换镜像里的 supervisor。
 
-镜像将本目录的 `profile-supervisor.mjs` 放到
-`/usr/local/lib/cindy/profile-supervisor.mjs`，并同批更新由
-`apps/desktop/src/main/instance-runtime/profile-runtime-wire.ts` 构建的 wire bundle。
-只更新 ASAR 不会替换镜像继承的 supervisor。
+Cindy 退出时 supervisor 随之退出；Cindy 消失而 supervisor 仍在时由 `application-watch`
+停止容器。见 [桌面运行时说明](runtime-desktop-xfce/README.md#runtime-composition)。
 
-云运行、维护和预检入口显式设置 `disable-dev-shm-usage`；supervisor 也给候选与
-旧兼容恢复应用传入该参数。Chromium 共享图像使用既有临时卷中的私有、已取消目录链接的
-文件，避免多个软件渲染窗口耗尽容器默认的 64 MiB `/dev/shm` 后退出。普通 Desktop
-不受影响；不增加内存配额、不改变 Keyring/PVC、不改变 seccomp、NNP 或能力集。
-临时卷磁盘仍可能耗尽，应按实际临时存储容量监测；此参数不宣称解决所有内存不足。
-发布验收须包含原安全上下文中的菜单反复开关、共享内存压力和完整运行观测。
+## 共享内存
 
-运行观测接受最多 64 个 CDP SystemInfo 发现的 renderer，逐一测量 /proc 的 PID、启动时间、
-Seccomp/filter 数、NoNewPrivs 与 capabilities；不得截取前几个进程。独立的 preflight
-仍最多 8 个，保证 Kubernetes 4 KiB termination receipt 有界。运行证据保留 16 KiB、
-私有文件权限、身份/代际和心跳检查；超过容量或任何进程测量失败都撤下证据。
+云实例、维护和预检模式的 Electron 主进程都追加 `disable-dev-shm-usage`，supervisor 启动
+Cindy 时也传入该参数。Chromium 共享图像改用现有临时卷中私有、已取消链接的文件，避免多个
+软件渲染窗口耗尽容器默认 64 MiB 的 `/dev/shm` 后 renderer 退出。普通 Desktop 不受影响；
+不改变内存配额、Keyring、PVC、seccomp、NoNewPrivs 或能力集。临时卷仍可能写满，应按实际
+临时存储容量监测。
 
-失败会输出固定 `PROFILE_OBSERVATION_UNAVAILABLE` 事件和 stage/code，不包含 telemetry、
-原始异常、URL 或凭据；同一连续故障去重。启动和停止期间证据不可用仍属正常生命周期。
+## 观测与证据
 
-先部署兼容 64 renderer 的 CIS 读取端，再更新对应 runtime。旧运行证据仍被新 CIS 接受；
-旧 CIS 会拒绝超过 8 个 renderer 的新证据。不可只以基本 status.ready 代替完整安全观测。
-单元测试的 CDP /proc 替身只能证明边界；发布后还需真实多 renderer、当前凭据续期和
-CIS 实際读取验证。
+- 运行观测接受通过 CDP SystemInfo 发现的最多 64 个 renderer，逐个从 `/proc` 测量 PID、
+  启动时间、Seccomp 与 filter 数、NoNewPrivs 和 capabilities，不截取部分进程。
+- 预检最多 8 个 renderer，保证 Kubernetes 4 KiB termination message 有界。
+- 运行证据上限 16 KiB，私有文件权限，并校验身份、代际和心跳。超过上限或任何一项测量失败，
+  证据即被撤下。
+- 失败输出固定的 `PROFILE_OBSERVATION_UNAVAILABLE` 事件及 stage/code，不含遥测内容、原始
+  异常、URL 或凭据；同一连续故障只输出一次。启动和停止期间没有证据属于正常生命周期。
+
+CIS 读取这份证据，必须接受最多 64 个 renderer。修改上限或证据字段时，先发布兼容的 CIS
+读取端，再发布 runtime。不能用基本的 `status.ready` 代替完整的安全观测。
+
+## 验收
+
+单元测试中的 CDP 与 `/proc` 替身只证明边界。发布验收须在实际安全上下文中运行多 renderer、
+反复打开关闭菜单和共享内存压力，并确认凭据续期后 CIS 能实际读取证据。
