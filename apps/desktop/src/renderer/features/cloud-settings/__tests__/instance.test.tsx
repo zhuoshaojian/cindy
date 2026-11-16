@@ -48,9 +48,10 @@ afterEach(() => {
   vi.clearAllMocks();
   mock.confirm.mockResolvedValue(true);
 });
-// The common namespace as the app loads it: upstream copy plus the cloud copy.
-const withCloud = <A extends object, B extends object>(common: A, cloud: B) =>
-  mergeCloudStrings(common as Record<string, unknown>, cloud as Record<string, unknown>) as A & B;
+// The common namespace as the app loads it: upstream copy plus the cloud copy. Only the
+// cloud copy is typed; the upstream catalog is far too large to type-check as an intersection.
+const withCloud = <B extends object>(common: object, cloud: B) =>
+  mergeCloudStrings(common as Record<string, unknown>, cloud as Record<string, unknown>) as B;
 const zhCN = withCloud(zhCNCommon, zhCNCloud);
 const zhTW = withCloud(zhTWCommon, zhTWCloud);
 const en = withCloud(enCommon, enCloud);

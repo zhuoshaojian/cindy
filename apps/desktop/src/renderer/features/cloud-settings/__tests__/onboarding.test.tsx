@@ -26,9 +26,10 @@ afterEach(() => {
   vi.clearAllMocks();
   confirmation.confirm.mockResolvedValue(true);
 });
-// The common namespace as the app loads it: upstream copy plus the cloud copy.
-const withCloud = <A extends object, B extends object>(common: A, cloud: B) =>
-  mergeCloudStrings(common as Record<string, unknown>, cloud as Record<string, unknown>) as A & B;
+// The common namespace as the app loads it: upstream copy plus the cloud copy. Only the
+// cloud copy is typed; the upstream catalog is far too large to type-check as an intersection.
+const withCloud = <B extends object>(common: object, cloud: B) =>
+  mergeCloudStrings(common as Record<string, unknown>, cloud as Record<string, unknown>) as B;
 const zhCN = withCloud(zhCNCommon, zhCNCloud);
 const zhTW = withCloud(zhTWCommon, zhTWCloud);
 const en = withCloud(enCommon, enCloud);
@@ -157,13 +158,13 @@ it('login completion waits for runtime readiness before opening the settings', a
   fireEvent.click(await screen.findByRole('button', { name: '登录云端 Cindy' }));
   await screen.findByRole('button', { name: '重新打开登录页' });
   f.api.instanceList.mockResolvedValue([{ ...target, loginRequired: false }]);
-  fireEvent.click(screen.getByRole('button', { name: zhCN.settings.devices.refresh }));
+  fireEvent.click(screen.getByRole('button', { name: zhCNCommon.settings.devices.refresh }));
   await screen.findByText(zhCN.cloudSettings.instance.state.starting);
   expect(f.onOpen).not.toHaveBeenCalled();
   f.api.instanceList.mockResolvedValue([
     { ...target, loginRequired: false, ready: true, runtimeState: 'running' },
   ]);
-  fireEvent.click(screen.getByRole('button', { name: zhCN.settings.devices.refresh }));
+  fireEvent.click(screen.getByRole('button', { name: zhCNCommon.settings.devices.refresh }));
   await waitFor(() => expect(f.onOpen).toHaveBeenCalledExactlyOnceWith('example-device'));
 });
 
@@ -186,12 +187,12 @@ it('quick desktop opens only the selected ready instance and never changes its p
     { ...running, deviceId: 'device-b', instanceId: 'b', name: 'Cloud B' },
   ]);
   const own = within(await screen.findByRole('region', { name: 'Cloud A' }));
-  fireEvent.click(own.getByRole('button', { name: zhCN.remoteDesktop.title }));
+  fireEvent.click(own.getByRole('button', { name: zhCNCommon.remoteDesktop.title }));
   expect(f.onOpenDesktop).toHaveBeenCalledExactlyOnceWith(running);
   expect(
     (
       within(screen.getByRole('region', { name: 'Cloud B' })).getByRole('button', {
-        name: zhCN.remoteDesktop.title,
+        name: zhCNCommon.remoteDesktop.title,
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -222,7 +223,7 @@ it('quick wake submits once for the selected instance and keeps stale list resul
   await waitFor(() => expect((wake as HTMLButtonElement).disabled).toBe(true));
   expect(confirmation.confirm).not.toHaveBeenCalled();
   f.api.instanceList.mockResolvedValue([running]);
-  fireEvent.click(screen.getByRole('button', { name: zhCN.settings.devices.refresh }));
+  fireEvent.click(screen.getByRole('button', { name: zhCNCommon.settings.devices.refresh }));
   await waitFor(() =>
     expect((screen.getByRole('button', { name: '休眠' }) as HTMLButtonElement).disabled).toBe(
       false,
@@ -264,7 +265,7 @@ it('a refused wake says why instead of an unconfirmed result', async () => {
     zhCN.cloudSettings.refusal.CLOUD_SETTINGS_INSTANCE_TRANSFERRED,
   );
   // Nothing changed and asking again would be refused too: no retry, and nothing is read back.
-  expect(screen.queryByRole('button', { name: zhCN.commonUi.retry })).toBeNull();
+  expect(screen.queryByRole('button', { name: zhCNCommon.commonUi.retry })).toBeNull();
   expect(screen.queryByText(zhCN.cloudSettings.instance.statusUnreadable)).toBeNull();
   expect(f.api.instancePower).toHaveBeenCalledTimes(1);
 });
@@ -350,7 +351,7 @@ it.each(['starting', 'stopping', 'verifying'] as const)(
       ).disabled,
     ).toBe(true);
     expect(
-      (region.getByRole('button', { name: zhCN.remoteDesktop.title }) as HTMLButtonElement)
+      (region.getByRole('button', { name: zhCNCommon.remoteDesktop.title }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
     expect(f.api.instancePower).not.toHaveBeenCalled();
@@ -502,7 +503,7 @@ it('sleep cancels the old login completion navigation without waking on a later 
   fireEvent.click(screen.getByRole('button', { name: '休眠' }));
   await waitFor(() => expect(f.api.instancePower).toHaveBeenCalledOnce());
   f.api.instanceList.mockResolvedValue([{ ...target, loginRequired: false, ready: true, runtimeState: 'running' }]);
-  fireEvent.click(screen.getByRole('button', { name: zhCN.settings.devices.refresh }));
+  fireEvent.click(screen.getByRole('button', { name: zhCNCommon.settings.devices.refresh }));
   await screen.findByText(zhCN.cloudSettings.instance.state.running);
   expect(f.onOpen).not.toHaveBeenCalled();
   expect(f.api.instancePower).toHaveBeenCalledExactlyOnceWith({ deviceId: target.deviceId, action: 'sleep' });
