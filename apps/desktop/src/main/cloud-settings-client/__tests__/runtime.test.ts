@@ -50,6 +50,8 @@ vi.mock('../../security/trustedAppRenderer', () => ({
     if (!event.trusted) throw Error('PERMISSION_DENIED');
   },
 }));
+// Window creation fails: the IPC cases must never reach a usable login window.
+const createWindow = vi.fn<() => never>(() => { throw Error('fixture login window unavailable'); });
 let f: ReturnType<typeof fixture>;
 let sender: EventEmitter & { id: number; isDestroyed(): boolean };
 let event: { sender: typeof sender; trusted: boolean };
@@ -95,13 +97,23 @@ beforeEach(async () => {
   (await import('../runtime')).registerCloudSettingsClientIpc({
     isOpenSender: (candidate) => candidate === sender,
     title: () => 'Cloud login',
-    createWindow: () => { throw Error('These IPC rejection cases must never create a window'); },
+    createWindow,
   });
 });
 afterEach(() => {
   mock.quit.mock.calls.find(([name]) => name === 'before-quit')?.[1]();
   f.stop();
   vi.useRealTimers();
+});
+// A client without a cloud instance service (no cloudInstanceApiBaseUrl for its region, as in
+// upstream builds) must not create the hidden login window at startup; a configured one prewarms it.
+it.each([
+  ['without', 0, ''],
+  ['with', 1, 'https://cis.example.test'],
+])('a client %s a cloud instance service prewarms %i hidden login window', async (_label, windows, baseUrl) => {
+  mock.baseUrl = baseUrl;
+  (await import('../runtime')).cloudLoginWindowLifecycle.prewarm();
+  expect(createWindow).toHaveBeenCalledTimes(windows);
 });
 it('registers the closed bridge once and rejects untrusted IPC before network access', async () => {
   (await import('../runtime')).registerCloudSettingsClientIpc();
