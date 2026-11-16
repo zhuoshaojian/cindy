@@ -16,6 +16,13 @@ import { UnifiedModelList } from '../../../src/renderer/components/settings/Unif
 import { Button } from '../../../src/renderer/components/ui/button';
 import { appendSpeechModels, providerSpeechSetup } from '../../../src/shared/speechProviderSetup';
 import { isModelEnabled, setModelVisibilityOwner, useModelVisibilityVersion } from '../../../src/renderer/state/modelVisibilityPrefs';
+import { setDataOwnerGeneration } from '../../../src/renderer/contexts/dataOwnerGeneration';
+import {
+  applyModelPresentationOperation,
+  emptyModelPresentationPreferences,
+  type ModelPresentationPreferencesApi,
+  type ModelPresentationPreferencesSnapshot,
+} from '../../../src/shared/modelPresentationPreferences';
 
 let stored: CustomProviderConfig = {
   id: 'minimax-personal',
@@ -120,6 +127,29 @@ function Fixture({ scenario }: { scenario: string }) {
 }
 void mountPage({
   host: (ctx) => {
+    // The fork persists model visibility through Host receipts, not localStorage.
+    const ownerStamp = { dataOwnerId: 'speech-fixture', ownerGeneration: 1 };
+    if (ctx.case === 'speech-visibility') setDataOwnerGeneration(ownerStamp.dataOwnerId, 1);
+    let revision = 0;
+    let preferences = emptyModelPresentationPreferences();
+    const snapshot = (): ModelPresentationPreferencesSnapshot => ({
+      status: 'ready', ownerStamp, revision: String(revision), initialized: true,
+      value: structuredClone(preferences),
+    });
+    const modelPresentationPreferences: ModelPresentationPreferencesApi = {
+      get: async () => snapshot(),
+      importLegacy: forbid('modelPresentationPreferences.importLegacy: fixture already initialized'),
+      mutate: async (request) => {
+        if (request.ownerStamp.dataOwnerId !== ownerStamp.dataOwnerId ||
+            request.ownerStamp.ownerGeneration !== ownerStamp.ownerGeneration ||
+            request.expectedRevision !== String(revision)) throw new Error('Fixture owner/revision conflict');
+        const result = applyModelPresentationOperation(preferences, request.operation);
+        preferences = result.value;
+        revision++;
+        return { snapshot: snapshot(), favoriteUid: result.favoriteUid };
+      },
+      onChanged: subscription('modelPresentationPreferences.changed'),
+    };
     if (ctx.case === 'empty') stored.runtimes.codex!.models = [];
     if (ctx.case === 'speech-visibility')
       stored.runtimes.codex!.models.push({ id: 'speech-2.8-hd', name: 'MiniMax Speech 2.8 HD', mode: 'audio_speech', defaultEnabled: false });
@@ -143,6 +173,7 @@ void mountPage({
         },
       };
     return {
+      modelPresentationPreferences,
       safeStorageRead: async () => 'fixture-key',
       maker: {
         claimLegacyModelVisibilityOwner: () => ({ dataOwnerId: 'speech-fixture', ownerGeneration: 1,

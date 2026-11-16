@@ -1,10 +1,11 @@
-import type { SettingsSearchContext } from './settingsSearchTypes';
+import type { SettingsSearchContext, SettingsSearchEntry } from './settingsSearchTypes';
 import type { ComponentType, ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LucideProps } from 'lucide-react';
 import {
   Boxes,
   ChartColumn,
+  Cloud,
   CircleDollarSign,
   CircleHelp,
   Database,
@@ -78,6 +79,7 @@ const TAB_ICON: Record<VisibleSettingsTab, SettingsNavIcon> = {
   'agent-island': AgentIslandNavIcon,
   import: FileUp,
   'remote-control': MonitorSmartphone,
+  'cloud-instances': Cloud,
   'shared-tasks': Users,
   ghosts: Plug,
   'builtin-tools': Wrench,
@@ -88,10 +90,24 @@ const TAB_ICON: Record<VisibleSettingsTab, SettingsNavIcon> = {
   storage: Database,
 };
 
+/** A category of the page that is not a settings tab. */
+interface SettingsNavExtraTab {
+  id: string;
+  label: string;
+  icon: SettingsNavIcon;
+  selected: boolean;
+  onSelect(): void;
+}
+
 interface SettingsSidebarNavProps {
   tabIds: readonly VisibleSettingsTab[];
+  /** Categories search looks in; the listed tabs when not given. */
+  searchTabIds?: readonly VisibleSettingsTab[];
   searchContext?: SettingsSearchContext;
-  activeTab: SettingsTab;
+  allowSearchEntry?: (entry: SettingsSearchEntry) => boolean;
+  activeTab: SettingsTab | null;
+  leadingTab?: SettingsNavExtraTab;
+  trailingTab?: SettingsNavExtraTab;
   onSelectTab: (tab: SettingsTab) => void;
   onSelectSearchResult?: (result: { tab: SettingsTab; sectionId: string }) => void;
   pluginPages?: readonly PluginSettingsPage[];
@@ -103,7 +119,9 @@ interface SettingsSidebarNavProps {
 /** Settings left nav. Every item is an in-panel tab with a matching lucide mark. */
 export function SettingsSidebarNav({
   tabIds,
+  searchTabIds,
   searchContext,
+  allowSearchEntry,
   activeTab,
   onSelectTab,
   onSelectSearchResult,
@@ -111,16 +129,33 @@ export function SettingsSidebarNav({
   pluginSearchDocuments,
   selectedPluginPage,
   onSelectPluginPage,
+  leadingTab,
+  trailingTab,
 }: SettingsSidebarNavProps) {
   const { t } = useTranslation();
+  const items = [
+    ...(leadingTab ? [leadingTab] : []),
+    ...tabIds.map((tabId) => ({
+      id: tabId,
+      label: t(TAB_LABEL_KEY[tabId]),
+      icon: TAB_ICON[tabId],
+      selected: activeTab === tabId && !selectedPluginPage,
+      onSelect: () => onSelectTab(tabId),
+    })),
+    ...(trailingTab ? [trailingTab] : []),
+  ];
 
   return (
     <>
-      <SettingsSearchBox visibleTabIds={tabIds} searchContext={searchContext} additionalDocuments={pluginSearchDocuments} onSelect={onSelectSearchResult} />
+      <SettingsSearchBox
+        allowSearchEntry={allowSearchEntry}
+        visibleTabIds={searchTabIds ?? tabIds}
+        searchContext={searchContext}
+        additionalDocuments={pluginSearchDocuments}
+        onSelect={onSelectSearchResult}
+      />
       <nav role="tablist" aria-label={t('settings.title')} className="flex flex-col gap-0.5">
-        {tabIds.map((tabId) => {
-          const selected = activeTab === tabId && !selectedPluginPage;
-          const Icon = TAB_ICON[tabId];
+        {items.map(({ id: tabId, label, icon: Icon, selected, onSelect }) => {
           return (
             <button
               key={tabId}
@@ -129,7 +164,7 @@ export function SettingsSidebarNav({
               role="tab"
               aria-selected={selected}
               aria-controls={`settings-panel-${tabId}`}
-              onClick={() => onSelectTab(tabId)}
+              onClick={onSelect}
               className={cn(NAV_ITEM_CLASS, selected ? NAV_ITEM_ACTIVE_CLASS : NAV_ITEM_IDLE_CLASS)}
             >
               <Icon
@@ -143,7 +178,7 @@ export function SettingsSidebarNav({
                     : 'text-[var(--settings-menu-text)]',
                 )}
               />
-              <span className="leading-none">{t(TAB_LABEL_KEY[tabId])}</span>
+              <span className="leading-none">{label}</span>
             </button>
           );
         })}

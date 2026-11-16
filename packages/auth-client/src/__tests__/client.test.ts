@@ -415,6 +415,7 @@ describe("CindyAuthClient", () => {
         captcha: {
           provider: "turnstile",
           siteKey: "scenario-captcha-sitekey",
+          requestCodePage: true, // additive Auth capability is ignored by older native clients
           requiredFor: [
             "email_request_code",
             "phone_request_code",

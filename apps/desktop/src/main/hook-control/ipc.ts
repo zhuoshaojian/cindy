@@ -1,3 +1,10 @@
+import { configureCloudHookManagement } from '../host-settings/managementBots.js';
+import { registerCloudDomainCall } from '../host-settings/managementCalls.js';
+import { CLOUD_HOOK_PROVIDER_ACTION_URL } from '../../shared/cloudImSettings.js';
+import { getInstanceConfig } from '../instance-runtime/config.js';
+import { AuthorizationBrowser, launchAuthorizationBrowser } from '../instance-runtime/authorization-browser.js';
+import { HookAuthorizationWindows } from '../instance-runtime/hook-authorization-windows.js';
+import { onQuit } from '../lifecycle.js';
 import { registerGroupImageReader, fetchOfficialGroupImage } from './groupImageBridge.js';
 /**
  * hook-control/ipc.ts
@@ -73,6 +80,7 @@ import {
   HOOK_CONTROL_EVENT,
   HOOK_CONTROL_INVOKE,
   HOOK_WORKSPACE_ALIAS_RE,
+  HOOK_CHAT_WORKSPACE_ALIAS,
   HOOK_WORKSPACE_PROVIDER_SOURCE_MAX_ENTRIES,
   type HookPrefsPatch,
   type HookPrefsView,
@@ -114,17 +122,28 @@ import { listRecentHookSessions } from './recentSessions.js';
 import { validateTelegramExternalUrl } from './telegramDeepLink.js';
 import { validateXExternalUrl } from './xDeepLink.js';
 import { validateFeishuExternalUrl } from './feishuDeepLink.js';
+import { providerActionUrlFromIpc } from './providerActionUrlIpc.js';
 import { isAppContentWindow } from '../windowFocusClassifier.js';
 import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer.js';
 import { getAgentIslandService } from '../agent-island/service.js';
 import { setLifecycleAnnouncementFromIpc } from './lifecycleAnnouncementIpc.js';
 import { setSlackCommunicationsFromIpc } from './slackCommunicationsIpc.js';
+import { inspectOfficialHookSettings } from './store.js';
 
 const log = createLogger('hook-control');
 
 let store: SlackHookStore | null = null;
 let manager: HookControlManager | null = null;
 let disposeAuthListener: (() => void) | null = null;
+let cloudAuthorizationBrowser: AuthorizationBrowser | null = null;
+let cloudAuthorizationWindows: HookAuthorizationWindows | null = null;
+let cloudAuthorizationTeardown: Promise<void> = Promise.resolve();
+function closeCloudAuthorizationWindows(): Promise<void> {
+  const closing = cloudAuthorizationWindows?.dispose();
+  cloudAuthorizationTeardown = Promise.all([cloudAuthorizationTeardown, closing]).then(() => {});
+  return cloudAuthorizationTeardown;
+}
+onQuit('cloud-authorization-windows', () => cloudAuthorizationTeardown, 'async');
 let observedAuthRealm: ReturnType<typeof authManager.getActiveAuthRealm> | null = null;
 function hookControlAvailable(): boolean {
   return getAppCapabilities().canUseCindyAccountServices;
@@ -160,6 +179,33 @@ function requireNeutralProvider(payload: unknown): NeutralHookProvider {
 
 function providerDisplayName(provider: NeutralHookProvider): string {
   return NEUTRAL_PROVIDER_DISPLAY_NAMES[provider];
+}
+
+/** Host assembly only: reuse the existing native instance, without creating a connection. */
+export function getHostHookPreferencesContext() {
+  if (!hookControlAvailable() || !store || !manager) return null;
+  const fingerprint = currentAccountFingerprint();
+  if (inspectOfficialHookSettings(ownerScopedUserDataPath('slack-hook.json'), fingerprint, ownerScopedUserDataPath('hook-connections.json')).status !== 'ready') return null;
+  const snap = manager.snapshot();
+  const aliases = [HOOK_CHAT_WORKSPACE_ALIAS, ...Object.keys(store.get().workspaces)];
+  const targets: Array<{ channel: HookPrefsChannel; teamId: string | null; workspace: string; label: string }> = [];
+  if (slackAccountBound(snap)) {
+    const teams = snap.serverMultiTeam ? snap.bindings.filter(binding => !binding.displaced).map(binding => ({ id: binding.teamId, name: binding.teamName ?? binding.teamId })) : [{ id: null, name: '' }];
+    for (const team of teams) for (const workspace of aliases) targets.push({ channel: 'slack', teamId: team.id, workspace, label: [workspace === HOOK_CHAT_WORKSPACE_ALIAS ? 'Cindy' : workspace, 'Slack', team.name].filter(Boolean).join(' · ') });
+  }
+  for (const channel of ['telegram', 'x'] as const) if (snap[channel].binding?.state === 'confirmed') {
+    for (const workspace of aliases) targets.push({ channel, teamId: null, workspace, label: `${workspace === HOOK_CHAT_WORKSPACE_ALIAS ? 'Cindy' : workspace} · ${channel === 'telegram' ? 'Telegram' : 'X'}` });
+  }
+  return { store, fingerprint,
+    targets,
+    refresh() { if (manager && !manager.refreshHello()) manager.sync(); },
+    preferencesChanged(channels: HookPrefsChannel[]) {
+      for (const channel of new Set(channels)) {
+        if (channel === 'slack') broadcastPrefs(slackLocalPrefsView()); else broadcastProviderPrefs(providerLocalPrefsView(channel));
+        void mirrorWorkspacePrefs(channel);
+      }
+    },
+  };
 }
 
 /** Local/signed-out sessions must not observe a previous cloud owner's config. */
@@ -258,6 +304,13 @@ function providerLocalPrefsView(provider: Exclude<HookPrefsChannel, 'slack'>): P
     bound: confirmed !== null,
     prefs: listWorkspacePrefs(provider),
   };
+}
+
+export function notifyHostWorkspaceProviderSourcesChanged(): void {
+  const entries = listWorkspaceProviderSources();
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && isAppContentWindow(window)) window.webContents.send(HOOK_CONTROL_EVENT.WORKSPACE_PROVIDER_SOURCE_CHANGED, entries);
+  }
 }
 
 function parseWorkspacePrefsWrite(payload: unknown): {
@@ -599,6 +652,12 @@ function ensureInstances(): { store: SlackHookStore; manager: HookControlManager
       telegramCommandMenus: () => buildOfficialBotCommandMenus((key, locale) => t(key, locale)),
       log,
     });
+    const instance = getInstanceConfig();
+    if (instance) {
+      cloudAuthorizationBrowser ??= new AuthorizationBrowser(() => launchAuthorizationBrowser(instance.userDataDir));
+      cloudAuthorizationWindows = new HookAuthorizationWindows(cloudAuthorizationBrowser,
+        () => log.warn('Cloud authorization window cleanup failed'));
+    }
     manager = createHookControlManager({
       store,
       isAvailable: hookControlAvailable,
@@ -625,7 +684,10 @@ function ensureInstances(): { store: SlackHookStore; manager: HookControlManager
       // Only advertise runtimes that are actually registered on this build.
       // Pi is optional on unsupported/unprepared platforms.
       agents: getMaker().listAvailableAgents(),
-      notifyStatus: broadcastStatus,
+      notifyStatus: (view) => {
+        cloudAuthorizationWindows?.update(view);
+        broadcastStatus(view);
+      },
       notifyPrefs: (view) => {
         persistUnsolicitedServerPrefs('slack', view.prefs);
         broadcastPrefs(slackLocalPrefsView());
@@ -680,18 +742,24 @@ function ensureInstances(): { store: SlackHookStore; manager: HookControlManager
       },
       // 绑定授权链接: 用系统浏览器打开(远程控制时落被控机, 设置页另给复制链接)
       openExternalUrl: (url) => {
-        void shell.openExternal(url);
+        const opened = cloudAuthorizationWindows
+          ? cloudAuthorizationWindows.open('slack', url)
+          : shell.openExternal(url);
+        void opened.catch(() => log.warn('Slack authorization browser could not open'));
       },
       openTelegramUrl: (url) => {
         const safeUrl = validateTelegramExternalUrl(url);
+        if (cloudAuthorizationWindows?.pending('telegram')) return cloudAuthorizationWindows.open('telegram', safeUrl);
         return shell.openExternal(safeUrl);
       },
       openXUrl: (url) => {
         const safeUrl = validateXExternalUrl(url);
+        if (cloudAuthorizationWindows?.pending('x')) return cloudAuthorizationWindows.open('x', safeUrl);
         return shell.openExternal(safeUrl);
       },
       openFeishuUrl: (url) => {
         const safeUrl = validateFeishuExternalUrl(url);
+        if (cloudAuthorizationWindows?.pending('feishu')) return cloudAuthorizationWindows.open('feishu', safeUrl);
         return shell.openExternal(safeUrl);
       },
       log,
@@ -768,6 +836,9 @@ type HookControlIpcHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => 
 
 /** Register one fixed hook-control channel with the shared sender guard. */
 function registerTrustedHookControlHandler(channel: string, handler: HookControlIpcHandler): void {
+  // The cloud settings page reaches the settings subset through its owner-checked channel;
+  // the handlers never read the event, and unlisted channels are not captured.
+  registerCloudDomainCall(channel, (...args) => handler(undefined as unknown as IpcMainInvokeEvent, ...args));
   ipcMain.handle(channel, (event, ...args) => {
     assertTrustedHookControlSender(event);
     return handler(event, ...args);
@@ -805,6 +876,7 @@ export function readXCompanionSummary(): { available: boolean; visible: boolean;
 
 /** 注册 IPC 并按配置 + 登录态拉起连接。bootstrap 里调用一次。 */
 export function registerHookControlIpc(): void {
+  configureCloudHookManagement(() => { requireHookControl(); return ensureInstances().manager; });
   registerTrustedHookControlHandler(HOOK_CONTROL_INVOKE.GET, () => ({
     hook: hookControlAvailable() ? ensureInstances().manager.snapshot() : disabledHookView(),
   }));
@@ -909,6 +981,13 @@ export function registerHookControlIpc(): void {
       );
     }
     return { hook: m.snapshot() };
+  });
+
+  // The cloud settings page opens provider links on the controller's computer, not here.
+  registerCloudDomainCall(CLOUD_HOOK_PROVIDER_ACTION_URL, (payload) => {
+    requireHookControl();
+    const provider = requireNeutralProvider(payload);
+    return providerActionUrlFromIpc(ensureInstances().manager, provider, requireObject(payload).action);
   });
 
   registerTrustedHookControlHandler(
@@ -1324,11 +1403,14 @@ export function startHookControlAccount(): void {
 
 /** Close hook ingress before the old account DB is disposed. */
 export async function stopHookControlAccount(): Promise<void> {
+  await closeCloudAuthorizationWindows();
   if (manager) await manager.deactivateAccount();
 }
 
 /** Stop and discard all state tied to the current data owner; IPC stays registered. */
 export function resetHookControlOwnerBoundary(options?: { clearPersisted?: boolean }): void {
+  void closeCloudAuthorizationWindows();
+  cloudAuthorizationWindows = null;
   mirrorWorkspacePrefs.invalidateOwnerBoundary();
   unregisterSlackToolBridge();
   registerGroupImageReader(null);

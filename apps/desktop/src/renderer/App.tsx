@@ -17,6 +17,7 @@ import { WallpaperSettingsProvider } from '@/hooks/useWallpaperSettings';
 import { FontSettingsProvider } from '@/hooks/useFontSettings';
 import { LocaleProvider } from '@/hooks/useLocale';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { CloudInstanceAccessProvider } from '@/features/cloud-settings/CloudInstanceAccess';
 import { PluginReviewUpdatesProvider } from '@/contexts/PluginReviewUpdatesContext';
 import { AppShellCoverProvider, useAppShellCover } from '@/contexts/AppShellCoverContext';
 import { LoginHandoffProvider } from '@/contexts/LoginHandoffContext';
@@ -170,6 +171,8 @@ function syncNewMakerPrefs(appDefaultModelRequestId?: string) {
   // 不消费这两项,远程草稿镜像才用)。fire-and-forget。
   const selected = draft.lastByVendor[draft.vendor];
   window.electronAPI.syncNewMakerDraft({
+    vendor: draft.vendor === 'orca' ? 'cc' : draft.vendor,
+    defaultTupleCustomized: draft.defaultTupleCustomized,
     ...(appDefaultModelRequestId ? { appDefaultModelRequestId } : {}),
     ownerStamp: { dataOwnerId: owner.dataOwnerId, ownerGeneration: owner.generation },
     selectedRoute: {
@@ -267,7 +270,9 @@ function OwnerScopedRouter() {
   return (
     <PluginUiProvider enabled={canEnterApp} host={<Suspense fallback={null}><PluginUiHost /></Suspense>}>
     <MainViewHistoryProvider ownerKey={ownerKey} locationKey={router.state.location.key}>
-      <RouterProvider key={ownerKey} router={router} />
+      <CloudInstanceAccessProvider>
+        <RouterProvider key={ownerKey} router={router} />
+      </CloudInstanceAccessProvider>
     </MainViewHistoryProvider>
     </PluginUiProvider>
   );

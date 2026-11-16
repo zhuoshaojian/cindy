@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const fixture = vi.hoisted(() => ({ upload: vi.fn(async () => []), download: vi.fn(), packaged: true, urls: [] as string[], wsUrls: [] as string[], exists: vi.fn(), config: '', handle: vi.fn(), profiles: [] as unknown[], sockets: [] as import('ws').WebSocket[] }));
+const fixture = vi.hoisted(() => ({ endpoint: undefined as string | undefined, upload: vi.fn(async () => []), download: vi.fn(), packaged: true, urls: [] as string[], wsUrls: [] as string[], exists: vi.fn(), config: '', handle: vi.fn(), profiles: [] as unknown[], sockets: [] as import('ws').WebSocket[] }));
 vi.mock('../../authManager.js', () => ({ getAccessToken: () => 'isolated-test-token', refresh: vi.fn(async () => true) }));
-vi.mock('../../clientEndpointsService.js', () => ({ getClientEndpoint: () => 'https://chat.cindy.app' }));
+vi.mock('../../clientEndpointsService.js', () => ({ getClientEndpoint: () => fixture.endpoint ?? 'https://chat.cindy.app' }));
 vi.mock('../chatServerMedia.js', () => ({ createChatMedia: () => ({ upload: fixture.upload, download: fixture.download }) }));
 vi.mock('../chatServerWorkspaces.js', () => ({ chatServerWorkspaces: () => ({ read: () => null, save: vi.fn() }) }));
 vi.mock('../chatMigrationReceipts.js', () => ({ chatMigrationReceipts: () => ({ read: () => null, save: vi.fn() }) }));
@@ -98,7 +98,17 @@ describe('server group feature parity', () => {
       [execution.id, 'needs_input', null], ['40000000-0000-4000-8000-000000000002', 'stopping', null],
     ]);
   });
-  afterEach(() => { service.dispose(); vi.useRealTimers(); vi.unstubAllEnvs(); fixture.config = ''; vi.clearAllMocks(); });
+  afterEach(() => { service.dispose(); vi.useRealTimers(); vi.unstubAllEnvs(); fixture.config = ''; fixture.endpoint = undefined; vi.clearAllMocks(); });
+  // An environment whose manifest has no chat endpoint answers every retried read alike.
+  it('records a missing chat endpoint once instead of on every retried read', async () => {
+    service.dispose();
+    fixture.packaged = true; fixture.endpoint = '';
+    const warn = vi.fn();
+    service = withChatServer({ listGroups: vi.fn(async () => ({ ok: true, groups: [] })), settleLaneTurn: vi.fn(async () => false), dispose: vi.fn() } as unknown as BotGroupChatService,
+      { ...deps, log: { warn } });
+    for (let i = 0; i < 3; i++) expect((await service.listGroups()).ok).toBe(false);
+    expect(warn).toHaveBeenCalledExactlyOnceWith('Chat group action failed', { code: 'CHAT_ENDPOINT_UNAVAILABLE' });
+  });
   const secondBotId = '20000000-0000-4000-8000-000000000002';
   const planId = '70000000-0000-4000-8000-000000000001';
   const members = [botId, secondBotId].map(id => ({ id, kind: 'bot', name: id === botId ? 'Bot' : 'Peer',

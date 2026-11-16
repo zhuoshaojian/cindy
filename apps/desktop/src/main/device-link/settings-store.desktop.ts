@@ -25,6 +25,6 @@ import { withAvailabilityPolicyMutation } from './providerShareAvailabilityPolic
 import { app } from 'electron';
 import { createDeviceLinkSettingsStore } from "./settings-store.js";
 export type * from "./settings-store.js";
-export const { readDeviceLinkSettings, onDeviceLinkSettingChanged, updateDeviceLinkSetting, writeDeviceLinkSetting, readLastKnownDeviceNames, writeLastKnownDeviceNames, setDeviceControlEnabled, rememberLastKnownDeviceName, forgetLastKnownDeviceName, normalizeCachedDeviceName, isPlaceholderDeviceName, __testing } = createDeviceLinkSettingsStore({
+export const { inspectDeviceLinkSettings, readDeviceLinkSettings, onDeviceLinkSettingChanged, updateDeviceLinkSetting, writeDeviceLinkSetting, readLastKnownDeviceNames, writeLastKnownDeviceNames, setDeviceControlEnabled, rememberLastKnownDeviceName, forgetLastKnownDeviceName, normalizeCachedDeviceName, isPlaceholderDeviceName, __testing } = createDeviceLinkSettingsStore({
 getUserDataDir: () => app.getPath('userData'), withAvailabilityPolicyMutation,
 });

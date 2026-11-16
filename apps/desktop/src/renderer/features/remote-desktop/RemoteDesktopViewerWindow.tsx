@@ -855,7 +855,10 @@ export function RemoteDesktopViewerWindow() {
             </div>
           </ViewerPanel>
         </div>
-        {!isMac && <WindowControls onClose={requestClose} />}
+        {!isMac && (
+          // A browser tab cannot be minimized from the page; maximize enters fullscreen there.
+          <WindowControls onClose={requestClose} showMinimize={window.electronAPI.platform !== 'web'} />
+        )}
       </header>
       <div ref={root} className="remote-viewer-content">
         <div id="stage" tabIndex={0} aria-label={t('remoteDesktop.title')}>

@@ -8,6 +8,7 @@
   "scripts": {
     "dev:winsetup": "node -e \"if(process.platform==='win32'){try{require('child_process').execSync('chcp 65001',{stdio:'ignore'})}catch(e){}}\"",
     "build:remote-bundles": "node scripts/build-remote-bundles.mjs",
+    "build:cloud-web": "vite build -c vite.cloud-web.config.ts",
     "predev": "pnpm build:remote-bundles",
     "predev:remote": "pnpm build:remote-bundles",
     "predev:inspect": "pnpm build:remote-bundles",

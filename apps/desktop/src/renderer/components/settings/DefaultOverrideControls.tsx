@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -46,6 +47,31 @@ export function DefaultOverrideControls({
           <RotateCcw size={15} aria-hidden />
         </Button>
       </Tip>
+    </div>
+  );
+}
+
+/** A saved override and how to clear it, for a single-control row that offers a reset. */
+export interface DefaultOverrideReset {
+  customized: boolean;
+  disabled?: boolean;
+  onReset(): void;
+}
+
+/**
+ * The row's control with DefaultOverrideControls in front of it. Without `reset` the control is
+ * returned unchanged, so callers that do not pass one render exactly as before.
+ */
+export function withDefaultOverride(control: ReactNode, reset?: DefaultOverrideReset) {
+  if (!reset) return control;
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <DefaultOverrideControls
+        isCustomized={reset.customized}
+        disabled={reset.disabled}
+        onReset={reset.onReset}
+      />
+      {control}
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { bindModelSourceSnapshot, acceptsModelSourceSnapshot, modelSourceRequest
 import { buildModelsFetchRequest } from '../maker-host/provider-model-fetch.js';
 import { getProviderRouteCredentialRevision } from '../maker-host/provider-route.js';
 import { appendSpeechModels, missingSpeechReference } from '../../shared/speechProviderSetup.js';
+import { cloudManagementExecution } from '../host-settings/managementCalls.js';
+import { presentManagementDeviceCode } from '../host-settings/managementAuthorization.js';
 import { setProviderPresentation, retainProviderPresentationAfterAuthChange } from '../maker-host/provider-presentation-store.js';
 import type { DeploymentDetectionResult } from '../../shared/providerDetection.js';
 import { pruneProviderGroupBindings } from '../provider-group/bindings.desktop.js';
@@ -288,6 +290,7 @@ function oauthRuntimeEndpointSignature(config: CustomProviderConfig | null): str
 export interface ProviderHandlerDeps {
   /** Test seam: production reads known locations on this desktop, never renderer paths. */
   localProviderSourceContext?: () => LocalSourceContext;
+  registerCloudCredentialReplacement?(handler: import('./ipcHandlerRegistry.js').IpcHandler): void;
   /**
    * 当前供应商视图（含实时连接状态）；见 createDesktopProviderService。
    *
@@ -2607,6 +2610,17 @@ export function registerProviderHandlers(
       }
     });
   }
+  // Credential-only cloud edits retain the latest configuration inside the native queue.
+  deps.registerCloudCredentialReplacement?.(async (event, providerId, keys) => {
+    assertTrustedProviderMutationSender(event);
+    const id = storedCustomProviderId(requireProviderId(providerId));
+    const current = await getCustomProvider(id);
+    if (!current || current.auth?.method === 'oauth') throwIpcError('INVALID_PARAMS', 'API-key connection required');
+    return updateProviderFromInput(event, current, keys, { source: 'manual-settings' }, latest => {
+      if (latest.auth?.method === 'oauth') throwIpcError('INVALID_PARAMS', 'connection changed');
+      return latest;
+    });
+  });
   registry.handle(MAKER_INVOKE.PROVIDER_CUSTOM_UPDATE, (event, input, keys, options) =>
     updateProviderFromInput(event, input, keys, options),
   );
@@ -2992,7 +3006,9 @@ export function registerProviderHandlers(
       }
       const { ownerId, method } = requireProviderOAuthLoginOptions(rawOptions);
       const sender = providerOAuthRendererSender(event);
-      if (method === 'device' && !ownerId)
+      // A cloud settings page shows the device code on the controlling computer instead.
+      const management = cloudManagementExecution();
+      if (method === 'device' && !ownerId && !management)
         throwIpcError('INVALID_PARAMS', 'device login requires an initiating window');
       if (ownerId && !sender) {
         throwIpcError('INVALID_PARAMS', 'ownerId requires an Electron sender');
@@ -3030,6 +3046,7 @@ export function registerProviderHandlers(
             });
           } catch { /* A closed renderer must not interrupt credential cleanup. */ }
         }, method, (code) => {
+          if (management && isCurrent()) presentManagementDeviceCode(code);
           if (!ownerId || !sender || !isCurrent()) return;
           try {
             sender.send?.(MAKER_PUSH.PROVIDER_OAUTH_PROGRESS, {

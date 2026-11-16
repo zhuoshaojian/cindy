@@ -1275,6 +1275,9 @@ interface ElectronAPI {
   setApplicationMenuLocale: (locale: ApplicationMenuLocale) => Promise<{ ok: true }>;
   setClassicalReplyStyle: (style: string) => Promise<{ ok: true }>;
   billing: import('../shared/billing').BillingRendererApi;
+  cloudSettings: import('../shared/cloudSettingsClient').CloudSettingsRendererApi;
+  cloudLoginWindow: import('../shared/cloudLoginWindow').CloudLoginWindowApi;
+  hostSettings: import('../shared/hostSettings').HostSettingsRendererApi;
 
   // lifecycle 兜底 catch 到瞬时网络错误时推一次。renderer 收到后由
   // systemNetworkErrorToast.ts 负责节流 + 多语言 toast。
@@ -2653,6 +2656,8 @@ interface ElectronAPI {
     appDefaultModelRequestId?: string;
     ownerStamp: import('../shared/dataOwnerPush').DataOwnerPushStamp;
     selectedRoute?: import('../shared/botModelChain').BotModelRoute;
+    vendor?: 'cc' | 'codex' | 'pi';
+    defaultTupleCustomized?: boolean;
     lastByVendor: Partial<
       Record<
         'cc' | 'codex' | 'pi',

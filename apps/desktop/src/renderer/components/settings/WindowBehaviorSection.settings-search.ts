@@ -10,6 +10,7 @@ export const windowBehaviorSettings = defineSettings({
     titleKey: 'settings.devices.keepAwake',
     sectionKey: 'settings.sections.windowBehavior',
     descriptionKey: 'settings.devices.keepAwakeHint',
+    isVisible: ({ managedCloudInstance }) => !managedCloudInstance,
   },
   awayGuard: {
     id: 'settings.windowBehavior.awayGuard.label',
@@ -73,7 +74,7 @@ export const windowBehaviorSettings = defineSettings({
       { value: 'minimize', labelKey: 'settings.windowBehavior.closeBehavior.minimize', isVisible: ({ platform }) => platform === 'linux' },
       { value: 'quit', labelKey: 'settings.windowBehavior.closeBehavior.quit' },
     ],
-    isVisible: ({ platform }) => platform === 'linux' || platform === 'win32',
+    isVisible: ({ platform, managedCloudInstance }) => (platform === 'linux' || platform === 'win32') && !managedCloudInstance,
   },
   swallowActivationClickLabel: {
     id: 'settings.windowBehavior.swallowActivationClickLabel',

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { companionEnvironmentKey } from '../bot-import/environment.js';
 import { isRendererAccessibleSafeStorageKey, isCustomProviderRuntimeKeyStorageKey,
   customProviderSecretStorageKey, customMcpSecretStorageKey, providerOAuthStorageKey,
-  MCP_APP_REVISION_KEY_STORAGE_KEY } from '../../shared/providerSecrets.js';
+  providerSecretStorageKey, MCP_APP_REVISION_KEY_STORAGE_KEY } from '../../shared/providerSecrets.js';
 
 // Execute the production registrations with fake Electron dependencies, without
 // launching Desktop or reproducing the IPC handlers in a test implementation.
@@ -20,7 +20,7 @@ let root: string;
 beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-companion-bridge-test-')); });
 afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
-function bridge() {
+function bridge({ cloud = false }: { cloud?: boolean } = {}) {
   const handlers = new Map<string, Handler>();
   const log = { error: vi.fn(), debug: vi.fn(), warn: vi.fn() };
   const readXdKey = vi.fn<(id: string) => string | null>(() => null);
@@ -45,6 +45,10 @@ function bridge() {
     safeStorageReadLog: log, console: log,
     isIpcError: () => false,
     throwIpcError: (_code: string, message: string) => { throw new Error(message); },
+    // Cloud management registers the same handler; only its closed call reaches it.
+    cloudManagementProviderRegistry: (registry: unknown) => registry,
+    isCloudManagementInvocation: () => cloud,
+    providerSecretStorageKey,
   };
   new Function(...Object.keys(deps), compiled)(...Object.values(deps));
   expect([...handlers.keys()]).toEqual(['safe-storage-store', 'safe-storage-read', 'safe-storage-remove']);
@@ -119,5 +123,18 @@ describe('generic safeStorage companion boundary', () => {
     } finally {
       write.mockRestore();
     }
+  });
+});
+
+describe('cloud providers page removal', () => {
+  it('removes only the Cindy AI key through cloud management', async () => {
+    const api = bridge({ cloud: true });
+    expect(await api.invoke('remove', customProviderSecretStorageKey('fixture-provider', 'codex'))).toEqual({
+      success: false, error: 'invalid key',
+    });
+    expect(api.assertTrustedAppRendererEvent).not.toHaveBeenCalled();
+    expect(api.resolveOwnerScopedSecretStorageKey).not.toHaveBeenCalled();
+    expect(await api.invoke('remove', 'api_key')).toEqual({ success: true });
+    expect(api.noteManualXdKeyRemoved).toHaveBeenCalledOnce();
   });
 });

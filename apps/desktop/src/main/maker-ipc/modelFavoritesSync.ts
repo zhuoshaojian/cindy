@@ -24,6 +24,13 @@ import {
 import { isDeviceLinkInvoke } from '../device-link/invoke-context.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 
+let request: ((mutation?: unknown) => Promise<RemoteModelFavorite[]>) | null = null;
+/** Reads, or applies one mutation, through the same app window as the remote favorites calls. */
+export function requestModelFavorites(mutation?: unknown): Promise<RemoteModelFavorite[]> {
+  if (!request) throwIpcError('DEVICE_LINK_UNAVAILABLE', 'Favorites host not ready');
+  return request(mutation);
+}
+
 /** The existing renderer store is authoritative. Dispatch once to ONE owner-fenced
  * app window and acknowledge persisted results, never maintain a second database. */
 export function registerModelFavoritesSync(
@@ -59,7 +66,7 @@ export function registerModelFavoritesSync(
     )
       broadcast(MODEL_FAVORITES_CHANGED, {});
   });
-  const request = async (mutation?: unknown): Promise<RemoteModelFavorite[]> => {
+  request = async (mutation?: unknown): Promise<RemoteModelFavorite[]> => {
     if (isAppSessionBoundaryPending())
       throwIpcError('PRECONDITION_FAILED', 'Favorites owner is changing');
     if (pending.size >= 64)
@@ -109,11 +116,11 @@ export function registerModelFavoritesSync(
   };
   ipcMain.handle(MODEL_FAVORITES_GET, (event) => {
     if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
-    return request();
+    return requestModelFavorites();
   });
   ipcMain.handle(MODEL_FAVORITES_APPLY, (event, mutation: unknown) => {
     if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
     if (mutation === undefined) throwIpcError('INVALID_PARAMS', 'Favorite operation required');
-    return request(mutation);
+    return requestModelFavorites(mutation);
   });
 }
