@@ -38,10 +38,10 @@ export function cloudSettingsClientHandlers(
     };
   }
   return {
-    instanceAccess: handler(z.object({}).strict(), (c) => service.instanceAccess(c)),
-    instanceList: handler(z.object({}).strict(), (c) => service.instanceList(c)),
-    instanceCapacity: handler(z.object({}).strict(), (c) => service.instanceCapacity(c)),
-    instanceClaim: handler(z.object({ another: z.literal(true).optional() }).strict(), (c, v) =>
+    instanceAccess: handler(z.strictObject({}), (c) => service.instanceAccess(c)),
+    instanceList: handler(z.strictObject({}), (c) => service.instanceList(c)),
+    instanceCapacity: handler(z.strictObject({}), (c) => service.instanceCapacity(c)),
+    instanceClaim: handler(z.strictObject({ another: z.literal(true).optional() }), (c, v) =>
       service.instanceClaim(c, v.another === true),
     ),
     instanceInitialize: handler(cloudInstanceTargetSchema, (c, v) =>
@@ -61,7 +61,7 @@ export function cloudSettingsClientHandlers(
     instancePolicy: handler(cloudInstancePolicySchema, (c, v) =>
       service.instancePolicy(c, v.deviceId, v.change),
     ),
-    open: handler(z.object({ deviceId: z.string().min(1).max(160) }).strict(), (c, v) =>
+    open: handler(z.strictObject({ deviceId: z.string().min(1).max(160) }), (c, v) =>
       service.open(c, v.deviceId),
     ),
     read: handler(cloudClientReadSchema, (c, v) => service.read(c, v.handle, v.domains)),

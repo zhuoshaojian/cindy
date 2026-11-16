@@ -13,25 +13,23 @@ export const CLOUD_STORAGE_USAGE_CALLS = [
   'database-size-warning:measure',
 ] as const;
 
-export const cloudStorageUsageRequestSchema = z.object({ op: z.literal('read') }).strict();
+export const cloudStorageUsageRequestSchema = z.strictObject({ op: z.literal('read') });
 
 const bytes = z.number().int().nonnegative().nullable();
 export const cloudStorageUsageSchema = z
-  .object({
+  .strictObject({
     version: z.literal(1),
     ownerGeneration: z.number().int().nonnegative(),
     /** The volume holding Cindy's data; null when the instance cannot measure it. */
     disk: z
-      .object({
+      .strictObject({
         totalBytes: z.number().int().positive(),
         freeBytes: z.number().int().nonnegative(),
       })
-      .strict()
       .nullable(),
     databaseBytes: bytes,
     mediaBytes: bytes,
     legacyImagesBytes: bytes,
     chatAttachmentsBytes: bytes,
-  })
-  .strict();
+  });
 export type CloudStorageUsage = z.infer<typeof cloudStorageUsageSchema>;

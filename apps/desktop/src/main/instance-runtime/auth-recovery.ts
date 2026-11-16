@@ -5,11 +5,11 @@ import net from 'node:net';
 import { z } from 'zod';
 
 export const AUTH_RECOVERY_SOCKET = '/tmp/cindy-auth-recovery/control.sock';
-export const authRecoveryRequest = z.object({
+export const authRecoveryRequest = z.strictObject({
   version: z.literal(1), requestId: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/),
   deviceId: z.string(), membershipId: z.string(),
   expiresAtMs: z.number().int().positive(), refreshToken: z.string().min(1).max(4096),
-}).strict();
+});
 export type AuthRecoveryRequest = z.infer<typeof authRecoveryRequest>;
 
 async function removeStaleSocket(socket: string): Promise<void> {

@@ -19,7 +19,7 @@ const profile = z
   .max(100)
   .regex(/^[a-z0-9][a-z0-9-]*$/);
 const identity = z
-  .object({
+  .strictObject({
     deviceId: z.string().regex(/^cloud-device-[a-f0-9]{24}$/),
     membershipId: z
       .string()
@@ -28,8 +28,7 @@ const identity = z
       .regex(/^[A-Za-z0-9_-]+$/),
     authBaseUrl: z.string().max(512).url(),
     realm: z.enum(["cn", "global"]),
-  })
-  .strict();
+  });
 export function profileLayout(profileName: string) {
   const root = `profiles/${profile.parse(profileName)}`;
   const directories = (prefix: string) => ({
@@ -79,14 +78,13 @@ const relativePath = z
   .regex(/^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/)
   .max(256);
 const layoutDirectories = z
-  .object({
+  .strictObject({
     home: relativePath,
     userData: relativePath,
     workspaces: relativePath,
-  })
-  .strict();
+  });
 const layoutSchema = z
-  .object({
+  .strictObject({
     version: z.literal(3),
     profile,
     recoveryScope: z.literal("image-and-cindy-resource"),
@@ -104,10 +102,9 @@ const layoutSchema = z
     root: relativePath,
     keyrings: relativePath,
     handoff: relativePath,
-  })
-  .strict();
+  });
 const requestSchema = z
-  .object({
+  .strictObject({
     version: z.literal(3),
     operationId: id,
     requestId: id,
@@ -123,10 +120,9 @@ const requestSchema = z
     authProtocol: z.literal("resource-v1"),
     accountControl: z.literal(false),
     executionBindingSha256: digest,
-  })
-  .strict();
+  });
 const cisRequestSchema = z
-  .object({
+  .strictObject({
     version: z.literal(3),
     operationId: id,
     requestId: id,
@@ -149,7 +145,7 @@ const cisRequestSchema = z
     credentialSnapshot: z.literal("latest-durable"),
     layoutSha256: digest,
     stopped: z
-      .object({
+      .strictObject({
         role: z.enum(["source", "candidate"]),
         statefulSetUid: id,
         pvcUid: id,
@@ -158,8 +154,7 @@ const cisRequestSchema = z
         generation: z.number().int().positive(),
         observedGeneration: z.number().int().positive(),
         podsAbsent: z.literal(true),
-      })
-      .strict(),
+      }),
     keyUid: id,
     bindingUid: id,
     endpointManifestSha256: digest,
@@ -168,29 +163,26 @@ const cisRequestSchema = z
     predecessorReceiptId: id.nullable(),
     authProtocol: z.literal("resource-v1"),
     accountControl: z.literal(false),
-  })
-  .strict();
+  });
 const bindingSchema = z
-  .object({
+  .strictObject({
     version: z.literal(3),
     layoutVersion: z.literal(3),
     layout: layoutSchema,
     cisRequest: cisRequestSchema,
     identity,
     fence: z
-      .object({
+      .strictObject({
         statefulSetUid: id,
         resourceVersion: z.string().min(1).max(128),
         pvcUid: id,
         pvcResourceVersion: z.string().min(1).max(128),
         helperPodUid: id,
-      })
-      .strict(),
-    key: z.object({ keyUid: id, bindingUid: id }).strict(),
+      }),
+    key: z.strictObject({ keyUid: id, bindingUid: id }),
     helperImage: image,
     helperTemplateSha256: digest,
-  })
-  .strict();
+  });
 
 export const profileMounts = {
   request: "/run/cindy-profile/input/request.json",

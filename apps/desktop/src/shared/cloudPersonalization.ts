@@ -15,29 +15,27 @@ export const CLOUD_USER_PROMPT_MAX_LENGTH = 8000;
 const ownerGeneration = z.number().int().nonnegative();
 const revision = z.string().min(1).max(256);
 export const cloudPersonalizationRequestSchema = z.discriminatedUnion('op', [
-  z.object({ op: z.literal('read') }).strict(),
+  z.strictObject({ op: z.literal('read') }),
   z
-    .object({
+    .strictObject({
       op: z.literal('save'),
       ownerGeneration,
       revision,
       userPrompt: z.string().max(CLOUD_USER_PROMPT_MAX_LENGTH),
-    })
-    .strict(),
-  z.object({ op: z.literal('reset'), ownerGeneration, revision }).strict(),
+    }),
+  z.strictObject({ op: z.literal('reset'), ownerGeneration, revision }),
 ]);
 export type CloudPersonalizationRequest = z.infer<typeof cloudPersonalizationRequestSchema>;
 
 export const cloudPersonalizationStateSchema = z.discriminatedUnion('status', [
   z
-    .object({
+    .strictObject({
       status: z.literal('ready'),
       ownerGeneration,
       revision,
       userPrompt: z.string().max(CLOUD_USER_PROMPT_MAX_LENGTH),
       customized: z.boolean(),
-    })
-    .strict(),
-  z.object({ status: z.enum(['unavailable', 'unreadable']), ownerGeneration }).strict(),
+    }),
+  z.strictObject({ status: z.enum(['unavailable', 'unreadable']), ownerGeneration }),
 ]);
 export type CloudPersonalizationState = z.infer<typeof cloudPersonalizationStateSchema>;

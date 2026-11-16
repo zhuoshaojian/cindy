@@ -28,13 +28,13 @@ export type SettingsSnapshotFieldsV2 = {
 };
 export function settingsSnapshotFieldV2Schema<T extends z.ZodTypeAny>(value: T) {
   return z.union([
-    z.object({ status: z.literal('value'), value, source: settingsSnapshotSourceV2Schema }).strict(),
-    z.object({ status: settingsSnapshotUnavailableStatusSchema }).strict(),
+    z.strictObject({ status: z.literal('value'), value, source: settingsSnapshotSourceV2Schema }),
+    z.strictObject({ status: settingsSnapshotUnavailableStatusSchema }),
   ]);
 }
-export const settingsSnapshotFieldsV2Schema: z.ZodType<SettingsSnapshotFieldsV2> = z.object(
+export const settingsSnapshotFieldsV2Schema: z.ZodType<SettingsSnapshotFieldsV2> = z.strictObject(
   Object.fromEntries(SETTINGS_SNAPSHOT_V2_FIELD_IDS.map(id => [id, settingsSnapshotFieldV2Schema(SETTINGS_READ_CATALOG[id].valueSchema)])),
-).strict() as unknown as z.ZodType<SettingsSnapshotFieldsV2>;
+) as unknown as z.ZodType<SettingsSnapshotFieldsV2>;
 
 export type SettingsSnapshotCollectionEntry<K extends SettingsSnapshotCollectionId> = z.infer<typeof SETTINGS_READ_COLLECTION_CATALOG[K]['entrySchema']>;
 export type SettingsSnapshotCollectionV2<K extends SettingsSnapshotCollectionId> = {
@@ -46,11 +46,11 @@ export type SettingsSnapshotCollectionV2<K extends SettingsSnapshotCollectionId>
 export type SettingsSnapshotCollectionsV2 = { [K in SettingsSnapshotCollectionId]: SettingsSnapshotCollectionV2<K> };
 const safeCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 function collectionSchema(entrySchema: z.ZodType<{ ordinal: number }>) {
-  return z.object({
+  return z.strictObject({
     status: z.enum(['complete', 'partial', 'unavailable', 'unreadable', 'unsupported', 'migrationPending', 'private']),
     total: safeCount.nullable(), omitted: safeCount.nullable(),
     entries: z.array(entrySchema).max(SETTINGS_SNAPSHOT_COLLECTION_MAX_ITEMS),
-  }).strict().superRefine((value, ctx) => {
+  }).superRefine((value, ctx) => {
     const fail = () => ctx.addIssue({ code: 'custom', message: 'INVALID_COLLECTION_COMPLETENESS' });
     if (value.status !== 'complete' && value.status !== 'partial') {
       if (value.total !== null || value.omitted !== null || value.entries.length !== 0) fail();
@@ -70,14 +70,14 @@ function collectionSchema(entrySchema: z.ZodType<{ ordinal: number }>) {
     }
   });
 }
-export const settingsSnapshotCollectionsV2Schema: z.ZodType<SettingsSnapshotCollectionsV2> = z.object(
+export const settingsSnapshotCollectionsV2Schema: z.ZodType<SettingsSnapshotCollectionsV2> = z.strictObject(
   Object.fromEntries(SETTINGS_READ_COLLECTION_IDS.map(id => [id, collectionSchema(SETTINGS_READ_COLLECTION_CATALOG[id].entrySchema)])),
-).strict() as unknown as z.ZodType<SettingsSnapshotCollectionsV2>;
-const reportV2Shape = z.object({
+) as unknown as z.ZodType<SettingsSnapshotCollectionsV2>;
+const reportV2Shape = z.strictObject({
   schemaVersion: z.literal(SETTINGS_SNAPSHOT_V2_SCHEMA_VERSION), reportId: z.string().uuid(),
   baseRevision: safeCount, capturedAtMs: safeCount,
   fields: settingsSnapshotFieldsV2Schema, collections: settingsSnapshotCollectionsV2Schema,
-}).strict();
+});
 export type SettingsSnapshotReportV2 = z.infer<typeof reportV2Shape>;
 export const settingsSnapshotReportV2Schema = reportV2Shape.superRefine((value, ctx) => {
   if (!validateSettingsSnapshotBudget(value).ok) ctx.addIssue({ code: 'custom', message: 'SNAPSHOT_BUDGET_EXCEEDED' });
@@ -193,17 +193,17 @@ export const SETTINGS_SNAPSHOT_CAPABILITIES = {
       collectionMaxBytes: SETTINGS_SNAPSHOT_COLLECTION_MAX_BYTES, collectionMaxEntries: SETTINGS_SNAPSHOT_COLLECTION_MAX_ITEMS },
   },
 };
-const capabilityV1Limit = z.object({ maxBytes: z.literal(8192) }).strict();
-const capabilityV2Limit = z.object({
+const capabilityV1Limit = z.strictObject({ maxBytes: z.literal(8192) });
+const capabilityV2Limit = z.strictObject({
   maxBytes: z.literal(SETTINGS_SNAPSHOT_V2_MAX_BYTES), fixedBytes: z.literal(SETTINGS_SNAPSHOT_V2_FIXED_MAX_BYTES),
   collectionsBytes: z.literal(SETTINGS_SNAPSHOT_V2_COLLECTIONS_MAX_BYTES), envelopeBytes: z.literal(SETTINGS_SNAPSHOT_V2_ENVELOPE_MAX_BYTES),
   collectionMaxBytes: z.literal(SETTINGS_SNAPSHOT_COLLECTION_MAX_BYTES), collectionMaxEntries: z.literal(SETTINGS_SNAPSHOT_COLLECTION_MAX_ITEMS),
-}).strict();
+});
 export const settingsSnapshotCapabilitiesSchema = z.union([
-  z.object({ schemaVersion: z.literal(1), supportedVersions: z.tuple([z.literal(1), z.literal(2)]),
-    limits: z.object({ v1: capabilityV1Limit, v2: capabilityV2Limit }).strict() }).strict(),
-  z.object({ schemaVersion: z.literal(1), supportedVersions: z.tuple([z.literal(1)]),
-    limits: z.object({ v1: capabilityV1Limit }).strict() }).strict(),
+  z.strictObject({ schemaVersion: z.literal(1), supportedVersions: z.tuple([z.literal(1), z.literal(2)]),
+    limits: z.strictObject({ v1: capabilityV1Limit, v2: capabilityV2Limit }) }),
+  z.strictObject({ schemaVersion: z.literal(1), supportedVersions: z.tuple([z.literal(1)]),
+    limits: z.strictObject({ v1: capabilityV1Limit }) }),
 ]);
 
 /** 两仓共同的非秘密 fixture，状态值也有完整叶子，不冒充实际 Host 已读取报告。 */

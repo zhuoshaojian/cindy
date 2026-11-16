@@ -9,9 +9,9 @@ export const SETTINGS_SNAPSHOT_PUBLISH_INTERVAL_MS = 60_000;
 export const SETTINGS_SNAPSHOT_MIN_WRITE_INTERVAL_MS = 10_000;
 export const SETTINGS_SNAPSHOT_FRESHNESS_MS = 180_000;
 export const settingsSnapshotSourceSchema = z.enum(['default', 'override']);
-const field = <T extends z.ZodTypeAny>(value: T) => z.object({
+const field = <T extends z.ZodTypeAny>(value: T) => z.strictObject({
   value, source: settingsSnapshotSourceSchema,
-}).strict();
+});
 /** 只接收结构化目录标识，不安全或自定义原始值由投影端省略。 */
 export const settingsSnapshotIdentifierSchema = z.string().min(1).max(96)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
@@ -20,13 +20,13 @@ const number = (min: number, max: number) => z.number().finite().min(min).max(ma
 const domain = <T extends z.ZodRawShape, S extends string, B extends string>(
   scope: S, boundary: B, shape: T,
 ) => z.discriminatedUnion('status', [
-  z.object({ status: z.literal('supported'), scope: z.literal(scope), boundary: z.literal(boundary),
-    fields: z.object(shape).strict() }).strict(),
-  z.object({ status: z.literal('unsupported'), scope: z.literal(scope), boundary: z.literal(boundary) }).strict(),
-  z.object({ status: z.literal('unavailable'), scope: z.literal(scope), boundary: z.literal(boundary) }).strict(),
+  z.strictObject({ status: z.literal('supported'), scope: z.literal(scope), boundary: z.literal(boundary),
+    fields: z.strictObject(shape) }),
+  z.strictObject({ status: z.literal('unsupported'), scope: z.literal(scope), boundary: z.literal(boundary) }),
+  z.strictObject({ status: z.literal('unavailable'), scope: z.literal(scope), boundary: z.literal(boundary) }),
 ]);
 
-export const settingsSnapshotDomainsSchema = z.object({
+export const settingsSnapshotDomainsSchema = z.strictObject({
   newTaskDefaults: domain('owner', 'nextTask', {
     harness: field(z.enum(['claude-code', 'codex', 'pi'])).optional(),
     modelId: field(settingsSnapshotIdentifierSchema).optional(),
@@ -51,15 +51,15 @@ export const settingsSnapshotDomainsSchema = z.object({
     uiFontCustomized: field(z.boolean()),
     codeFontCustomized: field(z.boolean()),
   }),
-}).strict();
+});
 
-export const settingsSnapshotReportSchema = z.object({
+export const settingsSnapshotReportSchema = z.strictObject({
   schemaVersion: z.literal(SETTINGS_SNAPSHOT_SCHEMA_VERSION),
   reportId: z.string().uuid(),
   baseRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   capturedAtMs: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   domains: settingsSnapshotDomainsSchema,
-}).strict();
+});
 export type SettingsSnapshotReport = z.infer<typeof settingsSnapshotReportSchema>;
 /** 整份替换的双版本入口；不改变原 v1 parser/export 的语义。 */
 export const settingsSnapshotAnyReportSchema = z.union([settingsSnapshotReportSchema, settingsSnapshotReportV2Schema])

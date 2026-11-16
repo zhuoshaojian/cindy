@@ -8,7 +8,7 @@ export const CLOUD_SETTINGS_LOCALES = SETTINGS_DISPLAY_LOCALES.slice(0, 6);
 const bool = z.boolean();
 const int = (min: number, max: number) => z.number().int().min(min).max(max);
 const routeId = z.string().trim().min(1).max(256).regex(/^[^\x00-\x1f\x7f]+$/u);
-const backend = z.object({ providerId: routeId, modelId: routeId }).strict();
+const backend = z.strictObject({ providerId: routeId, modelId: routeId });
 export type SettingsEditableValue = string | number | boolean | null | SettingsEditableValue[] | { [key: string]: SettingsEditableValue };
 export function settingsValuesEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -27,67 +27,67 @@ export type ImSettingsDomain = typeof IM_SETTINGS_DOMAINS[number];
 export function isImSettingsDomain(domain: string): domain is ImSettingsDomain { return IM_SETTINGS_DOMAINS.includes(domain as ImSettingsDomain); }
 const permission = z.enum(['ask', 'default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']);
 const imRoute = backend.extend({ modelId: z.union([z.literal(''), routeId]), providerId: routeId.nullable(), effort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']) }).refine(route => route.modelId !== '' || route.providerId === null, 'automatic routes have no fixed provider');
-const imSettings = z.object({ agentKind: z.enum(['claude-code', 'codex', 'pi']), permissionMode: permission, claudeCode: imRoute, codex: imRoute, pi: imRoute }).strict();
+const imSettings = z.strictObject({ agentKind: z.enum(['claude-code', 'codex', 'pi']), permissionMode: permission, claudeCode: imRoute, codex: imRoute, pi: imRoute });
 export const MODEL_PREFERENCE_DOMAINS = ['modelVisibility', 'modelEngines', 'modelFavorites', 'modelContext', 'modelAccess', 'providerNames', 'modelPrices'] as const;
 export type ModelPreferenceDomain = typeof MODEL_PREFERENCE_DOMAINS[number];
 export function isModelPreferenceDomain(domain: string): domain is ModelPreferenceDomain { return MODEL_PREFERENCE_DOMAINS.includes(domain as ModelPreferenceDomain); }
 const modelTarget = backend.extend({ harness: z.enum(['claude-code', 'codex', 'pi']) });
 export const PLUGIN_CINDY_FIELDS = { imageGenerate: 'image.generate', imageEdit: 'image.edit', videoGenerate: 'video.generate', videoEdit: 'video.edit', textOneshot: 'text.oneshot', embedText: 'embed.text' } as const;
-const pluginPin = z.array(z.object({ ghostId: routeId, model: z.string().min(1).max(768) }).strict()).max(128);
+const pluginPin = z.array(z.strictObject({ ghostId: routeId, model: z.string().min(1).max(768) })).max(128);
 export const MODEL_SETTINGS_DOMAINS = ['subagentModel', 'auxiliaryModel', 'visionBridge', 'botModelChain', ...IM_SETTINGS_DOMAINS, ...MODEL_PREFERENCE_DOMAINS] as const;
 export type ModelSettingsDomain = typeof MODEL_SETTINGS_DOMAINS[number];
 export function isModelSettingsDomain(domain: string): domain is ModelSettingsDomain {
   return MODEL_SETTINGS_DOMAINS.includes(domain as ModelSettingsDomain);
 }
 export const additionalSettingsSchemas = {
-  imWorkspaceProviders: z.object({ entries: z.array(z.object({ workspaceId: routeId, providerId: routeId.max(128) }).strict()).max(256) }).strict(),
-  workspaceTools: z.object({ browser: bool, feishu_bot: bool, wechat: bool, slack: bool, ssh: bool, docs: bool, collab: bool }).strict(),
-  imWorkspaces: z.object({ entries: z.array(z.object({ workspaceId: routeId, harness: z.enum(['claude-code', 'codex', 'pi']).nullable(), modelId: routeId.max(128).nullable(), effort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).nullable(), permissionMode: permission.nullable() }).strict()).max(256) }).strict(),
-  wecomNotifications: z.object({ enabled: bool }).strict(),
-  officialHooks: z.object({ lifecycleAnnouncement: bool, telegramDefaultWorkspace: routeId.nullable(), xDefaultWorkspace: routeId.nullable() }).strict(),
-  telegramGroups: z.object({ always: z.array(z.string().regex(/^-?\d+$/).max(64)).max(256) }).strict(),
-  pluginErrand: z.object({ routes: z.array(z.object({ ghostId: routeId, harness: z.enum(['claude-code', 'codex', 'pi']).nullable(), providerId: routeId.max(128).nullable(), modelId: routeId.max(128).nullable(), effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).nullable(), fastMode: bool.nullable() }).strict()).max(128), permissions: z.array(z.object({ ghostId: routeId, permissionMode: z.enum(['plan', 'acceptEdits', 'auto']) }).strict()).max(128), workspaces: z.array(z.object({ ghostId: routeId, workspaceId: routeId }).strict()).max(128) }).strict(),
-  pluginCindy: z.object({ imageGenerate: pluginPin, imageEdit: pluginPin, videoGenerate: pluginPin, videoEdit: pluginPin, textOneshot: pluginPin, embedText: pluginPin, inflightLimits: z.array(z.object({ ghostId: routeId, limit: int(1, Number.MAX_SAFE_INTEGER) }).strict()).max(128) }).strict(),
-  pluginSidebar: z.object({ hidden: z.array(routeId).max(128) }).strict(),
+  imWorkspaceProviders: z.strictObject({ entries: z.array(z.strictObject({ workspaceId: routeId, providerId: routeId.max(128) })).max(256) }),
+  workspaceTools: z.strictObject({ browser: bool, feishu_bot: bool, wechat: bool, slack: bool, ssh: bool, docs: bool, collab: bool }),
+  imWorkspaces: z.strictObject({ entries: z.array(z.strictObject({ workspaceId: routeId, harness: z.enum(['claude-code', 'codex', 'pi']).nullable(), modelId: routeId.max(128).nullable(), effort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).nullable(), permissionMode: permission.nullable() })).max(256) }),
+  wecomNotifications: z.strictObject({ enabled: bool }),
+  officialHooks: z.strictObject({ lifecycleAnnouncement: bool, telegramDefaultWorkspace: routeId.nullable(), xDefaultWorkspace: routeId.nullable() }),
+  telegramGroups: z.strictObject({ always: z.array(z.string().regex(/^-?\d+$/).max(64)).max(256) }),
+  pluginErrand: z.strictObject({ routes: z.array(z.strictObject({ ghostId: routeId, harness: z.enum(['claude-code', 'codex', 'pi']).nullable(), providerId: routeId.max(128).nullable(), modelId: routeId.max(128).nullable(), effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).nullable(), fastMode: bool.nullable() })).max(128), permissions: z.array(z.strictObject({ ghostId: routeId, permissionMode: z.enum(['plan', 'acceptEdits', 'auto']) })).max(128), workspaces: z.array(z.strictObject({ ghostId: routeId, workspaceId: routeId })).max(128) }),
+  pluginCindy: z.strictObject({ imageGenerate: pluginPin, imageEdit: pluginPin, videoGenerate: pluginPin, videoEdit: pluginPin, textOneshot: pluginPin, embedText: pluginPin, inflightLimits: z.array(z.strictObject({ ghostId: routeId, limit: int(1, Number.MAX_SAFE_INTEGER) })).max(128) }),
+  pluginSidebar: z.strictObject({ hidden: z.array(routeId).max(128) }),
   ...Object.fromEntries(IM_SETTINGS_DOMAINS.map(domain => [domain, imSettings])) as Record<ImSettingsDomain, typeof imSettings>,
   imFeishu: imSettings.extend({ groupPermissionMode: permission }).strict(),
-  modelVisibility: z.object({ entries: z.array(modelTarget.extend({ enabled: bool }).strict()).max(256) }).strict(),
-  modelEngines: z.object({ entries: z.array(modelTarget.strict()).max(256) }).strict(),
-  modelFavorites: z.object({ entries: z.array(modelTarget.extend({ effort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).nullable(), fast: bool }).strict()).max(256) }).strict(),
-  modelContext: z.object({ entries: z.array(modelTarget.extend({ limit: int(1000, 100_000_000) }).strict()).max(256) }).strict(),
-  modelAccess: z.object({ models: z.array(backend.strict()).max(256), providers: z.array(routeId).max(256) }).strict(),
-  providerNames: z.object({ entries: z.array(z.object({ providerId: routeId, name: z.string().trim().min(1).max(128) }).strict()).max(256) }).strict(),
-  modelPrices: z.object({ entries: z.array(modelTarget.extend({ currency: z.enum(['USD', 'CNY']), inputPerMtok: z.number().finite().min(0), outputPerMtok: z.number().finite().min(0), cacheReadPerMtok: z.number().finite().min(0).nullable(), cacheCreatePerMtok: z.number().finite().min(0).nullable() }).strict()).max(256) }).strict(),
-  collaboration: z.object({ workerSoftLimit: int(1, 20), workerHardLimit: int(1, 20), workerIdleReleaseMinutes: int(0, 120) }).strict(),
-  agentResource: z.object({ maxConcurrentCommands: int(0, 64), processPriority: z.enum(['normal', 'low', 'lowest']), capToolchainThreads: bool }).strict(),
-  gitSafety: z.object({ autoSnapshotEnabled: bool }).strict(),
-  memory: z.object({ maker: bool, claudeCode: bool, codex: bool, pi: bool }).strict(),
-  claudeCompaction: z.object({ claudeCodeAutoCompactPct: int(50, 95) }).strict(),
-  piCompaction: z.object({ piAutoCompactPct: int(50, 95) }).strict(),
-  contacts: z.object({ enabled: bool }).strict(),
-  shortcuts: z.object({ entries: z.array(z.object({ id: z.enum(SETTINGS_READ_SHORTCUT_IDS), code: z.enum(SETTINGS_READ_KEY_CODES).nullable(), meta: bool, ctrl: bool, alt: bool, shift: bool }).strict()).max(27) }).strict(),
-  contactsSync: z.object({ deviceSyncEnabled: bool }).strict(),
-  browserBackend: z.object({ kind: z.enum(['external', 'rsb-webview']) }).strict(),
-  computerTools: z.object({ computer: bool }).strict(),
-  androidTools: z.object({ android: bool }).strict(),
-  telegramPersona: z.object({ botName: z.string().trim().max(64), soul: z.string().max(4000) }).strict(),
-  chatEmbedding: z.object({ enabled: bool }).strict(),
-  silentEncryptedRetry: z.object({ enabled: bool }).strict(),
-  lsp: z.object({ enabled: bool }).strict(),
-  privacy: z.object({ analyticsEnabled: bool }).strict(),
-  diagnostics: z.object({ crashAutoUploadEnabled: bool }).strict(),
-  desktopGeneral: z.object({ themeFamilyId: routeId, theme: z.enum(['system', 'light', 'dark']), locale: z.enum(SETTINGS_DISPLAY_LOCALES), sidebarPinnedMode: z.enum(['text', 'card', 'list']), sidebarMainMode: z.enum(['text', 'list']), ghostPanelRestoreMode: z.enum(['bubble', 'sidebar']) }).strict(),
-  desktopChat: z.object({ composerSendShortcut: z.enum(['enter', 'modifier-enter']), webLinkOpenPreference: z.enum(['external', 'sidebar']), localLinkOpenPreference: z.enum(['external', 'sidebar']), streamFadePreference: z.enum(['on', 'off']), promptRecommendationEnabled: bool, messageNavRailEnabled: bool }).strict(),
-  desktopNotifications: z.object({ notificationsEnabled: bool, feishuNotificationsEnabled: bool, swallowActivationClick: bool, networkDebugEnabled: bool }).strict(),
-  linuxWindow: z.object({ linuxCloseBehavior: z.enum(['quit', 'minimize']).nullable() }).strict(),
-  telegramBehavior: z.object({ emojiReactions: z.enum(['off', 'minimal', 'expressive']), replyQuoteGroup: z.enum(['off', 'first', 'all']), replyQuoteDm: z.enum(['off', 'first']) }).strict(),
-  terminal: z.object({ defaultShellPref: z.enum(['auto', 'zsh', 'bash', 'fish', 'sh', 'pwsh', 'powershell', 'cmd', 'gitbash', 'wsl']) }).strict(),
-  builtinTools: z.object({ feishu_bot: bool, wechat: bool, slack: bool, ssh: bool, docs: bool, collab: bool }).strict(),
-  browserTools: z.object({ browser: bool }).strict(),
-  subagentModel: z.object({ claudeCode: backend.extend({ providerId: routeId.nullable() }).nullable(), codexSmartSubagentRouting: bool }).strict(),
-  auxiliaryModel: z.object({ models: z.array(z.string().min(1).max(768)).max(3) }).strict(),
-  visionBridge: z.object({ enabled: bool, primary: backend.nullable(), fallback: backend.nullable(), targetModels: z.array(routeId).max(256) }).strict(),
-  botModelChain: z.object({ modelChain: z.array(z.object({ harness: z.enum(['claude', 'codex', 'pi']), providerId: routeId.nullable(), model: routeId, effort: z.enum(['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']), fastMode: bool }).strict()).max(5) }).strict(),
+  modelVisibility: z.strictObject({ entries: z.array(modelTarget.extend({ enabled: bool }).strict()).max(256) }),
+  modelEngines: z.strictObject({ entries: z.array(modelTarget.strict()).max(256) }),
+  modelFavorites: z.strictObject({ entries: z.array(modelTarget.extend({ effort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).nullable(), fast: bool }).strict()).max(256) }),
+  modelContext: z.strictObject({ entries: z.array(modelTarget.extend({ limit: int(1000, 100_000_000) }).strict()).max(256) }),
+  modelAccess: z.strictObject({ models: z.array(backend.strict()).max(256), providers: z.array(routeId).max(256) }),
+  providerNames: z.strictObject({ entries: z.array(z.strictObject({ providerId: routeId, name: z.string().trim().min(1).max(128) })).max(256) }),
+  modelPrices: z.strictObject({ entries: z.array(modelTarget.extend({ currency: z.enum(['USD', 'CNY']), inputPerMtok: z.number().finite().min(0), outputPerMtok: z.number().finite().min(0), cacheReadPerMtok: z.number().finite().min(0).nullable(), cacheCreatePerMtok: z.number().finite().min(0).nullable() }).strict()).max(256) }),
+  collaboration: z.strictObject({ workerSoftLimit: int(1, 20), workerHardLimit: int(1, 20), workerIdleReleaseMinutes: int(0, 120) }),
+  agentResource: z.strictObject({ maxConcurrentCommands: int(0, 64), processPriority: z.enum(['normal', 'low', 'lowest']), capToolchainThreads: bool }),
+  gitSafety: z.strictObject({ autoSnapshotEnabled: bool }),
+  memory: z.strictObject({ maker: bool, claudeCode: bool, codex: bool, pi: bool }),
+  claudeCompaction: z.strictObject({ claudeCodeAutoCompactPct: int(50, 95) }),
+  piCompaction: z.strictObject({ piAutoCompactPct: int(50, 95) }),
+  contacts: z.strictObject({ enabled: bool }),
+  shortcuts: z.strictObject({ entries: z.array(z.strictObject({ id: z.enum(SETTINGS_READ_SHORTCUT_IDS), code: z.enum(SETTINGS_READ_KEY_CODES).nullable(), meta: bool, ctrl: bool, alt: bool, shift: bool })).max(27) }),
+  contactsSync: z.strictObject({ deviceSyncEnabled: bool }),
+  browserBackend: z.strictObject({ kind: z.enum(['external', 'rsb-webview']) }),
+  computerTools: z.strictObject({ computer: bool }),
+  androidTools: z.strictObject({ android: bool }),
+  telegramPersona: z.strictObject({ botName: z.string().trim().max(64), soul: z.string().max(4000) }),
+  chatEmbedding: z.strictObject({ enabled: bool }),
+  silentEncryptedRetry: z.strictObject({ enabled: bool }),
+  lsp: z.strictObject({ enabled: bool }),
+  privacy: z.strictObject({ analyticsEnabled: bool }),
+  diagnostics: z.strictObject({ crashAutoUploadEnabled: bool }),
+  desktopGeneral: z.strictObject({ themeFamilyId: routeId, theme: z.enum(['system', 'light', 'dark']), locale: z.enum(SETTINGS_DISPLAY_LOCALES), sidebarPinnedMode: z.enum(['text', 'card', 'list']), sidebarMainMode: z.enum(['text', 'list']), ghostPanelRestoreMode: z.enum(['bubble', 'sidebar']) }),
+  desktopChat: z.strictObject({ composerSendShortcut: z.enum(['enter', 'modifier-enter']), webLinkOpenPreference: z.enum(['external', 'sidebar']), localLinkOpenPreference: z.enum(['external', 'sidebar']), streamFadePreference: z.enum(['on', 'off']), promptRecommendationEnabled: bool, messageNavRailEnabled: bool }),
+  desktopNotifications: z.strictObject({ notificationsEnabled: bool, feishuNotificationsEnabled: bool, swallowActivationClick: bool, networkDebugEnabled: bool }),
+  linuxWindow: z.strictObject({ linuxCloseBehavior: z.enum(['quit', 'minimize']).nullable() }),
+  telegramBehavior: z.strictObject({ emojiReactions: z.enum(['off', 'minimal', 'expressive']), replyQuoteGroup: z.enum(['off', 'first', 'all']), replyQuoteDm: z.enum(['off', 'first']) }),
+  terminal: z.strictObject({ defaultShellPref: z.enum(['auto', 'zsh', 'bash', 'fish', 'sh', 'pwsh', 'powershell', 'cmd', 'gitbash', 'wsl']) }),
+  builtinTools: z.strictObject({ feishu_bot: bool, wechat: bool, slack: bool, ssh: bool, docs: bool, collab: bool }),
+  browserTools: z.strictObject({ browser: bool }),
+  subagentModel: z.strictObject({ claudeCode: backend.extend({ providerId: routeId.nullable() }).nullable(), codexSmartSubagentRouting: bool }),
+  auxiliaryModel: z.strictObject({ models: z.array(z.string().min(1).max(768)).max(3) }),
+  visionBridge: z.strictObject({ enabled: bool, primary: backend.nullable(), fallback: backend.nullable(), targetModels: z.array(routeId).max(256) }),
+  botModelChain: z.strictObject({ modelChain: z.array(z.strictObject({ harness: z.enum(['claude', 'codex', 'pi']), providerId: routeId.nullable(), model: routeId, effort: z.enum(['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']), fastMode: bool })).max(5) }),
 } as const;
 export type AdditionalSettingsDomain = keyof typeof additionalSettingsSchemas;
 /** Upstream keeps Smart Contacts in the cindy-contacts plugin; these domains stay in the wire catalog only. */

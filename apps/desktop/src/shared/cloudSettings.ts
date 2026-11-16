@@ -76,7 +76,7 @@ export const cloudSettingsReadErrorCodeSchema = z.enum([
   'UNREADABLE',
 ]);
 export const cloudSettingsStateSchema = z
-  .object({
+  .strictObject({
     domain: cloudSettingsDomainSchema,
     status: z.enum(['ready', 'unavailable', 'unreadable']),
     readErrorCode: cloudSettingsReadErrorCodeSchema.optional(),
@@ -92,7 +92,7 @@ export const cloudSettingsStateSchema = z
         z
           .array(
             z
-              .object({
+              .strictObject({
                 value: settingsEditableValueSchema,
                 label: z.string().max(512),
                 efforts: z
@@ -100,14 +100,12 @@ export const cloudSettingsStateSchema = z
                   .max(7)
                   .optional(),
                 supportsFast: z.boolean().optional(),
-              })
-              .strict(),
+              }),
           )
           .max(SETTINGS_WEB_MAX_CHOICES),
       )
       .optional(),
   })
-  .strict()
   .superRefine(({ readErrorCode, ...state }, ctx) => {
     if (readErrorCode && state.status !== 'unreadable')
       ctx.addIssue({ code: 'custom', message: 'read error requires unreadable state' });
@@ -123,7 +121,7 @@ export const cloudSettingsStateSchema = z
         ctx.addIssue({ code: 'custom', message: 'invalid unavailable state' });
       return;
     }
-    const schema = z.object({ userPrompt: z.string().max(8000) }).strict();
+    const schema = z.strictObject({ userPrompt: z.string().max(8000) });
     if (
       !state.revision ||
       !state.operationId ||

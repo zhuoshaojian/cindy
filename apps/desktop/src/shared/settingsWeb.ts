@@ -11,10 +11,10 @@ const id = z.string().uuid();
 const revision = z.string().min(1).max(128);
 const routeId = z.string().trim().min(1).max(256).regex(/^[^\x00-\x1f]+$/u);
 const effort = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
-const newTask = z.object({ harness: z.enum(['claude-code', 'codex', 'pi']), providerId: routeId.nullable(), modelId: routeId.nullable(), effort: effort.nullable(), fast: z.boolean(), thinking: z.boolean(), worktree: z.boolean(), planMode: z.boolean() }).strict();
-const appearance = z.object({ uiFamily: z.string().trim().max(256), codeFamily: z.string().trim().max(256), uiSize: z.number().int().min(12).max(24), codeSize: z.number().int().min(10).max(24), windowZoom: z.number().min(0.5).max(3).refine(v => Math.abs(v * 10 - Math.round(v * 10)) < 1e-8) }).strict();
-const database = z.object({ thresholdGiB: z.number().min(1).max(1024), disabled: z.boolean() }).strict();
-const personalization = z.object({ userPrompt: z.string().max(8000) }).strict();
+const newTask = z.strictObject({ harness: z.enum(['claude-code', 'codex', 'pi']), providerId: routeId.nullable(), modelId: routeId.nullable(), effort: effort.nullable(), fast: z.boolean(), thinking: z.boolean(), worktree: z.boolean(), planMode: z.boolean() });
+const appearance = z.strictObject({ uiFamily: z.string().trim().max(256), codeFamily: z.string().trim().max(256), uiSize: z.number().int().min(12).max(24), codeSize: z.number().int().min(10).max(24), windowZoom: z.number().min(0.5).max(3).refine(v => Math.abs(v * 10 - Math.round(v * 10)) < 1e-8) });
+const database = z.strictObject({ thresholdGiB: z.number().min(1).max(1024), disabled: z.boolean() });
+const personalization = z.strictObject({ userPrompt: z.string().max(8000) });
 const fields = {
   newTaskDefaults: newTask.keyof().options,
   personalization: personalization.keyof().options,
@@ -23,10 +23,10 @@ const fields = {
 };
 const updateBase = { expectedRevision: revision, operationId: id, clear: z.array(z.string()).max(8).optional() };
 const nativeSettingsWebUpdateSchema = z.discriminatedUnion('domain', [
-  z.object({ ...updateBase, domain: z.literal('newTaskDefaults'), set: newTask.extend({ providerId: routeId, modelId: routeId }).partial().optional() }).strict(),
-  z.object({ ...updateBase, domain: z.literal('personalization'), set: personalization.partial().optional() }).strict(),
-  z.object({ ...updateBase, domain: z.literal('databaseWarning'), set: database.partial().optional() }).strict(),
-  z.object({ ...updateBase, domain: z.literal('appearance'), set: appearance.partial().optional() }).strict(),
+  z.strictObject({ ...updateBase, domain: z.literal('newTaskDefaults'), set: newTask.extend({ providerId: routeId, modelId: routeId }).partial().optional() }),
+  z.strictObject({ ...updateBase, domain: z.literal('personalization'), set: personalization.partial().optional() }),
+  z.strictObject({ ...updateBase, domain: z.literal('databaseWarning'), set: database.partial().optional() }),
+  z.strictObject({ ...updateBase, domain: z.literal('appearance'), set: appearance.partial().optional() }),
 ]).superRefine((value, ctx) => {
   const set = Object.keys(value.set ?? {});
   const clear = value.clear ?? [];
@@ -35,7 +35,7 @@ const nativeSettingsWebUpdateSchema = z.discriminatedUnion('domain', [
 });
 const additionalDomain = z.enum(ADDITIONAL_SETTINGS_DOMAINS as [typeof ADDITIONAL_SETTINGS_DOMAINS[number], ...typeof ADDITIONAL_SETTINGS_DOMAINS[number][]]);
 const workspaceId = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
-const additionalUpdate = z.object({ ...updateBase, domain: additionalDomain, workspaceId: workspaceId.optional(), set: z.record(z.string(), z.unknown()).optional(), clear: z.array(z.string()).max(16).optional() }).strict()
+const additionalUpdate = z.strictObject({ ...updateBase, domain: additionalDomain, workspaceId: workspaceId.optional(), set: z.record(z.string(), z.unknown()).optional(), clear: z.array(z.string()).max(16).optional() })
   .superRefine((value, ctx) => { try { normalizeAdditionalSettingsChange(value.domain, value.set, value.clear); }
     catch { ctx.addIssue({ code: 'custom', message: 'invalid settings change' }); }
     if ((value.domain === 'workspaceTools') !== (value.workspaceId !== undefined)) ctx.addIssue({ code: 'custom', message: 'invalid workspace scope' }); });
@@ -65,42 +65,42 @@ export const SETTINGS_WEB_CHANNELS = [
 export const SETTINGS_WEB_LARGE_RESULT_MAX_BYTES = 2 * 1024 * 1024 + 64 * 1024;
 const channelName = z.enum(SETTINGS_WEB_CHANNELS);
 const iceUrl = z.string().max(512).regex(/^(stun|turn|turns):[^\s]+$/u);
-const iceServer = z.object({ urls: z.union([iceUrl, z.array(iceUrl).min(1).max(8)]),
-  username: z.string().max(512).optional(), credential: z.string().max(512).optional() }).strict();
+const iceServer = z.strictObject({ urls: z.union([iceUrl, z.array(iceUrl).min(1).max(8)]),
+  username: z.string().max(512).optional(), credential: z.string().max(512).optional() });
 export const settingsWebCommandSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('manage'), command: managementCommandSchema }).strict(),
-  z.object({ kind: z.literal('readBatch'), domains: batchDomains }).strict(),
-  z.object({ kind: z.literal('read'), domain: settingsWebDomainSchema, workspaceId: workspaceId.optional() }).strict(),
-  z.object({ kind: z.literal('update'), change: settingsWebUpdateSchema }).strict(),
-  z.object({ kind: z.literal('receipt'), operationId: id }).strict(),
+  z.strictObject({ kind: z.literal('manage'), command: managementCommandSchema }),
+  z.strictObject({ kind: z.literal('readBatch'), domains: batchDomains }),
+  z.strictObject({ kind: z.literal('read'), domain: settingsWebDomainSchema, workspaceId: workspaceId.optional() }),
+  z.strictObject({ kind: z.literal('update'), change: settingsWebUpdateSchema }),
+  z.strictObject({ kind: z.literal('receipt'), operationId: id }),
   // Opaque to CIS: the Host parses arguments and requests with its own schemas.
-  z.object({ kind: z.literal('channel'), channel: channelName, args: z.array(z.unknown()).max(8) }).strict(),
-  z.object({ kind: z.literal('desktop'), request: z.record(z.string(), z.unknown()) }).strict(),
-  z.object({ kind: z.literal('desktopIce') }).strict(),
+  z.strictObject({ kind: z.literal('channel'), channel: channelName, args: z.array(z.unknown()).max(8) }),
+  z.strictObject({ kind: z.literal('desktop'), request: z.record(z.string(), z.unknown()) }),
+  z.strictObject({ kind: z.literal('desktopIce') }),
 ]).refine(value => value.kind !== 'read' || value.workspaceId === undefined || value.domain === 'workspaceTools', 'invalid workspace scope');
 export type SettingsWebCommand = z.infer<typeof settingsWebCommandSchema>;
 /** Commands only a signed-in browser may send; the native client already has DeviceLink. */
-export const settingsWebConnectSchema = z.object({ runtimeId: id, domains: batchDomains, readBatch: z.literal(true).optional(), managementV1: z.literal(true).optional(),
+export const settingsWebConnectSchema = z.strictObject({ runtimeId: id, domains: batchDomains, readBatch: z.literal(true).optional(), managementV1: z.literal(true).optional(),
   channels: z.array(channelName).min(1).max(SETTINGS_WEB_CHANNELS.length).refine(names => new Set(names).size === names.length).optional(),
-  desktopV1: z.literal(true).optional() }).strict();
-const modelOption = z.object({ harness: newTask.shape.harness, providerId: routeId, providerName: z.string().min(1).max(256), modelId: routeId, modelName: z.string().min(1).max(256), efforts: z.array(effort).max(7), supportsFast: z.boolean(), supportsThinkingToggle: z.boolean() }).strict();
+  desktopV1: z.literal(true).optional() });
+const modelOption = z.strictObject({ harness: newTask.shape.harness, providerId: routeId, providerName: z.string().min(1).max(256), modelId: routeId, modelName: z.string().min(1).max(256), efforts: z.array(effort).max(7), supportsFast: z.boolean(), supportsThinkingToggle: z.boolean() });
 const readyBase = { status: z.literal('ready'), revision, operationId: id, customizedKeys: z.array(z.string().max(32)).max(8), isCustomized: z.boolean() };
-const promptState = z.object({ isCustomized: z.boolean() }).strict();
+const promptState = z.strictObject({ isCustomized: z.boolean() });
 const nativeReady = z.discriminatedUnion('domain', [
-  z.object({ ...readyBase, domain: z.literal('newTaskDefaults'), value: newTask, defaults: newTask, models: z.array(modelOption).max(256) }).strict(),
-  z.object({ ...readyBase, domain: z.literal('personalization'), value: promptState, defaults: promptState }).strict(),
-  z.object({ ...readyBase, domain: z.literal('databaseWarning'), value: database, defaults: database }).strict(),
-  z.object({ ...readyBase, domain: z.literal('appearance'), value: appearance, defaults: appearance }).strict(),
+  z.strictObject({ ...readyBase, domain: z.literal('newTaskDefaults'), value: newTask, defaults: newTask, models: z.array(modelOption).max(256) }),
+  z.strictObject({ ...readyBase, domain: z.literal('personalization'), value: promptState, defaults: promptState }),
+  z.strictObject({ ...readyBase, domain: z.literal('databaseWarning'), value: database, defaults: database }),
+  z.strictObject({ ...readyBase, domain: z.literal('appearance'), value: appearance, defaults: appearance }),
 ]).refine(value => new Set(value.customizedKeys).size === value.customizedKeys.length
   && value.customizedKeys.every(key => (fields[value.domain] as string[]).includes(key))
   && value.isCustomized === (value.customizedKeys.length > 0), 'invalid override state');
-const additionalReady = z.object({ ...readyBase, domain: additionalDomain,
+const additionalReady = z.strictObject({ ...readyBase, domain: additionalDomain,
   workspaceId: workspaceId.optional(), workspaceLabel: z.string().min(1).max(512).optional(),
   value: z.record(z.string(), settingsEditableValueSchema),
   defaults: z.record(z.string(), settingsEditableValueSchema),
   customizedKeys: z.array(z.string().max(64)).max(16),
-  choices: z.record(z.string(), z.array(z.object({ value: settingsEditableValueSchema, label: z.string().min(1).max(512), efforts: z.array(z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])).max(7).optional(), supportsFast: z.boolean().optional() }).strict()).max(SETTINGS_WEB_MAX_CHOICES)).optional(),
-}).strict().superRefine((value, ctx) => {
+  choices: z.record(z.string(), z.array(z.strictObject({ value: settingsEditableValueSchema, label: z.string().min(1).max(512), efforts: z.array(z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])).max(7).optional(), supportsFast: z.boolean().optional() })).max(SETTINGS_WEB_MAX_CHOICES)).optional(),
+}).superRefine((value, ctx) => {
   const schema = additionalSettingsSchemas[value.domain];
   if ((value.domain === 'workspaceTools') !== (value.workspaceId !== undefined && value.workspaceLabel !== undefined)
     || value.domain !== 'workspaceTools' && (value.workspaceId !== undefined || value.workspaceLabel !== undefined)
@@ -111,22 +111,22 @@ const additionalReady = z.object({ ...readyBase, domain: additionalDomain,
 });
 const ready = z.union([nativeReady, additionalReady]);
 const receipt = z.union([
-  z.object({ status: z.enum(['pending', 'unknown']) }).strict(),
-  z.object({ status: z.enum(['saved', 'rejected', 'unknown']), operationId: id, domain: settingsWebDomainSchema, saved: z.boolean(), application: z.enum(['next_task', 'next_agent_start', 'applied', 'failed', 'not_applied']), revision: revision.optional(), code: z.string().regex(/^[A-Z_]{1,64}$/u).optional() }).strict()
+  z.strictObject({ status: z.enum(['pending', 'unknown']) }),
+  z.strictObject({ status: z.enum(['saved', 'rejected', 'unknown']), operationId: id, domain: settingsWebDomainSchema, saved: z.boolean(), application: z.enum(['next_task', 'next_agent_start', 'applied', 'failed', 'not_applied']), revision: revision.optional(), code: z.string().regex(/^[A-Z_]{1,64}$/u).optional() })
     .refine(value => value.saved === (value.status === 'saved') && value.saved === (value.application !== 'not_applied'), 'inconsistent receipt'),
 ]);
-const failed = z.object({ ok: z.literal(false), code: z.string().regex(/^[A-Z_]{1,64}$/u) }).strict();
+const failed = z.strictObject({ ok: z.literal(false), code: z.string().regex(/^[A-Z_]{1,64}$/u) });
 export const settingsWebReadResultSchema = z.union([
-  z.object({ ok: z.literal(true), settings: ready }).strict(),
-  z.object({ ok: z.literal(true), settings: z.object({ domain: settingsWebDomainSchema, status: z.enum(['unavailable', 'unreadable']), revision: z.null() }).strict() }).strict(),
+  z.strictObject({ ok: z.literal(true), settings: ready }),
+  z.strictObject({ ok: z.literal(true), settings: z.strictObject({ domain: settingsWebDomainSchema, status: z.enum(['unavailable', 'unreadable']), revision: z.null() }) }),
   failed,
 ]);
 export type SettingsWebReadResult = z.infer<typeof settingsWebReadResultSchema>;
-export const settingsWebBatchResultSchema = z.object({
+export const settingsWebBatchResultSchema = z.strictObject({
   ok: z.literal(true),
-  entries: z.array(z.object({ domain: settingsWebDomainSchema, result: settingsWebReadResultSchema }).strict()).min(1).max(64),
+  entries: z.array(z.strictObject({ domain: settingsWebDomainSchema, result: settingsWebReadResultSchema })).min(1).max(64),
   remainingDomains: z.array(settingsWebDomainSchema).max(63),
-}).strict().superRefine((value, ctx) => {
+}).superRefine((value, ctx) => {
   const domains = [...value.entries.map(entry => entry.domain), ...value.remainingDomains];
   if (domains.length > 64 || new Set(domains).size !== domains.length
     || value.entries.some(entry => entry.result.ok && entry.result.settings.domain !== entry.domain)) {
@@ -135,13 +135,13 @@ export const settingsWebBatchResultSchema = z.object({
 });
 const largeResult = (value: object) => 'channel' in value || 'desktop' in value;
 export const settingsWebResultSchema = z.union([
-  z.object({ ok: z.literal(true), management: managementResultSchema }).strict(),
+  z.strictObject({ ok: z.literal(true), management: managementResultSchema }),
   settingsWebReadResultSchema,
   settingsWebBatchResultSchema,
-  z.object({ ok: z.literal(true), receipt }).strict(),
-  z.object({ ok: z.literal(true), channel: z.unknown().refine(value => value !== undefined) }).strict(),
-  z.object({ ok: z.literal(true), desktop: z.unknown().refine(value => value !== undefined) }).strict(),
-  z.object({ ok: z.literal(true), ice: z.array(iceServer).max(16) }).strict(),
+  z.strictObject({ ok: z.literal(true), receipt }),
+  z.strictObject({ ok: z.literal(true), channel: z.unknown().refine(value => value !== undefined) }),
+  z.strictObject({ ok: z.literal(true), desktop: z.unknown().refine(value => value !== undefined) }),
+  z.strictObject({ ok: z.literal(true), ice: z.array(iceServer).max(16) }),
 ]).refine(value => new TextEncoder().encode(JSON.stringify(value)).byteLength
   <= (largeResult(value) ? SETTINGS_WEB_LARGE_RESULT_MAX_BYTES : SETTINGS_WEB_MAX_BYTES) - 512, 'settings response exceeds its budget');
 export type SettingsWebResult = z.infer<typeof settingsWebResultSchema>;

@@ -72,13 +72,11 @@ export type CloudImSettingsCall = (typeof CLOUD_IM_SETTINGS_CALLS)[number];
 export const CLOUD_IM_SETTINGS_MAX_BYTES = 512 * 1024;
 
 export const cloudImSettingsRequestSchema = z
-  .object({
+  .strictObject({
     call: z.enum(CLOUD_IM_SETTINGS_CALLS),
     args: z.array(z.unknown()).max(4).default([]),
-  })
-  .strict();
+  });
 
 export const cloudImSettingsReplySchema = z
-  .object({ ownerGeneration: z.number().int().nonnegative(), result: z.unknown() })
-  .strict();
+  .strictObject({ ownerGeneration: z.number().int().nonnegative(), result: z.unknown() });
 export type CloudImSettingsReply = z.infer<typeof cloudImSettingsReplySchema>;

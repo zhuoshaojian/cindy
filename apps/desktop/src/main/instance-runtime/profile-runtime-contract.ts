@@ -9,38 +9,38 @@ const counter = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 // runtime collector limit. Preflight retains its smaller termination-message cap.
 export const MAX_RUNTIME_RENDERERS = 64;
 export const MAX_PREFLIGHT_RENDERERS = 8;
-export const preflightBindingSchema = z.object({version:z.literal(1),purpose:z.literal('cis-profile-preflight'),
+export const preflightBindingSchema = z.strictObject({version:z.literal(1),purpose:z.literal('cis-profile-preflight'),
  pilotSha256:sha,layoutSha256:sha,sourcePodUid:id,pvcUid:id,sourceTemplateSha256:sha,
- recoveryScope:z.literal('image-and-cindy-resource'),credentials:z.literal('synthetic-only')}).strict();
-const processSchema = z.object({pid:z.number().int().positive(),startTicks:counter,seccomp:z.literal(2),
- filters:z.number().int().positive(),noNewPrivs:z.literal(1),capEff:z.literal('0000000000000000')}).strict();
-const sandboxFor = (maximum: number) => z.object({browser:processSchema,renderers:z.array(processSchema).min(1).max(maximum),
- rendererDiscovery:z.literal('cdp-system-info'),pageReadback:z.literal('exact')}).strict().superRefine((v,c)=>{
+ recoveryScope:z.literal('image-and-cindy-resource'),credentials:z.literal('synthetic-only')});
+const processSchema = z.strictObject({pid:z.number().int().positive(),startTicks:counter,seccomp:z.literal(2),
+ filters:z.number().int().positive(),noNewPrivs:z.literal(1),capEff:z.literal('0000000000000000')});
+const sandboxFor = (maximum: number) => z.strictObject({browser:processSchema,renderers:z.array(processSchema).min(1).max(maximum),
+ rendererDiscovery:z.literal('cdp-system-info'),pageReadback:z.literal('exact')}).superRefine((v,c)=>{
  const pids=[v.browser.pid,...v.renderers.map(p=>p.pid)];
  if(new Set(pids).size!==pids.length||v.renderers.some(p=>p.filters<=v.browser.filters))
  c.addIssue({code:z.ZodIssueCode.custom,message:'additional renderer sandbox required'});
 });
 export const sandboxSchema = sandboxFor(MAX_RUNTIME_RENDERERS);
 export const preflightSandboxSchema = sandboxFor(MAX_PREFLIGHT_RENDERERS);
-export const canonicalObservationSchema = z.object({source:z.enum(['canonical','legacy-cindy-four-keys']),
+export const canonicalObservationSchema = z.strictObject({source:z.enum(['canonical','legacy-cindy-four-keys']),
  backend:z.literal('gnome-libsecret'),sessionId:id,durableRefreshSequence:counter,durableAtMs:counter,
- typ:z.literal('access'),aud:z.literal('cindy'),sub:id,deviceId:id,accountControl:z.literal(false),expiresAtMs:counter}).strict();
-export const readinessSchema = z.object({auth:z.literal('ready'),database:z.literal('ready'),binaries:z.literal('ready'),
- maker:z.literal('ready'),deviceLink:z.literal('ready')}).strict();
-export const telemetrySchema = z.object({version:z.literal(1),deviceId:id,membershipId:id,realm:z.enum(['cn','global']),
+ typ:z.literal('access'),aud:z.literal('cindy'),sub:id,deviceId:id,accountControl:z.literal(false),expiresAtMs:counter});
+export const readinessSchema = z.strictObject({auth:z.literal('ready'),database:z.literal('ready'),binaries:z.literal('ready'),
+ maker:z.literal('ready'),deviceLink:z.literal('ready')});
+export const telemetrySchema = z.strictObject({version:z.literal(1),deviceId:id,membershipId:id,realm:z.enum(['cn','global']),
  authBaseUrl:z.string().url(),profile:id,role:z.enum(['candidate','recovery']),heartbeatAtMs:counter,
- process:z.object({pid:z.number().int().positive(),startTicks:counter}).strict(),canonical:canonicalObservationSchema,
- readiness:readinessSchema}).strict();
+ process:z.strictObject({pid:z.number().int().positive(),startTicks:counter}),canonical:canonicalObservationSchema,
+ readiness:readinessSchema});
 export const runtimeEvidenceSchema = telemetrySchema.extend({sandbox:sandboxSchema}).strict();
-const preflightBase = z.object({version:z.literal(1),bindingSha256:sha,podUid:id,observedAtMs:counter,
- architecture:z.enum(['amd64','arm64']),sandbox:preflightSandboxSchema}).strict();
+const preflightBase = z.strictObject({version:z.literal(1),bindingSha256:sha,podUid:id,observedAtMs:counter,
+ architecture:z.enum(['amd64','arm64']),sandbox:preflightSandboxSchema});
 export const preflightEvidenceSchema = z.discriminatedUnion('role',[
- preflightBase.extend({role:z.literal('candidate'),checks:z.object({canonicalWithoutB:z.literal(true),missingCanonicalRejected:z.literal(true),
- wrongKeyRejected:z.literal(true),sharedKeyringAcrossHomes:z.literal(true)}).strict()}).strict(),
- preflightBase.extend({role:z.literal('recovery'),checks:z.object({legacyAsarWithSecureWrapper:z.literal(true),currentResourceAccepted:z.literal(true),
- refreshCycles:counter.min(2),sharedKeyringAcrossHomes:z.literal(true)}).strict()}).strict(),
- preflightBase.extend({role:z.literal('maintenance'),checks:z.object({latestDurableForward:z.literal(true),latestCanonicalReverse:z.literal(true),
- sourceUnchanged:z.literal(true),cindyOnlyRecovery:z.literal(true),wrongKeyRejected:z.literal(true)}).strict()}).strict(),
+ preflightBase.extend({role:z.literal('candidate'),checks:z.strictObject({canonicalWithoutB:z.literal(true),missingCanonicalRejected:z.literal(true),
+ wrongKeyRejected:z.literal(true),sharedKeyringAcrossHomes:z.literal(true)})}).strict(),
+ preflightBase.extend({role:z.literal('recovery'),checks:z.strictObject({legacyAsarWithSecureWrapper:z.literal(true),currentResourceAccepted:z.literal(true),
+ refreshCycles:counter.min(2),sharedKeyringAcrossHomes:z.literal(true)})}).strict(),
+ preflightBase.extend({role:z.literal('maintenance'),checks:z.strictObject({latestDurableForward:z.literal(true),latestCanonicalReverse:z.literal(true),
+ sourceUnchanged:z.literal(true),cindyOnlyRecovery:z.literal(true),wrongKeyRejected:z.literal(true)})}).strict(),
 ]);
 export function evidenceDigest(value:unknown):string {
  const sorted=(v:unknown):unknown=>Array.isArray(v)?v.map(sorted):v&&typeof v==='object'

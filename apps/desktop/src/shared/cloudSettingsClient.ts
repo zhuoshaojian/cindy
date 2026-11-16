@@ -10,11 +10,10 @@ import { cloudSettingsDomainSchema, type CloudSettingsDomain } from './cloudSett
 // Account admission is a read-only, versioned CIS result, never an authorization
 // grant for subsequent requests. No instance IDs, credentials or caller identity.
 export const cloudInstanceAccessSchema = z
-  .object({
+  .strictObject({
     schemaVersion: z.literal(1),
     allowed: z.boolean(),
-  })
-  .strict();
+  });
 export type CloudInstanceAccess = z.infer<typeof cloudInstanceAccessSchema>;
 
 // Local IPC and the proposed CIS native caller envelope. Business commands use
@@ -44,14 +43,13 @@ export const cloudClientOpenSchema = cloudClientCapabilitiesSchema
   .strict();
 export type CloudClientOpen = z.infer<typeof cloudClientOpenSchema>;
 export const cloudClientQueueViewSchema = z
-  .object({
+  .strictObject({
     requestId: z.string().uuid(),
     status: z.enum(['queued', 'running', 'complete', 'unknown']),
     result: settingsWebResultSchema.optional(),
   })
-  .strict()
   .refine((v) => (v.status === 'complete') === (v.result !== undefined));
-export const cloudClientHandleSchema = z.object({ handle: z.string().uuid() }).strict();
+export const cloudClientHandleSchema = z.strictObject({ handle: z.string().uuid() });
 export const cloudClientReadSchema = cloudClientHandleSchema
   .extend({
     domains: z
@@ -72,11 +70,10 @@ export const cloudClientManageSchema = cloudClientHandleSchema
   .strict();
 /** How many cloud instances the owner has and may have; CIS decides the limit. */
 export const cloudInstanceCapacitySchema = z
-  .object({
+  .strictObject({
     limit: z.number().int().min(0).max(1_000_000),
     used: z.number().int().min(0).max(1_000_000),
-  })
-  .strict();
+  });
 export type CloudInstanceCapacity = z.infer<typeof cloudInstanceCapacitySchema>;
 export interface CloudSettingsRendererApi {
   instanceAccess(input: Record<string, never>): Promise<CloudInstanceAccess>;

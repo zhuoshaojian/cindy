@@ -89,75 +89,68 @@ export interface CloudProviderSetupSecrets {
 
 const id = z.string().min(1).max(256);
 const agent = z.enum(['claude-code', 'codex', 'pi']);
-const modelTarget = z.object({ providerId: id, agent, modelId: id }).strict();
+const modelTarget = z.strictObject({ providerId: id, agent, modelId: id });
 const ownerGeneration = z.number().int().nonnegative();
 const json = z.record(z.string(), z.unknown());
 const updateOptions = z
-  .object({
+  .strictObject({
     source: z.literal('manual-settings').optional(),
     codexImageGenerationRestartPolicy: z.literal('interrupt').optional(),
-  })
-  .strict();
+  });
 const targets = z
-  .array(z.object({ agent: z.string().min(1).max(64), modelId: id }).strict())
+  .array(z.strictObject({ agent: z.string().min(1).max(64), modelId: id }))
   .min(1)
   .max(512);
 
 export const cloudProviderSettingsRequestSchema = z.discriminatedUnion('op', [
-  z.object({ op: z.literal('list') }).strict(),
+  z.strictObject({ op: z.literal('list') }),
   z
-    .object({
+    .strictObject({
       op: z.literal('visibility-set'),
       ownerGeneration,
       revision: z.string().min(1).max(256),
       providerId: id,
       targets,
       enabled: z.boolean(),
-    })
-    .strict(),
+    }),
   z
-    .object({
+    .strictObject({
       op: z.literal('visibility-reset'),
       ownerGeneration,
       revision: z.string().min(1).max(256),
       providerId: id,
       targets,
-    })
-    .strict(),
+    }),
   z
-    .object({
+    .strictObject({
       op: z.literal('model-disable'),
       ownerGeneration,
       providerId: id,
       kind: z.enum(['model', 'provider', 'reset']),
       disabled: z.boolean().optional(),
       modelIds: z.array(id).min(1).max(512).optional(),
-    })
-    .strict(),
+    }),
   z
-    .object({ op: z.literal('order'), ownerGeneration, providerIds: z.array(id).min(1).max(256) })
-    .strict(),
+    .strictObject({ op: z.literal('order'), ownerGeneration, providerIds: z.array(id).min(1).max(256) }),
   z
-    .object({
+    .strictObject({
       op: z.literal('presentation'),
       ownerGeneration,
       providerId: id,
       action: z.enum(['rename', 'remove', 'restore']),
       name: z.string().min(1).max(128).optional(),
-    })
-    .strict(),
+    }),
   z
-    .object({
+    .strictObject({
       op: z.literal('remote-access'),
       ownerGeneration,
       providerId: id,
       enabled: z.boolean(),
-    })
-    .strict(),
-  z.object({ op: z.literal('refresh'), ownerGeneration, providerId: id }).strict(),
-  z.object({ op: z.literal('rediscover'), ownerGeneration, providerId: id }).strict(),
+    }),
+  z.strictObject({ op: z.literal('refresh'), ownerGeneration, providerId: id }),
+  z.strictObject({ op: z.literal('rediscover'), ownerGeneration, providerId: id }),
   z
-    .object({
+    .strictObject({
       op: z.literal('model-call'),
       ownerGeneration,
       call: z.enum(Object.keys(CLOUD_MODEL_CALLS) as [CloudModelCall, ...CloudModelCall[]]),
@@ -170,30 +163,27 @@ export const cloudProviderSettingsRequestSchema = z.discriminatedUnion('op', [
           z.number().finite().nullable(),
           z.boolean(),
           z
-            .object({
+            .strictObject({
               currency: z.enum(['CNY', 'USD']),
               inputPerMtok: z.number().finite(),
               outputPerMtok: z.number().finite(),
               cacheReadPerMtok: z.number().finite().nullable().optional(),
               cacheCreatePerMtok: z.number().finite().nullable().optional(),
-            })
-            .strict(),
+            }),
         ])
         .optional(),
-    })
-    .strict(),
+    }),
   z
-    .object({
+    .strictObject({
       op: z.literal('effort'),
       ownerGeneration,
       agent,
       providerId: id,
       modelId: id,
       effort: z.string().min(1).max(32).nullable(),
-    })
-    .strict(),
+    }),
   z
-    .object({
+    .strictObject({
       op: z.literal('model-edit'),
       ownerGeneration,
       providerId: id,
@@ -201,98 +191,83 @@ export const cloudProviderSettingsRequestSchema = z.discriminatedUnion('op', [
       modelId: id,
       edit: z.discriminatedUnion('kind', [
         z
-          .object({
+          .strictObject({
             kind: z.literal('interface'),
             api: z.string().min(1).max(128),
             profile: z.boolean(),
-          })
-          .strict(),
+          }),
         z
-          .object({
+          .strictObject({
             kind: z.literal('capability'),
             media: z.enum(['image', 'video']),
             value: z.enum(['default', 'generate', 'edit']),
-          })
-          .strict(),
+          }),
       ]),
-    })
-    .strict(),
-  z.object({ op: z.literal('cli-scan'), ownerGeneration }).strict(),
-  z.object({ op: z.literal('presets'), ownerGeneration }).strict(),
+    }),
+  z.strictObject({ op: z.literal('cli-scan'), ownerGeneration }),
+  z.strictObject({ op: z.literal('presets'), ownerGeneration }),
   /** One provider as the instance's own Settings page sees it; never credentials. */
-  z.object({ op: z.literal('provider-view'), ownerGeneration, providerId: id }).strict(),
+  z.strictObject({ op: z.literal('provider-view'), ownerGeneration, providerId: id }),
   /** Secret-free configuration writes (OAuth drafts, model choices); keys use the ticket. */
   z
-    .object({
+    .strictObject({
       op: z.enum(['custom-create', 'custom-update']),
       ownerGeneration,
       config: json,
       options: updateOptions.optional(),
-    })
-    .strict(),
-  z.object({ op: z.literal('custom-delete'), ownerGeneration, providerId: id }).strict(),
+    }),
+  z.strictObject({ op: z.literal('custom-delete'), ownerGeneration, providerId: id }),
   /** Secret-free probes (saved credentials stay on the instance, or no authentication). */
   z
-    .object({
+    .strictObject({
       op: z.enum(['models-fetch', 'test-connection', 'detect']),
       ownerGeneration,
       request: json,
-    })
-    .strict(),
+    }),
   z
-    .object({
+    .strictObject({
       op: z.literal('setup-stage'),
       ownerGeneration,
       kind: z.enum(CLOUD_PROVIDER_SETUP_KINDS),
       request: json,
-    })
-    .strict(),
-  z.object({ op: z.literal('setup-result'), ownerGeneration, stageId: z.string().uuid() }).strict(),
+    }),
+  z.strictObject({ op: z.literal('setup-result'), ownerGeneration, stageId: z.string().uuid() }),
   z
-    .object({
+    .strictObject({
       op: z.literal('xd'),
       ownerGeneration,
       action: z.enum(['status', 'retry', 'rotate', 'disconnect']),
-    })
-    .strict(),
+    }),
+  z.strictObject({ op: z.literal('byok'), ownerGeneration, action: z.enum(['status', 'retry']) }),
+  z.strictObject({ op: z.literal('codex-limits'), ownerGeneration, providerId: id.optional() }),
   z
-    .object({ op: z.literal('byok'), ownerGeneration, action: z.enum(['status', 'retry']) })
-    .strict(),
-  z.object({ op: z.literal('codex-limits'), ownerGeneration, providerId: id.optional() }).strict(),
-  z
-    .object({
+    .strictObject({
       op: z.literal('codex-reset'),
       ownerGeneration,
       idempotencyKey: z.string().uuid(),
       providerId: id.optional(),
-    })
-    .strict(),
+    }),
   z
-    .object({
+    .strictObject({
       op: z.literal('account-usage'),
       ownerGeneration,
       providerId: id,
       forceRefresh: z.boolean().optional(),
-    })
-    .strict(),
+    }),
   z
-    .object({
+    .strictObject({
       op: z.literal('share'),
       ownerGeneration,
       /** Guest actions on this instance: its received shares, its credential trust, leaving. */
       command: z.discriminatedUnion('action', [
-        z.object({ action: z.literal('received') }).strict(),
-        z.object({ action: z.literal('get-credential-consent'), shareId: id }).strict(),
+        z.strictObject({ action: z.literal('received') }),
+        z.strictObject({ action: z.literal('get-credential-consent'), shareId: id }),
         z
-          .object({ action: z.literal('set-credential-consent'), shareId: id, skip: z.boolean() })
-          .strict(),
-        z.object({ action: z.literal('leave'), memberId: id }).strict(),
-        z
-          .object({ action: z.literal('insights'), shareId: id, includeUsage: z.boolean() })
-          .strict(),
+          .strictObject({ action: z.literal('set-credential-consent'), shareId: id, skip: z.boolean() }),
+        z.strictObject({ action: z.literal('leave'), memberId: id }),
+        z.strictObject({ action: z.literal('insights'), shareId: id, includeUsage: z.boolean() }),
       ]),
-    })
-    .strict(),
+    }),
 ]);
 export type CloudProviderSettingsRequest = z.infer<typeof cloudProviderSettingsRequestSchema>;
 

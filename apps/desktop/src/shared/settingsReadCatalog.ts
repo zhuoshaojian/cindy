@@ -58,12 +58,12 @@ export const settingsReadPublicIdentifierSchema = z.string().min(1).max(96)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*){0,3}$/u)
   .refine(value => !value.split('/').some(part => /^(?:sk-|Bearer|cpca_|cpcr_|eyJ|https?|localhost$)/iu.test(part)));
 export const settingsReadReferenceSchema = z.union([
-  z.object({ configured: z.literal(false) }).strict(),
-  z.object({ configured: z.literal(true), publicId: settingsReadPublicIdentifierSchema.optional() }).strict(),
+  z.strictObject({ configured: z.literal(false) }),
+  z.strictObject({ configured: z.literal(true), publicId: settingsReadPublicIdentifierSchema.optional() }),
 ]);
 const sound = z.union([
-  z.object({ type: z.literal('builtin'), id: z.enum(SETTINGS_READ_ISLAND_SOUNDS) }).strict(),
-  z.object({ type: z.literal('custom'), configured: z.literal(true) }).strict(),
+  z.strictObject({ type: z.literal('builtin'), id: z.enum(SETTINGS_READ_ISLAND_SOUNDS) }),
+  z.strictObject({ type: z.literal('custom'), configured: z.literal(true) }),
 ]);
 /** 不传 key 显示兜底；键码是封闭物理键词表，绝不接受任意按键文字。 */
 export const SETTINGS_READ_KEY_CODES = [
@@ -77,27 +77,27 @@ export const SETTINGS_READ_KEY_CODES = [
   'Home', 'End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
   'NumpadAdd', 'NumpadSubtract', 'NumpadMultiply', 'NumpadDivide', 'NumpadDecimal', 'NumpadEnter',
 ] as const;
-export const settingsReadShortcutComboSchema = z.object({
+export const settingsReadShortcutComboSchema = z.strictObject({
   code: z.enum(SETTINGS_READ_KEY_CODES), meta: bool, ctrl: bool, alt: bool, shift: bool,
-}).strict();
+});
 export const settingsReadHardwareActionSchema = z.union([
-  z.object({ type: z.literal('command'), commandId: z.enum(SETTINGS_READ_COMMAND_IDS) }).strict(),
-  z.object({ type: z.literal('keycap'), keycapId: z.enum(SETTINGS_READ_WORKLOUDER_KEYCAPS) }).strict(),
-  z.object({ type: z.literal('voice') }).strict(),
-  z.object({ type: z.enum(['task', 'skill', 'composer-text', 'external-url']), configured: z.literal(true) }).strict(),
+  z.strictObject({ type: z.literal('command'), commandId: z.enum(SETTINGS_READ_COMMAND_IDS) }),
+  z.strictObject({ type: z.literal('keycap'), keycapId: z.enum(SETTINGS_READ_WORKLOUDER_KEYCAPS) }),
+  z.strictObject({ type: z.literal('voice') }),
+  z.strictObject({ type: z.enum(['task', 'skill', 'composer-text', 'external-url']), configured: z.literal(true) }),
   z.null(),
 ]);
 const gamepadAction = z.union([
-  z.object({ type: z.literal('command'), commandId: z.enum(SETTINGS_READ_COMMAND_IDS) }).strict(),
-  z.object({ type: z.literal('voice') }).strict(),
-  z.object({ type: z.literal('skill'), configured: z.literal(true) }).strict(),
+  z.strictObject({ type: z.literal('command'), commandId: z.enum(SETTINGS_READ_COMMAND_IDS) }),
+  z.strictObject({ type: z.literal('voice') }),
+  z.strictObject({ type: z.literal('skill'), configured: z.literal(true) }),
   z.null(),
 ]);
-const route = z.object({
+const route = z.strictObject({
   harness, model: settingsReadReferenceSchema, provider: settingsReadReferenceSchema,
   effort: effort.nullable(), fastMode: bool,
-}).strict();
-const modelRoute = z.object({ model: settingsReadReferenceSchema, provider: settingsReadReferenceSchema }).strict();
+});
+const modelRoute = z.strictObject({ model: settingsReadReferenceSchema, provider: settingsReadReferenceSchema });
 
 /** 字段来源及排版元数据。reader 是纯 inspection 域，不是可调用的写入口。 */
 export interface SettingsReadFieldDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
@@ -259,7 +259,7 @@ const worklouder = family(SETTINGS_READ_WORKLOUDER_MODELS, model => ({
     'shortcuts', 'WorkLouderCodexSettings', 'shared/workLouderCodex.ts#WORKLOUDER_CODEX_AGENT_SLOT_COUNT', 'profile', 'immediate', 'safeProjection')),
   ...group(`worklouder.${model}.layout`, { encoderMode: z.enum(['session-switch', 'composer-navigation', 'reasoning', 'conversation-scroll', 'custom']), separateMicrophoneKeys: bool,
     taskKeys: z.array(z.enum(SETTINGS_READ_WORKLOUDER_KEYS)).max(13),
-    merges: z.array(z.object({ origin: z.enum(SETTINGS_READ_WORKLOUDER_KEYS), cover: z.enum(SETTINGS_READ_WORKLOUDER_KEYS) }).strict()).max(6),
+    merges: z.array(z.strictObject({ origin: z.enum(SETTINGS_READ_WORKLOUDER_KEYS), cover: z.enum(SETTINGS_READ_WORKLOUDER_KEYS) })).max(6),
   }, 'shortcuts', 'WorkLouderCodexSettings', 'shared/workLouderCodex.ts#WorkLouderCodexLayout', 'profile', 'immediate', 'safeProjection'),
   ...family(SETTINGS_READ_WORKLOUDER_SLOTS, slot => group(`worklouder.${model}.layout.slots.${slot}`, {
     keycapId: z.enum(SETTINGS_READ_WORKLOUDER_KEYCAPS), action: settingsReadHardwareActionSchema,
@@ -294,28 +294,28 @@ const collectionDefinition = <T extends z.ZodTypeAny>(entrySchema: T, tab: Setti
   privacy: 'safeProjection' as const, labelKey: `settingsRead.collections.${control}`,
 });
 export const SETTINGS_READ_COLLECTION_CATALOG = {
-  modelVisibility: collectionDefinition(z.object({ ...entryBase, enabled: bool }).strict(), 'providers', 'UnifiedModelList', 'main/maker-host/model-visibility-mirror.ts'),
-  modelEngines: collectionDefinition(z.object({ ...entryBase, agent: harness }).strict(), 'providers', 'UnifiedModelList', 'main/maker-host/model-visibility-mirror.ts'),
-  modelFavorites: collectionDefinition(z.object({ ...entryBase, agent: harness, effort: effort.nullable(), fast: bool }).strict(), 'providers', 'UnifiedModelList', 'main/maker-host/model-visibility-mirror.ts'),
-  modelDisable: collectionDefinition(z.object({ ...entryBase, kind: z.enum(['model', 'provider']), disabled: z.literal(true) }).strict(), 'providers', 'UnifiedModelList', 'main/maker-host/model-disable-store.ts'),
-  providerPresentation: collectionDefinition(z.object({ ...entryBase, nameConfigured: bool, removed: bool.nullable() }).strict(), 'providers', 'ProvidersSection', 'main/maker-host/provider-presentation-store.ts'),
-  modelContextBudget: collectionDefinition(z.object({ ...entryBase, contextLimit: integer(1000, 100_000_000) }).strict(), 'providers', 'ModelAdvancedDrawer', 'shared/modelContextLimit.ts'),
-  modelPrices: collectionDefinition(z.object({ ...entryBase, currency: z.enum(['USD', 'CNY']).optional(),
+  modelVisibility: collectionDefinition(z.strictObject({ ...entryBase, enabled: bool }), 'providers', 'UnifiedModelList', 'main/maker-host/model-visibility-mirror.ts'),
+  modelEngines: collectionDefinition(z.strictObject({ ...entryBase, agent: harness }), 'providers', 'UnifiedModelList', 'main/maker-host/model-visibility-mirror.ts'),
+  modelFavorites: collectionDefinition(z.strictObject({ ...entryBase, agent: harness, effort: effort.nullable(), fast: bool }), 'providers', 'UnifiedModelList', 'main/maker-host/model-visibility-mirror.ts'),
+  modelDisable: collectionDefinition(z.strictObject({ ...entryBase, kind: z.enum(['model', 'provider']), disabled: z.literal(true) }), 'providers', 'UnifiedModelList', 'main/maker-host/model-disable-store.ts'),
+  providerPresentation: collectionDefinition(z.strictObject({ ...entryBase, nameConfigured: bool, removed: bool.nullable() }), 'providers', 'ProvidersSection', 'main/maker-host/provider-presentation-store.ts'),
+  modelContextBudget: collectionDefinition(z.strictObject({ ...entryBase, contextLimit: integer(1000, 100_000_000) }), 'providers', 'ModelAdvancedDrawer', 'shared/modelContextLimit.ts'),
+  modelPrices: collectionDefinition(z.strictObject({ ...entryBase, currency: z.enum(['USD', 'CNY']).optional(),
     inputPerMtok: number(0, Number.MAX_VALUE).optional(), outputPerMtok: number(0, Number.MAX_VALUE).optional(),
     cacheReadPerMtok: number(0, Number.MAX_VALUE).nullable().optional(), cacheCreatePerMtok: number(0, Number.MAX_VALUE).nullable().optional(),
-  }).strict(), 'providers', 'ModelPriceOverrideDialog', 'shared/modelPriceOverride.ts'),
-  modelParameterHistory: collectionDefinition(z.object({ ...entryBase, effort: effort.optional(), fast: bool.optional(), thinking: bool.optional(), lastSelected: bool }).strict(), 'providers', 'UnifiedModelList', 'shared/newTaskPreferenceHistory.ts'),
-  visionBridgeTargets: collectionDefinition(z.object({ ...entryBase, model: settingsReadReferenceSchema }).strict(), 'personalization', 'VisionBridgeSection', 'shared/visionBridgeSettings.ts', 'profile'),
-  imWorkspacePrefs: collectionDefinition(z.object({ ...entryBase, channel: z.enum(['slack', 'telegram', 'x']), harness: harness.nullable(), modelConfigured: bool,
-    effort: effort.nullable(), permissionMode: permission.nullable(), dirty: bool }).strict(), 'im-bot', 'HookWorkspacePrefsEditor', 'main/hook-control/workspacePrefsStore.ts'),
-  telegramGroupActivation: collectionDefinition(z.object({ ...entryBase, mode: z.enum(['mention', 'always']) }).strict(), 'im-bot', 'TelegramBehaviorSettings', 'main/im/telegram/behaviorStore.ts'),
-  builtinToolOverrides: collectionDefinition(z.object({ ...entryBase, scope: z.enum(['user', 'project']), tool: z.enum(SETTINGS_READ_BUILTIN_TOOL_IDS), enabled: bool }).strict(), 'builtin-tools', 'BuiltinToolsSection', 'main/maker-host/plugins/settings-reader.ts', 'workspace'),
-  pluginSidebar: collectionDefinition(z.object({ ...entryBase, hidden: bool, order: integer(0, Number.MAX_SAFE_INTEGER).nullable() }).strict(), 'ghosts', 'SettingsCatalogPanel', 'main/sidebarSettingsStore.ts'),
-  pluginCindyPrefs: collectionDefinition(z.object({ ...entryBase, capability: z.enum(SETTINGS_READ_CAPABILITIES).nullable(), modelConfigured: bool,
-    inflightLimit: integer(1, Number.MAX_SAFE_INTEGER).nullable() }).strict(), 'ghosts', 'SettingsCatalogPanel', 'main/cindy-brain/cindyPrefsStore.ts'),
-  pluginErrandPrefs: collectionDefinition(z.object({ ...entryBase, harness: harness.nullable(), modelConfigured: bool, providerConfigured: bool,
+  }), 'providers', 'ModelPriceOverrideDialog', 'shared/modelPriceOverride.ts'),
+  modelParameterHistory: collectionDefinition(z.strictObject({ ...entryBase, effort: effort.optional(), fast: bool.optional(), thinking: bool.optional(), lastSelected: bool }), 'providers', 'UnifiedModelList', 'shared/newTaskPreferenceHistory.ts'),
+  visionBridgeTargets: collectionDefinition(z.strictObject({ ...entryBase, model: settingsReadReferenceSchema }), 'personalization', 'VisionBridgeSection', 'shared/visionBridgeSettings.ts', 'profile'),
+  imWorkspacePrefs: collectionDefinition(z.strictObject({ ...entryBase, channel: z.enum(['slack', 'telegram', 'x']), harness: harness.nullable(), modelConfigured: bool,
+    effort: effort.nullable(), permissionMode: permission.nullable(), dirty: bool }), 'im-bot', 'HookWorkspacePrefsEditor', 'main/hook-control/workspacePrefsStore.ts'),
+  telegramGroupActivation: collectionDefinition(z.strictObject({ ...entryBase, mode: z.enum(['mention', 'always']) }), 'im-bot', 'TelegramBehaviorSettings', 'main/im/telegram/behaviorStore.ts'),
+  builtinToolOverrides: collectionDefinition(z.strictObject({ ...entryBase, scope: z.enum(['user', 'project']), tool: z.enum(SETTINGS_READ_BUILTIN_TOOL_IDS), enabled: bool }), 'builtin-tools', 'BuiltinToolsSection', 'main/maker-host/plugins/settings-reader.ts', 'workspace'),
+  pluginSidebar: collectionDefinition(z.strictObject({ ...entryBase, hidden: bool, order: integer(0, Number.MAX_SAFE_INTEGER).nullable() }), 'ghosts', 'SettingsCatalogPanel', 'main/sidebarSettingsStore.ts'),
+  pluginCindyPrefs: collectionDefinition(z.strictObject({ ...entryBase, capability: z.enum(SETTINGS_READ_CAPABILITIES).nullable(), modelConfigured: bool,
+    inflightLimit: integer(1, Number.MAX_SAFE_INTEGER).nullable() }), 'ghosts', 'SettingsCatalogPanel', 'main/cindy-brain/cindyPrefsStore.ts'),
+  pluginErrandPrefs: collectionDefinition(z.strictObject({ ...entryBase, harness: harness.nullable(), modelConfigured: bool, providerConfigured: bool,
     effort: effort.nullable(), fastMode: bool.nullable(), permissionMode: z.enum(['plan', 'acceptEdits', 'auto']).nullable(), workingDirConfigured: bool,
-  }).strict(), 'ghosts', 'SettingsCatalogPanel', 'main/cindy-brain/errandPrefsStore.ts'),
+  }), 'ghosts', 'SettingsCatalogPanel', 'main/cindy-brain/errandPrefsStore.ts'),
 };
 export type SettingsSnapshotCollectionId = keyof typeof SETTINGS_READ_COLLECTION_CATALOG;
 export const SETTINGS_READ_COLLECTION_IDS = Object.keys(SETTINGS_READ_COLLECTION_CATALOG) as SettingsSnapshotCollectionId[];

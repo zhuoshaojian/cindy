@@ -4,7 +4,7 @@ import { z } from 'zod';
 const time = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/u);
 const minutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
 export const cloudMaintenanceCalendarSchema = z
-  .object({
+  .strictObject({
     timezone: z
       .string()
       .min(1)
@@ -21,7 +21,7 @@ export const cloudMaintenanceCalendarSchema = z
     windows: z
       .array(
         z
-          .object({
+          .strictObject({
             id: z
               .string()
               .min(1)
@@ -34,13 +34,11 @@ export const cloudMaintenanceCalendarSchema = z
               .refine((days) => new Set(days).size === days.length),
             startLocal: time,
             endLocal: time,
-          })
-          .strict(),
+          }),
       )
       .min(1)
       .max(7),
   })
-  .strict()
   .superRefine((calendar, ctx) => {
     const ids = new Set<string>(),
       occupied = new Set<number>();
@@ -69,10 +67,9 @@ const patch = {
   autoUpdate: z.boolean(),
 };
 export const cloudMaintenanceEditSchema = z.discriminatedUnion('policyMode', [
-  z.object({ ...patch, policyMode: z.literal('inherit') }).strict(),
+  z.strictObject({ ...patch, policyMode: z.literal('inherit') }),
   z
-    .object({ ...patch, policyMode: z.literal('custom'), calendar: cloudMaintenanceCalendarSchema })
-    .strict(),
+    .strictObject({ ...patch, policyMode: z.literal('custom'), calendar: cloudMaintenanceCalendarSchema }),
 ]);
 export type CloudMaintenanceEdit = z.infer<typeof cloudMaintenanceEditSchema>;
 export const cloudMaintenanceViewSchema = z.object({
@@ -122,7 +119,7 @@ export const cloudUpgradeStatusSchema = z.object({
 });
 export const cloudUpgradeReceiptSchema = z.object({ operation: cloudUpgradeOperationSchema });
 export const cloudInstanceViewSchema = z
-  .object({
+  .strictObject({
     instanceId: z.string().min(1).max(128),
     deviceId: z.string().min(1).max(160),
     name: z.string().max(512).nullable(),
@@ -145,12 +142,9 @@ export const cloudInstanceViewSchema = z
     manualUpgrade: z.boolean().optional(),
     upgradeOperation: cloudUpgradeOperationSchema.nullable().optional(),
     resourceChanging: z.boolean().optional(),
-  })
-  .strict();
+  });
 export type CloudInstanceView = z.infer<typeof cloudInstanceViewSchema>;
-export const cloudInstanceTargetSchema = z
-  .object({ deviceId: z.string().min(1).max(160) })
-  .strict();
+export const cloudInstanceTargetSchema = z.strictObject({ deviceId: z.string().min(1).max(160) });
 export const cloudInstancePowerSchema = cloudInstanceTargetSchema
   .extend({ action: z.enum(['wake', 'sleep']) })
   .strict();

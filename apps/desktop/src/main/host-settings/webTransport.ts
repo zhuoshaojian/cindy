@@ -13,7 +13,7 @@ export interface SettingsWebTransportOptions {
   /** Cloud fork: owner-only calls from the browser build of the client's cloud pages. */
   hostCalls?: { channels: string[]; desktopV1: true };
 }
-const envelope = z.object({ requestId: z.string().uuid(), runtimeId: z.string().uuid(), sessionKey: z.string().regex(/^[a-f0-9]{64}$/u), expiresAtMs: z.number().safe().int(), command: settingsWebCommandSchema }).strict();
+const envelope = z.strictObject({ requestId: z.string().uuid(), runtimeId: z.string().uuid(), sessionKey: z.string().regex(/^[a-f0-9]{64}$/u), expiresAtMs: z.number().safe().int(), command: settingsWebCommandSchema });
 class TransportError extends Error { constructor(readonly status: number) { super('SETTINGS_WEB_TRANSPORT_UNAVAILABLE'); } }
 
 /** One request at a time. A delivery failure retries only the result, never the write. */
@@ -82,7 +82,7 @@ export function createSettingsWebTransport(options: SettingsWebTransportOptions)
         connected = true;
       }
       const polledAt = now();
-      const response = z.object({ request: envelope.nullable() }).strict().parse(await post(context, 'poll', { runtimeId }));
+      const response = z.strictObject({ request: envelope.nullable() }).parse(await post(context, 'poll', { runtimeId }));
       // After a held (long) poll, ask again at once so a browser's next call is not delayed.
       if (!response.request) return now() - polledAt >= 4_000 ? 50 : 2_000;
       const request = response.request;

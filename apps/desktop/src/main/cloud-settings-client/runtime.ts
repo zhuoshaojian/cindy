@@ -153,7 +153,7 @@ export function registerCloudSettingsClientIpc(windowDeps?: {
       },
     });
     loginWindow = manager;
-    const epoch = z.object({ generation: z.number().int().nonnegative() }).strict();
+    const epoch = z.strictObject({ generation: z.number().int().nonnegative() });
     function windowHandler<T>(
       channel: string,
       schema: z.ZodType<T>,
@@ -175,7 +175,7 @@ export function registerCloudSettingsClientIpc(windowDeps?: {
       manager.open(e.sender, input.deviceId),
     );
     for (const key of ['state', 'ready', 'presented'] as const) {
-      windowHandler(CLOUD_LOGIN_WINDOW[key], z.object({}).strict(), (e) => {
+      windowHandler(CLOUD_LOGIN_WINDOW[key], z.strictObject({}), (e) => {
         manager.assertSender(e.sender);
         if (key === 'ready') manager.controller.markRendererReady(e.sender);
         if (key === 'presented') manager.controller.markPresentationReady(e.sender);
