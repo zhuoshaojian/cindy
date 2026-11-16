@@ -1582,6 +1582,8 @@ describe('the seed keeps a restored explicit choice', () => {
       dlSeedKeyRef: { current: null as string | null },
       dlSeedCapabilitiesRef: { current: null as unknown },
       dlSeedDefaultsRef: { current: null as unknown },
+      dlSeedProvidersRef: { current: null as unknown },
+      deviceProvidersError: null,
       dlRuntimeTouchedRef,
       dlExplicitChoiceRef,
       setDlSel,

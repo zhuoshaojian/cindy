@@ -114,6 +114,7 @@ const ledgerAddRefMock = vi.fn(async (params: TestLedgerRef) => {
   ledgerRefs.push({ ...params });
   return `ref-${ledgerRefs.length}`;
 });
+const githubConnectMock = vi.fn();
 const callCindyMediaMock = vi.fn();
 const callEvaluateMock = vi.fn();
 const readEvaluationImageFileMock = vi.fn();
@@ -209,6 +210,7 @@ const sessionSnapshotMock = vi.fn(async (): Promise<{
   remoteHostId: null,
 }));
 vi.mock('../../cindy-brain/index.js', () => ({
+  connectGhostGithubAccount: githubConnectMock,
   getGhostManager: () => ({ list: listInstalledMock,
     findInstalledInstance: findInstalledInstanceMock,
     readApprovedInstallReceipt: approvedReceiptMock, managedRootDirs: () => [] }),
@@ -398,6 +400,8 @@ beforeEach(() => {
   listInstalledMock.mockClear();
   listInstalledAsyncMock.mockClear();
   findInstalledInstanceMock.mockClear();
+  githubConnectMock.mockReset();
+  githubConnectMock.mockResolvedValue(null);
   listMock.mockReset();
   listMock.mockReturnValue([chipGhost('art'), chipGhost('other')]);
   activeSessionAvailableMock.mockReset();

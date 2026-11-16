@@ -1,0 +1,299 @@
+# 云镜像自动交付（客户端 fork）
+
+入口：[zhuoshaojian/cindy · feat/cloud-settings-native-client](https://github.com/zhuoshaojian/cindy/tree/feat/cloud-settings-native-client)，
+流水线：[cloud-image-delivery.yml](../../../.github/workflows/cloud-image-delivery.yml)。
+这里属于 `cindy`；`cindy-server` 的 CIS 负责消费合格镜像、备份、升级和恢复。
+本目录不会访问业务 PVC、修改实例或新认领默认。
+
+每个版本交付一份云运行时镜像。主容器和本仓提供的 init 应使用这份镜像的同一精确引用；
+Runner、DinD、BuildKit 是构建工具，不是云实例需要安装的额外产品。
+
+## 已实现与尚未接通
+
+| 阶段 | 本分支能力 | 启用/验收状态 |
+| --- | --- | --- |
+| runner 自动供给 | 专属 ACK 队列控制器，仓库级 JIT + 一次性 ECI，Lease/状态续接与自动回收 | push 完整交付、控制器重建后不重复执行、三阶段资源回收均已实测 |
+| 可信分支推送检查 | 精简锁定测试依赖、云覆盖层与发布工具测试、双版本和上游 commit 校验 | push 触发与专属 self-hosted ECI runner 自动供给已实测，见接入手册 |
+| 候选镜像 | 完整源码构建、两层镜像审计、原生 Linux 隔离启动/停机、发布已测产物、digest 绑定 | 完整构建、隔离 smoke、ACR 推送及产物上传已在 self-hosted runner 通过 |
+| ACS 缓存 | 按目标网络准备主镜像和全部实际 init 镜像，检查精确引用与 Ready | 已实测 Ready 与同一 AK 的创建/Ready/非强制删除；每版实际镜像清单以回执为准 |
+| 产品验收与晋级 | 记录明确的 pending 状态 | 完整 OAuth、DeviceLink、Pod 实际缓存命中、灰度、签名信任及稳定通道准入尚未自动化 |
+| CIS 自动更新 | [双版本选择与主动升级](../DUAL-VERSION-UPDATES.md) | 已登记维护实例支持双版本；网页和原生客户端均已接入主动升级。新领取按已准入列表选择同仓库、地区与架构的最高版本；稳定目录与自动晋级待接入 |
+
+当前已交付并通过本人实例及新版 Mac Dev 分项验收的版本为 `0.1.120-cloud.1`。
+已向其余 11 台运行中的企业实例开放升级资格，新领取选择该版本；未强制升级其他实例，
+停止实例保持停止。实际主容器与 init 缓存命中、备份升级、原生桌面输入、客户端配置保存及
+回读恢复均通过；本轮未重跑完整 OAuth / DeviceLink 传输验收。源码、交付与范围见
+[0.1.120 对齐记录](../UPSTREAM-0120.md)，不以 workflow 完成代替生产准入或实测。
+此前的上游对齐过程见 [0.1.119 对齐记录](../UPSTREAM-0119.md)。
+[自动跟随上游方案](../UPSTREAM-ALIGNMENT.md) 仍是方案，尚未启用定时合并或自动推广。
+此前已验收版本分别见 [0.1.115 对齐](../UPSTREAM-0115.md)、
+[身份与登录](../ACCEPTANCE-IDENTITY-20261027.md) 和 [Dock](../ACCEPTANCE-DOCK-20261023.md)。
+历史镜像与补丁来源以对应记录为准，不作为当前构建输入。
+
+`cloud.25 / cloud.26` 原始 push 到 ACS Ready 分别为 **17 分 45 秒 / 17 分 37 秒**，
+全部 job 收尾分别为 **17 分 54 秒 / 17 分 48 秒**：新 runner 连续两轮低于 20 分钟，
+包含供给、排队、完整构建、隔离 smoke、发布与缓存等待，无人工重试。
+smoke 后复用已测 BuildKit 结果，经 VPC 按 digest 上传再写双标签，发布由 142 秒降至
+14–19 秒；依赖与原生缓存连续命中，六个入口 runner 均真实命中 ACS 缓存。
+隔离桌面 smoke、最终包 SQLite/PTY、五份记录哈希、已测 config 与导出 manifest 的绑定、
+公开双标签及两轮 ACS 2/2 Ready 均通过。构建缓存与上传实际使用同仓 VPC 端点。
+这是两轮热交付实测，不是冷构建或未来每轮性能保证。此前超时记录与验收边界见
+[缓存与交付实测](BUILD-CACHE-BENCHMARK.md)。
+自动供给的恢复、权限与首次验收见 [自动供给记录](ACCEPTANCE-AUTOSUPPLY-20261022.md)。
+
+实例升级与镜像交付分开：`cloud.9` 的存量升级、新领取选择和客户端测试包见服务端
+[更新验收](https://github.com/zhuoshaojian/cindy-server/blob/feat/cloud-settings-readonly/docs/cloud-instance/runtime-update-20261022.md)。
+`cloud.1` 的跨上游升级保留在 [0.1.113 验收记录](../ACCEPTANCE-0113-20261022.md)。
+CI 本身不切换实例。cloud.28 本人实例的分项 DeviceLink 结果和未通过项目见上方 Dock
+验收记录，本轮未补做 OAuth 验收。
+历史实例升级与 init 修复见 [2026-10-21 验收](../ACCEPTANCE-CLOUD2-20261021.md)。
+历史镜像、缓存和运行编号保留在对应验收记录，不作为当前发行输入。
+
+## 哪些提交会执行什么
+
+| 提交内容 | 自动行为 |
+| --- | --- |
+| 仅操作说明、README、验收记录 | 不触发本交付 workflow，不创建 runner、不构建、不发布、不创建 ACS 缓存 |
+| 构建配方、运行时资源或交付工具变化，版本未变 | 只运行 `verify`，不交付镜像 |
+| 同时更新 `delivery/version.json` 的合法云修订或上游版本 | `verify → candidate → cache`；发布前必须通过完整构建和隔离 smoke |
+| 显式 `workflow_dispatch` | 手动请求完整候选交付，仍受分支、Environment、版本和不可变镜像门禁约束 |
+
+纯文档排除规则写在 workflow 的 `push.paths`，不是等申请 runner 后再跳过发布。
+`runtime-guidance/settings.md` 会进入应用正文，属于运行时资源，**不属于排除的说明文档**；
+交付它的修改仍须递增云修订。文档与代码/版本混合提交时按实际代码/版本变化执行，
+文档不会阻止应有的交付。显式手动触发不受 push 路径筛选约束。
+
+本 workflow 产出候选和 ACS Ready 回执，不修改 CIS 控制面或任何实例。
+CIS 自身的构建/部署与用户实例升级是另外两件事，见
+[两仓交付边界](https://github.com/zhuoshaojian/cindy-server/blob/feat/cloud-settings-readonly/docs/cloud-instance/ci-cd-integration.md)。
+两组 Environment 只放行本 fork 分支；ACR 与 ACS 使用独立 AK，不使用 OIDC。
+两组 job 使用 `environment.deployment: false`，保留环境凭据与分支保护，停止创建多余的 GitHub 部署记录。
+这不取消 reviewer 或 wait timer；若未来启用 GitHub App 自定义部署保护，须重新启用 deployment，
+否则 GitHub 会拒绝运行。见 [官方语义](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments#using-environments-without-deployments)。
+配置见 [接入手册](BOOTSTRAP.md)，runner 的供给和回收见 [控制器说明](runner/README.md)。
+
+## 双版本：上游完整版本 + 云修订
+
+[`version.json`](version.json) 是提交到 Git 的发行意图。例如：
+
+- 上游版本：`0.1.113`，完整保留 major/minor/patch；普通客户端源码版本不变。
+- 云应用和发行版本：`0.1.113-cloud.9`；镜像标签：`0.1.113-cloud.9-cn-amd64`。
+  云构建只在隔离导出目录写组合版本，应用内显示、ASAR、OCI 元数据与交付计划必须一致。
+- 下次云改动：`0.1.113-cloud.10`；切换到 `0.1.114` 后：`0.1.114-cloud.1`。
+
+同一上游修订必须加 1，新上游修订从 1 开始，禁止上游倒退和同名上游 tag 改 commit。
+镜像仓库统一使用 `cloud-runtime-cn`，每份产物保留两个不可变标签：
+`0.1.113-cloud.N-cn-amd64` 与 `sha-<完整配方 commit>-cn-amd64`，二者必须读回同一 manifest digest。
+先并行检查两个标签在公开与 VPC 端点均无冲突，全部通过才发布；中断后可补齐缺失标签，
+不覆盖已有不同产物。发布日志只记录操作类型与耗时，便于区分查询和上传开销。
+原生 smoke 完成后，CI 使用同一 BuildKit 结果经 VPC 按 digest 上传，不先创建版本标签；
+导出前后的 config digest 与本地已测 image ID 必须相同，远端再次核对后才复制同一 manifest
+到双标签。这样复用 BuildKit 的压缩层，避免 Docker load 后再由 daemon 重压缩上传。
+不增加产品仓库或产品镜像，完整 Dockerfile、隔离验收和 CIS 准入边界保留。
+失败时保存 `publish-build.log` / `publish-metadata.json`；不同产物不会得到版本标签。
+若已有一个标签，重试直接复用其精确 manifest 补齐另一个，不重新导出等价但压缩摘要不同的层。
+本地无 BuildKit 记录的旧调用仍使用 Docker push；CI 显式传 `--reuse-buildkit-export`。
+导出及标签复制语义见 [Docker image exporter](https://docs.docker.com/build/exporters/image-registry/)
+与 [imagetools create](https://docs.docker.com/reference/cli/docker/buildx/imagetools/create/)。
+`candidate` 只表示验收清单中的阶段，现有 job / Environment 名不决定镜像仓库；
+通过验收后消费原 digest，不重建第二份“正式镜像”。旧仓库中的已发布版本不搬运、不重标。
+
+排序比较四个整数 `(major, minor, patch, cloudRevision)`，不使用整个字符串的 SemVer
+或字典序。通道是独立字段，目前只输出 `candidate`。
+
+这是新双版本编号的起点，**不把历史 R7 自动映射成 cloud.7，也不重标现有线上镜像**。
+新上游还需更新冻结源码、补丁、依赖和配方并重新验收；检测到上游更新不等于可以发布。
+当前完整配方仅支持显式的 `cn / linux/amd64`，其它组合拒绝构建，不伪造矩阵覆盖。
+
+`version.json` 变化才会在可信分支推送时申请自动交付；相关代码提交只检查，纯说明文档不触发。
+要交付的新配方必须同时提交修订号。重试不分配新版本：同 tag/config ID 已存在时复用，
+不同产物拒绝覆盖。修复已发布候选必须新增修订。镜像仓库还须开启 tag 不可变策略，
+不能仅依赖脚本的先查后写防并发。不得另推纯 `X.Y.Z` 或 `latest` 以绕过旧 CIS 选版逻辑。
+
+镜像内同时保存 `io.cindy.upstream-version`、`io.cindy.cloud-revision`、
+`org.opencontainers.image.version`，构建记录与 `candidate.json` 再绑定源码和 Registry digest。
+本地 image config ID 用来证明推送的是已测产物；部署身份使用 Registry manifest digest。
+
+## 执行链与凭据边界
+
+1. `verify` 在 fork 仓库专属的临时 self-hosted Linux 运行，无发布凭据。
+   只安装 `checks/package-lock.json` 锁定的 6 个检查依赖，不重复安装 Desktop/Mobile 工作区，
+   完整应用依赖仍在 Docker 构建内按客户端 pnpm 锁安装；检查集合不变。
+   本交付 workflow 只接受指定 fork 功能分支的 push/dispatch，不监听外部 PR；主仓工作流不变。
+   fork 不必预先复制上游 tag：从 `makecindy/cindy` 拉取指定正式 tag，核对固定 commit，
+   不使用上游最新分支或强制覆盖本地冲突 tag。检查和构建保留完整提交历史，
+   用 `blob:none` 按需获取源码内容；verify 只检出回归实际使用的文件，缺文件直接使测试失败。
+   冻结源码归档和基座溯源不变。
+2. `candidate` 只接受上述 fork 和分支，在 `cloud-image-candidate-cn` 环境运行。
+   将两份完整 Dockerfile 组合为同一多阶段 Bake 图，编译、瘦身和审计仍由现有完整 Dockerfile 完成。
+   不继承历史 Cindy 成品镜像；中间构建层只写入私有构建缓存，不发布为云运行时版本。
+3. `smoke.py` 使用一次性 tmpfs、无网络、只读根，模拟 root-owned 老 HOME 目录。
+   初始化仅持有建测试目录所需权限，应用切到 UID 10001、清空 capabilities，执行镜像内
+   原有 seccomp 入口。验证 Xfce/Plank、Cindy 可见窗口、renderer sandbox、正常停机。
+   Docker 外层 seccomp/AppArmor 只在该一次性测试容器中交给运行时自带过滤器；不改变宿主
+   系统策略、不使用 `--no-sandbox`、不代表业务身份就绪或 DeviceLink/OAuth 验收。
+4. CLI 在构建前以普通用户安装到 job 临时目录，校验固定 SHA-256 和版本；不使用 sudo。
+   构建前登录独立的私有构建缓存仓库；启动检查通过后重新登录候选仓库再发布。
+   AK 只注入两个登录步骤，不传入 Dockerfile、build arg 或构建环境。可用 Registry 密码，或通过 ACR AK 换取
+   一小时的临时 Registry 凭据。推送已测 image ID 并读取 Registry 原始 manifest，
+   按 digest 再读回验证 config ID；不重建产物、不覆盖冲突标签。
+5. GitHub artifact 保存候选记录、五份构建审计（含实际打包模块的 SQLite/PTY 运行结果）和 smoke 结果；不上传 HOME、密钥、整份
+   构建上下文。跨 job 按不可变 artifact ID 传递，失败 job 重跑仍使用原产物。
+6. `cache` 在独立 Environment 读取缓存 AK，创建/复用缓存。`cache-status.json` 只记录摘要、
+   opaque cache ID 和结果，不公开 VSwitch / 安全组配置。`Ready` 仍保留
+   `podMatchVerified: false` 和 `releaseApproved: false`。
+
+缓存 API 每个请求只支持一个镜像，所以每个目标中按**精确引用**去重后逐个建缓存。
+`$runtime` 展开为本轮精确引用。正常目标模板中的主容器与 Cindy init 均使用 `$runtime`，
+见 [`acs-targets.example.json`](acs-targets.example.json)。现场发现旧 init 时须显式登记其
+digest 以免漏算现状，同时登记并修复升级遗漏；缓存步骤没有修改实例模板的职责。
+不要把现场旧引用复制成长期默认配置。由独立组件提供的 init 则使用其自身审核过的精确引用。
+缓存发现、权限、网络或任一镜像失败即停止；超时可能仍在云端创建，重跑按同一请求 token
+和缓存名称恢复，不自动删除重建。Ready 时再次核对镜像、Region、平台、网络及资源组。
+缓存命中 probe 和生产准入仍需后续补齐，单凭回执不能切实例。
+
+## fork 一次性配置
+
+先配置再开开关；这些值不放在源码或聊天中。管理员操作和最小权限示例见
+[首次接入手册](BOOTSTRAP.md)。
+
+| 位置 | 名称 | 用途 |
+| --- | --- | --- |
+| Repository variable | `CLOUD_IMAGE_DELIVERY_ENABLED=true` | 开启可信分支候选交付 |
+| Repository variable | `CLOUD_IMAGE_CACHE_ENABLED=true` | 开启候选发布后的缓存步骤 |
+| `cloud-image-candidate-cn` variable | `CLOUD_IMAGE_REPOSITORY` | Registry 主机和仓库路径，不含 tag/digest |
+| 同上 variable | `CLOUD_IMAGE_PUSH_REPOSITORY` | 可选的同仓 ACR VPC 别名，仅改变上传路径；公开双标签与 digest 读回仍使用上项 |
+| 同上 variable | `CLOUD_IMAGE_BUILD_CACHE_REPOSITORY` | 独立私有、允许更新标签的构建缓存仓库；不得等于候选仓库 |
+| 同上 variable | `CLOUD_IMAGE_IMMUTABLE_TAGS=true` | 管理员确认仓库已启用 tag 不可变策略 |
+| 同上 variable | `CLOUD_IMAGE_BUILDX_DRIVER_OPTS` | 可选，多行 BuildKit driver 选项；ECI 使用已验证的镜像 digest 和 `network=host`，见接入手册 |
+| 同上 variable | `CLOUD_IMAGE_REGISTRY_AUTH` | `password`（默认）或 `acr-ak`；显式选择，不自动回退 |
+| 同上 secrets | `CLOUD_IMAGE_REGISTRY_USER` / `CLOUD_IMAGE_REGISTRY_PASSWORD` | `password` 模式的 Registry 登录身份 |
+| 同上 variable | `CLOUD_IMAGE_ACR_INSTANCE_ID` | `acr-ak` 模式的目标 ACR 企业版实例 |
+| 同上 secrets | `CLOUD_IMAGE_ACR_ACCESS_KEY_ID` / `CLOUD_IMAGE_ACR_ACCESS_KEY_SECRET` | `acr-ak` 模式的 ACR 身份；仅在构建缓存和候选发布的登录步骤注入，见接入手册权限范围 |
+| `cloud-image-cache-cn` secrets | `CLOUD_IMAGE_CACHE_ACCESS_KEY_ID` / `CLOUD_IMAGE_CACHE_ACCESS_KEY_SECRET` | 缓存 AK，仅在缓存步骤注入，与 ACR 身份独立 |
+| 同上 secret | `CLOUD_IMAGE_CACHE_TARGETS` | 实际网络、允许的镜像仓库、完整主/init 模板清单 JSON |
+
+两个 Environment 的部署分支限制均只放行 `feat/cloud-settings-native-client`；按团队政策
+设置 reviewer。缓存 AK 按目标区域/账号授予 `acc:ListImageCaches`、
+`acc:CreateImageCache`、`acc:GetImageCache`、`acc:DeleteImageCache`，预先准备服务关联角色。
+发布流程负责创建和就绪检查；清理权限供独立的缓存维护使用，当前发布任务不会自动删除缓存。这里不需要
+Kubernetes RRSA，不借用用户的控制台 Cookie。私有 ACR 拉取须预先配置可用权限；
+当前适配器没有内联 Registry 密码字段，不要把凭据混进缓存配置。
+
+所有 job 都使用 **repository-scoped、仅注册到 `https://github.com/zhuoshaojian/cindy`**
+的临时 self-hosted runner。三个运行池标签分别为 `cindy-fork-cloud-check`、
+`cindy-fork-cloud-build`、`cindy-fork-cloud-cache`，均包含 `self-hosted, Linux, X64`，
+并绑定 `cindy-fork-run-<run_id>-<run_attempt>`；控制器按队列创建且完成后回收。
+检查与缓存池不需要 Docker 特权；只有构建池使用独立 DinD。不得注册组织/企业级 runner，
+不改主仓、企业运行池或现有 GitLab Runner。标签是调度标记，不是访问控制；运行池的
+注册层级与 Environment 分支规则也须核验。
+
+运行环境需要 Python ≥3.12、Git；构建池另需 Docker/Buildx，建议至少 4 vCPU、16 GiB RAM、
+80 GiB 可用磁盘。可使用独立 VM 或 ACK 调度的临时 ECI，不挂宿主 HOME、Docker socket、
+业务 PVC 或生产凭据；一个 job 后回收整套工作盘与凭据。此运行池不运行外部 PR，
+也不与其共用缓存写入空间。跨 run 的 BuildKit 缓存见下节。
+当前 fork 默认分支仍为 `main`。已实测通过 REST API 对 GitHub 已索引的
+`cloud-image-delivery.yml` 指定 `feat/cloud-settings-native-client` 触发 `workflow_dispatch`，
+无需改默认分支或向 main 推文件；网页按钮是否出现须另行核对。API 接受触发不等于交付成功；最新运行和限制见 [接入手册](BOOTSTRAP.md)。
+
+## 构建缓存
+
+临时 runner 不保留本地 Docker 磁盘。两份完整配方在导出目录组合成
+`Dockerfile.combined`：基座与应用直接引用同一个阶段，不再经 `target:base` 跨构建图接入。
+基座依赖仍从固定 OS、包锁、校验值完整构建，不继承历史 Cindy 成品镜像。
+
+检查与 ACS job 复用固定 digest 的 fork runner 自带的 Node 24 / npm，启动时校验并打印版本；
+不再各自下载 Node。云镜像中的 Node 仍由完整 Dockerfile 和锁文件决定。
+ACS job 只 checkout 交付工具目录，仍使用独立 Environment 和一次性 runner。
+
+Registry 缓存使用两个独立标签、单写入者：基座 `v2-base / mode=max`，应用准备层
+`v4-prepared / mode=min`。后者保留已准备的 Agent/Electron、pnpm 依赖、Linux 打包环境，
+使用冻结应用源码与准备脚本作为输入；云修订号、发布 commit 和说明文档不在这一步参与。
+准备层还在独立物理副本中预编锁定的 `better-sqlite3` / `node-pty`，以 Electron 自带的
+源码/版本/ABI 缓存供最终打包复用。外层输入同时绑定 OS、编译器、依赖锁和缓存脚本。
+打包时删除副本中的 ABI-only 标记，核对恢复后的二进制哈希和权限；断网步骤使用同版本
+原始 Electron 实际加载最终 ASAR 内的 SQLite/PTY。正式包的 fuse、普通客户端构建不变。
+每版仍编译应用、组装最终层，但不再上传编译目录、打包副本、`/layer` 等重复临时层。
+这些私有缓存不是实例镜像，不进入 CIS 或 ACS 镜像清单。
+
+构建池在已连通的 VPC 内时，缓存仓库通过现有 `CLOUD_IMAGE_BUILD_CACHE_REPOSITORY`
+配置 VPC 端点，避免缓存层经公网下载；先验证两端内容一致和实际 OSS 内网下载。
+镜像上传也通过 `CLOUD_IMAGE_PUSH_REPOSITORY` 使用同仓 VPC 别名；运行时公开仓库、
+双标签和发布读回保持不变。本机仍按所在网络选择端点，见 [接入手册](BOOTSTRAP.md)。
+
+BuildKit 拉取输入元数据时若明确遇到连接重置、TLS/IO 超时或 unexpected EOF，在同一
+runner 内自动重试一次相同构建命令，保留首次失败日志与 `*-attempts.json`。
+再次失败、鉴权/完整性错误及编译 RUN 错误都直接阻断；该重试不涉及发布或实例操作，
+耗时仍计入完整交付。它不等于整个 workflow 自动 rerun。
+
+基座只读取 Dockerfile、包锁、包校验器、字体安装器和时间戳归一化工具，记录其最后变更 commit。
+完整发行身份在应用打包与独立 records 阶段绑定。命中缓存也必须执行发布审计、
+原生隔离启动/停机检查及两个标签的 digest 校验。构建阶段不重复下载准备阶段已有的系统库。
+
+基座先在独立 `/rootfs` 中把较新的 mtime 限制为 `SOURCE_DATE_EPOCH`，再缓存为单层；
+应用组装的 `/layer` 做同样处理。旧 mtime、字节、权限与软硬链接保持不变，导出时不再
+重新扫描并改写全部层。归一化工具拒绝 `/` 和符号链接根，不处理运行中实例或用户 HOME。
+新的缓存代次首次需要填充；热构建耗时必须由随后全新 runner 实测，不能拿本机重复构建代替。
+基座导出只导入基座缓存，准备阶段只导入准备缓存，避免混入重叠祖先的两套历史。
+后续 runtime/records 仅使用已经恢复的本地快照，不再重新导入 Registry 缓存。
+准备缓存解析后，单独执行不导出缓存的 `prepared-materialized` 目标，在断网环境实际读取
+Electron、Codex 和依赖目录，再启动并行导出。`cacheonly` 的元数据命中不能代替文件层恢复；
+验收必须同时检查 `prepare-build.log`、`materialize-build.log` 与 `full-build.log`，确认安装
+命令在三步中均未重跑。此探针不进入最终镜像，也不进入远端缓存，避免下轮只命中探针元数据。
+
+首次构建、输入变更或缓存被清理时按完整 Dockerfile 重建。`--no-cache` 禁止导入旧缓存，
+仍可导出新缓存；导出失败不忽略。普通 cache mount 不跨 runner 持久化；这里缓存的是
+完整准备层。2026-10-22 已完成首次填充和新 runner 的后续云修订交付，
+应用准备 RUN 命中且没有重新执行；缓存恢复仍需下载和解压。
+当前耗时、输入对照与旧图历史测量集中在 [缓存与交付实测](BUILD-CACHE-BENCHMARK.md)。
+
+实现依据：[Docker Registry cache](https://docs.docker.com/build/cache/backends/registry/)。
+
+## 本地检查与后续验收
+
+已有根依赖后，可运行：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s deploy/linux-desktop/delivery -p 'test_*.py' -v
+node --test deploy/linux-desktop/delivery/*.test.mjs
+python3 deploy/linux-desktop/delivery/plan.py --output /tmp/cindy-delivery-plan.json
+# 使用 actionlint 1.7.7
+actionlint -config-file deploy/linux-desktop/delivery/actionlint.yaml \
+  .github/workflows/cloud-image-delivery.yml
+```
+
+完整的覆盖层、依赖基座和权限回归见 workflow 的 verify job。
+离线测试覆盖数值排序/递增/降级、版本对与 digest 冲突、错误镜像证明、重复推送、
+网络/鉴权读取失败、旧 init 遗漏、分页失败、缓存超时、Ready 错配及部分失败停止。
+这些测试使用合成数据，不能当作真实 ACR/ACS 发布成功。
+
+本轮 Linux 实测检查与发布结果见页首记录。默认配置统一主/init 镜像后，本地交付 Node
+测试 13 项及文档检查 10 项通过；现场旧 init 的显式清点、缓存覆盖和失败停止测试仍保留。
+此前扩展执行 `pnpm test:runner` 为 574 通过、6 失败、2 跳过；失败均来自既有
+`design-inventory.test.mjs` 中 `/cloud-settings` 与 `/cloud-settings-trial` 的路由台账缺项，
+对应 router、台账实现和测试与本轮修改前一致，未为此放宽门禁。
+
+历史 init 升级遗漏已修复，证据见对应实例验收记录。每次推广按变化范围检查功能、各模板实际缓存命中和本人灰度；涉及授权或远控的变化另需
+真实 OAuth、DeviceLink 验收，不能以普通 smoke 代替。后续再接可信签名、长期发行目录与自动晋级。当前 GitHub 产物保留 30 天，仅作候选交接，不能作为永久稳定发行目录。
+
+官方依据：[GitHub 手动触发条件](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)、
+[ACS CreateImageCache](https://www.alibabacloud.com/help/en/cs/api-acc-2024-04-02-createimagecache)、
+[ACS GetImageCache](https://www.alibabacloud.com/help/en/cs/api-acc-2024-04-02-getimagecache)。
+
+### 云内应用版本
+
+`version.json` 的上游版本与云修订号同时决定镜像标签、OCI 标签和 Electron 包版本。
+包内 Cindy 的“关于”与运行期 `app.getVersion()` 显示 `0.1.113-cloud.9` 形式；镜像标签另附区域与架构。
+发布检查读取实际 `app.asar` 的包版本并与发行计划比对，防止镜像已更新而云内仍只显示上游版本。
+普通本地客户端的版本策略不变。
+
+### 应用准备层与多网络缓存
+
+pnpm 下载 store 使用 BuildKit cache mount；跨 runner 的准备层仅保留安装后的依赖、
+已校验并解压的 Agent、Electron 与构建头文件。Forge 仍需读取的 Electron ZIP 继续保留，
+不重复携带已消费的 Agent 压缩包、apt 索引或 npm
+下载缓存。当前为 `v4-prepared`；先解析缓存，再实际挂载读取准备层，最后并行导出镜像和记录。
+只看到元数据 `CACHED` 不算完成恢复；三份日志必须共同证明没有重跑准备 RUN。首次填充与热交付分别计时，见缓存实测。
+ACS 的不同镜像/网络计划最多并行两个，保留原幂等 token。任一失败后停止领取新计划，
+等待已开始的计划收尾并保存回执；完整集合全部 Ready 才成功。

@@ -31,8 +31,18 @@ vi.mock('react-i18next', async (importOriginal) => ({
     'settings.appearance.wallpaper.motionDynamic': 'Dynamic wallpaper',
   }[key] ?? key) }),
 }));
+const auth = vi.hoisted(() => ({ mode: 'local', cloudAccess: 'hidden' }));
+vi.mock('@/features/cloud-settings/CloudInstanceAccess', () => ({
+  useCloudInstanceAccess: () => auth.cloudAccess,
+}));
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({ mode: 'local', dataOwnerId: null, user: null }),
+  useAuth: () => ({ mode: auth.mode, dataOwnerId: null, user: null }),
+}));
+vi.mock('@/components/ui/confirm-dialog-provider', () => ({
+  useConfirmDialog: () => ({ confirm: vi.fn().mockResolvedValue(false) }),
+}));
+vi.mock('@/features/device-link/useDeviceLinkDeviceList', () => ({
+  useDeviceLinkDeviceList: () => [],
 }));
 vi.mock('@/lib/useCindyVersions', () => ({
   useCindyVersions: () => ({ state: 'idle' }),
@@ -67,6 +77,7 @@ vi.mock('../VisionBridgeSection', () => ({ VisionBridgeSection: Stub }));
 vi.mock('../ProvidersSection', () => ({ ProvidersSection: Stub }));
 vi.mock('../McpServersSection', () => ({ McpServersSection: Stub }));
 vi.mock('../RemoteControlSection', () => ({ RemoteControlSection: Stub }));
+vi.mock('../LocalAgentSection', () => ({ LocalAgentSection: Stub }));
 vi.mock('@/features/device-link/SharedTaskDialog', () => ({ SharedTaskDialog: Stub }));
 vi.mock('../NotificationSection', () => ({ NotificationSection: Stub }));
 vi.mock('../WindowBehaviorSection', () => ({ WindowBehaviorSection: Stub }));
@@ -186,6 +197,8 @@ beforeEach(() => {
 afterEach(() => {
   localStorage.clear();
   vi.unstubAllGlobals();
+  auth.mode = 'local';
+  auth.cloudAccess = 'hidden';
 });
 
 describe('SettingsView Escape', () => {
@@ -405,6 +418,51 @@ describe('SettingsView Escape', () => {
     }
   });
 
+  // Admission regression: a signed-in account used to see the cloud page
+  // solely because mode=cloud. Unknown/denied permission must not mount it.
+  it.each(['checking', 'hidden'])('hides cloud discovery for a signed-in account with %s access', (access) => {
+    auth.mode = 'cloud';
+    auth.cloudAccess = access;
+    const instanceList = vi.fn();
+    vi.stubGlobal('electronAPI', { ...window.electronAPI, platform: 'darwin', cloudSettings: { instanceList } });
+    renderSettings('/settings?tab=cloud-instances&section=cloudInstances');
+    expect(screen.queryByTestId('cloud-instances-page')).toBeNull();
+    expect(screen.getByRole('tabpanel').id).toBe('settings-panel-general');
+    expect(screen.queryByText('cloudSettings.instance.title')).toBeNull();
+    expect(instanceList).not.toHaveBeenCalled();
+  });
+
+  // 2026-11-05: the category moved into Remote connections; old links must still land there.
+  // Admission and the instance list are covered where the group mounts (remoteControlDevicesDeepLink).
+  it('rewrites the retired cloud instances link to Remote connections', async () => {
+    auth.mode = 'cloud';
+    auth.cloudAccess = 'allowed';
+    const instanceList = vi.fn().mockResolvedValue([]);
+    Object.assign(window.electronAPI, { platform: 'darwin', cloudSettings: { instanceList } });
+    renderSettings('/settings?tab=cloud-instances&section=cloudInstances');
+    expect(location()).toBe('/settings?tab=remote-control&section=remoteControl.cloudInstances');
+    // Remote connections loads lazily, as every section but General.
+    expect((await screen.findByRole('tabpanel')).id).toBe('settings-panel-remote-control');
+    expect(screen.queryByTestId('cloud-instances-page')).toBeNull();
+    expect(instanceList).not.toHaveBeenCalled();
+    pressEscape();
+    expect(location()).toBe('/');
+  });
+
+  // 2026-11-04 product review: the instance's remote desktop must not offer keep-awake or quit.
+  it.each([false, true])('shows app behavior only outside a managed cloud instance (%s)', (hostOwned) => {
+    Object.assign(window.electronAPI, { platform: 'linux', hostSettings: { hostOwned } });
+    renderSettings('/settings');
+    expect(!!document.getElementById('settings-window-behavior')).toBe(!hostOwned);
+    expect(document.getElementById('settings-search-target-general-language')).toBeTruthy();
+  });
+  it('does not fetch cloud instances from a signed-out settings deep link', () => {
+    const instanceList = vi.fn();
+    vi.stubGlobal('electronAPI', { ...window.electronAPI, platform: 'darwin', cloudSettings: { instanceList } });
+    renderSettings('/settings?tab=cloud-instances');
+    expect(screen.queryByTestId('cloud-instances-page')).toBeNull();
+    expect(instanceList).not.toHaveBeenCalled();
+  });
   it('returns from the Pi extensions page to General before leaving Settings', async () => {
     renderSettings('/settings?openPanel=pi-extensions');
     expect(await screen.findByText('PI packages')).toBeTruthy();

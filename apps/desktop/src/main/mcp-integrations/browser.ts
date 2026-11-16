@@ -2,8 +2,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import nodePath from 'node:path';
+import { configureManagedBrowserText, ownedManagedBrowserEndpoint } from './browser-focused-text.js';
 import {
   createBrowserControlRuntime,
+  insertFocusedBrowserText,
   browserUploadDirectory,
   setBrowserControlRuntimeConfig,
   type BrowserProxyRoute,
@@ -371,6 +373,21 @@ const browserBackendHealthService = new BrowserBackendHealthService(
   () => listInstalledChromium({ platform: process.platform, home: os.homedir() }).length > 0,
 );
 
+configureManagedBrowserText(async (request) => {
+  if (process.platform !== 'linux' || backendController.kind !== 'external' || readBrowserBackendSettings().useRealProfile)
+    throw new Error('Text requires the owned managed browser');
+  const status = await backendController.call({ action: 'status' });
+  const cdpUrl = ownedManagedBrowserEndpoint(status, process.env.XDT_BROWSER_RUNTIME_DIR, MANAGED_PROFILE, request.pid);
+  await insertFocusedBrowserText({
+    ...request, cdpUrl,
+    validate: async () => {
+      if (process.platform !== 'linux' || backendController.kind !== 'external' || readBrowserBackendSettings().useRealProfile)
+        throw new Error('Managed browser changed');
+      await request.validate();
+    },
+  });
+});
+
 /**
  * Switch the active backend. Shared by Settings and browser MCP mode changes.
  * Persists the new kind to disk and disposes the outgoing backend (per
@@ -396,6 +413,11 @@ async function managedPortHeldByAnotherCindy(): Promise<boolean> {
     () => null,
   );
   return commandLine !== null && !commandLine.includes(`--user-data-dir=${runtimeDir}${nodePath.sep}`);
+}
+
+/** Internal settings transaction: keep CAS persistence inside the native switch queue. */
+export function commitHostBrowserBackendKind(kind: BackendKind, persist: () => Promise<void>): Promise<boolean> {
+  return backendController.setKind(kind, persist);
 }
 
 async function stopExternalRuntimeIfUsed(): Promise<void> {

@@ -73,3 +73,26 @@ describe('maker:apply-new-maker-worktree-pref IPC handler', () => {
     expect(deps.broadcast).not.toHaveBeenCalled();
   });
 });
+
+describe('maker:apply-new-maker-worktree-pref on a managed cloud instance', () => {
+  it('saves to the Host instead of forwarding to the renderer', async () => {
+    const harness = new IpcHarness();
+    const deps = createDeps({ savePreference: vi.fn(async () => {}) });
+    registerNewMakerWorktreePreferenceHandler(harness, deps);
+    await expect(harness.invoke(MAKER_INVOKE.APPLY_NEW_MAKER_WORKTREE_PREF, { worktreeEnabled: false })).resolves.toBeUndefined();
+    expect(deps.savePreference).toHaveBeenCalledWith(false);
+    expect(deps.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('does not report success before the save finishes and reports a failed save', async () => {
+    const harness = new IpcHarness();
+    let reject!: (error: Error) => void;
+    const pending = new Promise<void>((_resolve, fail) => { reject = fail; });
+    registerNewMakerWorktreePreferenceHandler(harness, createDeps({ savePreference: () => pending }));
+    let completed = false;
+    const result = harness.invoke(MAKER_INVOKE.APPLY_NEW_MAKER_WORKTREE_PREF, { worktreeEnabled: true }).finally(() => { completed = true; });
+    await Promise.resolve(); expect(completed).toBe(false);
+    reject(new Error('disk unavailable'));
+    await expect(result).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+  });
+});

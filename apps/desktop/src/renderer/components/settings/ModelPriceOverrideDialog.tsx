@@ -18,6 +18,7 @@ import type {
 import type { UnionModelRow } from './UnifiedModelList';
 import { providersSettings } from './ProvidersSection.settings-search';
 import { useSettingDefinition } from './useSettingDefinition';
+import { useModelSettingsSource } from './modelSettingsSource';
 
 const AGENT_LABEL: Record<AgentKind, string> = {
   'claude-code': 'Claude Code',
@@ -94,6 +95,12 @@ export function ModelPriceOverrideDialog({ provider, row, open, onOpenChange, pr
     setSaving(pending);
     onPendingChange?.(pending);
   };
+  // Another device's settings (cloud instance page) answer instead of this device.
+  const source = useModelSettingsSource();
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  // Resolved when a request runs, as the direct preload call was.
+  const maker = () => sourceRef.current?.maker ?? window.electronAPI.maker;
 
   const model = row.byAgent[agent];
   const target = useMemo(
@@ -137,7 +144,7 @@ export function ModelPriceOverrideDialog({ provider, row, open, onOpenChange, pr
     setLoading(true);
     setView(null);
     setForm(EMPTY_FORM);
-    void window.electronAPI.maker
+    void maker()
       .getModelPriceOverride(target)
       .then((next) => {
         if (cancelled) return;
@@ -190,7 +197,7 @@ export function ModelPriceOverrideDialog({ provider, row, open, onOpenChange, pr
     setPending(true);
     const epoch = mutationEpochRef.current;
     try {
-      const next = await window.electronAPI.maker.setModelPriceOverride(target, desired);
+      const next = await maker().setModelPriceOverride(target, desired);
       if (mutationEpochRef.current !== epoch) return false;
       setView(next);
       setForm(formFromView(next));
@@ -216,7 +223,7 @@ export function ModelPriceOverrideDialog({ provider, row, open, onOpenChange, pr
     setPending(true);
     const epoch = mutationEpochRef.current;
     try {
-      const next = await window.electronAPI.maker.resetModelPriceOverride(target);
+      const next = await maker().resetModelPriceOverride(target);
       if (mutationEpochRef.current !== epoch) return;
       setView(next);
       setForm(formFromView(next));
@@ -272,7 +279,8 @@ export function ModelPriceOverrideDialog({ provider, row, open, onOpenChange, pr
             if (!dirty) setAgent(next);
             else void save().then((saved) => { if (saved) setAgent(next); });
           }} options={row.avail.map(candidate => ({ value: candidate, label: AGENT_LABEL[candidate] }))} />}
-        {(view?.allowedCurrencies.length ?? 0) > 1 && <div className="mt-2 flex items-center justify-between gap-4 text-12 text-[var(--text-secondary)]">
+        {/* An older cloud instance reports no currency list. */}
+        {(view?.allowedCurrencies?.length ?? 0) > 1 && <div className="mt-2 flex items-center justify-between gap-4 text-12 text-[var(--text-secondary)]">
           {t('settings.providers.models.priceOverride.currency')}
           {/* Changes are ignored while a save is pending (the trigger keeps focus). */}
           <Select {...pricingSetting.controlProps} label={t('settings.providers.models.priceOverride.currency')}

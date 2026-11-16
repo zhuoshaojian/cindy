@@ -22,7 +22,9 @@ const isRegionScreenshotPin = urlParams.get('regionScreenshotPin') === '1';
 
 void i18nReady
   .then(() =>
-    isRecordingPreview
+    urlParams.get('cloudLoginWindow') === '1'
+      ? import('./cloud-login-entry')
+      : isRecordingPreview
       ? import('./recording-preview-entry')
       : isRemoteDesktopViewer
       ? import('./remote-desktop-viewer-entry')

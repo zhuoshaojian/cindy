@@ -14,6 +14,8 @@ import {
   portableOverrideSettings,
   type OverrideSettingsState,
 } from '../maker-host/override-settings-file.js';
+import { validateAdditionalSettingsOverrides } from '../../shared/settingsEditableCatalog.js';
+import { inspectSettingsFile, isSettingBoolean, isSettingStringList, isSettingsObject, validateOptionalSettingsFields } from '../maker-host/settings-inspection.js';
 
 export type { VisionBackendRef, VisionBridgeSettings };
 
@@ -69,6 +71,8 @@ const store = createOverrideSettingsFile<VisionBridgeSettings>({
   filePath: settingsFilePath,
   defaults: DEFAULTS,
   normalize,
+  // Cloud settings reads only; ordinary writes keep upstream semantics.
+  validateOverrides: raw => validateAdditionalSettingsOverrides('visionBridge', raw),
   log,
   label: 'vision bridge',
   // targetModels 需要「显式空数组也保留 override」：用户显式清空（取消默认勾选的
@@ -145,5 +149,20 @@ function resetVisionBridgeSettings(): VisionBridgeSettings {
 /** New-computer setup: values the user changed here (docs/product-rules/new-device-setup-migration.md). */
 const visionBridgePortableSettings = portableOverrideSettings(store);
 
-return { readVisionBridgeSettings, isTargetModelsCustomized, readVisionBridgeSettingsState, writeVisionBridgeSettings, resetVisionBridgeSettings, visionBridgePortableSettings };
+/** 只校验结构；保存的路由不需要通过当前模型目录的动态准入。 */
+function inspectVisionBridgeSettings() {
+  const backend = (value: unknown) => value === null || (isSettingsObject(value)
+    && typeof value.providerId === 'string' && typeof value.modelId === 'string'
+    && normalizeBackendRef(value) !== null);
+  return inspectSettingsFile({ filePath: settingsFilePath, defaults: DEFAULTS, normalize,
+    validate: (raw) => validateOptionalSettingsFields(raw, {
+      enabled: isSettingBoolean, targetModels: isSettingStringList, primary: backend, fallback: backend,
+    }),
+  });
+}
+
+/** Internal Host settings adapter; uses the native persistence and revision lock. */
+function getVisionBridgeSettingsStore() { return store; }
+
+return { readVisionBridgeSettings, isTargetModelsCustomized, readVisionBridgeSettingsState, writeVisionBridgeSettings, resetVisionBridgeSettings, visionBridgePortableSettings, inspectVisionBridgeSettings, getVisionBridgeSettingsStore };
 }

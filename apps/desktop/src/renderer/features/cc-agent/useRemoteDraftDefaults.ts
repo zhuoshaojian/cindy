@@ -151,6 +151,7 @@ export function useRemoteDraftSelection({
   deviceDraftDefaultsReady,
   deviceDraftDefaults,
   isAgentDeviceDraft,
+  deviceProvidersError,
 }: {
   remoteDefaults: ReturnType<typeof useRemoteDraftDefaults>;
   usesDeviceCatalog: boolean;
@@ -164,15 +165,18 @@ export function useRemoteDraftSelection({
   deviceDraftDefaultsReady: boolean;
   deviceDraftDefaults: RemoteDraftDefaults | null;
   isAgentDeviceDraft: boolean;
+  deviceProvidersError: string | null;
 }) {
   const {
     dlSeedKeyRef, dlSeedCapabilitiesRef, dlSeedDefaultsRef, dlRuntimeTouchedRef, dlExplicitChoiceRef, setDlSel,
   } = remoteDefaults;
+  const dlSeedProvidersRef = useRef<ProviderView[] | null>(null);
   useEffect(() => {
     if (!usesDeviceCatalog || !catalogDeviceId) {
       dlSeedKeyRef.current = null;
       dlSeedCapabilitiesRef.current = null;
       dlSeedDefaultsRef.current = null;
+      dlSeedProvidersRef.current = null;
       dlRuntimeTouchedRef.current = false;
       dlExplicitChoiceRef.current = false;
       setDlSel(null);
@@ -187,11 +191,12 @@ export function useRemoteDraftSelection({
       !capabilities ||
       capabilitiesLoading ||
       !deviceDraftDefaultsReady ||
-      !deviceProviderCatalogReady
+      !deviceProviderCatalogReady ||
+      (!!deviceProvidersError && !deviceProvidersUnsupported)
     ) return;
     const key = `${catalogDeviceId}:${capabilityAgentKind}`;
     const newTarget = dlSeedKeyRef.current !== key;
-    const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities;
+    const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities || (dlSeedProvidersRef.current !== agentCatalogProviders && (!!dlSeedProvidersRef.current?.length || agentCatalogProviders.length > 0));
     if (
       !shouldReseedDeviceLinkDraftDefaults({
         currentSeedKey: dlSeedKeyRef.current,
@@ -204,6 +209,7 @@ export function useRemoteDraftSelection({
     ) {
       if (capabilitiesChanged) {
         dlSeedCapabilitiesRef.current = capabilities;
+        dlSeedProvidersRef.current = agentCatalogProviders;
         // 显式意图只禁止“换成区域默认”，不能把已从新能力清单消失的 model / effort /
         // permission 留在草稿里。用当前控制端选择合成 active draft，只做合法性夹紧。
         setDlSel((current) =>
@@ -220,7 +226,7 @@ export function useRemoteDraftSelection({
                 },
                 current.model,
                 capabilityAgentKind,
-                agentCatalogProviders,
+                deviceProvidersUnsupported ? undefined : agentCatalogProviders,
               )
             : current,
         );
@@ -230,6 +236,7 @@ export function useRemoteDraftSelection({
     dlSeedKeyRef.current = key;
     dlSeedCapabilitiesRef.current = capabilities;
     dlSeedDefaultsRef.current = deviceDraftDefaults;
+    dlSeedProvidersRef.current = agentCatalogProviders;
     if (newTarget) {
       dlRuntimeTouchedRef.current = false;
       // 恢复出来的明确选择（记忆 / 被控端快照标着 modelChosenByUser）继续当显式：一律清零
@@ -244,7 +251,7 @@ export function useRemoteDraftSelection({
         deviceDraftDefaults,
         undefined,
         capabilityAgentKind,
-        agentCatalogProviders,
+        deviceProvidersUnsupported ? undefined : agentCatalogProviders,
       ),
     );
   }, [
@@ -259,6 +266,7 @@ export function useRemoteDraftSelection({
     deviceDraftDefaultsReady,
     deviceDraftDefaults,
     isAgentDeviceDraft,
+    deviceProvidersError,
   ]);
 }
 

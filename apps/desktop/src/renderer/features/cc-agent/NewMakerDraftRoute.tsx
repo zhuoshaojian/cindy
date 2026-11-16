@@ -1894,7 +1894,7 @@ export function NewMakerDraftRoute() {
   useRemoteDraftSelection({
     remoteDefaults, usesDeviceCatalog, catalogDeviceId, capabilityAgentKind, agentCatalogProviders,
     capabilities, capabilitiesLoading, deviceProvidersLoading, deviceProvidersUnsupported,
-    deviceDraftDefaultsReady, deviceDraftDefaults, isAgentDeviceDraft,
+    deviceDraftDefaultsReady, deviceDraftDefaults, isAgentDeviceDraft, deviceProvidersError,
   });
 
   // 记住这次对运行 Agent 的电脑的选择(仅本次运行)，切走再切回时恢复。
@@ -2324,6 +2324,7 @@ export function NewMakerDraftRoute() {
         providerId: string | null;
         modelId: string;
         effort?: Effort;
+        markModelChoice?: boolean;
       },
       /**
        * 这次选择落在被控电脑自己的目录里(从另一台电脑改回被控电脑):此刻闭包里 Agent 仍在
@@ -2370,7 +2371,8 @@ export function NewMakerDraftRoute() {
               : (dlSel?.providerId ?? deviceLinkInitial?.providerId ?? ''),
             modelId: model,
             active: true,
-            markModelChoice: false,
+            // 显式目标只由选中模型的动作提供；纯 effort / Fast 调整保留原来的选择标记。
+            markModelChoice: target !== undefined && target.markModelChoice !== false,
             ...(activeEffort !== undefined ? { effort: activeEffort } : {}),
             ...(patch.fast !== undefined ? { fast: patch.fast } : {}),
           },
@@ -3398,6 +3400,12 @@ export function NewMakerDraftRoute() {
           permissionMode: prev?.permissionMode,
           providerId: prev?.providerId ?? null,
         }));
+        pushActiveDraftPref({ effort: resolved.effort ?? undefined, fast: resolved.fastMode }, {
+          agent: capabilityAgentKind,
+          providerId: dlSel?.providerId ?? deviceLinkInitial?.providerId ?? null,
+          modelId: newModelId,
+          effort: resolved.effort ?? undefined,
+        });
         return;
       }
       markDefaultTupleCustomized();
@@ -3413,6 +3421,7 @@ export function NewMakerDraftRoute() {
       deviceDraftDefaults,
       patchActiveTuplePrefs,
       capabilityAgentKind,
+      pushActiveDraftPref, dlSel, deviceLinkInitial,
       agentCatalogProviders,
     ],
   );
@@ -3629,6 +3638,7 @@ export function NewMakerDraftRoute() {
             providerId: selection.providerId,
             modelId: selection.modelId,
             ...(selection.effort ? { effort: selection.effort } : {}),
+            markModelChoice: selection.resetToRecommended !== true,
           },
           { taskComputerSelection: true },
         );
@@ -3719,6 +3729,7 @@ export function NewMakerDraftRoute() {
             providerId: selection.providerId,
             modelId: selection.modelId,
             ...(selection.effort ? { effort: selection.effort } : {}),
+            markModelChoice: selection.resetToRecommended !== true,
           },
         );
         return;

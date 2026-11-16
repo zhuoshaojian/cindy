@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createInstance, type TFunction } from 'i18next';
-import { TAB_IDS, TAB_LABEL_KEY } from '@/lib/tabLabels';
+import { MERGED_SETTINGS_TABS, TAB_IDS, TAB_LABEL_KEY } from '@/lib/tabLabels';
 import zhCN from '../../../i18n/locales/zh-CN/common.json';
 import en from '../../../i18n/locales/en/common.json';
 import { SELECTABLE_WALLPAPER_IDS } from '../../../../shared/appearanceSettings';
 import { AGENT_ISLAND_SOUND_EVENTS, AGENT_ISLAND_SOUND_OPTIONS } from '../../../../shared/agentIsland';
-
 
 import {
   buildSettingsSearchDocuments,
@@ -382,6 +381,13 @@ describe('settings search catalog', () => {
     expect(matches.some(match => match.entry.id === 'mcp.duplicates')).toBe(true);
     expect(resolveSettingsSearchTarget('builtin-tools', 'mcp.duplicates')).toBe('settings-mcp-duplicates');
   });
+  // Search is another entry point: login alone does not grant cloud access.
+  it.each([undefined, false, true])('requires affirmative cloud admission for search (%s)', (canAccessCloudInstances) => {
+    const documents = buildSettingsSearchDocuments(t, TAB_IDS, {
+      region: 'cn', mode: 'cloud', membershipKind: 'org', platform: 'darwin', canAccessCloudInstances,
+    });
+    expect(documents.some(({ entry }) => entry.id === 'remoteControl.cloudInstances')).toBe(canAccessCloudInstances === true);
+  });
   it('normalizes mixed-width and repeated whitespace', () => {
     expect(normalizeSettingsSearchText('  Ａppearance\u00a0  ')).toBe('appearance');
   });
@@ -473,7 +479,8 @@ describe('settings search catalog', () => {
     expect(new Set(SETTINGS_SEARCH_MODULES.map(({ id }) => id)).size).toBe(
       SETTINGS_SEARCH_MODULES.length,
     );
-    for (const tab of TAB_IDS) {
+    // A merged tab has no menu item of its own; its entries point at the new location.
+    for (const tab of TAB_IDS.filter((id) => !MERGED_SETTINGS_TABS[id])) {
       expect(
         SETTINGS_SEARCH_ENTRIES.some(
           (entry) => entry.tab === tab && entry.titleKey === TAB_LABEL_KEY[tab],
@@ -552,5 +559,22 @@ describe('settings search catalog', () => {
       expect(visible).toContain('imBot.lark');
     }
     expect(ids()).not.toContain('imBot.cindy');
+  });
+
+  // A managed cloud instance's own settings must not offer keep-awake or a quit-on-close choice.
+  it('hides app behavior entries in a managed cloud instance', () => {
+    const ids = (managedCloudInstance?: boolean) =>
+      buildSettingsSearchDocuments(t, TAB_IDS, {
+        platform: 'linux',
+        region: 'cn',
+        mode: 'cloud',
+        membershipKind: 'personal',
+        managedCloudInstance,
+      }).map(({ entry }) => entry.id);
+    for (const id of ['settings.devices.keepAwake', 'settings.windowBehavior.closeBehavior.label']) {
+      expect(ids()).toContain(id);
+      expect(ids(false)).toContain(id);
+      expect(ids(true)).not.toContain(id);
+    }
   });
 });

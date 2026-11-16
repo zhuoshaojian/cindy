@@ -48,3 +48,11 @@ export function writeVisionBridgeSettings(...args: Parameters<Instance['writeVis
 export function resetVisionBridgeSettings(...args: Parameters<Instance['resetVisionBridgeSettings']>): ReturnType<Instance['resetVisionBridgeSettings']> {
   return desktopStore.resetVisionBridgeSettings(...args);
 }
+
+/** 只校验结构；保存的路由不需要通过当前模型目录的动态准入。 */
+export function inspectVisionBridgeSettings(): ReturnType<Instance['inspectVisionBridgeSettings']> {
+  return desktopStore.inspectVisionBridgeSettings();
+}
+
+/** Internal Host settings adapter; uses the native persistence and revision lock. */
+export function getVisionBridgeSettingsStore() { return desktopStore.getVisionBridgeSettingsStore(); }

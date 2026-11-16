@@ -18,6 +18,7 @@ function usePageDefaults(bindings: Parameters<typeof useRemoteDraftDefaults>[0] 
     capabilitiesLoading: false, deviceProvidersUnsupported: true, deviceProvidersLoading: false,
     deviceDraftDefaultsReady: remoteDefaults.remoteDraftState.status === 'ready',
     deviceDraftDefaults: remoteDefaults.remoteDraftState.value, isAgentDeviceDraft: false,
+    deviceProvidersError: null,
   });
   useRemoteDraftPush({ ...bindings, remoteDefaults, effectiveAgentDeviceId: undefined, agentCatalogProviders: [] });
   return { ...remoteDefaults, touch: () => { remoteDefaults.dlRuntimeTouchedRef.current = true; } };

@@ -1367,7 +1367,7 @@ describe('远程交互接线不变式', () => {
     expect(pushActiveEnd).toBeGreaterThan(pushActiveStart);
     const pushActiveBody = newMakerDraftRouteSrc.slice(pushActiveStart, pushActiveEnd);
     expect(pushActiveBody).toContain('active: true');
-    expect(pushActiveBody).toContain('markModelChoice: false');
+    expect(pushActiveBody).toContain('markModelChoice: target !== undefined && target.markModelChoice !== false');
   });
 
   it('外部 session effort patch 必须在 layout commit 时对齐 cache 并抢占旧 runtime', () => {

@@ -10,18 +10,22 @@
  * 抽成纯函数(不依赖 React / IPC)是为了可在 node 直接单测 seed/clamp/fallback 三条路径
  * (规则 9:用代码而非 prompt 固化确定性;规则 14:main 外的高风险派生逻辑也补测)。
  *
- * 注:providerId(来源)这里**原样透传**——它的合法性(是否被控端已连来源 / 是否 offer 该
- * 模型)由 ChatInput 的 effectiveSourceId 统一校准(不在连接栏内即回落 nativeDefault),
- * 与「会话内切来源」同一口径,不在本函数重复一套。
+ * 新端同时传执行端的供应商目录，复用统一默认选择器保持模型与来源成对；仅旧端缺少
+ * 供应商目录时保留 capabilities 的兼容路径。
  */
 
 import {
   effectiveSourceIdForModel,
   getModel,
-  type ProviderView,
 } from '@cindy/model-providers';
 import type { AgentCapabilities, AgentKind } from '@/hooks/useAgentCapabilities';
 import type { Effort, PermissionMode } from '@/lib/userPreferences.types';
+import {
+  connectedProvidersForAgent,
+  isModelSelectableForNewRoute,
+  type ProviderView,
+} from '@cindy/model-providers';
+import { pickConnectedModelForAgent } from '@/lib/draftModelCalibration';
 
 /** 被控端当前草稿的原始值(maker:get-new-maker-defaults 隧道返回;字段全可选)。 */
 export interface RemoteDraftDefaults {
@@ -130,14 +134,14 @@ export function resolveDeviceLinkWorktreeEnabled(
 /**
  * 把被控端草稿值(或 null=回落)按被控端 capabilities 校准成可 seed 的选择。
  *   - model:要解析的模型 = targetModel(用户在草稿里切模型)优先,否则 remoteDraft.model(初始 seed);
- *     该 id 在被控端清单内则用它,否则被控端 availableModels[0]。
+ *     新端按执行端的已连接来源校准，旧端才回落拍平清单。
  *   - 传 agentKind(New Maker 正式路径)时,effort/fast 优先读 `${agent}:*` 全局模型预设——首页
  *     没有运行中会话,当前显示模型也不受保护。兼容调用未传 agentKind 时保留旧顺序:
  *       · 当前模型 → 草稿激活值 remoteDraft.effort / remoteDraft.fastMode;
  *       · 其它模型 → per-model 记忆 effortByModel[id] / fastModeByModel[id]。
  *     最终 effort 仍按目标模型 efforts 校验(不支持则落 defaultEffort);fast 仍按 agent×模型 能力门控。
  *   - permissionMode:被控端支持该档才带,否则 undefined(非按模型记)。
- *   - providerId:原样透传(下游 clamp;非按模型记)。
+ *   - providerId:与最终可用模型一起选定，不借本机来源。
  * capabilities.availableModels 为空(理论不该发生)→ 退化返回安全兜底。
  */
 export function resolveDeviceLinkDraftDefaults(
@@ -145,10 +149,10 @@ export function resolveDeviceLinkDraftDefaults(
   remoteDraft: RemoteDraftDefaults | null,
   targetModel?: string,
   agentKind?: AgentKind,
-  providers?: ProviderView[],
+  providers?: readonly ProviderView[],
 ): DeviceLinkDraftSelection {
   const models = capabilities.availableModels;
-  const providerId = remoteDraft?.providerId ?? null;
+  let providerId = remoteDraft?.providerId ?? null;
   const permissionMode = pickPermissionMode(capabilities, remoteDraft?.permissionMode);
 
   // 要解析哪个模型:控制端本次显式 targetModel(切模型)永远优先。初始 seed 只有在**新端明确
@@ -174,7 +178,50 @@ export function resolveDeviceLinkDraftDefaults(
       ? (markedDefault ?? remoteDraft.model)
       : remoteDraft?.model);
 
-  if (models.length === 0) {
+  // capabilities 是跨来源的型号并集，含未连接的内置订阅；不能把存在于其中当成可调用。
+  // 新端使用执行端供应商目录与本地新任务相同的准入/默认选择器，旧端保留拍平清单兼容。
+  const connected =
+    providers && agentKind
+      ? connectedProvidersForAgent([...providers], agentKind)
+          .filter((p) => !p.modelDiscoveryFailure)
+          .map((p) => ({
+            ...p,
+            models: {
+              ...p.models,
+              [agentKind]: (p.models[agentKind] ?? []).filter((m) =>
+                isModelSelectableForNewRoute(m, { userProvider: p.source === 'user' }),
+              ),
+            },
+          }))
+      : undefined;
+  let connectedModel;
+  if (connected && agentKind) {
+    const wanted = targetModel ?? remoteDraft?.model;
+    const preferred = connected.find(
+      (p) => p.id === providerId && (p.models[agentKind]?.length ?? 0) > 0,
+    );
+    const pool = preferred ? [preferred] : connected;
+    const explicit = targetModel !== undefined || remoteDraft?.modelChosenByUser !== false;
+    const retained = explicit
+      ? pool.find((p) => p.models[agentKind]?.some((m) => m.id === wanted))
+      : undefined;
+    const picked =
+      retained && wanted
+        ? { providerId: retained.id, model: wanted }
+        : pickConnectedModelForAgent(pool, agentKind, explicit ? '' : (wanted ?? ''));
+    connectedModel = picked
+      ? connected
+          .find((p) => p.id === picked.providerId)
+          ?.models[agentKind]?.find((m) => m.id === picked.model)
+      : undefined;
+    providerId = picked?.providerId ?? null;
+    if (!connectedModel) {
+      // 已读到权威空集合时不再把冷启动占位伪装成可发消息的默认模型。
+      return { model: '', effort: 'high', fastMode: false, permissionMode, providerId: null };
+    }
+  }
+
+  if (models.length === 0 && !connectedModel) {
     return {
       model: wantedModelId ?? '',
       effort: (remoteDraft?.effort as Effort | null | undefined) ?? 'high',
@@ -184,11 +231,11 @@ export function resolveDeviceLinkDraftDefaults(
     };
   }
 
-  const chosen = models.find((m) => m.id === wantedModelId) ?? models[0];
+  const chosen = connectedModel ?? models.find((m) => m.id === wantedModelId) ?? models[0];
   const selectedProviderId =
     agentKind && providers?.length
       ? remoteDraft?.providerId ??
-        effectiveSourceIdForModel(providers, null, chosen.id, agentKind)
+        effectiveSourceIdForModel([...providers], null, chosen.id, agentKind)
       : null;
   const selectedProvider = selectedProviderId
     ? providers?.find((provider) => provider.id === selectedProviderId)
