@@ -23,7 +23,7 @@ for name, target in {
 }.items():
     install(recipe / 'runtime-support' / name, 'usr/local/bin/' + target, 0o755)
 for name in ['keyring-check.mjs', 'profile-entry-check.mjs', 'profile-helper.mjs',
-             'profile-preflight.mjs', 'cdp-pipe.mjs']:
+             'profile-preflight.mjs', 'cdp-pipe.mjs', 'child-exit.mjs']:
     install(recipe / 'runtime-support' / name, 'usr/local/lib/cindy/' + name, 0o755)
 for name in ['profile-maintenance-context.mjs', 'profile-runtime-wire.mjs']:
     install(artifact / name, 'usr/local/lib/cindy/' + name)
