@@ -1,5 +1,5 @@
 import { additionalSettingsRuntime, additionalNativeOperations } from './additionalRuntime.js';
-import { getHostBrowserBackendStore } from '../browser-backend-settings-store.js';
+import { getHostBrowserBackendStore } from '../browser-backend-settings-store.desktop.js';
 import { inspectHostChatEmbeddingSettings, commitHostChatEmbeddingSettings } from '../maker-host/chat-embedding-settings-store.js';
 import { additionalSettingsSchemas, RETIRED_ADDITIONAL_SETTINGS_DOMAINS, type AdditionalSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';

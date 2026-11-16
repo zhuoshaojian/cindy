@@ -416,7 +416,7 @@ async function managedPortHeldByAnotherCindy(): Promise<boolean> {
 }
 
 /** Internal settings transaction: keep CAS persistence inside the native switch queue. */
-export function commitHostBrowserBackendKind(kind: BackendKind, persist: () => Promise<void>): Promise<boolean> {
+function commitHostBrowserBackendKind(kind: BackendKind, persist: () => Promise<void>): Promise<boolean> {
   return backendController.setKind(kind, persist);
 }
 
@@ -766,5 +766,5 @@ function disposeBrowserRuntime(): Promise<void> {
   externalChromeBackend.beginQuiescence();
   return backendController.dispose().finally(() => externalBackend.dispose());
 }
-return { setBrowserSessionUploadRootResolver, setUserBrowserPageControlProvider, clearUserBrowserMarksForSession, setActiveBrowserBackendKind, setBrowserUseRealProfile, getBrowserMcpDeps, getBrowserAvailability, getActiveBrowserBackendKind, recoverActiveBrowserBackend, getBrowserBackendHealth, createBrowserSettingsHandlers, openBrowserForLogin, disposeBrowserRuntime };
+return { setBrowserSessionUploadRootResolver, setUserBrowserPageControlProvider, clearUserBrowserMarksForSession, setActiveBrowserBackendKind, setBrowserUseRealProfile, getBrowserMcpDeps, getBrowserAvailability, getActiveBrowserBackendKind, recoverActiveBrowserBackend, getBrowserBackendHealth, createBrowserSettingsHandlers, openBrowserForLogin, disposeBrowserRuntime, commitHostBrowserBackendKind };
 }

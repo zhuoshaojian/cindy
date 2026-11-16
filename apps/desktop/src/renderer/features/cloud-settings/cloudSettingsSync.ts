@@ -64,8 +64,8 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 /**
  * Lists whose order means nothing. The shared vision bridge view writes its whole list and appends
  * a model turned back on (cloud-test R5, 2026-11-09: off → on left the same models in a new order
- * as an explicit override, as it does on this computer). Ordered lists, such as the bot model
- * chain, keep the exact comparison.
+ * as an explicit override, as it does on this computer). Ordered lists, such as the auxiliary
+ * model order, keep the exact comparison.
  */
 const UNORDERED: Partial<Record<CloudSettingsDomain, readonly string[]>> = {
   visionBridge: ['targetModels'],

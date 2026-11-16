@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /** 只读公开目录，不是 mutation 协议；元数据只供 Host 投影与 CIS 排版，不随报告上传。 */
 export const SETTINGS_READ_TABS = [
-  'general', 'appearance', 'personalization', 'providers', 'billing', 'usage', 'voice-input', 'im-bot',
+  'general', 'appearance', 'personalization', 'providers', 'billing', 'usage', 'model-groups', 'voice-input', 'im-bot',
   'shortcuts', 'agent-island', 'import', 'remote-control', 'cloud-instances', 'shared-tasks', 'ghosts', 'builtin-tools',
   'computer-use', 'storage', 'help', 'about',
 ] as const;
@@ -331,8 +331,12 @@ export const SETTINGS_READ_EXTERNAL_CATALOG = [
   { id: 'general.defaultNewTaskWorkingDir', tab: 'general', control: 'DefaultNewTaskWorkingDirSection', kind: 'external', entry: 'newTask' },
   // Setup migration from another computer is an action on that computer's own window, not a v2 snapshot field.
   { id: 'general.setupMigration', tab: 'general', control: 'SetupMigrationSection', kind: 'action', entry: 'setupMigration' },
+  // Upstream v0.1.136's get-started guide is reopened on the window itself; it holds no setting.
+  { id: 'general.firstRunGuide', tab: 'general', control: 'FirstRunGuideSection', kind: 'action', entry: 'help' },
   { id: 'billing.account', tab: 'billing', control: 'BillingSettingsSection', kind: 'external', entry: 'billing' },
   { id: 'usage.history', tab: 'usage', control: 'UsageHistorySection', kind: 'resource', entry: 'usage' },
+  // Upstream v0.1.136's model groups are a provider resource, not a v2 snapshot field.
+  { id: 'modelGroups.groups', tab: 'model-groups', control: 'ModelGroupsSection', kind: 'resource', entry: 'providers' },
   { id: 'personalization.memoryContent', tab: 'personalization', control: 'MemorySection', kind: 'resource', entry: 'memory' },
   { id: 'providers.connections', tab: 'providers', control: 'ProvidersSection', kind: 'authorization', entry: 'providers' },
   { id: 'voice.dictionary', tab: 'voice-input', control: 'VoiceInputSection', kind: 'resource', entry: 'voice' },

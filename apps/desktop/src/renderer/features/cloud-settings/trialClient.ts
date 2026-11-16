@@ -64,7 +64,6 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
       ghostPanelRestoreMode: 'bubble',
     },
     privacy: { analyticsEnabled: true },
-    botModelChain: { modelChain: [] },
     subagentModel: { claudeCode: null, codexSmartSubagentRouting: false },
     auxiliaryModel: { models: [] },
     visionBridge: { enabled: false, primary: null, fallback: null, targetModels: [] },

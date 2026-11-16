@@ -488,7 +488,7 @@ describe('shared native cloud settings', () => {
   it('finds the personal instructions on a real instance, where the prompt has no CIS domain', () => {
     for (const id of ['personalization.userPrompt', 'personalization.instructions']) {
       const entry = SETTINGS_SEARCH_ENTRIES.find((e) => e.id === id)!;
-      expect(cloudSearchEntryAllowed(entry, ['memory', 'botModelChain'], false), id).toBe(true);
+      expect(cloudSearchEntryAllowed(entry, ['memory', 'subagentModel'], false), id).toBe(true);
       // The trial reports the prompt as a CIS group, and shows it only when it does.
       expect(cloudSearchEntryAllowed(entry, ['memory'], true), id).toBe(false);
       expect(cloudSearchEntryAllowed(entry, ['personalization'], true), id).toBe(true);
@@ -633,13 +633,15 @@ describe('the shown cloud settings', () => {
     await waitFor(() => expect(screen.queryByRole('tab', { name: 'settings.tabs.providers' })).toBeNull());
     await waitFor(() => expect(selected('settings.tabs.general')).toBe('true'));
   });
-  it('shows each category whole and reads only the open one: the bot model chain is in General again', async () => {
+  // Upstream v0.1.136 removed the global teammate model chain editor, so General no longer shows it.
+  it('shows each category whole and reads only the open one, without the removed teammate model chain', async () => {
     const client = createTrialCloudSettingsClient();
     const domains = readDomains(client);
     const save = vi.spyOn(client, 'save');
     renderShown(client);
-    for (const id of ['settings-bots', 'settings-collaboration', 'settings-agent-resource'])
+    for (const id of ['settings-collaboration', 'settings-agent-resource'])
       await waitFor(() => expect(document.querySelector(`#settings-panel-general #${id}`), id).toBeTruthy());
+    expect(document.querySelector('#settings-bots')).toBeNull();
     expect(new Set(domains())).toEqual(new Set(CLOUD_SETTINGS_GROUPS.general));
     fireEvent.click(screen.getByRole('tab', { name: 'settings.tabs.personalization' }));
     await screen.findByText('settings.memory.title');
@@ -733,7 +735,7 @@ describe('the shown cloud settings', () => {
     expect(toCard('general', 'maintenance')).toBe(true);
     expect(toCard('general')).toBe(false);
   });
-  it('searches only what is shown and finds the bot model chain under General', async () => {
+  it('searches only what is shown and opens a General result in General', async () => {
     setup(undefined, CLOUD_SETTINGS_VISIBILITY);
     // The section target scrolls to and marks the setting once its category is open.
     Object.assign(window, { matchMedia: () => ({ matches: true }) });
@@ -770,15 +772,10 @@ describe('the shown cloud settings', () => {
       'settings.computerUse.browser.title',
     ])
       expect(options(shown).length, shown).toBeGreaterThan(0);
-    const results = options('settings.sections.bots');
-    expect(results).toHaveLength(1);
+    expect(options('settings.sections.bots')).toHaveLength(0);
+    const results = options('settings.sections.collaboration');
     fireEvent.click(results[0]);
     await waitFor(() => expect(selected('settings.tabs.general')).toBe('true'));
-    await waitFor(() =>
-      expect(
-        document.querySelector('#settings-bots.settings-search-target-highlight'),
-      ).toBeTruthy(),
-    );
   });
 });
 
