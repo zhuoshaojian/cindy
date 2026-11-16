@@ -5,6 +5,10 @@
 它导入的 `profile-runtime-wire.mjs` 由 `apps/desktop/src/main/instance-runtime/profile-runtime-wire.ts`
 在同一次镜像构建中打包。两者须一起更新：只更新 ASAR 不会替换镜像里的 supervisor。
 
+supervisor 只接受 `candidate` 挂载，以普通方式（`--cloud-instance`）启动 `/opt/cindy/Cindy`；
+其它挂载直接失败退出。预检只支持 `candidate` 与 `maintenance` 角色。CIS 的 `recovery` 角色
+使用它单独固定的回退镜像，由该镜像自带的程序执行，不经过本镜像。
+
 Cindy 退出时 supervisor 随之退出；Cindy 消失而 supervisor 仍在时由 `application-watch`
 停止容器。见 [桌面运行时说明](runtime-desktop-xfce/README.md#runtime-composition)。
 

@@ -12,16 +12,16 @@ export function processObservation(pid:number) {
  const i=l.indexOf(':');return[l.slice(0,i),l.slice(i+1).trim()];}));
  return {pid,startTicks,seccomp:Number(values.Seccomp),filters:Number(values.Seccomp_filters),noNewPrivs:Number(values.NoNewPrivs),capEff:values.CapEff};
 }
-export function profileMount(mountinfo?:string):{profile:string;role:'candidate'|'recovery'}|null {
+export function profileMount(mountinfo?:string):{profile:string;role:'candidate'}|null {
  if(mountinfo===undefined&&process.platform!=='linux')return null;
  mountinfo??=fs.readFileSync('/proc/self/mountinfo','utf8');
  const lines=mountinfo.split('\n').map(l=>l.split(' ')).filter(p=>p[4]==='/var/lib/cindy/user-data');
  if(lines.length===0)return null;
  if(lines.length!==1)throw new Error('PROFILE_MOUNT_REJECTED');
  const p=lines[0];if(!p[3].includes('/profiles/'))return null;
- const match=/\/profiles\/([A-Za-z0-9][A-Za-z0-9_.-]{0,127})\/(candidate|recovery)\/user-data$/.exec(p[3]);
+ const match=/\/profiles\/([A-Za-z0-9][A-Za-z0-9_.-]{0,127})\/candidate\/user-data$/.exec(p[3]);
  if(!match||!p[5].split(',').includes('rw'))throw new Error('PROFILE_MOUNT_REJECTED');
- return {profile:match[1],role:match[2] as 'candidate'|'recovery'};
+ return {profile:match[1],role:'candidate'};
 }
 export function removeRuntimeEvidence(file=PROFILE_STATUS):void {
  try {fs.unlinkSync(file);const fd=fs.openSync(path.dirname(file),'r');try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}

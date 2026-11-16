@@ -32,10 +32,9 @@ describe('profile binding and sandbox evidence',()=>{
  const line=(root:string,opts='rw')=>`1 0 8:1 ${root} /var/lib/cindy/user-data ${opts} - ext4 /dev/example rw`;
  it('derives the role from the actual subpath, never a caller flag',()=>{
  expect(profileMount(line('/data/profiles/revision-1/candidate/user-data'))).toEqual({profile:'revision-1',role:'candidate'});
- expect(profileMount(line('/profiles/revision-1/recovery/user-data'))).toEqual({profile:'revision-1',role:'recovery'});
- expect(profileMount('')).toBeNull();expect(profileMount(line('/data/user-data'))).toBeNull();
+  expect(profileMount('')).toBeNull();expect(profileMount(line('/data/user-data'))).toBeNull();
  });
- it.each(['/profiles/revision-1/snapshot/user-data','/profiles/revision-1/candidate/user-data/child'])('rejects non-profile subpaths %s',p=>expect(()=>profileMount(line(p))).toThrow());
+ it.each(['/profiles/revision-1/recovery/user-data','/profiles/revision-1/snapshot/user-data','/profiles/revision-1/candidate/user-data/child'])('rejects non-profile subpaths %s',p=>expect(()=>profileMount(line(p))).toThrow());
  it('rejects readonly or ambiguous roots',()=>{
  const p='/profiles/revision-1/candidate/user-data';expect(()=>profileMount(line(p,'ro'))).toThrow();expect(()=>profileMount(line(p)+'\n'+line(p))).toThrow();
  });

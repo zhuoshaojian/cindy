@@ -3,7 +3,7 @@ import { preflightBindingSchema,evidenceDigest } from './profile-runtime-contrac
 export const PREFLIGHT_ROOT='/preflight/run';
 export function readPreflightContext() {
  try{
- if(process.getuid?.()!==10001||!['candidate','maintenance','recovery'].includes(process.env.CINDY_PROFILE_PREFLIGHT_ROLE??'')||(process.env.CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE&&!(process.env.CINDY_PROFILE_PREFLIGHT_ROLE==='recovery'&&process.env.CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE==='/preflight/run/inert-bootstrap'))||fs.existsSync('/run/secrets/credential-store-key')||fs.existsSync('/var/run/secrets/kubernetes.io/serviceaccount/token'))throw 0;
+ if(process.getuid?.()!==10001||!['candidate','maintenance'].includes(process.env.CINDY_PROFILE_PREFLIGHT_ROLE??'')||process.env.CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE||fs.existsSync('/run/secrets/credential-store-key')||fs.existsSync('/var/run/secrets/kubernetes.io/serviceaccount/token'))throw 0;
  const mounts=fs.readFileSync('/proc/self/mountinfo','utf8').split('\n').map(l=>l.split(' '));
  for(const target of ['/run/cindy-profile-check/profile-preflight.json','/run/cindy-profile-check/identity']){
  const match=mounts.filter(p=>p[4]===target);if(match.length!==1||!match[0][5].split(',').includes('ro'))throw 0;
@@ -16,6 +16,6 @@ export function readPreflightContext() {
  const s=fs.statSync(input);if(!s.isFile()||s.size>4096||s.uid!==0||(s.mode&0o022)!==0)throw 0;
  const binding=preflightBindingSchema.parse(JSON.parse(fs.readFileSync(input,'utf8')));
  const podUid=fs.readFileSync('/run/cindy-profile-check/identity/pod-uid','utf8');if(!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(podUid))throw 0;
- return {binding,podUid,bindingSha256:evidenceDigest(binding),role:process.env.CINDY_PROFILE_PREFLIGHT_ROLE as 'candidate'|'maintenance'|'recovery'};
+ return {binding,podUid,bindingSha256:evidenceDigest(binding),role:process.env.CINDY_PROFILE_PREFLIGHT_ROLE as 'candidate'|'maintenance'};
  }catch{throw new Error('PROFILE_PREFLIGHT_BINDING_REJECTED');}
 }

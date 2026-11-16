@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { cdpPipe } from './cdp-pipe.mjs';
 import { exitWithChild } from './child-exit.mjs';
@@ -17,22 +16,9 @@ const fail=(error,stage='lifecycle')=>{
 try{
  const mounted=profileMount();
  if(!mounted)throw new Error('PROFILE_MOUNT_REQUIRED');
- const candidate=mounted.role==='candidate';
+ if(mounted.role!=='candidate')throw new Error('PROFILE_MOUNT_REJECTED');
  if(process.env.XDT_DEV_SAFE_STORAGE_BASIC==='1'||process.env.ELECTRON_DISABLE_SANDBOX)throw new Error('PROFILE_STORAGE_POLICY_REJECTED');
- if(!candidate){
-   if(process.env.CINDY_POD_CREDENTIAL_SOURCE!=='canonical'||process.env.CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE||process.env.CINDY_POD_RESOURCE_REFRESH_TOKEN)throw new Error('PROFILE_RECOVERY_SOURCE_REJECTED');
-   for(const key of ['cindy_auth_session_v1','cindy_pod_resource_refresh_token','cindy_pod_membership_id','cindy_auth_refresh_token']){
-     const file='/var/lib/cindy/user-data/safe-storage/'+key+'.enc',st=fs.lstatSync(file);
-     if(!st.isFile()||st.isSymbolicLink()||st.uid!==10001||st.nlink!==1||(st.mode&0o077)!==0)throw new Error('PROFILE_RECOVERY_SOURCE_REJECTED');
-   }
- }
- child=spawn(candidate?'/opt/cindy/Cindy':'/opt/cindy-rollback/Cindy',
- candidate?['--cloud-instance','--password-store=gnome-libsecret','--disable-dev-shm-usage','--remote-debugging-pipe']:
- ['--headless','--cloud-ui','--password-store=gnome-libsecret','--disable-dev-shm-usage','--remote-debugging-pipe'],
- {env:candidate?process.env:{...process.env,
- CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE:'/run/cindy-profile/bootstrap-disabled',
- XDT_USER_DATA_DIR:'/var/lib/cindy/user-data',CINDY_CLOUD_STATUS_FILE:'/var/lib/cindy/status/status.json',
- CINDY_POD_WORKSPACES_DIR:'/var/lib/cindy/workspaces',XDT_ENDPOINT_MANIFEST_FILE:'/run/config/endpoint.json'},
+ child=spawn('/opt/cindy/Cindy',['--cloud-instance','--password-store=gnome-libsecret','--disable-dev-shm-usage','--remote-debugging-pipe'],{
  stdio:['ignore','inherit','inherit','pipe','pipe','pipe']});
  const bornAt=Date.now(),invoke=cdpPipe(child);fail();
  const watchdog=setInterval(()=>{if(Date.now()-lastInput>15000&&lastFailure===null)fail(undefined,'watchdog');},1000);
@@ -41,7 +27,7 @@ try{
  try{
  const value=telemetrySchema.parse(JSON.parse(raw));stage='binding';
  if(value.process.pid!==child.pid||value.profile!==mounted.profile||value.role!==mounted.role
- ||value.canonical.source!==(candidate?'canonical':'legacy-cindy-four-keys')||value.canonical.durableAtMs<bornAt
+ ||value.canonical.source!=='canonical'||value.canonical.durableAtMs<bornAt
  ||value.heartbeatAtMs>Date.now()+1000||Date.now()-value.heartbeatAtMs>10000)throw 0;
  const proc=processObservation(child.pid);if(proc.startTicks!==value.process.startTicks)throw 0;
  stage='sandbox';const sandbox=await observeSandbox(invoke,child.pid);
