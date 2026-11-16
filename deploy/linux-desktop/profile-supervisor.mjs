@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { cdpPipe } from './cdp-pipe.mjs';
+import { exitWithChild } from './child-exit.mjs';
 import { profileMount, observeSandbox, publishRuntimeEvidence, removeRuntimeEvidence, processObservation,
  telemetrySchema, profileObservationDiagnostic } from './profile-runtime-wire.mjs';
 if(process.argv.length!==2||process.getuid()!==10001)process.exit(1);
@@ -55,6 +56,7 @@ try{
  });
  child.stdio[5].on('error',fail);child.stdio[5].on('end',fail);
  for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{closing=true;fail();child.kill(signal);});
- child.on('error',()=>{closing=true;clearInterval(watchdog);fail();process.exitCode=1;});
- child.on('exit',(code)=>{closing=true;clearInterval(watchdog);fail();process.exitCode=code===0?0:1;});
+ // Exit explicitly: background processes started from Cindy may still hold the inherited pipes.
+ child.on('error',()=>{closing=true;clearInterval(watchdog);fail();exitWithChild(child,1);});
+ child.on('exit',(code)=>{closing=true;clearInterval(watchdog);fail();exitWithChild(child,code===0?0:1);});
 }catch{fail();process.exitCode=1;}
