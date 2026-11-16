@@ -258,8 +258,8 @@ test("remote CDN startup removes inherited files and remains CDN through the chi
   }
 });
 
-// A temporary edit to config/endpoint.json was restored after launch, so the next
-// restart lost CIS and hid both cloud settings entries for an admitted account.
+// A temporary edit to config/endpoint.json restored after launch would make the next
+// restart lose CIS and hide both cloud settings entries for an admitted account.
 test("explicit private endpoint files survive the child wrapper without trusting inherited overrides", () => {
   const manifest = "/private/cloud test/endpoint.json";
   for (const argv of [["--endpoints-file", manifest], [`--endpoints-file=${manifest}`]]) {

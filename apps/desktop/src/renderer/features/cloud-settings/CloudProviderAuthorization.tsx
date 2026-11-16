@@ -66,8 +66,8 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
           {t(`cloudSettings.${failure}`)}
         </p>
       )}
-      {/* The client's one notice for a model list it cannot update (D11 C3); while reading,
-          nothing (C2). */}
+      {/* The client's one notice for a model list it cannot update; while reading,
+          nothing. */}
       {readFailure && (
         <LocalModelCatalogNotice
           failure={{ reason: 'catalog-unavailable' }}
@@ -230,7 +230,7 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
           </div>
         </div>
       )}
-      {/* Nothing to sign in to, and no 「添加供应商」 on this list (D11 C4, as RemoteBotSettings). */}
+      {/* Nothing to sign in to, and no 「添加供应商」 on this list (as RemoteBotSettings). */}
       {!loading && !failure && !items.length && (
         <p className="py-3 text-13 text-[var(--text-secondary)]">{t('bots.remoteSettings.unsupported')}</p>
       )}

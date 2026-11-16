@@ -307,8 +307,8 @@ function CloudProviderCatalogPage({
     () => ({
       received: shares,
       command: (async (command: { action: string }) => {
-        // The share's quota and usage as the instance (the member) reads them. Instances
-        // before cloud.4 do not run it; this computer's own reading stays the fallback.
+        // The share's quota and usage as the instance (the member) reads them. Instances that
+        // do not list `insights` do not run it; this computer's own reading stays the fallback.
         if (command.action === 'insights' && !catalog.shareActions.includes('insights'))
           return window.electronAPI.providerShare.command(
             command as Parameters<typeof window.electronAPI.providerShare.command>[0],
@@ -1086,7 +1086,7 @@ function CloudProviderCatalogPage({
             </p>
           )}
           {/* The provider list or its sign-ins could not be read: the client's one notice for a
-              model list it cannot update (D11 C3). While reading, nothing (C2). */}
+              model list it cannot update. While reading, nothing. */}
           {(catalog.status === 'unavailable' || auth.readFailure) && (
             <LocalModelCatalogNotice
               failure={{ reason: 'catalog-unavailable' }}

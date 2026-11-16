@@ -49,7 +49,7 @@ describe('Host calls from the browser build of the cloud pages', () => {
     expect(f.contexts.map(([, channel]) => channel)).toEqual(['maker:model-catalog:read', 'maker:provider:list']);
   });
 
-  it('reaches cloud.4 quota and favorites channels as ordinary DeviceLink calls', async () => {
+  it('reaches the quota and favorites channels as ordinary DeviceLink calls', async () => {
     const f = deps();
     for (const [channel, args] of [['maker:usage:account', ['claude-code', 'cindy-quota-state-v1']],
       ['maker:usage:codex-rate-limits', ['openai']], ['maker:model-favorites:get', []],

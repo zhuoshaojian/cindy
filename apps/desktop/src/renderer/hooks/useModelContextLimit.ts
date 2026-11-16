@@ -24,7 +24,7 @@ export function useModelContextLimit(target: ModelContextLimitTarget | null) {
   const remote = source !== null;
   const sourceRef = useRef(source);
   sourceRef.current = source;
-  // Resolved when a request runs, as the direct preload call was.
+  // Resolved when a request runs, like a direct preload call.
   const maker = () => sourceRef.current?.maker ?? window.electronAPI.maker;
   const generation = useRef(0);
   const pendingWrite = useRef<{

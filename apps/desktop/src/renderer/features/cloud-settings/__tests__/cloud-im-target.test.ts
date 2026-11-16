@@ -124,8 +124,8 @@ describe('cloud IM target', () => {
     expect(openExternal).toHaveBeenCalledWith('https://t.me/cindy');
   });
 
-  // Unit/jsdom: the remote adapter swallowed browser rejection and disabled native Feishu
-  // actions. Existing coverage mocked successful opening and only exercised Telegram/X.
+  // Unit/jsdom: the remote adapter must not swallow a browser rejection or disable native
+  // Feishu actions.
   it('reports a rejected browser opening instead of a successful action', async () => {
     replies.push({ call: CLOUD_HOOK_PROVIDER_ACTION_URL, result: { url: 'https://t.me/cindy' } });
     openExternal.mockResolvedValueOnce({ success: false });

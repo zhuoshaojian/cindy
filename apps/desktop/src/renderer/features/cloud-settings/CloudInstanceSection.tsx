@@ -107,7 +107,7 @@ const defaultCalendarOf = (base: CloudMaintenanceView, timezone: string) =>
   base.effective.source === 'inherit' ? base.effective.calendar : dailyCalendar(3, timezone);
 /**
  * The daily option the default schedule equals in this computer's time zone, if any: it is not
- * offered twice (owner, 2026-11-09).
+ * offered twice.
  */
 function defaultHour(base: CloudMaintenanceView, timezone: string): number | null {
   const calendar = defaultCalendarOf(base, timezone);
@@ -134,10 +134,10 @@ export type CloudInstanceFeed = {
   onPolicySaved(policy: CloudMaintenanceView): void;
   /** DeviceLink does not have the instance: during an update it is restarting. */
   linkOffline?: boolean;
-  /** An update was just requested: the card reads its list more often for a while (T57). */
+  /** An update was just requested: the card reads its list more often for a while. */
   hurry?(): void;
 };
-/** After 立即更新, the instance is read every 2 s for 30 s, so 已安排 turns into 正在更新 soon (T57). */
+/** After 立即更新, the instance is read every 2 s for 30 s, so 已安排 turns into 正在更新 soon. */
 export const HURRY_POLL_MS = 2_000;
 export const HURRY_FOR_MS = 30_000;
 const fromPolicy = (base: CloudMaintenanceView): Draft => ({
@@ -203,7 +203,7 @@ export function CloudInstanceSection({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
-  /** A refused or failed request is a toast, as the local About page does (owner, 2026-11-11: follow the client). */
+  /** A refused or failed request is a toast, as the local About page does. */
   const failToast = (key: string) =>
     toast.error(t(`cloudSettings.instance.${key}`));
   /** What became of the last automatic save: said in a toast, not under the dropdown. */
@@ -265,7 +265,7 @@ export function CloudInstanceSection({
     },
     [client],
   );
-  // S3: an upgrade, sleep or wake with an unknown result is read back from the instance,
+  // An upgrade, sleep or wake with an unknown result is read back from the instance,
   // never requested again. What a read found replaces the unknown state.
   const readInstance = async () => {
     const next = await client.instance!();
@@ -348,7 +348,7 @@ export function CloudInstanceSection({
       document.removeEventListener('visibilitychange', poll);
     };
   }, [active, client, fed, refresh, !fed && view ? stableState(view) : true, hurrying]);
-  // Direction C (owner, 2026-11-10): the switch and the dropdown save as soon as they change.
+  // The switch and the dropdown save as soon as they change.
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const update = (patch: Partial<Draft>) => {
@@ -392,7 +392,7 @@ export function CloudInstanceSection({
     if (
       dirty.current &&
       !(await confirm({
-        // The client's reload-with-unsaved-changes confirm (D11, RemoteBotSettings).
+        // The client's reload-with-unsaved-changes confirm (RemoteBotSettings).
         title: t('bots.memory.unsavedTitle'),
         description: t('bots.remoteSettings.discardDescription'),
         confirmText: t('bots.memory.discard'),
@@ -486,7 +486,7 @@ export function CloudInstanceSection({
       if (!alive.current) return;
       submitted = true;
       setError(undefined);
-      // The confirmation has closed: the row says it is scheduled at once (T57).
+      // The confirmation has closed: the row says it is scheduled at once.
       setSubmitting(true);
       setHurrying(true);
       feedRef.current?.hurry?.();
@@ -525,7 +525,7 @@ export function CloudInstanceSection({
     }
   };
   // One write at a time, each on the revision the previous one returned; a change made meanwhile
-  // goes out next. Only the switch changed: the calendar is sent exactly as it was (T19).
+  // goes out next. Only the switch changed: the calendar is sent exactly as it was.
   const writing = useRef(false),
     again = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -720,7 +720,7 @@ export function CloudInstanceSection({
           })
         : // In this computer's time zone it goes unsaid, as local schedules do (ScheduleChips).
           undefined;
-  // Where the last upgrade stands (direction A); while it runs, the automatic updates wait.
+  // Where the last upgrade stands; while it runs, the automatic updates wait.
   const outcome = view ? upgradeOutcome(view, !!feed?.linkOffline) : null;
   const upgrading = outcome?.kind === 'queued' || outcome?.kind === 'updating';
   const disabled =
@@ -732,14 +732,14 @@ export function CloudInstanceSection({
   const policyBusy = !!policyCheck.state;
   const policyDisabled =
     disabled || policyBusy || !policy || policy.raw.scheduledTaskPolicy !== 'protect';
-  // 「状态加载失败」 goes where the unreadable thing is shown (owner, 2026-11-11, A2 #15): the
+  // 「状态加载失败」 goes where the unreadable thing is shown: the
   // schedule's hint, or the version row's status; the refresh button is the retry.
   const scheduleUnreadable = policyCheck.state === 'unreadable';
   const notice = scheduleUnreadable ? { reload: policyCheck.reload } : unreadable;
   const status = view ? instanceStatus(view) : 'starting';
   const upgradeOffered =
     !!view?.manualUpgrade && (view.updateAvailable || !!view.upgradeOperation?.active);
-  // 25M: why "update now" cannot be used right now, under it (MyDevicesPanel's reason line).
+  // Why "update now" cannot be used right now, under it (MyDevicesPanel's reason line).
   const upgradeReason =
     view && upgradeOffered && !canRequestUpgrade(view) && !view.upgradeOperation?.active
       ? view.loginRequired
@@ -748,8 +748,8 @@ export function CloudInstanceSection({
           ? 'upgradeWakeFirst'
           : null
       : null;
-  // Direction A (owner, 2026-11-11): from the click until the end the button only spins, with no
-  // words while the result is not known; the title says what is under way once CIS confirms it.
+  // From the click until the end the button only spins, with no words while the result is not
+  // known; the title says what is under way once CIS confirms it.
   const upgradeLoading = submitting || upgradeCheck.state === 'checking' || upgrading;
   const upgradeButton = view && (
     <Button
@@ -784,8 +784,8 @@ export function CloudInstanceSection({
   // An update that failed after it started is said in the status row; one that never started is a
   // toast (failToast), as the local About page does.
   const failure = outcome?.kind === 'failed' ? outcome.reason : null;
-  // Beside each 「请重试」: what the refresh button above did (T52). While that read runs the
-  // failure stays shown and its retry spins (T54, as the device list's 「刷新」).
+  // Beside each 「请重试」: what the refresh button above did. While that read runs the
+  // failure stays shown and its retry spins, as the device list's 「刷新」 does.
   const [rereading, setRereading] = useState<'status' | 'schedule' | null>(null);
   const statusFailed = !!unreadable || rereading === 'status';
   const scheduleFailed = scheduleUnreadable || rereading === 'schedule';
@@ -803,11 +803,11 @@ export function CloudInstanceSection({
     />
   );
   /**
-   * The update dialog's one status row (owner, 2026-11-12, the lead's design): the first row of the
+   * The update dialog's one status row: the first row of the
    * card and the only one that changes. A state icon before the title; on the right only an action
    * (立即更新 or a retry), never a spinner. Nothing is said twice, and there is no notice above it.
    */
-  // From the confirmation until CIS answers, the request is shown as scheduled (「把排队放进等待」).
+  // From the confirmation until CIS answers, the request is shown as scheduled.
   const requestPending = submitting || upgradeCheck.state === 'checking';
   const stateIcon = (icon: 'queued' | 'updating' | 'done' | 'failed') =>
     icon === 'queued' ? (
@@ -849,7 +849,7 @@ export function CloudInstanceSection({
         title: tr('upgradeScheduledTo', { version: target }),
         hint: tr('upgradeQueuedHint'),
       };
-    // Updating, also while it restarts and DeviceLink does not have it: the same words (T57).
+    // Updating, also while it restarts and DeviceLink does not have it: the same words.
     if (outcome?.kind === 'updating')
       return {
         icon: stateIcon('updating'),
@@ -879,12 +879,12 @@ export function CloudInstanceSection({
     // 语义待后端确认: recovery-hold says nothing more, and offers nothing, until its meaning is known.
     if (failure === 'held') return { icon: stateIcon('failed'), title: tr('upgradeFailed') };
     if (view.updateAvailable) {
-      // 25L: no update by hand on this instance; it waits for the update hours.
+      // No update by hand on this instance; it waits for the update hours.
       if (!view.manualUpgrade)
         return { title: latest, hint: tr('offeredScheduledOnly', { version: current }) };
       return {
         title: latest,
-        // 25M: why it cannot be updated right now.
+        // Why it cannot be updated right now.
         hint:
           upgradeReason === 'upgradeWakeFirst'
             ? tr('offeredWakeFirst', { version: current })
@@ -912,7 +912,7 @@ export function CloudInstanceSection({
   // Saving only disables the controls; what became of it is a toast (the local auto-update switch).
   const hint = scheduleFailed ? tr('statusUnreadable') : scheduleHint;
   const schedule = policy && draft && (
-    // One dropdown (owner, 2026-11-09, plan A): the default, or every day for two hours from a
+    // One dropdown: the default, or every day for two hours from a
     // whole hour in this computer's time zone. A custom schedule it cannot show stays as it was
     // until another choice replaces it, which asks first.
     <div className="flex flex-col gap-2">
@@ -996,7 +996,7 @@ export function CloudInstanceSection({
           <SettingsPageHeader title={tr('title')} action={refreshButton} />
         ) : (
           // Only when nothing could be read: a status or schedule that could not be read has its
-          // own retry beside it (T52), so a second one here would repeat it (T53).
+          // own retry beside it, so a second one here would repeat it.
           error && <div className="flex flex-wrap items-center gap-3">{refreshButton}</div>
         )}
         {error && error !== 'upgradeUnavailable' && (

@@ -12,7 +12,7 @@ vi.mock('../../instance-runtime/config.js', () => ({ getInstanceConfig: () => in
 vi.mock('../../logger.js', () => ({ createLogger: () => state.log }));
 vi.mock('../../maker-host/logger-adapter.js', () => ({ desktopMakerLogger: { child: () => state.log } }));
 vi.mock('../../appSessionState.js', () => ({ getActiveAppSession: state.forbidden, ownerScopedUserDataPath: state.forbidden, activeOwnerScopeKey: state.forbidden, getActiveDataOwnerPushStamp: state.forbidden, isAppSessionBoundaryPending: state.forbidden, dataOwnerStorageKey: (v: string) => v }));
-// Upstream moved the ambient owner and profile root behind injected modules; readers get both explicitly.
+// Upstream keeps the ambient owner and profile root behind injected modules; readers get both explicitly.
 vi.mock('../../ownerContext.js', () => ({ configureOwnerContext: () => {}, ownerScopedPath: state.forbidden, activeDataOwnerId: state.forbidden, hasCommittedOwner: state.forbidden, isOwnerBoundaryPending: state.forbidden, ownerGeneration: state.forbidden }));
 vi.mock('../../userDataPath.js', () => ({ configureUserDataDir: () => {}, getUserDataDir: state.forbidden, userDataPath: state.forbidden }));
 vi.mock('../../ownerNamespaceMigration.js', () => ({ hasExclusiveSharedLegacyUserDataAccess: state.forbidden, hasLegacyOwnerNamespaceClaim: state.forbidden, isLegacyOwnerNamespaceClaimOwnedBy: state.forbidden, isLegacyOwnerNamespaceClaimedByOtherOwner: state.forbidden }));

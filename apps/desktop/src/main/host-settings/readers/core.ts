@@ -114,7 +114,7 @@ export function readCoreSettings(deps: {
   read('memory', ['maker', 'claudeCode', 'codex', 'pi'], () => s.memory(context.ownerRoot));
   read('compaction', ['claudeCodeAutoCompactPct'], () => s.compaction(context.ownerRoot));
   read('compaction', ['piAutoCompactPct'], () => s.piCompaction(context.ownerRoot));
-  // Smart Contacts moved to the cindy-contacts plugin upstream; the frozen field IDs remain.
+  // Upstream keeps Smart Contacts in the cindy-contacts plugin; the frozen field IDs remain.
   fields['contacts.enabled'] = { status: 'unsupported' };
   fields['contacts.deviceSyncEnabled'] = { status: 'unsupported' };
   read('silentEncryptedRetry', ['enabled'], () => s.silentEncryptedRetry());
@@ -149,7 +149,7 @@ export function readCoreSettings(deps: {
   read('autoUpdate', ['autoRelaunchOnIdle'], () => s.autoUpdate());
   read('analytics', ['analyticsEnabled'], () => s.analytics());
   read('logUpload', ['crashAutoUploadEnabled'], () => s.logUpload());
-  // The embedded iOS simulator was retired upstream; the field stays in the wire catalog.
+  // Upstream has no embedded iOS simulator; the field stays in the wire catalog.
   fields['iosSimulator.autoOpenEmbeddedPanel'] = { status: 'unsupported' };
   return current() ? { fields, collections } : unavailable();
 }

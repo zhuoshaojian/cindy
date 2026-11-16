@@ -23,7 +23,7 @@ const instance = (deviceId, extra) => ({
   manualUpgrade: true, ...extra,
 });
 
-// The update hours (owner, 2026-11-09, plan A): one dropdown. A saved schedule it cannot show
+// The update hours: one dropdown. A saved schedule it cannot show
 // stays as it was until another choice is saved.
 const complexPolicy = {
   ...maintenance,
@@ -49,7 +49,7 @@ const scheduleCase = (complex, width, extra = {}) => ({
   },
 });
 
-// The card's ⋯ menu (owner, 2026-11-12: the card's only actions layout), in each card state.
+// The card's ⋯ menu (the card's only actions layout), in each card state.
 const MENU_STATES = {
   running: {},
   update: { updateAvailable: true, latestVersion: '0.1.126-cloud.3' },
@@ -293,7 +293,7 @@ export const useDeviceLinkSettings=()=>({enabled:true,linkStatus:"online",connec
       const dialog = page.getByRole('dialog', { name: await ui.t('cloudSettings.instance.updates') });
       const hours = dialog.getByRole('combobox', { name: await ui.t('cloudSettings.instance.schedule') });
       await hours.waitFor();
-      // The old editor is gone: no time zone picker, weekday buttons, times or added windows.
+      // No time zone picker, weekday buttons, times or added windows.
       assert.equal(await dialog.locator('details, input[type="time"]').count(), 0);
       assert.equal(await dialog.getByRole('button', { pressed: true }).count(), 0);
       if (ui.data.schedule === 'complex') {
@@ -307,7 +307,7 @@ export const useDeviceLinkSettings=()=>({enabled:true,linkStatus:"online",connec
           }),
         );
       }
-      // Changes save as they are made (direction C): 完成 is the only button in the footer.
+      // Changes save as they are made: 完成 is the only button in the footer.
       await dialog.getByRole('button', { name: await ui.t('cloudSettings.instance.done'), exact: true }).waitFor();
       await ui.capture('dialog');
       if (ui.data.scheduleOpen) {
@@ -329,7 +329,7 @@ export const useDeviceLinkSettings=()=>({enabled:true,linkStatus:"online",connec
       await card
         .getByText(await ui.t(state === 'upgrading' ? 'cloudSettings.instance.cardUpdating' : `cloudSettings.instance.state.${state === 'asleep' ? 'asleep' : 'running'}`), { exact: false })
         .waitFor();
-      // No row under the header; the menu sits before remote desktop. Its name is just Manage (T59).
+      // No row under the header; the menu sits before remote desktop. Its name is just Manage.
       assert.equal(await card.locator('[data-cloud-instance]').count(), 0);
       const header = card.getByRole('button', { name: await ui.t('remoteDesktop.title') }).locator('..');
       const labels = await header.locator('button').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('aria-label')));
@@ -379,7 +379,7 @@ export const useDeviceLinkSettings=()=>({enabled:true,linkStatus:"online",connec
       }
       return;
     }
-    // The cloud instances link opens My devices (no separate group any more).
+    // The cloud instances link opens My devices (no separate group).
     assert.equal(await page.locator('#settings-search-target-remote-devices > button').getAttribute('aria-expanded'), 'true');
     const remove = card.getByRole('button', { name: await ui.t('settings.devices.delete'), exact: true });
     if (!allowed) {

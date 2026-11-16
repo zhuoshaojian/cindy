@@ -63,7 +63,7 @@ describe('expanded settings use the real native stores', () => {
     for (const domain of ['collaboration', 'agentResource', 'gitSafety', 'memory', 'claudeCompaction', 'piCompaction', 'silentEncryptedRetry', 'lsp', 'privacy', 'diagnostics', 'telegramBehavior', 'terminal'] as const) {
       expect(await getHostSettings(caller, domain)).toMatchObject({ status: 'ready', customizedKeys: [] });
     }
-    // Smart Contacts moved to a plugin upstream; its retired domains stay readable as unavailable.
+    // Upstream keeps Smart Contacts in a plugin; its retired domains stay readable as unavailable.
     for (const domain of ['contacts', 'contactsSync'] as const) {
       expect(await getHostSettings(caller, domain)).toMatchObject({ status: 'unavailable' });
     }

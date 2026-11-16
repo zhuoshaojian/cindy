@@ -240,7 +240,7 @@ class PublishTest(unittest.TestCase):
             native = records/'native-modules.json'
             native.write_text(json.dumps({'passed':True,'sqlite':True,'sqliteVec':True,'pty':True,'electronVersion':'42.11.12','abi':'145'}))
             self.assertEqual(len(check_build(p,info,result,proof,records)),5)
-            # cloud.29's old sqlite/pty-only proof missed an LFS pointer in vec0.so.
+            # A sqlite/pty-only proof misses an LFS pointer in vec0.so.
             complete = json.loads(native.read_text())
             for vec_proof in (None, False):
                 legacy = {k:v for k,v in complete.items() if k != 'sqliteVec'}

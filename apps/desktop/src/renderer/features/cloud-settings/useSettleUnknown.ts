@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
- * S3 (owner, 2026-11-09: "the system checks, and says only what it knows"): when a write's
- * outcome is unknown, its result is read back, never written again. Each entry waits this long
+ * The system checks, and says only what it knows: when a write's outcome is unknown, its result
+ * is read back, never written again. Each entry waits this long
  * before each read; a read that answers decides.
  */
 export const SETTLE_DELAYS_MS = {

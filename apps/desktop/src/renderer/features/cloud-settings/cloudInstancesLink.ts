@@ -1,6 +1,6 @@
 /**
- * Cloud instances live on their device cards in Settings → Remote connections → My devices
- * (2026-11-05), not in a category of their own. This section opens "My devices";
+ * Cloud instances live on their device cards in Settings → Remote connections → My devices,
+ * not in a category of their own. This section opens "My devices";
  * `device=<deviceId>` scrolls to one instance.
  */
 export const REMOTE_CLOUD_INSTANCES_SECTION = 'remoteControl.cloudInstances';

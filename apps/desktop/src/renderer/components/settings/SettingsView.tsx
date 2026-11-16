@@ -196,7 +196,7 @@ function SettingsViewContent() {
     if (raw === 'task-management') return 'storage';
     if (raw === 'billing' && !canAccessBilling) return 'general';
     if (raw === 'usage' && !canAccessUsage) return 'general';
-    // legacy 深链:独立「云实例」分类已并入「远程连接」的「云实例」分组(2026-11-05),
+    // legacy 深链:独立「云实例」分类已并入「远程连接」的「云实例」分组,
     // URL 由下方 effect 改写;这里先落到远程连接,避免闪一帧通用页。未准入账号与基线一致落到通用。
     if (raw === 'cloud-instances') return canAccessCloudInstances ? 'remote-control' : 'general';
     if (raw === 'agent-island' && !isMac) return 'general';

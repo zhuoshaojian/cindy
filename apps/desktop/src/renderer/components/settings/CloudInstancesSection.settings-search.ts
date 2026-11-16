@@ -5,7 +5,7 @@ export default {
   order: 3,
   entries: [
     {
-      // 2026-11-05 云实例并入「远程连接 → 我的设备」的设备卡;id 即 ?section=,
+      // 云实例在「远程连接 → 我的设备」的设备卡上;id 即 ?section=,
       // 与 REMOTE_CLOUD_INSTANCES_SECTION 一致,RemoteControlSection 据此展开「我的设备」。
       id: 'remoteControl.cloudInstances',
       tab: 'remote-control',

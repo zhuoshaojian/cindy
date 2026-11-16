@@ -244,7 +244,7 @@ export function ModelAdvancedDrawer({
   useModelVisibilityVersion();
   useProviderModelMemoryVersion();
   // Another device's settings (cloud instance page) stand in for this device's stores.
-  // Resolved at call time, as the direct imports were.
+  // Resolved at call time, like direct imports.
   const source = useModelSettingsSource();
   const isModelEnabled: typeof localIsModelEnabled = (...args) =>
     source ? source.isModelEnabled(...args) : localIsModelEnabled(...args);

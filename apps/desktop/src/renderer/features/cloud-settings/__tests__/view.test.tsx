@@ -138,8 +138,7 @@ it.each([['tab=instance'], ['tab=cloud-instances'], ['section=maintenance']])(
     expect(connect).not.toHaveBeenCalled();
   },
 );
-// Plan C (2026-11-09): General is shown again, so its links stay there; Plugins is shown again
-// (2026-11-11), so its links stay there too.
+// General is shown, so its links stay there; Plugins is shown, so its links stay there too.
 it.each([
   ['ghosts', 'settings.tabs.ghosts'],
   ['general', 'settings.tabs.general'],
@@ -197,7 +196,7 @@ it('redirects the old list route into Settings and reads owned instances without
   }
 });
 
-// Regression for the reported workspace-covering route: use the actual settings
+// Regression: login is never a workspace-covering route. Use the actual settings
 // entry and click login; only the auxiliary bridge may open, the route stays put.
 it('opens cloud login separately while keeping the settings workspace mounted', async () => {
   const open = vi.fn().mockResolvedValue(undefined);
@@ -254,11 +253,10 @@ const cisView = (patch: Record<string, unknown>) => ({
   ...patch,
 });
 
-// Real packaged acceptance: the local relay had stopped with device-removed,
-// while CIS and the cloud runtime remained healthy. The old entry treated the
-// missing DeviceLink directory as a cloud outage and hid all settings.
-// Unit tier: exercise the production route, with only CIS I/O replaced. Existing
-// entry tests only covered the remote-control flag, not independent relay state.
+// A local relay stopped with device-removed, while CIS and the cloud runtime stay
+// healthy, is not a cloud outage: a missing DeviceLink directory must not hide the
+// settings. Unit tier: exercise the production route, with only CIS I/O replaced,
+// for independent relay state rather than only the remote-control flag.
 it('loads CIS settings without a local relay and disables them when CIS becomes unavailable', async () => {
   state.online = false;
   const client = createTrialCloudSettingsClient();
@@ -307,9 +305,9 @@ it.each(['stopped', 'login-required', 'unready', 'wrong-target'])(
     expect(connect).not.toHaveBeenCalled();
   },
 );
-// cloud-test, 2026-11-09: during an upgrade CIS still reported running/ready while the runtime was
-// down, so the page connected, Main answered CLOUD_SETTINGS_SCOPE_CHANGED and the page showed a
-// generic read failure. It must say the instance is upgrading and not try to connect.
+// During an upgrade CIS can still report running/ready while the runtime is down; connecting then
+// gets CLOUD_SETTINGS_SCOPE_CHANGED from Main and a generic read failure. The page must say the
+// instance is upgrading and not try to connect.
 it.each([
   ['an active operation', true, { upgradeOperation: { operationId: 'op', phase: 'backup-running', active: true, updatedAtMs: 2_000 } }],
   ['a finished operation newer than the last observation, with DeviceLink offline', false, { observedAtMs: 1_000, upgradeOperation: { operationId: 'op', phase: 'completed', active: false, updatedAtMs: 2_000 } }],
@@ -329,10 +327,9 @@ it.each([
   expect(screen.queryByText('cloudSettings.targetUnavailable')).toBeNull();
   expect(connect).not.toHaveBeenCalled();
 });
-// Plan C settled the settings scope (2026-11-09): a scope a dev build stored earlier no longer
-// changes the page, and the dev options offer no scope switch (since 2026-11-12 no switch at all:
-// only the entry to the scenario panel). Plugins is a category again since 2026-11-11, when the
-// native client began managing the instance's plugins. Through the real route.
+// The settings scope is fixed: a scope a dev build stored earlier does not change the page, and
+// the dev options offer no scope switch (only the entry to the scenario panel). Plugins is a
+// category, since the native client manages the instance's plugins. Through the real route.
 it('shows the released categories whatever scope a dev build stored, and offers no scope switch', async () => {
   localStorage.setItem('cloud-preview:settings-scope', 'all');
   Object.assign(window, { electronAPI: { cloudSettings: {} } });

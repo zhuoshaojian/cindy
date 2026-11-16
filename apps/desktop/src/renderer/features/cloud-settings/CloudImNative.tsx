@@ -19,7 +19,7 @@ import { errorCode, useBlockRetry } from './blockRetry';
 import { createCloudImTarget, type CloudImAuthorization, type CloudImTarget } from './cloudImTarget';
 
 type Action = ManagementItem['actions'][number];
-/** failed: the instance's IM channel did not answer; it is read again on its own (T17b). */
+/** failed: the instance's IM channel did not answer; it is read again on its own. */
 export type CloudImSupport = 'probing' | 'ready' | 'unsupported' | 'failed';
 
 /**
@@ -106,8 +106,8 @@ export function useCloudImTarget({
       .catch((error: unknown) => {
         if (probedFor.current !== asked) return;
         const code = extractIpcError(error)?.code;
-        // An older runtime keeps the earlier cards; any other failure is read again on its own,
-        // then reported where the cards would be (T27: it used to fall back to them silently).
+        // An older runtime keeps the ticket cards; any other failure is read again on its own,
+        // then reported where the cards would be, never by falling back to them silently.
         if (code === 'DEVICE_LINK_CHANNEL_NOT_ALLOWED' || code === 'PERMISSION_DENIED')
           setSupport('unsupported');
         else {

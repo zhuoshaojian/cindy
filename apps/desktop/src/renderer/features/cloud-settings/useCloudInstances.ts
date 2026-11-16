@@ -57,7 +57,7 @@ const powerVerdict = (list: readonly CloudInstanceView[], pending: PowerPending)
  * instances page and Settings → Remote connections → My devices, so one view polls once:
  * every 30 s, every 5 s while an instance is changing, never while the window is hidden.
  * Membership discovery is read-only; only an explicit claim ensures a first instance.
- * A claim, sleep or wake with an unknown result is read back (S3), never submitted again.
+ * A claim, sleep or wake with an unknown result is read back, never submitted again.
  * Each instance sleeps and wakes on its own: one still waking never holds up another.
  */
 export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: string) => void) {
@@ -223,7 +223,7 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
     [...powerCheck.entries.values()].some((entry) => entry.state === 'checking') ||
     claimCheck.state === 'checking';
   // An update was just requested from the card's dialog: the list is read every 2 s for 30 s, so
-  // the card moves from scheduled to updating soon (T57).
+  // the card moves from scheduled to updating soon.
   const [hurrying, setHurrying] = useState(0);
   useEffect(() => {
     if (!hurrying) return;
@@ -299,7 +299,7 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
     }
   };
   /**
-   * `confirmed`: the user already confirmed this request once (its retry, T54); no second ask.
+   * `confirmed`: the user already confirmed this request once (its retry); no second ask.
    * Only this instance's own sleep or wake waits for it; the others stay free.
    */
   const power = async (instance: CloudInstanceView, name: string, options?: { confirmed?: boolean }) => {
@@ -409,7 +409,7 @@ export function useCloudInstances(api: CloudInstancesApi, onOpen: (deviceId: str
     busy,
     error,
     failures,
-    /** Reads the list more often for a while, after an update was requested (T57). */
+    /** Reads the list more often for a while, after an update was requested. */
     hurry: () => setHurrying((count) => count + 1),
     waiting,
     /** This instance's own sleep or wake under way, its read-back included. */

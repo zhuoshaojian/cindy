@@ -7,7 +7,7 @@ import {
 export * from '@cindy/maker-shared/settings-tabs';
 
 /**
- * 「云实例」2026-11-05 并入「远程连接」的「云实例」分组,但 id 仍留在本端 TAB_IDS:
+ * 「云实例」的落点是「远程连接」的「云实例」分组,但 id 仍留在本端 TAB_IDS:
  * TAB_IDS 与 settingsReadCatalog 的 SETTINGS_READ_TABS 必须一致(后者供 Host 投影与 CIS 排版),
  * 所以只在可见层隐藏:不进菜单、不进搜索,旧深链改写到落点。共享包(Agent 的设置入口)不含它。
  */

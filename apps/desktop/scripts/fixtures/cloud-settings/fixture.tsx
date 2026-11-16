@@ -35,7 +35,7 @@ const catalogProviders = [
     .map((p) => ({ ...p, connected: false })),
 ];
 const providerSettings = (request: { op: string; command?: { action: string } }) => {
-  // The instance does not answer the provider list (C4).
+  // The instance does not answer the provider list.
   if (request.op === 'list' && window.__uiPage?.ctx?.data?.providersUnreadable)
     throw Error('[DEVICE_LINK_TIMEOUT] timeout');
   if (request.op === 'list')
@@ -137,7 +137,7 @@ function Fixture({
       };
     if (imReadFailure) {
       // The IM groups stay unreadable through the page's three automatic re-reads, so the card's
-      // own notice (C3) and its reload are what recover them.
+      // own notice and its reload are what recover them.
       let failures = 0;
       const read = client.read;
       client.read = async (domains) => {
@@ -160,8 +160,8 @@ function Fixture({
       const read = client.read;
       client.read = async (domains) =>
         (await read(domains)).map((state) =>
-          // Contacts left the cloud page in the 2026-11-04 review; an unavailable group now is
-          // chat embedding, beside a tips row that stays usable.
+          // The cloud page has no Contacts; the unavailable group is chat embedding, beside a
+          // tips row that stays usable.
           state.domain === 'chatEmbedding'
             ? { domain: state.domain, status: 'unavailable', revision: null }
             : state.domain === 'terminal'

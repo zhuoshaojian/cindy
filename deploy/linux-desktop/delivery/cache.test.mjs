@@ -89,7 +89,7 @@ test('provider-assigned default resource group is allowed; explicit groups must 
   await assert.rejects(prepareImageCache(plans(manifest,c)[0].plans[0],{call}),/resource group mismatch/);
 });
 
-// Regression: independent Ready polling previously serialized both networks.
+// Regression: independent Ready polling must not serialize both networks.
 // Unit: deferred API responses prove overlap and all-complete without wall sleeps.
 test('independent networks overlap, with at most two pending requests', async () => {
   const targets=list(); let active=0, peak=0; const pending=[];

@@ -13,7 +13,7 @@ function Preview() {
   const access = useCloudInstanceAccess();
   return (
     <main data-access={access} className="mx-auto max-w-[920px] p-6">
-      {/* Since 2026-11-05 a cloud instance is managed on its card in My devices. */}
+      {/* A cloud instance is managed on its card in My devices. */}
       <RemoteControlSection />
     </main>
   );

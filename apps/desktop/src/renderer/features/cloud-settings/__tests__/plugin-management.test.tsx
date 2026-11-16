@@ -103,7 +103,7 @@ it('is supplied by the native router only', () => {
     fs.readdirSync(path.join(renderer, 'cloud-web')).filter((name) => /\.tsx?$/.test(name)).map((name) => `cloud-web/${name}`),
   );
   // The one exception is the plugin layout's 「正在管理」 notice (CatalogManagementNotice), which the
-  // settings page shows above every other category as the client does (D11 A3); the plugin and
+  // settings page shows above every other category as the client does; the plugin and
   // skill pages themselves stay out.
   for (const file of shared) {
     expect(read(file), file).not.toMatch(

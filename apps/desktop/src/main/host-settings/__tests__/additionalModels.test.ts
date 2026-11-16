@@ -123,7 +123,7 @@ describe('model and IM settings native persistence', () => {
     expect((raw.raw.entries as Record<string, unknown>)[key]).toEqual(original);
     await expect(commitHostModelPrices([], undefined, { expectedRevision: before.revision })).rejects.toThrow();
   });
-  // 0.1.113 removed per-capability pins: old controllers must not persist inert choices.
+  // Per-capability pins are retired: older controllers must not persist inert choices.
   it('rejects retired Plugin pins and preserves legacy data when changing concurrency', async () => {
     configureAdditionalNativeOperations({ plugins: nativePluginSettings } as never);
     const dir = path.join(context.root, 'owners', 'test-first'); fs.mkdirSync(dir, { recursive: true });
@@ -188,7 +188,7 @@ describe('model and IM settings native persistence', () => {
     expect(await updateHostSettings(caller, input)).toMatchObject({ saved: false, code: 'MODEL_UNAVAILABLE' });
     expect(readSubagentModelSettings().claudeCode).toBeNull();
   });
-  // Upstream v0.1.136 removed the global teammate model chain editor; the cloud Host follows it.
+  // Upstream has no global teammate model chain editor; the cloud Host follows it.
   it('keeps the global teammate model chain read-only and still rejects duplicate routes on the wire', async () => {
     expect(await getHostSettings(caller, 'botModelChain')).toMatchObject({ status: 'unavailable', revision: null });
     const item = { harness: 'codex', providerId: route.providerId, model: route.modelId, effort: 'low', fastMode: false };
@@ -245,8 +245,8 @@ describe('model and IM settings native persistence', () => {
   });
 });
 
-// Native defaults use empty routes for automatic selection. Previously the real web
-// response validator rejected that read (unit); test the writer + real file as well.
+// Native defaults use empty routes for automatic selection, and the real web response
+// validator must accept that read (unit); test the writer + real file as well.
 it.each([['imFeishu', 'feishu'], ['imWechat', 'wechat'], ['imWecom', 'wecom'], ['imDingtalk', 'dingtalk'], ['imDiscord', 'discord'], ['imTelegram', 'telegram']] as const)('round-trips %s automatic defaults without pinning a model or another channel', async (domain, channel) => {
   const before = await getHostSettings(caller, domain);
   expect(settingsWebReadResultSchema.safeParse({ ok: true, settings: { ...before, domain } }).success).toBe(true);

@@ -6,8 +6,8 @@ import { CLOUD_RETRY_DELAYS_MS } from './blockRetry';
 export type CloudSettingsPatch = { set: Record<string, unknown>; clear: string[] };
 /**
  * Explicit failures revert at once. An unknown outcome is read back: notSaved when the instance
- * does not hold the change, unreachable when it could not be read (owner, 2026-11-09: say what is
- * known, or what the page will do, never that the outcome is unknown).
+ * does not hold the change, unreachable when it could not be read. The page says what is known, or
+ * what it will do, never that the outcome is unknown.
  */
 export type CloudSyncFailureReason =
   'conflict' | 'rejected' | 'unavailable' | 'notSaved' | 'unreachable';
@@ -63,9 +63,8 @@ export function projectCloudSettings(
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 /**
  * Lists whose order means nothing. The shared vision bridge view writes its whole list and appends
- * a model turned back on (cloud-test R5, 2026-11-09: off → on left the same models in a new order
- * as an explicit override, as it does on this computer). Ordered lists, such as the auxiliary
- * model order, keep the exact comparison.
+ * a model turned back on, so off → on must not leave the same models in a new order as an explicit
+ * override. Ordered lists, such as the auxiliary model order, keep the exact comparison.
  */
 const UNORDERED: Partial<Record<CloudSettingsDomain, readonly string[]>> = {
   visionBridge: ['targetModels'],
@@ -81,8 +80,8 @@ const equal = (domain: CloudSettingsDomain, key: string, a: unknown, b: unknown)
 };
 /**
  * What is left to write once the patch is compared with the instance's confirmed state: a value it
- * already holds, or a clear of a key it does not store, is no change (cloud-test R3, 2026-11-09:
- * on → off → on merged into a write of the original value and left an explicit override).
+ * already holds, or a clear of a key it does not store, is no change, so on → off → on merged into
+ * a write of the original value leaves no explicit override.
  */
 const effective = (
   state: CloudSettingsState,
@@ -167,8 +166,8 @@ export function createCloudSettingsSync(options: {
   const unset = new Map<CloudSettingsDomain, Set<string>>();
   /**
    * Groups whose latest read failed after an earlier one succeeded: they keep the last value read
-   * and are not editable until a read succeeds (owner, 2026-11-11: the values stay in place, the
-   * failure shows on them, as the local IM workspace preferences do).
+   * and are not editable until a read succeeds: the values stay in place and the failure shows on
+   * them, as the local IM workspace preferences do.
    */
   const stale = new Set<CloudSettingsDomain>();
   const noteRead = (state: CloudSettingsState) => {

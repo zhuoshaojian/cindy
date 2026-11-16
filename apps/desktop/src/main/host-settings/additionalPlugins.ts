@@ -135,7 +135,7 @@ export const nativePluginSettings = {
       const result = await commitHostSidebarHidden(hidden, { ...options, assertCurrent: validate });
       return ready(domain, result.revision, { hidden });
     }
-    // Do not accept old clients' writes to model pins that the runtime no longer consumes.
+    // Do not accept older clients' writes to model pins that the runtime does not consume.
     if ([...change.clear, ...Object.keys(change.set)].some(field => field !== 'inflightLimits'))
       throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
     const next = { ...before.value, ...Object.fromEntries(change.clear.map(key => [key, []])), ...change.set };

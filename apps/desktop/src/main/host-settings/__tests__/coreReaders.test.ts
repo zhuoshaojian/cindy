@@ -27,7 +27,7 @@ vi.mock('../../appSessionState.js', () => ({
   isAppSessionBoundaryPending: state.forbidden,
   dataOwnerStorageKey: (owner: string) => `test-${owner}`,
 }));
-// Native stores now ask the injected owner context for the ambient owner; pure inspection
+// Native stores ask the injected owner context for the ambient owner; pure inspection
 // receives its owner root explicitly and must not consult it either.
 vi.mock('../../ownerContext.js', () => ({
   configureOwnerContext: () => {},
@@ -309,7 +309,7 @@ it.each(['darwin', 'win32', 'linux'] as const)('marks inapplicable fields on %s 
   const result = unchanged(() => readCoreSettings({ getContext: context, stores }));
   expect(result.fields['windowBehavior.windowsCloseBehavior'].status).toBe(platform === 'win32' ? 'value' : 'unsupported');
   expect(result.fields['windowBehavior.linuxCloseBehavior'].status).toBe(platform === 'linux' ? 'value' : 'unsupported');
-  // The embedded iOS simulator was retired upstream on every platform.
+  // Upstream has no embedded iOS simulator on any platform.
   expect(result.fields['iosSimulator.autoOpenEmbeddedPanel'].status).toBe('unsupported');
   expect(result.fields['updateChannel.enableBeta'].status).toBe(supportsBetaUpdateChannel(platform, state.arch) ? 'value' : 'unsupported');
   expect(result.fields['contacts.deviceSyncEnabled'].status).toBe('unsupported');

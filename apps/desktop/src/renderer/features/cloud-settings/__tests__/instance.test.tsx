@@ -28,7 +28,7 @@ const mock = vi.hoisted(() => ({
   confirm: vi.fn<(input: { title?: string; description?: string }) => Promise<boolean>>().mockResolvedValue(true),
 }));
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({ useConfirmDialog: () => mock }));
-// Save and request outcomes are toasts, as the local About page and auto-update switch (D11).
+// Save and request outcomes are toasts, as the local About page and auto-update switch.
 const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), dismissAll: vi.fn() }));
 vi.mock('@/lib/toast', () => ({ toast: toasts }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }));
@@ -207,7 +207,7 @@ it('sleep requires confirmation and double clicks send only one request', async 
   finish();
   await screen.findByText('正在进入休眠…');
 });
-// S3: an unknown sleep or wake is read back from the instance, never sent again.
+// An unknown sleep or wake is read back from the instance, never sent again.
 it('reads an uncertain power request back and never resubmits it', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   try {
@@ -227,7 +227,7 @@ it('reads an uncertain power request back and never resubmits it', async () => {
     vi.useRealTimers();
   }
 });
-// Direction C (owner, 2026-11-10): the switch saves as it changes, with the local switch's toast.
+// The switch saves as it changes, with the local switch's toast.
 it('saves auto update as it changes, without waking the instance', async () => {
   const f = await setup();
   fireEvent.click(screen.getByRole('switch', { name: '自动更新' }));
@@ -251,7 +251,7 @@ it('a save that meets a newer revision shows what the instance holds, never over
   await waitFor(() => expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true'));
   expect(f.client.maintenance).toHaveBeenCalledTimes(1);
 });
-// Owner, 2026-11-09 (plan A): one dropdown for the update hours, the default or every day for two
+// One dropdown for the update hours, the default or every day for two
 // hours from a whole hour in this computer's time zone. A custom schedule it cannot show stays as
 // it was until another choice is saved.
 const SHANGHAI = Intl.DateTimeFormat().resolvedOptions();
@@ -291,7 +291,7 @@ it('offers the default and the other 23 daily two-hour windows in this computer\
   // In this computer's time zone it goes unsaid, as local schedules do.
   expect(screen.queryByText(/时区/)).toBeNull();
   const options = openSchedule().map((option) => option.textContent);
-  // The default is not offered a second time as a plain daily window (owner, 2026-11-09).
+  // The default is not offered a second time as a plain daily window.
   expect(options).toHaveLength(24);
   expect(options.filter((option) => option?.startsWith('每天 03:00–05:00'))).toEqual(['每天 03:00–05:00（默认）']);
   expect(options.slice(0, 5)).toEqual([
@@ -431,7 +431,7 @@ it('maintenance shortcut scrolls to the policy after loading, without changing i
   }
 });
 
-// 2026-11-09 owner decision: the upgrade asks first, once, even for a double click.
+// The upgrade asks first, once, even for a double click.
 it('requests an upgrade with auto-update disabled and preserves schedules after one confirmation', async () => {
   const f = await setup({
     running: true,
@@ -518,7 +518,7 @@ it('does not resubmit an uncertain request and recovers persisted progress on ex
   await screen.findByText('已更新到 0.1.108-cloud.10-cn-amd64');
   expect(screen.getByText('0.1.108-cloud.10-cn-amd64')).toBeTruthy();
   expect(screen.getByText('暂无')).toBeTruthy();
-  // 2026-11-04 product review: no inert upgrade button when there is nothing to install.
+  // No inert upgrade button when there is nothing to install.
   expect(screen.queryByRole('button', { name: zhCN.cloudSettings.instance.upgradeNow })).toBeNull();
 });
 it('stops showing an upgrade that ended long ago, but keeps a held one', async () => {

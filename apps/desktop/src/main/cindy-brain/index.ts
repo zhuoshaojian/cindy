@@ -1419,7 +1419,7 @@ export function findTrustedXdGhostForScript(id: string): InstalledGhost | null {
     ? ghost : null;
 }
 
-/** Private settings projection. Capability pins were retired in 0.1.113. */
+/** Private settings projection; it carries no capability pins. */
 export function getHostPluginPreferenceContext() {
   return availableGhosts().map(ghost => {
     const agent = !!ghost.manifest.workspace || ghost.manifest.agent?.errand === true || ghost.manifest.agent?.tasks === true;

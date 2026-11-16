@@ -106,7 +106,7 @@ export function CloudMcpAuthorization({
   useEffect(() => {
     if (!active || !online) setSelected(undefined);
   }, [active, online]);
-  // S3: progress that could not be read is read back from the operation, never run again.
+  // Progress that could not be read is read back from the operation, never run again.
   const unknown = useSettleUnknown<string>({
     delays: SETTLE_DELAYS_MS.authorization,
     check: async (id) => {
@@ -122,7 +122,7 @@ export function CloudMcpAuthorization({
   };
   useEffect(() => () => unknown.stop(), [client]);
   // Credentials set or removed from a row: how it ended is a toast, as the client's MCP page says a
-  // save (D11 F4–F8); a cancel says nothing. The dialog and the delete say their own.
+  // save; a cancel says nothing. The dialog and the delete say their own.
   const fromRow = useRef(new Set<string>());
   const accept = (result: ManagementResult, id: string) => {
     if (result.kind !== 'operation' || result.operationId !== id) throw Error('SCOPE_CHANGED');
@@ -146,7 +146,7 @@ export function CloudMcpAuthorization({
         action.confirmation &&
         !(await confirm({
           title: t('cloudSettings.mcpRemove'),
-          // What removing does (D11 F13; cloud only).
+          // What removing does (cloud only).
           description: t('cloudSettings.mcpRemoveBody', { name }),
           confirmText: t('settings.mcp.deleteConfirm.confirm'),
           cancelText: t('settings.mcp.cancel'),
@@ -272,7 +272,7 @@ export function CloudMcpAuthorization({
     return () => clearTimeout(timer);
   }, [client, online, operation]);
   const busy = pending || !!running || operation?.phase === 'unknown';
-  // A result that could not be read back: a warning toast whose button reads it once more (D11 F9).
+  // A result that could not be read back: a warning toast whose button reads it once more.
   const unreadableNow = unknown.state === 'unreadable';
   useEffect(() => {
     if (!unreadableNow) return;
@@ -303,7 +303,7 @@ export function CloudMcpAuthorization({
           {t(`cloudSettings.${failure}`)}
         </p>
       )}
-      {/* One line and 「重新读取」, as the client's settings read failure (D11 F12). */}
+      {/* One line and 「重新读取」, as the client's settings read failure. */}
       {readRetry.exhausted && (
         <CloudRequestError
           message={t('cloudSettings.mcpReadFailed')}
@@ -312,7 +312,7 @@ export function CloudMcpAuthorization({
           disabled={loading || !online}
         />
       )}
-      {/* While reading nothing; with no server, only the add row (D11 F11). */}
+      {/* While reading nothing; with no server, only the add row. */}
       {(items.length > 0 || (createItem && online)) && (
       <div className="overflow-hidden rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)]">
         {items.map((item, i) => {

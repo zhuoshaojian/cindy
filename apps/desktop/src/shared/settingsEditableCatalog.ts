@@ -90,7 +90,7 @@ export const additionalSettingsSchemas = {
   botModelChain: z.object({ modelChain: z.array(z.object({ harness: z.enum(['claude', 'codex', 'pi']), providerId: routeId.nullable(), model: routeId, effort: z.enum(['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']), fastMode: bool }).strict()).max(5) }).strict(),
 } as const;
 export type AdditionalSettingsDomain = keyof typeof additionalSettingsSchemas;
-/** Smart Contacts moved to the cindy-contacts plugin upstream; these domains stay in the wire catalog only. */
+/** Upstream keeps Smart Contacts in the cindy-contacts plugin; these domains stay in the wire catalog only. */
 export const RETIRED_ADDITIONAL_SETTINGS_DOMAINS = ['contacts', 'contactsSync'] as const satisfies readonly AdditionalSettingsDomain[];
 export const ADDITIONAL_SETTINGS_DOMAINS = Object.keys(additionalSettingsSchemas) as AdditionalSettingsDomain[];
 export const isAdditionalSettingsDomain = (value: unknown): value is AdditionalSettingsDomain =>

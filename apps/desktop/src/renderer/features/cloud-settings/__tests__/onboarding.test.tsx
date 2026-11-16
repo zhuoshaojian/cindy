@@ -122,7 +122,7 @@ it('double clicking claim sends once, initializes only the returned device and s
   expect(screen.getByRole('list', { name: '领取进度' })).toBeTruthy();
   expect(f.onOpen).not.toHaveBeenCalled();
 });
-// S3: an unknown claim is read back from the list (claiming again could make a second instance).
+// An unknown claim is read back from the list (claiming again could make a second instance).
 it('unknown creation is read back from the list and never claimed again', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   try {
@@ -301,7 +301,7 @@ it('offers no further instance at the limit, without a reported limit, or when t
   await waitFor(() => expect(confirmation.confirm).toHaveBeenCalledTimes(1));
   expect(f.api.instanceClaim).not.toHaveBeenCalled();
 });
-// S3: an unknown sleep or wake is read back from the list, never sent again. When no read answers,
+// An unknown sleep or wake is read back from the list, never sent again. When no read answers,
 // the card says the state could not be read and only an explicit reload reads it once more.
 it('unknown power results are read back, never retried, and reload only on request', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -421,7 +421,7 @@ it('multiple owned instances require an explicit choice and do not auto-login', 
 it('names each by its own name, never a made-up number; two alike get the usual (1)/(2)', async () => {
   const sole = { ...target, name: null, nameSequence: 15, ordinal: null };
   await setup([sole]);
-  // The instance's own heading; the page title is the same product name since 2026-11-09.
+  // The instance's own heading; the page title is the same product name.
   expect(await screen.findByRole('heading', { name: '云端 Cindy', level: 3 })).toBeTruthy();
   expect(screen.queryByText(/云端 Cindy 15/)).toBeNull();
   cleanup();

@@ -4,7 +4,7 @@ import { BlockReadFailure } from './blockRetry';
 
 /**
  * The line under an authorization's buttons: what it is doing, or, once its progress could not be
- * read back, a notice whose reload reads it again without signing in again (S3). Where the button
+ * read back, a notice whose reload reads it again without signing in again. Where the button
  * that started it is not this page's own (the local wizard and provider page), `checking` shows a
  * spinner without words while an unknown result is read back.
  */

@@ -21,7 +21,7 @@ function setup(desktop?: Parameters<typeof fixture>[0]) {
   };
 }
 describe('native CIS settings client using existing settingsWeb commands', () => {
-  // An oversized/failed domain used to hide unrelated settings in the same tab.
+  // An oversized/failed domain must not hide unrelated settings in the same tab.
   // Only a domain read failure may degrade; scope/auth errors must still escape.
   it('contains domain read failures without swallowing ownership failures', async () => {
     const f = setup();
@@ -195,7 +195,7 @@ it('keeps the same request ID after a lost upgrade response, without automatic r
   expect(f.bridge.instanceUpgrade).toHaveBeenCalledTimes(2);
 });
 
-// Instance-window-only preferences are left to the remote desktop (2026-11-04 review).
+// Instance-window-only preferences are left to the remote desktop.
 // Older instances still advertise them; the page must ignore them, not render or write them.
 it('ignores instance-window-only desktop preferences still advertised by an older instance', async () => {
   const f = setup({

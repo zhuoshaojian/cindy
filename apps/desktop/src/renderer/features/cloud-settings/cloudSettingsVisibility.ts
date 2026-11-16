@@ -26,10 +26,9 @@ export interface CloudSettingsVisibility {
 }
 
 /**
- * Every supported category in the local page's order (owner, 2026-11-09: plan C, "what the
- * repository already supports goes up, as long as it tests clean"). Plugins is in it again since
- * the native client manages the instance's plugins and skills there (owner, 2026-11-11); a browser
- * still opens the remote desktop for them. Left out: the instance overview, whose operations all
+ * Every supported category in the local page's order. Plugins is in it, since the native client
+ * manages the instance's plugins and skills there; a browser still opens the remote desktop for
+ * them. Left out: the instance overview, whose operations all
  * live on the device card's Update dialog.
  */
 export const CLOUD_SETTINGS_VISIBILITY: CloudSettingsVisibility = {
@@ -77,7 +76,7 @@ export function cloudTabFromLink(
 ): CloudSettingsTab | 'more' | undefined {
   if ((visibility.tabs as readonly (string | null)[]).includes(tab)) return tab as CloudSettingsTab;
   if (tab === 'more' && visibility.more) return 'more';
-  // Links to General, whose settings now sit under Personalization, land there.
+  // Links to General, whose settings sit under Personalization, land there.
   if (tab === 'general' && visibility.tabs.includes('personalization')) return 'personalization';
   return visibility.more && isSettingsTab(tab) ? 'more' : undefined;
 }

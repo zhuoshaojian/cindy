@@ -11828,7 +11828,7 @@ describe('host-triggered recovery of previously reliable links', () => {
       expect(phone.needsLinkRecovery('host')).toBe(true);
       await expect(other).resolves.toEqual({ ok: true, result: 'ready' });
       // The adapters use this query before admitting fresh work, including a
-      // listing-only subscription which previously never reopened its old link.
+      // listing-only subscription, which must reopen its old link.
       const send = async (channel: string) => {
         if (phone.needsLinkRecovery('host')) await open(phone);
         return phone.invoke('host', { channel, args: [] });

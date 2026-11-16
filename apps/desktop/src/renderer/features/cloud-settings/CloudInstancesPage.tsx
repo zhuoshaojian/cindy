@@ -131,7 +131,7 @@ export function CloudInstancesPage({
               <p className={`${description} max-w-[560px]`} role={claim ? 'status' : undefined}>
                 {tr(claim === 'notClaimed' ? 'claimNotDone' : 'emptyDescription')}
               </p>
-              {/* While the claim is sent and read back, only the button spins (2026-11-11). */}
+              {/* While the claim is sent and read back, only the button spins. */}
               <Button
                 loading={busy || claim === 'checking'}
                 disabled={claim === 'unreadable' || !!error}

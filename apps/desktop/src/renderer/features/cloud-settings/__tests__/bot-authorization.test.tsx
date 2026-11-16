@@ -76,8 +76,8 @@ it('shows official channels with the local description and status badge', async 
   }
 });
 
-// Regression: the native panel hid all disconnected credential-based bots.
-// Existing coverage had only fieldless OAuth; a connect ticket with required fields
+// Regression: the native panel must not hide disconnected credential-based bots.
+// Beyond fieldless OAuth, a connect ticket with required fields
 // must remain visible and submit once through the scoped bridge (unit/jsdom).
 it.each([
   ['wecom', { botId: 'test-bot', secret: 'synthetic-secret' }, 'connect'],
@@ -133,7 +133,7 @@ it.each([
 );
 
 // Unit/jsdom: WeChat must share the local confirmation/waiting/bound UI, not a generic switch.
-// Previously the cloud-only switch skipped the native flow; no local controller may run.
+// No cloud-only switch may skip the native flow, and no local controller may run.
 it('uses native WeChat authorization and a single unbind confirmation', async () => {
   const client = createTrialCloudSettingsClient();
   const manage = vi.spyOn(client, 'manage');
@@ -160,7 +160,7 @@ it('uses native WeChat authorization and a single unbind confirmation', async ()
 });
 
 // An uncertain remote result must stay recoverable without re-running the action: it is read
-// back on its own (S3, useSettleUnknown; the 「检查授权状态」 button was replaced by that read-back).
+// back on its own (useSettleUnknown; there is no 「检查授权状态」 button).
 it('reads an unknown credential operation back without a second submission', async () => {
   const client = createTrialCloudSettingsClient();
   const original = client.manage!;
@@ -184,7 +184,7 @@ it('reads an unknown credential operation back without a second submission', asy
 // Unit/jsdom: capabilities and identity details can be absent on an older Host.
 // The shared card must remain honest and must not offer successful-looking no-op actions.
 it('keeps a read-only remote connection visible without enabling unsupported actions', async () => {
-  // An older Host: no IM channel (T27: only that keeps the ticket cards; a failing channel
+  // An older Host: no IM channel (only that keeps the ticket cards; a failing channel
   // shows its failure instead), so its IM probe is refused.
   Object.assign(window, {
     electronAPI: new Proxy(
@@ -344,7 +344,7 @@ it('keeps missing saved Telegram groups and never applies personal groups to off
 });
 
 // Unit/jsdom: real shared section must survive per-domain read errors and retry.
-// Prior tests only covered ready snapshots; no local controller or credentials may be consulted.
+// Covers failed reads, not only ready snapshots; no local controller or credentials may be consulted.
 it.each([
   ['wechat', 'imWechat'],
   ['wecom', 'imWecom'],
@@ -389,7 +389,7 @@ it.each([
         }}
       />,
     );
-    // One line and 「重试」, as the client's settings read failure (CloudRequestError, D11 D4; A3 row 8).
+    // One line and 「重试」, as the client's settings read failure (CloudRequestError).
     expect(within(section).getByText('cloudSettings.imReadFailed')).toBeTruthy();
     expect(within(section).queryByText('Target model picker')).toBeNull();
     fireEvent.click(

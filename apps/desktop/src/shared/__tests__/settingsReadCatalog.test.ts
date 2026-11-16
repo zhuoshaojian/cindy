@@ -26,7 +26,7 @@ describe('settings read catalog independent coverage anchors', () => {
     const represented = new Set([...Object.values(SETTINGS_READ_CATALOG).map(field => field.tab), ...SETTINGS_READ_EXTERNAL_CATALOG.map(item => item.tab)]);
     expect([...represented].sort()).toEqual([...TAB_IDS].sort());
     const actualSections = [...text('renderer/components/settings/SettingsView.tsx').matchAll(/<([A-Z][A-Za-z]*(?:Section|Cell|Card|Panel))\b/g)].map(match => match[1]);
-    // Upstream 0.1.130 wraps page content in the shared settings-rows layout primitives; they hold no setting.
+    // Upstream wraps page content in the shared settings-rows layout primitives; they hold no setting.
     const layoutPrimitives = ['SettingsSection', 'SettingsCard'];
     for (const primitive of layoutPrimitives) expect(text('renderer/components/ui/settings-rows.tsx'), primitive).toMatch(new RegExp(`export function ${primitive}\\b`));
     const classified = new Set([...Object.values(SETTINGS_READ_CATALOG).flatMap(field => [field.control, ...field.controlAncestors]), ...Object.values(SETTINGS_READ_COLLECTION_CATALOG).map(item => item.control),
@@ -124,7 +124,7 @@ describe('settings read catalog independent coverage anchors', () => {
     expect(SETTINGS_READ_ASR_PROVIDERS).toEqual([...asr.matchAll(/^  '([^']+)': \{/gm)].map(match => match[1]));
     const tools = text('main/maker-host/plugins/builtin-plugins.ts');
     expect(SETTINGS_READ_BUILTIN_TOOL_IDS).toEqual([...tools.matchAll(/\{ id: '([^']+)',\s+name:/g)].map(match => match[1]));
-    // Old snapshot enum values stay wire-compatible; active overrides now only migrate oneshot.
+    // Old snapshot enum values stay wire-compatible; active overrides only migrate oneshot.
     expect(SETTINGS_READ_CAPABILITIES).toEqual(['image.generate', 'image.edit', 'video.generate', 'video.edit', 'text.oneshot', 'embed.text']);
     expect(text('main/cindy-brain/pluginTaskPrefsStore.ts')).toContain('migrateLegacyOneshotPins');
   });

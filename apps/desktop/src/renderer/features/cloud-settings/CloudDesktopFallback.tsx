@@ -39,7 +39,7 @@ export function CloudDesktopFallback({
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 flex-1 text-12 leading-[1.6] text-[var(--settings-section-desc)]">
-          {/* As the client asks to finish on the other computer (D11 G2). */}
+          {/* As the client asks to finish on the other computer. */}
           {description ?? t('bots.remoteSettings.finishOnHost', { device: name })}
         </p>
         <Button

@@ -217,8 +217,8 @@ class AutosupplyTest(unittest.TestCase):
         self.assertFalse(self.api.runners)
 
     def test_online_listener_survives_assignment_delay_but_failure_still_retries(self):
-        # Unit / Controller.tick: cloud.15 had a healthy online listener while
-        # its job remained queued. Existing regressions start after assignment;
+        # Unit / Controller.tick: a healthy online listener can wait while its
+        # job remains queued. Other regressions start after assignment;
         # advancing the bootstrap clock by 901s must not delete this live Job.
         for busy in (False, True):
             with self.subTest(busy=busy):
@@ -281,7 +281,7 @@ class AutosupplyTest(unittest.TestCase):
                 self.assertTrue(all('@sha256:' in v['image'] for v in pod['containers']))
                 privileged = [v['name'] for v in pod['containers'] if v['securityContext'].get('privileged')]
                 self.assertEqual(privileged, ['dind'] if role == 'build' else [])
-                # cloud.6 failed on Docker's redirected blob host: the build
+                # Docker redirects blobs to another host: the build
                 # template must route both CDNs, without widening check/cache DNS.
                 dns_env = {v['name']: v.get('value') for v in next(v for v in pod['containers'] if v['name'] == 'dns')['env']}
                 domains = dns_env['SNI_FORWARD_DOMAINS'].split(',')

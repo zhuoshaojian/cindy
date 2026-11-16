@@ -153,7 +153,7 @@ export async function commitModelSettings(domain: ModelSettingsDomain, change: {
 
 /** Interpret dynamic defaults without writing them as overrides. */
 export async function readModelSettings(domain: ModelSettingsDomain) {
-  // Upstream v0.1.136 removed the global teammate model chain editor; it stays read-only.
+  // Upstream has no global teammate model chain editor; it stays read-only.
   if (domain === 'botModelChain') return { status: 'unavailable' as const, revision: null };
   const before = await currentModelSettings(domain);
   if (before.status !== 'ready') return before;

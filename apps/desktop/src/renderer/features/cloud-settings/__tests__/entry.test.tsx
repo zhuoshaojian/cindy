@@ -60,7 +60,7 @@ function content() {
 const access = () => screen.getAllByTestId('access')[0]!.textContent;
 
 // Real provider + Main bridge substitute: covers permissions, read-only empty
-// membership, account switch races and expiry; previously only link routing was tested.
+// membership, account switch races and expiry, beyond link routing.
 it.each(['local', 'signed-out'])('does not query CIS in %s mode', async (mode) => {
   auth.mode = mode;
   render(content());

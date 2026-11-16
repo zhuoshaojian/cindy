@@ -418,7 +418,7 @@ describe('SettingsView Escape', () => {
     }
   });
 
-  // Admission regression: a signed-in account used to see the cloud page
+  // Admission: a signed-in account must not see the cloud page
   // solely because mode=cloud. Unknown/denied permission must not mount it.
   it.each(['checking', 'hidden'])('hides cloud discovery for a signed-in account with %s access', (access) => {
     auth.mode = 'cloud';
@@ -432,7 +432,7 @@ describe('SettingsView Escape', () => {
     expect(instanceList).not.toHaveBeenCalled();
   });
 
-  // 2026-11-05: the category moved into Remote connections; old links must still land there.
+  // The category lives in Remote connections; old links must still land there.
   // Admission and the instance list are covered where the group mounts (remoteControlDevicesDeepLink).
   it('rewrites the retired cloud instances link to Remote connections', async () => {
     auth.mode = 'cloud';
@@ -449,7 +449,7 @@ describe('SettingsView Escape', () => {
     expect(location()).toBe('/');
   });
 
-  // 2026-11-04 product review: the instance's remote desktop must not offer keep-awake or quit.
+  // The instance's remote desktop must not offer keep-awake or quit.
   it.each([false, true])('shows app behavior only outside a managed cloud instance (%s)', (hostOwned) => {
     Object.assign(window.electronAPI, { platform: 'linux', hostSettings: { hostOwned } });
     renderSettings('/settings');

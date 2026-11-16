@@ -52,7 +52,7 @@ export async function listProviderManagement(caller: ManagementCaller): Promise<
       actions: ManagementAction[] = [];
     const builtinSubscription =
       provider.source === 'builtin' && ['anthropic', 'openai', 'xai'].includes(provider.id);
-    // v0.1.97 retires independent Claude accounts; only the official CLI owns its login.
+    // Independent Claude accounts are retired; only the official CLI owns its login.
     const retiredClaude = provider.source === 'user' && provider.auth.native === 'claude';
     if (provider.id === 'anthropic' && builtinSubscription && provider.auth.method === 'oauth')
       actions.push({ resource, label: 'management.actions.authorize', intent: 'authorize',

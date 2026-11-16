@@ -24,7 +24,7 @@ export const CLOUD_PROVIDER_SETTINGS_OPS = [
   'refresh',
   'rediscover',
   'model-call',
-  // Image-input capability override of the model panel (upstream v0.1.125).
+  // Image-input capability override of the model panel.
   'image-input',
   'effort',
   'model-edit',
@@ -313,7 +313,7 @@ export interface CloudProviderSettingsList {
   /** Remembered reasoning effort by memory slot (`agent:providerId`, `agent:*`) and model. */
   efforts?: Record<string, Record<string, string>>;
   supportedOps: CloudProviderSettingsOp[];
-  /** Guest share actions this instance runs; absent before cloud.4, which added `insights`. */
+  /** Guest share actions this instance runs; absent on older instances, which do not run `insights`. */
   shareActions?: CloudProviderShareAction[];
 }
 

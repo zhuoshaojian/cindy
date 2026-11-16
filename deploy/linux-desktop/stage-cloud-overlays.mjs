@@ -2,7 +2,7 @@ import { transformCloudIdentitySource, targets as identityTargets } from './runt
 import { transformCloudUpdateSource, targets as updateTargets } from './runtime-updates/overlay.mjs';
 import { cloudAppVersion } from './build-version.mjs';
 // Applies the cloud runtime overlays to the frozen client source before packaging.
-// Order matches the main-process Vite plugin order already qualified for cloud.5/6:
+// Order matches the qualified main-process Vite plugin order:
 // guidance -> window controls -> task activity -> maintenance.
 import fs from 'node:fs';
 import path from 'node:path';

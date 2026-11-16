@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AuthApiError } from '@cindy/auth-client';
 
 // Unit: native login must open the selected Auth method, preserve SSO and
-// route the final credential only to the owned cloud device. Old onboarding
+// route the final credential only to the owned cloud device. The onboarding
 // tests cover the browser continuation, not these native actions/lifetimes.
 import { createCloudInstanceLogin } from '../login';
 import { CloudClientError, type CloudClientIdentity, type CloudClientHttp } from '../transport';

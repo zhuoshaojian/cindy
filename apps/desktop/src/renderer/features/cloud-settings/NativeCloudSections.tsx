@@ -75,7 +75,7 @@ type Props = {
   memoryAgentRows?: boolean;
   /**
    * Groups the instance still does not answer after the page's automatic reads: each shows a
-   * notice where it would be, named as on the page (owner, 2026-11-09).
+   * notice where it would be, named as on the page.
    */
   unreadableNotice?: { reload(): void; disabled: boolean };
   /** Groups showing their last value read because the latest read failed: not editable. */
@@ -97,9 +97,9 @@ const section = (id: string, content: ReactNode, className = 'pb-[18px]') => (
 );
 const generalSection = (id: string, content: ReactNode) => section(id, content, 'py-[18px]');
 /**
- * A group whose latest read failed keeps its last values in place, faded and not editable (owner,
- * 2026-11-11). Its heading row stays as it is and carries the failure on its right, where the
- * group's own action would be (D10 position 1), so 「重试」 stays usable. The shared views have no
+ * A group whose latest read failed keeps its last values in place, faded and not editable. Its
+ * heading row stays as it is and carries the failure on its right, where the group's own action
+ * would be, so 「重试」 stays usable. The shared views have no
  * faded state, so the rest of the group is marked from outside: everything beside the heading row
  * (and the description right under it) is faded and inert.
  */
@@ -312,8 +312,8 @@ export function NativeCloudSections(props: Props) {
       ? `${/^[A-Za-z0-9]/.test(text) ? ' ' : ''}${text}${/[A-Za-z0-9]$/.test(text) ? ' ' : ''}`
       : text;
   /**
-   * The failure in the group's heading row, on the right where its own action would be (owner,
-   * 2026-11-11, D10 position 1, D9 style 1): a red icon, 「加载失败」 and an icon-only 「重试」.
+   * The failure in the group's heading row, on the right where its own action would be: a red
+   * icon, 「加载失败」 and an icon-only 「重试」.
    */
   const groupStatus = (names: string[]) =>
     unreadableNotice && (
@@ -787,7 +787,7 @@ export function NativeCloudSections(props: Props) {
   if (tab === 'storage')
     return (
       <StorageSectionFrame description={t('cloudSettings.storageDescription')}>
-        {/* The instance disk is fixed in size (2026-11-04 product review); the preview has none. */}
+        {/* The instance disk is fixed in size; the preview has none. */}
         {!trial && (
           <CloudStorageUsage
             deviceId={deviceId}

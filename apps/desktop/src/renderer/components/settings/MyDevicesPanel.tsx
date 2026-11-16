@@ -295,7 +295,7 @@ export function MyDevicesPanel({
   // 与切换栏同一排序规则:按稳定身份(名字 → deviceId),不跟服务端的「在线/lastSeen 倒序」——
   // 短期上下线 / 心跳不再让顺序跳动,设备只在原位改在线点。本机单独置顶(下面单独渲染)。
   const allOthers = (s.devices ?? []).filter((d) => !d.isSelf).sort(compareDevicesByName);
-  // 白名单账号的云实例常驻在 'cloud' 里,不再出现在折叠的其它设备列表中。
+  // 白名单账号的云实例常驻在 'cloud' 里,不出现在折叠的其它设备列表中。
   const cloudDevices = cloud ? allOthers.filter((d) => cloud.isManaged(d.deviceId)) : [];
   const others = cloud ? allOthers.filter((d) => !cloud.isManaged(d.deviceId)) : allOthers;
   const revokedControllers = new Set(s.revokedControllers);

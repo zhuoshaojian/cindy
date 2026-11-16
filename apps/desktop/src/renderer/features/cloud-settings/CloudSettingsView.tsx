@@ -75,10 +75,10 @@ import {
 // The trial's prompt editor keeps its explicit save button and waits for the receipt.
 const CONFIRMED_DOMAINS = new Set<CloudSettingsDomain>(['personalization']);
 /**
- * A failed read rebuilds the settings session on its own, as the former sidebar "Reload" did
- * (owner, 2026-11-09): a restarted instance, an expired or discarded session
- * (CLOUD_SETTINGS_SCOPE_CHANGED) or a network failure. Three tries over about seven seconds, never
- * while a write is in flight; only then does the page say it cannot read and offer a reload.
+ * A failed read rebuilds the settings session on its own after a restarted instance, an expired
+ * or discarded session (CLOUD_SETTINGS_SCOPE_CHANGED) or a network failure. Three tries over about
+ * seven seconds, never while a write is in flight; only then does the page say it cannot read and
+ * offer a reload.
  */
 export const CLOUD_RECONNECT_DELAYS_MS = CLOUD_RETRY_DELAYS_MS;
 // Steppers and number fields send once the user pauses; switches and choices send at once.
@@ -167,20 +167,20 @@ export function CloudSettingsPanel({
       },
       onSaved: (domain, application) => {
         dirty.current.delete(domain);
-        // Saved but not applied everywhere on the instance: a warning toast (D11 B4).
+        // Saved but not applied everywhere on the instance: a warning toast.
         if (application === 'failed') toast.warning(copy.current.t('hostSettings.savedApplyFailed'));
         setResult(copy.current.trial ? 'cloudSettings.trialSaved' : 'cloudSettings.saved');
       },
       onFailure: ({ reason }) => {
         if (reason === 'unreachable' && unreachableShown.current) return;
-        // As the client's settings (D11 B2, B3): a toast with no button; the control shows the
+        // As the client's settings: a toast with no button; the control shows the
         // instance's value again.
         toast.error(copy.current.t(`cloudSettings.sync.${reason}`));
       },
     });
     return next;
   }, [client]);
-  // Leaving by any route: waiting changes are sent, not dropped (2026-11-09 owner decision).
+  // Leaving by any route: waiting changes are sent, not dropped.
   useEffect(() => () => void sync.dispose(), [sync]);
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: 0 });
@@ -199,7 +199,7 @@ export function CloudSettingsPanel({
     return true;
   };
   unreachableShown.current = failure === 'readFailed' && tab !== 'instance';
-  // The code stays for diagnostics; the client does not show it (D11 A5).
+  // The code stays for diagnostics; the client does not show it.
   const [, setFailureCode] = useState<string>();
   const connectedOnce = useRef(false);
   const recovery = useRef({ attempts: 0, running: false });
@@ -300,7 +300,7 @@ export function CloudSettingsPanel({
     if (
       dirty.current.size &&
       !(await confirm({
-        // As leaving another device's settings on this computer (D11 B6, RemoteBotSettings).
+        // As leaving another device's settings on this computer (RemoteBotSettings).
         title: t('bots.memory.unsavedTitle'),
         description: t('bots.remoteSettings.leaveDescription'),
         confirmText: t('bots.memory.discard'),
@@ -497,7 +497,7 @@ export function CloudSettingsPanel({
   // jump; an answer that rules the open category out moves to the first one it supports.
   const capabilitiesKnown = !!deviceId;
 
-  // The page's one notice (D11 A3–A7, B8, client: RemoteSkillsPage / RemotePluginPage): who is
+  // The page's one notice (as the client's RemoteSkillsPage / RemotePluginPage): who is
   // managed, and in its text what the page is doing: reading, could not read, offline, updating,
   // not supported. Until the instance has been read it is not known to be offline. The plugin
   // page reads over DeviceLink, not these settings, so there it says only the instance's state;
@@ -689,7 +689,7 @@ export function CloudSettingsPanel({
               <div
                 className={`mx-auto w-full min-w-0 animate-fade-in ${pluginPage ? 'max-w-none' : 'max-w-[920px] px-1'} ${fills ? 'flex h-full min-h-0 flex-col' : 'pb-32'}`}
               >
-                {/* As the client shows another computer it manages (D11 A3–A7, B8): one notice
+                {/* As the client shows another computer it manages: one notice
                     at the top, whose text says what the page is doing. On the plugin page it
                     stays above every tab, aligned with that page's own frame, which then shows
                     only what it alone knows (offline, loading, project). */}
@@ -702,7 +702,7 @@ export function CloudSettingsPanel({
                 <span className="sr-only" role="status">
                   {result ? t(result) : ''}
                 </span>
-                {/* A category the instance does not offer at all (B7). Groups it offers but could
+                {/* A category the instance does not offer at all. Groups it offers but could
                     not read say so in their own heading row. */}
                 {activeDomains.length > 0 &&
                   online &&
@@ -789,7 +789,7 @@ export function CloudSettingsPanel({
                       plugins ? (
                         plugins(tab === group)
                       ) : (
-                        // A browser has no plugin page: the instance's own settings (2026-11-04 review).
+                        // A browser has no plugin page: the instance's own settings.
                         <CloudDesktopFallback
                           deviceId={deviceId}
                           name={name}
@@ -871,7 +871,7 @@ export function CloudSettingsPanel({
                     id="settings-panel-more"
                     aria-labelledby="settings-tab-more"
                   >
-                    {/* A page title as on this computer's pages (D11 A9). */}
+                    {/* A page title as on this computer's pages. */}
                     <SettingsSection variant="page" title={t('cloudSettings.moreSettings')}>
                       <div className={card}>
                         <CloudDesktopFallback

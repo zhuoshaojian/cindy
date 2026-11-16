@@ -60,7 +60,7 @@ export interface DefaultOverrideReset {
 
 /**
  * The row's control with DefaultOverrideControls in front of it. Without `reset` the control is
- * returned unchanged, so callers that do not pass one render exactly as before.
+ * returned unchanged, so callers that do not pass one render the control exactly as given.
  */
 export function withDefaultOverride(control: ReactNode, reset?: DefaultOverrideReset) {
   if (!reset) return control;

@@ -2,7 +2,7 @@
 set -eu
 cd /workspace/source
 export TAR_OPTIONS=--no-same-owner
-# v0.1.119's production bundle exceeds the former 6 GiB heap. The build-only
+# The production bundle exceeds a 6 GiB heap. The build-only
 # DinD container has 28 GiB; reserve headroom for native tools and other targets.
 # Keep dependency preparation and the delivered runtime's limits unchanged.
 export CI=1 NODE_OPTIONS=--max-old-space-size=12288

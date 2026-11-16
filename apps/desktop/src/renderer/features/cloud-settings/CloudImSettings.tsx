@@ -163,10 +163,10 @@ export function CloudImSettings({
               {t('settings.imBot.defaults.loading')}
             </p>
           ) : !readFailed && (!supported || state?.status === 'unavailable') ? (
-            // Not offered by this instance (D11 G9).
+            // Not offered by this instance.
             <CloudRequestError message={t('bots.remoteSettings.unsupported')} />
           ) : (
-            // One line and 「重新读取」, as the client's settings read failure (D11 D4, G10).
+            // One line and 「重新读取」, as the client's settings read failure.
             <CloudRequestError
               message={t(
                 state?.readErrorCode === 'SETTINGS_RESPONSE_TOO_LARGE' ||

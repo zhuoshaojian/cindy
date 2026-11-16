@@ -24,7 +24,7 @@ vi.mock('../../main/appSessionState.js', () => ({
   getActiveAppSession: state.forbidden, ownerScopedUserDataPath: state.forbidden, activeOwnerScopeKey: state.forbidden,
   getActiveDataOwnerPushStamp: state.forbidden, isAppSessionBoundaryPending: state.forbidden, dataOwnerStorageKey: (v: string) => `test-${v}`,
 }));
-// Native stores now resolve the ambient owner through the injected owner context; readers get roots explicitly.
+// Native stores resolve the ambient owner through the injected owner context; readers get roots explicitly.
 vi.mock('../../main/ownerContext.js', () => ({
   configureOwnerContext: () => {}, ownerScopedPath: state.forbidden, activeDataOwnerId: state.forbidden,
   hasCommittedOwner: state.forbidden, isOwnerBoundaryPending: state.forbidden, ownerGeneration: state.forbidden,
@@ -151,7 +151,7 @@ describe('production reader to v2 coverage seam', () => {
     expect(Object.keys(report.fields)).toEqual([...SETTINGS_SNAPSHOT_V2_FIELD_IDS]);
     expect(Object.keys(inspection.fields).filter(id => !Object.hasOwn(report.fields, id)).sort())
       // Leaves added after the frozen v2 wire stay native-only, including newer shortcuts and
-      // the iMessage IM defaults channel added upstream in 0.1.130.
+      // the upstream iMessage IM defaults channel.
       .toEqual([
         'gitSafety.autoInitProjectGit',
         'gitSafety.mode',
