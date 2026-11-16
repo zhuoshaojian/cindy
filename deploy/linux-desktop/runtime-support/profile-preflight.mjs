@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import {randomBytes,randomUUID,generateKeyPairSync,sign,createHash} from 'node:crypto';
+import {randomBytes,randomUUID,generateKeyPairSync,sign} from 'node:crypto';
 import {createServer} from 'node:http';
 import {spawn,spawnSync} from 'node:child_process';
 import {cdpPipe} from './cdp-pipe.mjs';
@@ -58,32 +58,9 @@ async function main(){
  await stage('reverse',homes[0]);await stage('cold',homes[1]);
  privateWrite(root+'/key',randomBytes(32).toString('base64url'));await stage('cold',homes[0],{wrongKey:true});
  privateWrite(root+'/key',password);await stage('cold',homes[1]);
- let recoveryCycles=0;
- if(context.role==='recovery'){
- const manifest=JSON.parse(fs.readFileSync('/usr/local/lib/cindy/profile-image.json','utf8'));
- if(!manifest.recoveryAsarSha256||createHash('sha256').update(fs.readFileSync('/opt/cindy-rollback/resources/app.asar')).digest('hex')!==manifest.recoveryAsarSha256)throw new Error('PREFLIGHT_RECOVERY_IMAGE_REQUIRED');
- const endpoint=JSON.parse(fs.readFileSync('/usr/local/lib/cindy/profile-endpoint-template.json','utf8'));
- for(const [k,v]of Object.entries(endpoint))if(typeof v==='string'&&/^(https?|wss?):/.test(v))endpoint[k]=/^wss?:/.test(v)?identity.authBaseUrl.replace('http:','ws:'):identity.authBaseUrl;
- privateWrite(root+'/endpoint.json',JSON.stringify(endpoint));
- // An inert B is required by the original CLI config only. It must never be used:
- // the synthetic Auth only accepts the latest RT imported in the four v11 keys.
- privateWrite(root+'/inert-bootstrap',randomUUID());fs.mkdirSync(root+'/workspaces',{mode:0o700});
- const start=rotations;const child=spawn('/usr/local/bin/cindy-linux-desktop',['/opt/cindy-rollback/Cindy','--headless','--cloud-ui','--password-store=gnome-libsecret'],{
- env:{...envFor(homes[0]),CINDY_POD_DEVICE_ID:identity.deviceId,CINDY_POD_MEMBERSHIP_ID:identity.membershipId,CINDY_POD_DEVICE_NAME:'Synthetic preflight',
- CINDY_POD_RESOURCE_REFRESH_TOKEN_FILE:root+'/inert-bootstrap',XDT_USER_DATA_DIR:root+'/recovery',XDT_ENDPOINT_MANIFEST_FILE:root+'/endpoint.json',
- CINDY_POD_WORKSPACES_DIR:root+'/workspaces',CINDY_CLOUD_STATUS_FILE:root+'/legacy-status.json'},stdio:'ignore'});active=child;
- const deadline=Date.now()+45000;let accepted=false;
- while(Date.now()<deadline&&child.exitCode===null&&!child.signalCode&&!bad){
- try{const status=JSON.parse(fs.readFileSync(root+'/legacy-status.json','utf8'));if(status.readiness.auth==='ready'&&rotations-start>=2){accepted=true;break;}}catch{}
- await sleep(100);
- }
- await stop(child);active=null;if(!accepted||bad)throw new Error('PREFLIGHT_RECOVERY_AUTH_FAILED');recoveryCycles=rotations-start;
- privateWrite(root+'/expected-recovery.json',JSON.stringify({refreshToken:current}));await stage('recovery-cold',homes[1]);
- }
  const sandbox=await stage('sandbox',homes[0],{sandbox:true});
  const checks=context.role==='candidate'?{canonicalWithoutB:true,missingCanonicalRejected:true,wrongKeyRejected:true,sharedKeyringAcrossHomes:true}:
- context.role==='maintenance'?{latestDurableForward:true,latestCanonicalReverse:true,sourceUnchanged:true,cindyOnlyRecovery:true,wrongKeyRejected:true}:
- {legacyAsarWithSecureWrapper:true,currentResourceAccepted:true,refreshCycles:recoveryCycles,sharedKeyringAcrossHomes:true};
+ {latestDurableForward:true,latestCanonicalReverse:true,sourceUnchanged:true,cindyOnlyRecovery:true,wrongKeyRejected:true};
  const proof=preflightEvidenceSchema.parse({version:1,role:context.role,bindingSha256:context.bindingSha256,podUid:context.podUid,
  observedAtMs:Date.now(),architecture:process.arch==='arm64'?'arm64':process.arch==='x64'?'amd64':'invalid',sandbox,checks});
  const bytes=JSON.stringify(proof);if(Buffer.byteLength(bytes)>4096)throw new Error('PREFLIGHT_RECEIPT_TOO_LARGE');

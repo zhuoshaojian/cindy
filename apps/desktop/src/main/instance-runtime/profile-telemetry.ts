@@ -39,7 +39,7 @@ export function startProfileTelemetry(input:{deviceId:string;membershipId:string
  const proc=processObservation(process.pid);
  const message=telemetrySchema.parse({version:1,...mounted,deviceId:input.deviceId,membershipId:input.membershipId,
  realm,authBaseUrl:auth.authBaseUrl,heartbeatAtMs:Date.now(),process:{pid:proc.pid,startTicks:proc.startTicks},
- canonical:{source:mounted.role==='candidate'?'canonical':'legacy-cindy-four-keys',backend:'gnome-libsecret',sessionId,
+ canonical:{source:'canonical',backend:'gnome-libsecret',sessionId,
  durableRefreshSequence:auth.durableRefreshSequence,durableAtMs:auth.durableAtMs,...claims},
  readiness:{auth:'ready',database:'ready',binaries:'ready',maker:'ready',deviceLink:'ready'}});
  fs.writeSync(5,JSON.stringify(message)+'\n');

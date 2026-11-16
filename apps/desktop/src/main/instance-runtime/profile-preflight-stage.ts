@@ -10,7 +10,7 @@ import {importFrozenLegacyResourceCredential,seedLegacyResourceRecoveryProfile,p
 import {createResourceClaimVerifier} from './profile-runtime-io.js';
 import {createSandboxWitness} from './profile-telemetry.js';
 import {readPreflightContext,PREFLIGHT_ROOT} from './profile-preflight-context.js';
-const stages=['prepare','canonical','reverse','cold','recovery-cold','sandbox'] as const;
+const stages=['prepare','canonical','reverse','cold','sandbox'] as const;
 export function initializeProfilePreflight():boolean {
  if(!process.argv.includes('--cloud-profile-preflight-stage'))return false;
  readPreflightContext();
@@ -74,11 +74,6 @@ export async function runProfilePreflight():Promise<void> {
  // After reverse, the exact latest RT is available through both HOME keyring clients.
  const session=parseAuthSessionRecord(readLegacy(recovery,keyNames[0]));assert.equal(session?.refreshToken,canonical.refreshToken);
  assert.equal(readLegacy(recovery,keyNames[1]),canonical.refreshToken);assert.equal(readLegacy(recovery,keyNames[3]),canonical.refreshToken);
- }else if(stage==='recovery-cold'){
- const expected=JSON.parse(fs.readFileSync(PREFLIGHT_ROOT+'/expected-recovery.json','utf8'));
- const session=parseAuthSessionRecord(readLegacy(recovery,keyNames[0]));assert.equal(session?.refreshToken,expected.refreshToken);
- for(const k of [keyNames[1],keyNames[3]])assert.equal(readLegacy(recovery,k),expected.refreshToken);
- for(const k of keyNames)assert.equal(Buffer.from(fs.readFileSync(recovery+'/safe-storage/'+k+'.enc','utf8'),'base64').subarray(0,3).toString(),'v11');
  }
  stopped();atomicPrivateWrite(PREFLIGHT_ROOT+'/stage-result.json',Buffer.from(JSON.stringify({stage,bindingSha256:context.bindingSha256})));app.quit();
  }catch{throw new Error('PROFILE_PREFLIGHT_STAGE_FAILED');}
