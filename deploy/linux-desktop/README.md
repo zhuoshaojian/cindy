@@ -1,121 +1,77 @@
-# Linux cloud client image
+# Linux cloud runtime image
 
-The current development entry is [`zhuoshaojian/cindy`,
-`feat/cloud-settings-native-client`](https://github.com/zhuoshaojian/cindy/tree/feat/cloud-settings-native-client).
-Its CIS counterpart is [`zhuoshaojian/cindy-server`,
-`feat/cloud-settings-readonly`](https://github.com/zhuoshaojian/cindy-server/tree/feat/cloud-settings-readonly).
+This directory builds the Linux runtime image for cloud Cindy instances: cloud-only
+build overlays, runtime programs, the Xfce/Plank desktop, build scripts and the
+delivery pipeline. Ordinary desktop builds do not use anything here.
 
-This directory belongs to the **`cindy` client repository**. It owns the Linux application
-package, cloud-only build overlays, runtime entrypoints, desktop, fonts and image
-release checks. Ordinary desktop builds do not enable these overlays.
+The client repository builds, smoke-tests and publishes candidate images and prepares
+their ACS image caches. CIS (`cloud-instance-server` in `cindy-server`) selects
+approved images and runs backups, upgrades and recovery on instances; it does not
+build images or create their caches. Credentials, instance and PVC identities,
+deployment configuration and backups stay out of both repositories.
 
-| Material | Purpose |
+## Documents
+
+- [SOURCE-BUILD.md](SOURCE-BUILD.md): build the image from source, image layout, runtime acceptance.
+- [delivery/README.md](delivery/README.md): the CI pipeline (verify, build, smoke, publish, ACS cache).
+- [delivery/BOOTSTRAP.md](delivery/BOOTSTRAP.md): one-time setup of Environments, registries, ACS and runners.
+- [delivery/runner/README.md](delivery/runner/README.md): one-job runners and the controller that provisions them.
+- [DUAL-VERSION-UPDATES.md](DUAL-VERSION-UPDATES.md): upstream version plus cloud revision.
+- [UPSTREAM-ALIGNMENT.md](UPSTREAM-ALIGNMENT.md): moving the cloud stack onto a new upstream release.
+- [PROFILE-OBSERVATION.md](PROFILE-OBSERVATION.md): profile supervisor and runtime health evidence.
+
+## Files
+
+| Path | Purpose |
 | --- | --- |
-| [Upstream 0.1.119 alignment](UPSTREAM-0119.md) | Current client merge, delivery, compatibility decisions and acceptance scope |
-| [Automatic upstream alignment proposal](UPSTREAM-ALIGNMENT.md) | Conflict handling, fork delivery and owner-first admission; not an enabled scheduler |
-| [SOURCE-BUILD.md](SOURCE-BUILD.md), [0.1.113 instance acceptance](ACCEPTANCE-0113-20261022.md) | Complete source-build entry and the separate tested-instance result |
-| [cloud.29 identity acceptance](ACCEPTANCE-IDENTITY-20261027.md) | CI delivery, owner-only upgrade, real logout/account-mutation rejection and login-bridge test limits |
-| [Clipboard and recovery follow-up](ACCEPTANCE-CLIPBOARD-RECOVERY-20261020.md) | R7 source-build and Mac clipboard acceptance, rollout results, and explicit phone-test limits |
-| [Candidate delivery](delivery/README.md) | Fork-only self-hosted source build, isolated smoke, candidate publication and ACS cache preparation |
-| [Dual-version updates](DUAL-VERSION-UPDATES.md), [cloud.2 acceptance](ACCEPTANCE-CLOUD2-20261021.md) | Implemented CIS selection and owner-requested upgrades, application version display, live acceptance and remaining promotion work |
-| [runtime-base/README.md](runtime-base/README.md), `runtime-base/Dockerfile`, `runtime-base/packages.lock` | Build the third-party CN dependency base from pinned OS, package and asset inputs; no Cindy application or helpers |
-| `source-freeze.json` | Current frozen application commit, upstream version and runtime patch inputs |
-| [BUILD-V0108.md](BUILD-V0108.md) | Historical v0.1.108 application build inputs and limitations |
-| `prepare-linux.sh`, `prepare-codex.mjs`, `prepare-other-assets.mjs` | Prepare the isolated Linux builder and verify external assets |
-| `stage-cloud-overlays.mjs`, `build-runtime.sh` | Apply the cloud transforms to a disposable source export and package it |
-| `runtime-activity/`, `runtime-maintenance/` | Runtime task activity, maintenance gate and clean shutdown evidence |
-| `runtime-guidance/`, `runtime-updates/`, `runtime-window-controls/`, `runtime-identity/` | Cloud configuration guidance, managed updates, main-window controls and managed-identity account UI |
-| `runtime-entrypoint/`, `runtime-desktop-xfce/` | Historical Openbox entrypoint and current Xfce/Plank sources |
-| `runtime-fonts/` | Verified emoji font staging and permission checks |
-| `release_guard.py` | Offline application payload, permissions, image metadata and startup-evidence gates |
-| [IMAGE-PACKAGING.md](IMAGE-PACKAGING.md), `compact-runtime.py` | Source-build requirements and the historical filesystem compaction tool |
-| [PROFILE-OBSERVATION.md](PROFILE-OBSERVATION.md), `profile-supervisor.mjs` | Runtime supervision and profile observation contract |
+| `source-freeze.json` | Application commit, upstream tag and base-recipe commit to build from |
+| `delivery/version.json` | Upstream version and commit, cloud revision |
+| `Dockerfile`, `Dockerfile.dockerignore` | Application build stages and the runtime image |
+| [`runtime-base/`](runtime-base/README.md) | Pinned third-party dependency base; no Cindy files |
+| `build-image.py` | Export source and recipe from Git and build the image locally |
+| `download-build-assets.mjs`, `prepare-codex.mjs`, `prepare-other-assets.mjs`, `prepare-linux.sh` | Download and verify pinned build assets; prepare the Linux builder |
+| `prime-native-cache.cjs`, `verify-native-modules.cjs` | Prebuild native modules; run the packaged SQLite, sqlite-vec and PTY modules |
+| `stage-cloud-overlays.mjs`, `build-version.mjs`, `build-runtime.sh` | Apply the cloud overlays and cloud version to the exported source, then package |
+| `stage-runtime-agents.py` | Bundle the pinned Claude and Codex CLIs |
+| `assemble-runtime.py`, `normalize-timestamps.py`, `audit-runtime-layer.py` | Assemble the application layer, clamp timestamps, audit permissions and links |
+| `release_guard.py` | Image checks: platform, user, start command, labels, two-layer layout |
+| `compact-runtime.py` | Optional repackaging of an existing image; see [SOURCE-BUILD.md](SOURCE-BUILD.md#compact-runtimepy) |
+| `profile-supervisor.mjs` | Runs Cindy for a profile and publishes runtime evidence |
+| `github-device-login.py`, `github-device-login-proof.py` | Host GitHub device-login helper shipped in the image, and its offline proof |
+| [`runtime-activity/`](runtime-activity/README.md) | Overlay: live task activity that blocks restarts |
+| [`runtime-maintenance/`](runtime-maintenance/README.md) | Overlay: maintenance gate and clean-shutdown evidence |
+| [`runtime-guidance/`](runtime-guidance/README.md) | Overlay: cloud configuration guidance in agent prompts |
+| [`runtime-updates/`](runtime-updates/README.md) | Overlay: disable the desktop updater; CIS owns upgrades |
+| [`runtime-window-controls/`](runtime-window-controls/README.md) | Overlay: keep the main window open |
+| [`runtime-identity/`](runtime-identity/README.md) | Overlay: hide sign-out and account switching |
+| [`runtime-support/`](runtime-support/README.md) | Seccomp launcher, health check, keyring and profile maintenance/preflight programs |
+| [`runtime-desktop-xfce/`](runtime-desktop-xfce/README.md) | PID 1 wrapper, Xfce/Plank desktop, Dock launchers, seccomp profile, liveness check |
+| [`runtime-entrypoint/`](runtime-entrypoint/README.md) | Openbox PID 1 wrapper and shutdown-order test; not installed in the Xfce image |
+| [`runtime-fonts/`](runtime-fonts/README.md) | Emoji font staging |
+| `delivery/` | Pipeline scripts; see [delivery/README.md](delivery/README.md) |
 
-The published R5 digest, ASAR hash, frozen client patch hashes and final desktop
-source hashes are recorded in
-[`runtime-desktop-xfce/source-manifest.json`](runtime-desktop-xfce/source-manifest.json).
-That is historical artifact provenance, not proof that the current branch HEAD
-was built or deployed. The native cloud settings UI and the runtime image are
-different build outputs of this repository.
+## Local checks
 
-`cindy-server` is the server repository; `cloud-instance-server` (CIS) is a
-service inside it. A checkout directory name is not a repository or service name.
-
-## Complete source build
-
-The [source build entry](SOURCE-BUILD.md) exports the frozen client and recorded
-runtime fixes from Git, builds the pinned dependency base, compiles the application
-and context/wire bundles, and installs the tracked runtime programs into one
-application layer. `Dockerfile.r5` is retained only as a historical repair recipe.
-
-The source build and slim base require fresh isolated acceptance before use. A
-successful Docker build is not startup, authorization, input or rollout acceptance.
-The source builder does not publish images or operate instances.
-
-Local acceptance delivers a loadable image archive and checksum, image config ID,
-complete Dockerfiles/build inputs, build logs and test records. Test with disposable
-data and synthetic credentials; record native versus emulated execution and
-untested production behavior. Review the local result before an authorized candidate
-upload for native Linux qualification; promotion and instance changes require the
-completed qualification. A local image ID or archive checksum
-is not a registry manifest digest.
-
-## Release pipeline ownership
-
-**Client candidate delivery is implemented and has run on fork-only self-hosted
-runners, with automatic per-job provisioning and cleanup; see [the workflow records](delivery/README.md).**
-Operator documentation-only pushes do not trigger delivery or provision runners.
-Packaged runtime guidance remains a build input; a release still requires a version change.
-It produces candidates and cache readiness receipts, not stable release admission.
-CIS qualified-version selection and owner-requested upgrades are implemented.
-Actual cache hits and one authorized instance upgrade were separately verified in
-[cloud.2 acceptance](ACCEPTANCE-CLOUD2-20261021.md); complete product qualification,
-stable promotion and automatic cache-hit testing remain separate work. The full release sequence is:
-
-1. Freeze the client source, upstream version, complete Dockerfile chain,
-   dependency inputs and target platform; build from source and audit permissions.
-2. Qualify the final locally built candidate for normal startup, identity,
-   sandbox, keyring, desktop/input and orderly shutdown in isolated Linux.
-3. After publication is authorized, publish a unique immutable image digest.
-   An upload solely for isolated native qualification may precede step 2; it
-   remains an unqualified candidate until that test passes.
-   Enumerate the main image and **every
-   actual initContainer image** required by the supported deployment templates.
-4. Create their ACS caches in each target Region/cluster network. Verify `Ready`
-   and actual cache hits using those exact pinned image references; an older
-   init image still requires its own verification. A matching mutable tag alone
-   is insufficient.
-5. Hand CIS the qualified version and its release evidence only after all
-   prerequisites pass. No ready cache means the release is not ready for rollout.
-
-The completed delivery chain must retain source/digest mappings, the complete image list,
-platform, cache identity/Region, readiness and hit evidence, and rollback digest.
-This document assigns responsibilities; it does not introduce a new wire schema
-or claim that CIS already consumes an automated release manifest.
-
-The `cloud-instance-server` service in `cindy-server` owns instance placement,
-admission, task protection, upgrade
-orchestration, pre-upgrade backup and failure recovery. It consumes qualified
-images. It does not build client images or create their ACS caches. Credentials,
-real instance/PVC identities, deployment configuration, backup data and one-off
-operator scripts remain outside both source trees.
-
-## Local source checks
-
-From the client repository root (these do not build or publish an image):
+These are the `verify` job's checks. Run them from the repository root with root
+dependencies installed. They do not build or publish an image.
 
 ```sh
 CINDY_TEST_CLIENT_SOURCE="$PWD" CINDY_ACTIVITY_TEST_SOURCE="$PWD" \
   CLOUD_UPDATE_TEST_SOURCE="$PWD" CLOUD_WINDOW_TEST_SOURCE="$PWD" \
-  node --test deploy/linux-desktop/runtime-*/*.test.mjs
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
-  -s deploy/linux-desktop -p 'test_*.py' -v
-PYTHONDONTWRITEBYTECODE=1 python3 deploy/linux-desktop/runtime-fonts/test_stage_emoji_font.py
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
-  -s deploy/linux-desktop/runtime-base -p 'test_*.py' -v
+  node --test deploy/linux-desktop/build-version.test.mjs \
+    deploy/linux-desktop/prime-native-cache.test.mjs deploy/linux-desktop/runtime-*/*.test.mjs \
+    deploy/linux-desktop/download-build-assets.test.mjs deploy/linux-desktop/delivery/*.test.mjs
+export PYTHONDONTWRITEBYTECODE=1
+python3 -m unittest discover -s deploy/linux-desktop -p 'test_*.py' -v
+python3 -m unittest discover -s deploy/linux-desktop/runtime-base -p 'test_*.py' -v
+python3 -m unittest discover -s deploy/linux-desktop/delivery -p 'test_*.py' -v
+python3 deploy/linux-desktop/runtime-fonts/test_stage_emoji_font.py
+# Version and upstream-tag check; needs the upstream tag locally or --fetch-upstream.
+python3 deploy/linux-desktop/delivery/plan.py --output /tmp/cindy-delivery-plan.json
+actionlint -config-file deploy/linux-desktop/delivery/actionlint.yaml \
+  .github/workflows/cloud-image-delivery.yml
 ```
 
-The entrypoint shutdown harness needs Bash >= 5.1 and Python 3; its Node test
-reports a skip when unavailable. The Dock migration test requires an isolated
-Linux image with the packaged desktop dependencies; see its README. Neither
-offline source checks nor native X11 tests prove DeviceLink cross-device E2E.
+The entrypoint shutdown-order test needs Bash >= 5.1 and Python 3 and is skipped
+otherwise. These checks use synthetic data; they do not replace
+[runtime acceptance](SOURCE-BUILD.md#runtime-acceptance).

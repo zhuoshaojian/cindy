@@ -1,67 +1,70 @@
-# Cloud maintenance build
+# Cloud maintenance gate
 
-This overlay is maintained in the client image sources and applied only when packaging a cloud
-runtime. It does not modify the ordinary desktop source or credential migration
-v3. Include `runtime-activity/overlay.mjs` before this plugin in the existing
-desktop main-process Vite build.
+Cloud packaging overlay that lets CIS run single-instance maintenance operations
+(prepare, seal, cancel, release) against a running instance. Ordinary desktop
+builds do not use it.
 
-Pass `expectedRegion: 'cn'` or `'global'` explicitly to
-`cloudMaintenancePlugin`. The resolved main-process
-`import.meta.env.VITE_CINDY_AUTH_REGION` definition must match. Use the existing
-desktop build recipe's region configuration for all entries; rebuilding only
-main with implicit defaults can produce a region that differs from the preserved
-renderer and mounted endpoint manifest. The plugin rejects that build before
-packaging. Never patch the deployed endpoint manifest to accommodate a wrongly
-built application.
+## Build wiring
 
-The former on-volume `maintenance-backup.py` helper is retired: do not package
-or invoke it. Existing recovery archives are left untouched. Pre-upgrade backups,
-when `upgradeBackup` is configured, run from CIS in a separate stopped-volume Pod.
-This overlay supplies their precondition: it wires the desktop quit chain
-(`lifecycle.ts`) so that a fault-free, orderly quit of a sealed operation writes
-`/var/lib/cindy/user-data/.cis-maintenance/shutdown.json`. Roll this image out to
-every instance before enabling `upgradeBackup` (see the service document).
-Build the dependency base and application from the complete committed Dockerfile
-chain and recorded source inputs; do not use an exported old runtime as the base.
-Preserve native unpack flags,
-preload/worker assets and the release's configured region.
+`overlay.mjs` routes every work ingress through the gate: agent input, agent
+dispatch, scheduler, remote input (including managed login recovery) and plugin
+work. It also wires the desktop quit chain (`lifecycle.ts`) and activity sampling
+(`bootstrap-electron.ts`). Sampling reads `readMaintenanceActivity` from the
+`runtime-activity` virtual module, so that overlay must be applied too.
+`stage-cloud-overlays.mjs` applies both to the build's source export and generates
+the virtual module from `cloudMaintenancePlugin`. Missing, duplicate or drifted
+anchors fail the build.
 
-Run the overlay tests against the actual target client checkout using
-`CINDY_ACTIVITY_TEST_SOURCE`.
-Qualify the packaged artifact in an isolated Linux environment. Synthetic
-credential/preflight and `--smoke-test` checks do not exercise normal cloud
-startup; the admitted instance must also pass normal startup against its existing
-endpoint manifest, canonical account, device identity and sandbox evidence.
+`cloudMaintenancePlugin` requires an explicit `expectedRegion` (`'cn'` or
+`'global'`) that matches the main-process `import.meta.env.VITE_CINDY_AUTH_REGION`;
+a mismatch fails before packaging. The current build passes `'cn'`. Never patch a
+deployed endpoint manifest to fit a wrongly built application.
 
-The mount qualification, persistent ledger and
-explicit single-instance execution contract are documented in
-the CIS service contract (`docs/cloud-instance-server.md` in the server repository).
-The web API remains a configuration preview until an automatic worker is
-separately qualified and enabled.
+## Runtime behavior
 
-## Pending schedules during automatic maintenance
+The gate is installed only on Linux with `--cloud-instance` and the
+`/run/cindy-maintenance` projection (`binding.json`, `command.json`). If the ledger
+exists but the projection is missing, startup fails.
 
-The runtime advertises `scheduleAdmission: "running-only"` in its maintenance-v1
-receipt. Deploy the corresponding CIS parser first: older CIS rejects this added
-receipt field and must not control this image. New CIS retains the legacy wake
-headroom rule for old runtimes; it ignores future/past unstarted wake times only
-for automatic maintenance-window plans with the new source capability. Manual
-upgrade requests keep their existing schedule protection.
+- Commands are bound to the instance, device, StatefulSet, PVC, Pod and boot. The
+  ledger `/var/lib/cindy/user-data/.cis-maintenance/ledger.json` is written
+  atomically with fsync. A corrupt ledger, or a missing one while a command is
+  projected, keeps admission closed.
+- During prepare, new requests get a retryable `CLOUD_MAINTENANCE_RETRY`
+  rejection; already admitted work finishes. No accepted-work queue exists
+  (`deferredTasks: false`).
+- Seal requires a fresh activity sample (at most 15 s old), nothing in flight, no
+  active, queued or unknown work, and 10 s of quiet.
+- The receipt is written every 2 s to `/var/lib/cindy/status/maintenance.json`.
+- An orderly quit (`before-quit` or SIGTERM) of a sealed operation, with every quit
+  step finished in time without error, writes clean-shutdown evidence to
+  `/var/lib/cindy/user-data/.cis-maintenance/shutdown.json`. A crash, SIGKILL or
+  failed step leaves none, and the stopped-volume backup then refuses the volume.
+  CIS runs that backup in a separate Pod; this overlay only supplies the evidence.
 
-Only `scheduler-next-wake` is removed from maintenance activity. The ordinary
-idle/suspension reader is unchanged. Running/queued work, active sessions, remote
-input, in-flight scheduler scans and unknown observations still prevent sealing.
-The scheduler continues during prepare; a racing trigger invalidates quiet and
-must finish before seal. Window headroom, leases and stopped-volume backup remain.
+## Pending schedules
+
+The receipt advertises `scheduleAdmission: "running-only"`; the controlling CIS
+must accept this field. Only `scheduler-next-wake` is excluded from maintenance
+activity. Running/queued work, active sessions, remote input, in-flight scheduler
+scans and unknown observations still prevent sealing. The ordinary idle/suspension
+reader is unchanged. The scheduler continues during prepare; a racing trigger
+invalidates quiet and must finish before seal.
 
 On a sealed replacement boot, valid persisted schedules due during downtime retain
 their `nextFireAt` instead of startup normalization skipping the pending occurrence.
-The original scheduler claims each once after release, then resumes its cadence;
-this does not replay every missed interval. Manual, invalid and completed one-shot
-schedules stay excluded. Schedules/cron are not deleted or disabled, and no new
-accepted-work queue is introduced (`deferredTasks` remains false).
+The scheduler claims each once after release, then resumes its cadence; missed
+intervals are not replayed. Manual, invalid and completed one-shot schedules stay
+excluded. Schedules/cron are not deleted or disabled.
 
-`gate.test.mjs` covers pending wakes, real-work races and maintenance-only sampling.
-`overlay.test.mjs` executes the real transformed scheduler with memory storage and
-a fake clock through sealed startup, release and two ticks. Both files run under
-one second locally; this is simulated runtime integration, not a live cloud upgrade.
+## Tests
+
+```sh
+CINDY_ACTIVITY_TEST_SOURCE=/absolute/path/to/client node --test deploy/linux-desktop/runtime-maintenance/*.test.mjs
+```
+
+`gate.test.mjs` covers admission, seal races, ledger handling, shutdown evidence and
+pending wakes. `overlay.test.mjs` checks every ingress and, with a client source,
+runs the transformed scheduler with memory storage and a fake clock through sealed
+startup, release and two ticks. These are simulated; a packaged image still needs
+qualification in an isolated Linux environment with normal cloud startup.

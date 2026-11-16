@@ -1,27 +1,39 @@
-# 自动跟随上游正式版：实施方案
+# 跟随上游正式版
 
-本文是方案，尚未启用定时对齐或自动推广。现有镜像交付与 CIS 自动更新继续按各自规则运行。
+交付分支是 fork 的 `feat/cloud-settings-native-client`，一条不含 merge commit 的线性提交栈：
 
-## 版本与仓库
+1. 上游正式 tag（`makecindy/cindy` 的 `vX.Y.Z`）；
+2. 通用接缝：让设置界面作用于另一台电脑的 `refactor(desktop)` 提交；
+3. 通用修复：`fix(desktop)`、`fix(remote-desktop)` 等；
+4. 仅云端提交：`feat(cloud)`、`fix(cloud)` 等，最后一个是对新上游的适配；
+5. 构建提交：`build(cloud)`，其中发版提交 `build(cloud): deliver X.Y.Z cloud.N` 只改
+   `delivery/version.json` 和 `source-freeze.json`。
 
-- 只跟随 `makecindy/cindy` 的非草稿、非预发布正式 Release；固定 tag 对应的完整 commit，拒绝同名 tag 换 commit。
-- 集成目标为 `zhuoshaojian/cindy` 的 `feat/cloud-settings-native-client`，不修改上游或 fork 的 `main`。
-- 保留上游完整版本，再附加云修订：`0.1.119-cloud.1`。同一上游的云修复递增修订；新上游从 `cloud.1` 开始。比较复用现有 `delivery/versioning.py`，不按字符串排序。
-- 客户端仓负责源码、完整 Dockerfile、镜像、构建缓存与 ACS 缓存。CIS fork `feat/cloud-settings-readonly` 消费已准入版本，负责实例备份、升级和恢复；不复制客户端构建配方。
+## 步骤
 
-## 分阶段推进
+1. 只跟随非草稿、非预发布的正式 Release。记下 tag 的 commit：`git rev-parse vX.Y.Z^{commit}`。
+2. 把当前交付分支保存为 fork 的 `backup/cloud-settings-native-client-<旧上游>` 并先推送。
+   `plan.py` 要读取上一次推送的 commit，`baseRecipeCommit` 也必须能从 fork 的分支取到；
+   CI 只能取到 fork 分支或 tag 上的提交。
+3. 从新 tag 建分支，按上面的顺序 rebase。逐个解决冲突，不整仓使用 ours/theirs。
+   仅云端提交可以压成一个，避免在同一批文件里反复解决同样的冲突。适配新上游的改动放在单独的
+   `fix(cloud): adapt ... to upstream vX.Y.Z` 提交。
+4. 检查：
+   - `pnpm --filter desktop typecheck`；
+   - `pnpm --filter desktop test`，至少覆盖云客户端、cloud-web、Host settings、云设置页和共享契约；
+   - [本目录的离线检查](README.md#local-checks)。覆盖层测试读取客户端源码，接入点变化时会失败：
+     修改覆盖层去适配，不放宽锚点检查；
+   - `verify` job 只稀疏检出回归需要的文件。上游新增的导入导致缺文件时，把路径加进
+     `.github/workflows/cloud-image-delivery.yml` 的 `sparse-checkout`。
+5. 发版提交：
+   - `delivery/version.json`：`upstreamVersion`、`upstreamCommit`（第 1 步的 commit），`cloudRevision: 1`；
+   - `source-freeze.json`：`commit` 为最后一个应用源码提交（适配提交），`upstream` 为 `vX.Y.Z`，
+     `cloudParent` 为备份分支的 head，`scope` 写新上游；基座输入未变时保留 `baseRecipeCommit`
+     （构建会校验字节一致），变了就删掉或改成新 commit。
+6. 强制推送交付分支。`version.json` 变化会触发完整交付，见[交付说明](delivery/README.md)。
 
-1. **发现更新。** 由 fork 专属控制器定期查询 Release，按仓库、tag、commit 去重。同一时刻只允许一条集成任务；新版本到达时先记录，不并发改同一发行文件。GitHub 的 `schedule` 只运行默认分支上的 workflow，不能假设放在功能分支就会生效；可先复用现有外部 runner 控制器触发指定分支，定时职责单独评审。
-2. **创建集成分支。** 从已验收的 fork HEAD 建短期分支，执行普通 merge，保留两侧历史。发现文本冲突立即停止并给出文件和功能清单，不使用整仓 `ours` / `theirs`、自动覆盖或强推。恢复任务前核对原 HEAD，防止覆盖别人后续提交。
-3. **检查语义与构建接入。** 即使没有文本冲突，也要跑登录身份边界、云权限刷新、Host 偏好、维护入口、远控与剪贴板、独立授权窗口测试；重新生成内嵌远控脚本；验证数据库迁移及旧快照 wire 兼容。对干净源码执行全部云覆盖层，接入位置变化时保持 fail-fast，不放宽锚点检查。
-4. **冻结并交付。** 先提交合并后的源码，再将其 commit 写入 `source-freeze.json`，在单独的发行提交更新 `version.json`。复用 fork 专属 self-hosted runner 的完整 Dockerfile、VPC 缓存、隔离 Linux smoke、ACR 双标签和 ACS Ready 流程。阶段重试绑定原 commit 和回执；镜像已经发布时复用其精确 digest 继续缓存或验收，不重建覆盖。构建输入修正必须递增云修订，禁止用同一标签覆盖不同镜像。
-5. **本人灰度。** CI 成功只产生镜像和缓存回执。单独将精确 digest 准入本人实例，验证真实主容器及 init 的缓存命中；保护活跃会话，经正常维护流程完成停机和加密 OSS 备份，再升级。核对身份、PVC、数据迁移、定时任务、版本显示、桌面启动及基本输入。完整第三方 OAuth 和手机真机验收不能由模拟测试代替，未执行时明确记录。
-6. **推广。** 本人验收通过后才更新其他实例的可升级目标和新领取选择。保留各实例自动更新偏好、停止状态和维护窗口，不强制打断活跃任务。未来定时任务不阻塞窗口内升级，实际运行中的任务仍阻塞。失败停在当前阶段并保存恢复证据，不自动继续全量。
+## 同一上游上的后续发布
 
-建议先自动化第 1–4 步，产出待验收版本；第 5–6 步接入稳定的分项验收与恢复回执后，再决定是否取消人工发布确认。此方案本身不增加定时任务、凭据、CIS 接口或生产权限。
-
-## 0.1.119 对齐提供的实际依据
-
-本次有 38 个冲突文件，集中于登录、模型偏好、设置、远控和生成文件。除文本冲突外，云覆盖层还检测到 Pi 提示词组装和忙碌状态注册接口变化；终端字体新增字段需要接入既有严格校验，跨引擎思考偏好需要继续写入 Host 真源。这些情况说明“merge 无冲突”不能充当功能验收。
-
-每次交付记录至少包含：两侧 commit、冲突处理清单、测试环境与跳过项、上游/云版本、完整配方 commit、镜像 digest、ACS 网络与命中回执、本人升级 operation/备份回执、最终准入范围。纯说明文档仍不触发构建或部署。
+修复直接追加在栈顶，再追加一个把 `cloudRevision` 加 1 的发版提交；下次跟随上游时把它们归入
+对应层。应用源码有新提交时，`source-freeze.json` 的 `commit` 要指向包含它们的提交；只改
+`deploy/linux-desktop/` 配方时 `commit` 不变。版本规则见 [DUAL-VERSION-UPDATES.md](DUAL-VERSION-UPDATES.md)。

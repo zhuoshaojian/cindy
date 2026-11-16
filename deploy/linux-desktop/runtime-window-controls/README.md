@@ -1,21 +1,26 @@
 # Cloud main-window controls
 
-This cloud-only Vite packaging overlay keeps the Linux cloud runtime's Cindy main
-window available. For Xfce/Plank images it hides close and guards main-window close IPC and
-window-manager events. Minimize, taskbar restore, maximize and orderly shutdown
-remain available. These sources require a working taskbar/Dock; old Openbox
-images used a different minimize policy. Browser authorization windows and auxiliary Cindy windows are untouched.
+Cloud packaging overlay that keeps the Cindy main window available on Linux cloud
+instances. It hides the close button and blocks main-window close IPC and
+window-manager close events. Minimize, restore from the Dock, maximize and orderly
+shutdown remain available; restoring a minimized window relies on the Dock. Browser
+authorization windows and auxiliary Cindy windows are untouched.
 
-The overlay never writes to the native client checkout and is not imported by
-ordinary client builds. Include `cloudMainWindowControlsPlugin({ sourceRoot })`
-only when packaging a cloud image. It uses the existing instance configuration;
-there is no new environment variable, remote protocol, credential or data change.
-Each source integration point is checked for uniqueness; source drift stops the
-build instead of silently shipping a partial patch.
+Main-process decisions use the existing instance configuration. The main window
+receives the `--cindy-cloud-main-window` argument, from which its preload exposes a
+presentation-only flag; `runtime-updates` and `runtime-identity` reuse that
+argument. There is no new environment variable, remote protocol, credential or data
+change.
 
-Run the policy tests with `node --test deploy/linux-desktop/runtime-window-controls/overlay.test.mjs`.
-Set `CLOUD_WINDOW_TEST_SOURCE` to a native source checkout to additionally validate
-and compile all transformed integration points. Review the cloud image diff,
-ordinary-client source hashes, auxiliary-window behavior and graceful shutdown
-before enabling it on an instance. Rollout scope is controlled by instance image
-approval; do not change the fleet default as part of a single-instance acceptance.
+`stage-cloud-overlays.mjs` applies the transform to the build's source export;
+`cloudMainWindowControlsPlugin({ sourceRoot })` is the Vite plugin form. The native
+client checkout is never written, and ordinary client builds do not import this
+directory. Each integration point must match exactly once; source drift stops the
+build instead of shipping a partial patch.
+
+```sh
+CLOUD_WINDOW_TEST_SOURCE=/absolute/path/to/client node --test deploy/linux-desktop/runtime-window-controls/overlay.test.mjs
+```
+
+Without `CLOUD_WINDOW_TEST_SOURCE` only the policy tests run; with it, every
+transformed integration point is also compiled and the window controls are rendered.
