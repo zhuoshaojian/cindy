@@ -94,7 +94,7 @@ it.each([
   async (channel, values, actionLabel) => {
     const client = createTrialCloudSettingsClient();
     const original = client.manage!;
-    let submitted: any;
+    let submitted: { values?: unknown } | undefined;
     const manage = vi.spyOn(client, 'manage').mockImplementation(async (command) => {
       if (command.operation === 'run') submitted = structuredClone(command);
       return original(command);
@@ -120,7 +120,7 @@ it.each([
     await waitFor(() =>
       expect(manage.mock.calls.filter(([c]) => c.operation === 'run')).toHaveLength(1),
     );
-    expect(submitted.values).toEqual(
+    expect(submitted?.values).toEqual(
       channel === 'feishu' ? { ...values, service: 'feishu' } : values,
     );
     await screen.findByText('cloudSettings.imConnectionDetailsUnavailable');
@@ -249,15 +249,17 @@ it('clears a credential draft when the channel card is collapsed', async () => {
 
 // The new controller must never save model or group settings to this computer or
 // to an official hook. Mock only the heavy picker, keep the native view/controller.
-const pickers = vi.hoisted(() => ({ model: null as any, permission: null as any }));
+// The props the controller passes to the target pickers that these tests inspect.
+type PickerProps = { deviceId: string; onUnifiedSelect: (selection: Record<string, unknown>) => unknown };
+const pickers = vi.hoisted(() => ({ model: null as PickerProps | null, permission: null as PickerProps | null }));
 vi.mock('@/components/new-chat/ModelSelector', () => ({
-  ModelSelector: (props: any) => {
+  ModelSelector: (props: PickerProps) => {
     pickers.model = props;
     return <span>Target model picker</span>;
   },
 }));
 vi.mock('@/components/new-chat/PermissionSelector', () => ({
-  PermissionSelector: (props: any) => {
+  PermissionSelector: (props: PickerProps) => {
     pickers.permission = props;
     return <span>Target permission picker</span>;
   },
@@ -269,10 +271,10 @@ it('saves an admitted target route, rejects a local-only route and resets only t
   const save = vi.fn(async (s, set, clear) => (await client.save(s, set, clear)).state);
   const props = { itemId: 'bot:feishu', deviceId: 'cloud-target', name: 'Cloud', disabled: false, save };
   const view = render(<CloudImSettings {...props} states={{ imFeishu: state }} />);
-  expect(pickers.model.deviceId).toBe('cloud-target');
-  expect(pickers.permission.deviceId).toBe('cloud-target');
+  expect(pickers.model!.deviceId).toBe('cloud-target');
+  expect(pickers.permission!.deviceId).toBe('cloud-target');
   expect(
-    pickers.model.onUnifiedSelect({
+    pickers.model!.onUnifiedSelect({
       engine: 'cc',
       modelId: 'local-only',
       providerId: 'local',
@@ -280,7 +282,7 @@ it('saves an admitted target route, rejects a local-only route and resets only t
     }),
   ).toBe(false);
   expect(save).not.toHaveBeenCalled();
-  await pickers.model.onUnifiedSelect({
+  await pickers.model!.onUnifiedSelect({
     engine: 'cc',
     modelId: 'fixture-model',
     providerId: 'fixture-provider',
@@ -313,7 +315,7 @@ it('keeps missing saved Telegram groups and never applies personal groups to off
   state.value = { always: ['-999'] };
   state.isCustomized = true;
   state.customizedKeys = ['always'];
-  const save = vi.fn(async (_s: unknown, _set: Record<string, unknown>) => state);
+  const save = vi.fn<(s: unknown, set: Record<string, unknown>) => Promise<typeof state>>(async () => state);
   const props = {
     deviceId: 'cloud-target',
     name: 'Cloud',
@@ -401,7 +403,7 @@ it.each([
     );
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText('Target model picker')).toBeTruthy();
-    expect(pickers.model.deviceId).toBe('cloud-target');
+    expect(pickers.model!.deviceId).toBe('cloud-target');
     expect(save).not.toHaveBeenCalled();
   },
 );
