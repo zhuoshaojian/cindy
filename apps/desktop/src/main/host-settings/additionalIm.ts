@@ -1,5 +1,5 @@
 import { app } from 'electron';
-import { additionalSettingsSchemas, type ImSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
+import { additionalSettingsSchema, type ImSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import { createHostImDefaultsStore, interpretHostImDefaults, inspectImDefaultSettings } from '../im/defaultSettingsStore.js';
 import type { ImDefaultSettings, ImDefaultSettingsChannel } from '../../shared/imDefaultSettings.js';
@@ -23,12 +23,12 @@ function project(domain: ImSettingsDomain, snapshot: ReturnType<ReturnType<typeo
     return { status: 'unavailable', revision: null };
   }
   const scope = channel ? record(record(snapshot.value.channels)[channel]) : record(snapshot.value.global);
-  const pick = (value: ImDefaultSettings): Values => Object.fromEntries(Object.keys(additionalSettingsSchemas[domain].shape).map(key => {
+  const pick = (value: ImDefaultSettings): Values => Object.fromEntries(Object.keys(additionalSettingsSchema(domain).shape).map(key => {
     const agent = agents[key as keyof typeof agents];
     const route = agent ? value.agents[agent] : null;
     return [key, route ? { providerId: route.providerId, modelId: route.model, effort: route.effort } : value[key as 'agentKind' | 'permissionMode' | 'groupPermissionMode']];
   }));
-  const customizedKeys = Object.keys(additionalSettingsSchemas[domain].shape).filter(key => {
+  const customizedKeys = Object.keys(additionalSettingsSchema(domain).shape).filter(key => {
     const agent = agents[key as keyof typeof agents];
     return agent ? Object.hasOwn(record(scope.agents), agent) : Object.hasOwn(scope, key) || key === 'groupPermissionMode' && Object.hasOwn(scope, 'groupCtrPermissionMode');
   });

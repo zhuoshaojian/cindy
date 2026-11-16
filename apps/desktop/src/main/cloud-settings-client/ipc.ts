@@ -21,13 +21,13 @@ import type { CloudClientCaller, createCloudSettingsService } from './service';
 export function cloudSettingsClientHandlers(
   service: ReturnType<typeof createCloudSettingsService>,
 ) {
-  function handler<T, R>(
-    schema: z.ZodType<T>,
-    run: (caller: CloudClientCaller, input: T) => Promise<R>,
+  function handler<S extends z.core.$ZodType, R>(
+    schema: S,
+    run: (caller: CloudClientCaller, input: z.output<S>) => Promise<R>,
   ) {
     return async (caller: CloudClientCaller, raw: unknown): Promise<R> => {
       caller.assertCurrent();
-      const input = schema.safeParse(raw);
+      const input = z.safeParse(schema, raw);
       if (!input.success) throwIpcError('INVALID_PARAMS', 'Invalid cloud settings request');
       try {
         return await run(caller, input.data);

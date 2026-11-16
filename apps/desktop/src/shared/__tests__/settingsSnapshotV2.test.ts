@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { z } from 'zod';
 import { settingsSnapshotCompatibilityCorpus } from './settingsSnapshotCorpus.js';
 import { SETTINGS_READ_CATALOG, SETTINGS_READ_COLLECTION_CATALOG, SETTINGS_READ_COLLECTION_IDS } from '../settingsReadCatalog.js';
 import { SETTINGS_SNAPSHOT_V2_FIELD_IDS } from '../settingsSnapshotV2FieldIds.js';
@@ -15,12 +14,14 @@ import {
   projectSettingsSnapshotPublicReference, type SettingsSnapshotReportV2, type SettingsSnapshotCollectionsV2,
 } from '../settingsSnapshot.js';
 
+/** The two members maximal() reads, present on Zod 3 and Zod 4 schemas alike. */
+interface MaximalSchema { _def: unknown; safeParse(value: unknown): { success: boolean } }
 /** 只在测试内遍历纯 schema，兼容两仓各自的 Zod 3/4；不是生产逃生口。 */
-function maximal(schema: z.ZodTypeAny): unknown {
-  const def = schema._def as unknown as { typeName?: string; type?: string | z.ZodTypeAny; innerType?: z.ZodTypeAny;
-    schema?: z.ZodTypeAny; checks?: Array<{ kind?: string; value?: number; _zod?: { def: { check?: string; value?: number; maximum?: number } } }>;
-    values?: unknown[]; entries?: Record<string, string>; value?: unknown; options?: z.ZodTypeAny[];
-    maxLength?: { value: number }; shape?: Record<string, z.ZodTypeAny> | (() => Record<string, z.ZodTypeAny>); element?: z.ZodTypeAny };
+function maximal(schema: MaximalSchema): unknown {
+  const def = schema._def as { typeName?: string; type?: string | MaximalSchema; innerType?: MaximalSchema;
+    schema?: MaximalSchema; checks?: Array<{ kind?: string; value?: number; _zod?: { def: { check?: string; value?: number; maximum?: number } } }>;
+    values?: unknown[]; entries?: Record<string, string>; value?: unknown; options?: MaximalSchema[];
+    maxLength?: { value: number }; shape?: Record<string, MaximalSchema> | (() => Record<string, MaximalSchema>); element?: MaximalSchema };
   const kind = def.typeName?.replace('Zod', '').toLowerCase() ?? def.type;
   if (kind === 'effects') return maximal(def.schema!);
   if (kind === 'optional' || kind === 'nullable') return maximal(def.innerType!);
@@ -38,7 +39,7 @@ function maximal(schema: z.ZodTypeAny): unknown {
   if (kind === 'array') {
     const max = def.maxLength?.value ?? def.checks?.find(check => check._zod?.def.check === 'max_length')?._zod?.def.maximum;
     if (max === undefined) throw new Error('MAXIMAL_ARRAY_REQUIRES_EXPLICIT_MAX');
-    return Array.from({ length: max }, () => maximal(def.element ?? def.type as z.ZodTypeAny));
+    return Array.from({ length: max }, () => maximal(def.element ?? def.type as MaximalSchema));
   }
   if (kind === 'union' || kind === 'discriminatedunion') return def.options!.map(maximal).filter(value => schema.safeParse(value).success)
     .sort((a, b) => settingsSnapshotUtf8Bytes(b) - settingsSnapshotUtf8Bytes(a))[0];

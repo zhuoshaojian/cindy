@@ -1,6 +1,6 @@
 import { managementCommandSchema, managementResultSchema } from './settingsManagement.js';
 import { z } from 'zod';
-import { ADDITIONAL_SETTINGS_DOMAINS, additionalSettingsSchemas, normalizeAdditionalSettingsChange, settingsEditableValueSchema } from './settingsEditableCatalog.js';
+import { ADDITIONAL_SETTINGS_DOMAINS, additionalSettingsSchema, normalizeAdditionalSettingsChange, settingsEditableValueSchema } from './settingsEditableCatalog.js';
 
 /** Separate from the public read-only snapshot. These values belong to the signed-in owner. */
 export const settingsWebDomainSchema = z.enum(['newTaskDefaults', 'personalization', 'databaseWarning', 'appearance', ...ADDITIONAL_SETTINGS_DOMAINS]);
@@ -101,7 +101,7 @@ const additionalReady = z.strictObject({ ...readyBase, domain: additionalDomain,
   customizedKeys: z.array(z.string().max(64)).max(16),
   choices: z.record(z.string(), z.array(z.strictObject({ value: settingsEditableValueSchema, label: z.string().min(1).max(512), efforts: z.array(z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])).max(7).optional(), supportsFast: z.boolean().optional() })).max(SETTINGS_WEB_MAX_CHOICES)).optional(),
 }).superRefine((value, ctx) => {
-  const schema = additionalSettingsSchemas[value.domain];
+  const schema = additionalSettingsSchema(value.domain);
   if ((value.domain === 'workspaceTools') !== (value.workspaceId !== undefined && value.workspaceLabel !== undefined)
     || value.domain !== 'workspaceTools' && (value.workspaceId !== undefined || value.workspaceLabel !== undefined)
     || !schema.safeParse(value.value).success || !schema.safeParse(value.defaults).success

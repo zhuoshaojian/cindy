@@ -1,7 +1,7 @@
 import { additionalSettingsRuntime, additionalNativeOperations } from './additionalRuntime.js';
 import { getHostBrowserBackendStore } from '../browser-backend-settings-store.desktop.js';
 import { inspectHostChatEmbeddingSettings, commitHostChatEmbeddingSettings } from '../maker-host/chat-embedding-settings-store.js';
-import { additionalSettingsSchemas, RETIRED_ADDITIONAL_SETTINGS_DOMAINS, type AdditionalSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
+import { additionalSettingsSchema, RETIRED_ADDITIONAL_SETTINGS_DOMAINS, type AdditionalSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import type { OverrideSettingsCommitOptions, OverrideSettingsFile } from '../maker-host/override-settings-file.js';
 import { getCollaborationSettingsStore } from '../maker-host/collaboration-settings-store.js';
@@ -43,7 +43,7 @@ function toolReader() { return new SettingsReader({ userDataPath: ownerScopedUse
 function projectTools(domain: AdditionalSettingsDomain, snapshot: ReturnType<SettingsReader['inspectUserDefaults']>): State {
   if (snapshot.status !== 'ready') return snapshot;
   const raw = (snapshot.value.builtinTools ?? snapshot.value.plugins ?? {}) as Record<string, { enabled: boolean }>;
-  const keys = Object.keys(additionalSettingsSchemas[domain].shape);
+  const keys = Object.keys(additionalSettingsSchema(domain).shape);
   const defaults = Object.fromEntries(keys.map(key => [key, !DEFAULT_DISABLED_PLUGIN_IDS.has(key)]));
   return project(domain, { ...snapshot, defaults,
     value: Object.fromEntries(keys.map(key => [key, raw[key]?.enabled ?? defaults[key]])), customizedKeys: keys.filter(key => Object.hasOwn(raw, key)) });
@@ -53,11 +53,11 @@ function storeFor(domain: AdditionalSettingsDomain): OverrideSettingsFile<Values
 }
 function project(domain: AdditionalSettingsDomain, state: { status: string; revision?: string | null; value?: unknown; defaults?: unknown; customizedKeys?: string[] }): State {
   if (state.status !== 'ready') return { status: state.status === 'unreadable' ? 'unreadable' : 'unavailable', revision: null };
-  const fields = Object.keys(additionalSettingsSchemas[domain].shape);
+  const fields = Object.keys(additionalSettingsSchema(domain).shape);
   const pick = (value: unknown) => Object.fromEntries(fields.map(key => [key, (value as Values)[key]]));
   const legacyGit = (value: unknown) => domain === 'gitSafety' ? { autoSnapshotEnabled: (value as { mode: string }).mode !== 'off' } : value;
-  const value = additionalSettingsSchemas[domain].parse(pick(legacyGit(state.value))) as Values;
-  const defaults = additionalSettingsSchemas[domain].parse(pick(legacyGit(state.defaults))) as Values;
+  const value = additionalSettingsSchema(domain).parse(pick(legacyGit(state.value))) as Values;
+  const defaults = additionalSettingsSchema(domain).parse(pick(legacyGit(state.defaults))) as Values;
   const customizedKeys = fields.filter(key => state.customizedKeys?.includes(key) || (domain === 'gitSafety' && state.customizedKeys?.includes('mode')));
   return { status: 'ready', revision: state.revision!, value, defaults, customizedKeys, isCustomized: customizedKeys.length > 0 };
 }

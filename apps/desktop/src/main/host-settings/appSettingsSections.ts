@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { registerRuntimeSettingsSection } from '../app-settings/runtime.js';
 import type { AppSettingsSection } from '../app-settings/service.js';
-import { additionalSettingsSchemas, additionalSettingsMetadata, type AdditionalSettingsDomain } from '../../shared/settingsEditableCatalog.js';
+import { additionalSettingsSchema, additionalSettingsMetadata, type AdditionalSettingsDomain } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingsDomain } from '../../shared/hostSettings.js';
 import { getHostSettings, updateHostSettings, HostSettingsError, type HostSettingsCaller } from './index.js';
 
@@ -69,7 +69,7 @@ async function write(domain: HostSettingsDomain, change: { set?: Record<string, 
 }
 
 function section(domain: HostSettingsDomain, entry: Entry): AppSettingsSection {
-  const schema = ((domain === 'databaseWarning' ? databaseWarningSchema : additionalSettingsSchemas[domain as AdditionalSettingsDomain]) as z.ZodObject<z.ZodRawShape>).partial();
+  const schema = (domain === 'databaseWarning' ? databaseWarningSchema : additionalSettingsSchema(domain as AdditionalSettingsDomain)).partial();
   return {
     id: domain,
     title: entry.title,

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 const state = vi.hoisted(() => ({ forbidden: vi.fn(() => { throw new Error('forbidden runtime access'); }), cloud: false, log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('electron', () => ({ app: { getPath: state.forbidden }, ipcMain: { on: state.forbidden, handle: state.forbidden }, BrowserWindow: { getAllWindows: state.forbidden }, safeStorage: { isEncryptionAvailable: state.forbidden, decryptString: state.forbidden }, systemPreferences: { getMediaAccessStatus: state.forbidden } }));
@@ -65,7 +66,7 @@ describe('actual interaction preference readers', () => {
     expect(Object.keys(result.fields).filter(k => k.startsWith('shortcuts.'))).toHaveLength(30);
     for (const [key, item] of Object.entries(result.fields)) {
       expect(key in SETTINGS_READ_CATALOG, key).toBe(true);
-      if (item.status === 'value' && !key.match(/^im\.(global|feishu|slack|discord|wechat|telegram|dingtalk|wecom|imessage)\.agents\..*\.(model|providerId)$/)) expect(SETTINGS_READ_CATALOG[key as keyof typeof SETTINGS_READ_CATALOG].valueSchema.safeParse(item.value).success, key).toBe(true);
+      if (item.status === 'value' && !key.match(/^im\.(global|feishu|slack|discord|wechat|telegram|dingtalk|wecom|imessage)\.agents\..*\.(model|providerId)$/)) expect(z.safeParse(SETTINGS_READ_CATALOG[key as keyof typeof SETTINGS_READ_CATALOG].valueSchema, item.value).success, key).toBe(true);
     }
     expect(new Set(Object.keys(result.fields))).toEqual(new Set(INTERACTION_SETTINGS_FIELD_IDS));
     expect(INTERACTION_SETTINGS_FIELD_IDS).not.toContain('voice.refinerChain');
@@ -183,7 +184,7 @@ describe('known persisted dynamic collections', () => {
     for (const [name, collection] of Object.entries(result)) if (collection.status === 'value') {
       for (const [index, item] of collection.entries.entries()) {
         const publicFields = Object.fromEntries(Object.entries(item.fields).map(([key, inspected]) => [key, inspected.status === 'value' ? inspected.value : undefined]));
-        expect(SETTINGS_READ_COLLECTION_CATALOG[name as keyof typeof SETTINGS_READ_COLLECTION_CATALOG].entrySchema.safeParse({ ordinal: index + 1, source: 'override', ...publicFields }).success, name).toBe(true);
+        expect(z.safeParse(SETTINGS_READ_COLLECTION_CATALOG[name as keyof typeof SETTINGS_READ_COLLECTION_CATALOG].entrySchema, { ordinal: index + 1, source: 'override', ...publicFields }).success, name).toBe(true);
         const text = JSON.stringify(publicFields);
         for (const secret of ['private-model', 'private-provider-name', 'private-ghost', '/private/', 'private-session', '-12345']) expect(text).not.toContain(secret);
       }

@@ -38,8 +38,8 @@ export const cloudOwnedInstancesSchema = z.object({
     )
     .max(1024),
 });
-export function parseCloud<T>(schema: z.ZodType<T>, raw: unknown): T {
-  const value = schema.safeParse(raw);
+export function parseCloud<S extends z.core.$ZodType>(schema: S, raw: unknown): z.output<S> {
+  const value = z.safeParse(schema, raw);
   if (!value.success) throw new CloudClientError('CLOUD_SETTINGS_INVALID_RESPONSE');
   return value.data;
 }

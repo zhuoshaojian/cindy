@@ -54,8 +54,8 @@ const membershipSnapshot = z.object({
     )
     .max(1024),
 });
-function parsed<T>(schema: z.ZodType<T>, raw: unknown): T {
-  const result = schema.safeParse(raw);
+function parsed<S extends z.core.$ZodType>(schema: S, raw: unknown): z.output<S> {
+  const result = z.safeParse(schema, raw);
   if (!result.success) throw new CloudClientError('CLOUD_SETTINGS_INVALID_RESPONSE');
   return result.data;
 }

@@ -6,7 +6,7 @@ import { requestModelFavorites } from '../maker-ipc/modelFavoritesSync.js';
 import { getModelVisibilityMirrorSnapshot, waitForModelVisibilityMirror } from '../maker-host/model-visibility-mirror.js';
 import { getActiveCatalog } from '../maker-host/active-catalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
-import { additionalSettingsSchemas, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
+import { additionalSettingsSchema, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import { HostSettingsError } from './operations.js';
 
 /**
@@ -67,7 +67,7 @@ export async function readModelPresentationDomain(domain: ModelPresentationDomai
   let value: Values;
   try { value = (await readValues(domain)).value; }
   catch { return { status: 'unreadable', revision: null }; }
-  additionalSettingsSchemas[domain].parse(value);
+  additionalSettingsSchema(domain).parse(value);
   const customized = (value.entries as unknown[]).length > 0;
   return { status: 'ready', revision: createHmac('sha256', revisionKey).update(JSON.stringify([domain, value])).digest('base64url'),
     value, defaults: { entries: [] }, customizedKeys: customized ? ['entries'] : [], isCustomized: customized };

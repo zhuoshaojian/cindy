@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { inspectHostSidebarSettings, commitHostSidebarHidden } from '../sidebarSettingsStore.js';
 import { ownerScopedUserDataPath } from '../appSessionState.js';
-import { additionalSettingsSchemas, PLUGIN_CINDY_FIELDS, settingsValuesEqual, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
+import { additionalSettingsSchema, PLUGIN_CINDY_FIELDS, settingsValuesEqual, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import type { OverrideSettingsCommitOptions } from '../maker-host/override-settings-file.js';
 import { HostSettingsError } from './operations.js';
@@ -34,7 +34,7 @@ function choices(domain: Domain): Record<string, Choice[]> {
   return result;
 }
 function ready(domain: Domain, revision: string, value: Values): HostSettingState<Values> & { status: 'ready' } {
-  additionalSettingsSchemas[domain].parse(value);
+  additionalSettingsSchema(domain).parse(value);
   const customizedKeys = Object.keys(value).filter(key => (value[key] as unknown[]).length > 0);
   return { status: 'ready', revision, value, defaults: Object.fromEntries(Object.keys(value).map(key => [key, []])), customizedKeys, isCustomized: customizedKeys.length > 0 };
 }

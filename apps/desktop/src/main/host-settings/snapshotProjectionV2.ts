@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { parseAuxiliaryModelRef } from '../../shared/auxiliaryModelChain.js';
 import {
   SETTINGS_READ_CATALOG, SETTINGS_READ_COLLECTION_CATALOG, SETTINGS_READ_COLLECTION_IDS,
@@ -81,7 +82,7 @@ function projectCollection(id: SettingsSnapshotCollectionId, input: ReadonlySett
           ? reference(field.value, ids.models) : field.value;
       }
       next.source = collectionSource(sources);
-      return schema.parse(next);
+      return z.parse(schema, next);
     });
     if (state.total !== null && (!Number.isSafeInteger(state.total) || state.total < entries.length)) throw new Error('INVALID_COLLECTION_TOTAL');
     if (state.complete && state.total !== entries.length) throw new Error('INVALID_COLLECTION_COMPLETENESS');
@@ -104,7 +105,7 @@ export function projectSettingsSnapshotV2(
     if (!state) throw new Error('MISSING_SETTINGS_FIELD_READER');
     if (state.status !== 'value') { fields[id] = { status: state.status }; continue; }
     try {
-      const value = SETTINGS_READ_CATALOG[id].valueSchema.parse(projectFieldValue(id, state.value, ids));
+      const value = z.parse(SETTINGS_READ_CATALOG[id].valueSchema, projectFieldValue(id, state.value, ids));
       fields[id] = { status: 'value', source: state.source, value };
     } catch { fields[id] = { status: 'unreadable' }; }
   }

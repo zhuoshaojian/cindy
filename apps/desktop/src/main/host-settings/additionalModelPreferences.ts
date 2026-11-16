@@ -1,4 +1,4 @@
-import { additionalSettingsSchemas, type ModelPreferenceDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
+import { additionalSettingsSchema, additionalSettingsSchemas, type ModelPreferenceDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import { getHostModelContextStore, inspectModelContextLimits, modelContextLimitKey } from '../maker-host/model-context-limit-store.js';
 import { getHostModelAccessStore, inspectModelDisableOverrides } from '../maker-host/model-disable-store.js';
@@ -20,7 +20,7 @@ function parseTarget(key: string, withHarness = true) {
   return { ...(withHarness ? { harness } : {}), providerId, modelId };
 }
 function ready(domain: ModelPreferenceDomain, revision: string, value: Values): State & { status: 'ready' } {
-  additionalSettingsSchemas[domain].parse(value);
+  additionalSettingsSchema(domain).parse(value);
   const defaults = Object.fromEntries(Object.keys(value).map(key => [key, []]));
   const customizedKeys = Object.entries(value).filter(([, value]) => Array.isArray(value) && value.length > 0).map(([key]) => key);
   return { status: 'ready', revision, value, defaults, customizedKeys, isCustomized: customizedKeys.length > 0 };

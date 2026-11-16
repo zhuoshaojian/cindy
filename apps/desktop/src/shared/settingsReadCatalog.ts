@@ -100,7 +100,7 @@ const route = z.strictObject({
 const modelRoute = z.strictObject({ model: settingsReadReferenceSchema, provider: settingsReadReferenceSchema });
 
 /** 字段来源及排版元数据。reader 是纯 inspection 域，不是可调用的写入口。 */
-export interface SettingsReadFieldDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
+export interface SettingsReadFieldDefinition<T extends z.core.$ZodType = z.core.$ZodType> {
   tab: SettingsReadTab;
   group: string;
   labelKey: string;
@@ -116,7 +116,7 @@ export interface SettingsReadFieldDefinition<T extends z.ZodTypeAny = z.ZodTypeA
   projection: 'savedValue' | 'configuredOnly' | 'publicCatalogOrConfigured' | 'sanitizedStructure';
   valueSchema: T;
 }
-function definition<T extends z.ZodTypeAny>(
+function definition<T extends z.core.$ZodType>(
   valueSchema: T, tab: SettingsReadTab, group: string, control: string, sourcePath: string,
   scope: SettingsReadScope = 'profile', boundary: SettingsReadBoundary = 'immediate',
   privacy: SettingsReadPrivacy = 'value', platforms: SettingsReadFieldDefinition['platforms'] = SETTINGS_READ_PLATFORMS,
@@ -128,7 +128,7 @@ function definition<T extends z.ZodTypeAny>(
     surface: scope === 'cloudDesktop' ? 'hostDesktop' : 'host', boundary, privacy, platforms,
     projection: privacy === 'configured' ? 'configuredOnly' : privacy === 'publicReference' ? 'publicCatalogOrConfigured' : privacy === 'safeProjection' ? 'sanitizedStructure' : 'savedValue' };
 }
-function group<const P extends string, const S extends Record<string, z.ZodTypeAny>>(
+function group<const P extends string, const S extends Record<string, z.core.$ZodType>>(
   prefix: P, shape: S, tab: SettingsReadTab, control: string, sourcePath: string,
   scope: SettingsReadScope = 'profile', boundary: SettingsReadBoundary = 'immediate',
   privacy: SettingsReadPrivacy = 'value', platforms: SettingsReadFieldDefinition['platforms'] = SETTINGS_READ_PLATFORMS,
@@ -289,7 +289,7 @@ export const SETTINGS_READ_FIELD_IDS = Object.keys(SETTINGS_READ_CATALOG) as Set
 const ordinal = integer(1, Number.MAX_SAFE_INTEGER);
 const entrySource = z.enum(['default', 'override', 'unknown']);
 const entryBase = { ordinal, source: entrySource };
-const collectionDefinition = <T extends z.ZodTypeAny>(entrySchema: T, tab: SettingsReadTab, control: string, sourcePath: string, scope: SettingsReadScope = 'owner') => ({
+const collectionDefinition = <T extends z.core.$ZodType>(entrySchema: T, tab: SettingsReadTab, control: string, sourcePath: string, scope: SettingsReadScope = 'owner') => ({
   entrySchema, tab, control, sourcePath, scope, boundary: 'nextTask' as const,
   privacy: 'safeProjection' as const, labelKey: `settingsRead.collections.${control}`,
 });

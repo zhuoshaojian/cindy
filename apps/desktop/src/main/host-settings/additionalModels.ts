@@ -4,7 +4,7 @@ import { inspectImSettings, commitImSettings } from './additionalIm.js';
 import { app } from 'electron';
 import { SETTINGS_WEB_MAX_CHOICES } from '../../shared/settingsWeb.js';
 import { classifyVisionCapability, isModelSelectableForNewRoute, isModelVisible } from '@cindy/model-providers';
-import { additionalSettingsSchemas, settingsValuesEqual, isImSettingsDomain, isModelPreferenceDomain, type ModelSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
+import { additionalSettingsSchema, settingsValuesEqual, isImSettingsDomain, isModelPreferenceDomain, type ModelSettingsDomain, type SettingsEditableValue } from '../../shared/settingsEditableCatalog.js';
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import { getSubagentModelSettingsStore } from '../maker-host/subagent-model-settings-store.js';
 import { getAuxiliaryModelSettingsStore, inspectAuxiliaryModelSettings } from '../utility-model/auxiliary-model-settings-store.js';
@@ -32,7 +32,7 @@ const stores = { subagentModel: getSubagentModelSettingsStore, auxiliaryModel: g
 function storeFor(domain: ModelSettingsDomain) { return stores[domain as keyof typeof stores]() as unknown as OverrideSettingsFile<Values>; }
 function project(domain: ModelSettingsDomain, state: State): State {
   if (state.status !== 'ready') return state;
-  const schema = additionalSettingsSchemas[domain];
+  const schema = additionalSettingsSchema(domain);
   const pick = (raw: Values) => domain === 'subagentModel'
     ? { claudeCode: raw.claudeCode === null ? null : { modelId: raw.claudeCode, providerId: raw.claudeCodeProviderId }, codexSmartSubagentRouting: raw.codexSmartSubagentRouting }
     : Object.fromEntries(Object.keys(schema.shape).map(key => [key, raw[key]]));

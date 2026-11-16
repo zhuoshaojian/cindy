@@ -154,14 +154,14 @@ export function registerCloudSettingsClientIpc(windowDeps?: {
     });
     loginWindow = manager;
     const epoch = z.strictObject({ generation: z.number().int().nonnegative() });
-    function windowHandler<T>(
+    function windowHandler<S extends z.core.$ZodType>(
       channel: string,
-      schema: z.ZodType<T>,
-      run: (event: IpcMainInvokeEvent, input: T) => unknown,
+      schema: S,
+      run: (event: IpcMainInvokeEvent, input: z.output<S>) => unknown,
     ) {
       ipcMain.handle(channel, async (event, raw: unknown) => {
         assertTrustedAppRendererEvent(event);
-        const input = schema.safeParse(raw);
+        const input = z.safeParse(schema, raw);
         if (!input.success) throwIpcError('INVALID_PARAMS', 'Invalid cloud login window request');
         try {
           return await run(event, input.data);

@@ -26,7 +26,7 @@ export type SettingsSnapshotFieldV2<T> =
 export type SettingsSnapshotFieldsV2 = {
   [K in SettingsSnapshotV2FieldId]: SettingsSnapshotFieldV2<z.infer<typeof SETTINGS_READ_CATALOG[K]['valueSchema']>>;
 };
-export function settingsSnapshotFieldV2Schema<T extends z.ZodTypeAny>(value: T) {
+export function settingsSnapshotFieldV2Schema<T extends z.core.$ZodType>(value: T) {
   return z.union([
     z.strictObject({ status: z.literal('value'), value, source: settingsSnapshotSourceV2Schema }),
     z.strictObject({ status: settingsSnapshotUnavailableStatusSchema }),
@@ -45,11 +45,11 @@ export type SettingsSnapshotCollectionV2<K extends SettingsSnapshotCollectionId>
 };
 export type SettingsSnapshotCollectionsV2 = { [K in SettingsSnapshotCollectionId]: SettingsSnapshotCollectionV2<K> };
 const safeCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-function collectionSchema(entrySchema: z.ZodType<{ ordinal: number }>) {
+function collectionSchema(entrySchema: z.core.$ZodType) {
   return z.strictObject({
     status: z.enum(['complete', 'partial', 'unavailable', 'unreadable', 'unsupported', 'migrationPending', 'private']),
     total: safeCount.nullable(), omitted: safeCount.nullable(),
-    entries: z.array(entrySchema).max(SETTINGS_SNAPSHOT_COLLECTION_MAX_ITEMS),
+    entries: z.array(entrySchema as z.core.$ZodType<{ ordinal: number }>).max(SETTINGS_SNAPSHOT_COLLECTION_MAX_ITEMS),
   }).superRefine((value, ctx) => {
     const fail = () => ctx.addIssue({ code: 'custom', message: 'INVALID_COLLECTION_COMPLETENESS' });
     if (value.status !== 'complete' && value.status !== 'partial') {
@@ -144,7 +144,7 @@ export function boundSettingsSnapshotCollections(input: SettingsSnapshotCollecti
   for (const id of SETTINGS_READ_COLLECTION_IDS) {
     const collection = input[id];
     if (!collection) throw new Error('MISSING_SETTINGS_COLLECTION');
-    for (const entry of collection.entries) SETTINGS_READ_COLLECTION_CATALOG[id].entrySchema.parse(entry);
+    for (const entry of collection.entries) z.parse(SETTINGS_READ_COLLECTION_CATALOG[id].entrySchema, entry);
     if (collection.status !== 'complete' && collection.status !== 'partial') {
       collectionSchema(SETTINGS_READ_COLLECTION_CATALOG[id].entrySchema).parse(collection);
       Object.assign(output[id], collection, { entries: [] });

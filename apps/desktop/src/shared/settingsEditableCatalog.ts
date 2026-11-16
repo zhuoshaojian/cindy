@@ -95,6 +95,10 @@ export const RETIRED_ADDITIONAL_SETTINGS_DOMAINS = ['contacts', 'contactsSync'] 
 export const ADDITIONAL_SETTINGS_DOMAINS = Object.keys(additionalSettingsSchemas) as AdditionalSettingsDomain[];
 export const isAdditionalSettingsDomain = (value: unknown): value is AdditionalSettingsDomain =>
   typeof value === 'string' && Object.hasOwn(additionalSettingsSchemas, value);
+/** A domain's schema typed only as an object schema, for code that handles any domain alike. */
+export function additionalSettingsSchema(domain: AdditionalSettingsDomain): z.ZodObject {
+  return additionalSettingsSchemas[domain];
+}
 
 export const additionalSettingsMetadata: Record<AdditionalSettingsDomain, {
   tab: 'general' | 'personalization' | 'providers' | 'im-bot' | 'builtin-tools' | 'computer-use' | 'about' | 'shortcuts' | 'ghosts';
@@ -145,7 +149,7 @@ export const additionalSettingsMetadata: Record<AdditionalSettingsDomain, {
 };
 
 export function normalizeAdditionalSettingsChange(domain: AdditionalSettingsDomain, set: unknown, clear: unknown) {
-  const schema = additionalSettingsSchemas[domain];
+  const schema = additionalSettingsSchema(domain);
   const values = schema.partial().parse(set ?? {});
   const keys = Object.keys(schema.shape);
   const cleared = z.array(z.string()).max(keys.length).parse(clear ?? []);
@@ -161,7 +165,7 @@ export function normalizeAdditionalSettingsChange(domain: AdditionalSettingsDoma
 
 /** Validate known persisted leaves without dropping unrelated or future keys. */
 export function validateAdditionalSettingsOverrides(domain: AdditionalSettingsDomain, raw: Record<string, unknown>): void {
-  const schema = additionalSettingsSchemas[domain];
+  const schema = additionalSettingsSchema(domain);
   schema.partial().parse(Object.fromEntries(Object.entries(raw).filter(([key]) => Object.hasOwn(schema.shape, key))));
   if (domain === 'privacy') for (const key of ['privacyConsentAccepted', 'legacyConsentMigrationClosed']) {
     if (Object.hasOwn(raw, key) && typeof raw[key] !== 'boolean') throw new Error('Invalid consent record');

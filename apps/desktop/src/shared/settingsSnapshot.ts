@@ -9,7 +9,7 @@ export const SETTINGS_SNAPSHOT_PUBLISH_INTERVAL_MS = 60_000;
 export const SETTINGS_SNAPSHOT_MIN_WRITE_INTERVAL_MS = 10_000;
 export const SETTINGS_SNAPSHOT_FRESHNESS_MS = 180_000;
 export const settingsSnapshotSourceSchema = z.enum(['default', 'override']);
-const field = <T extends z.ZodTypeAny>(value: T) => z.strictObject({
+const field = <T extends z.core.$ZodType>(value: T) => z.strictObject({
   value, source: settingsSnapshotSourceSchema,
 });
 /** 只接收结构化目录标识，不安全或自定义原始值由投影端省略。 */
