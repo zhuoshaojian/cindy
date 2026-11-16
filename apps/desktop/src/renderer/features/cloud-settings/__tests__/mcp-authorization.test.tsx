@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CloudMcpAuthorization } from '../CloudMcpAuthorization';
-import { createTrialCloudSettingsClient } from '../trial';
+import { createTrialCloudSettingsClient } from '../trialClient';
 import { toast } from '@/lib/toast';
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),

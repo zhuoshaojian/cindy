@@ -85,7 +85,6 @@
     "discard": "棄所改而返",
     "targetUnavailable": "連線未成",
     "upgradingNotice": "「{{name}}」方更新，暫不可理。更新畢，乃可續之。",
-    "trialInstance": "雲端 Cindy · 範例",
     "authScope": "於此機完成授權，名籍繫於 {{name}}。",
     "authAdd": "增 {{provider}}",
     "authDisconnect": "斷 {{name}} 上之 {{provider}} 乎？",

@@ -85,7 +85,6 @@
     "discard": "弃所改而返",
     "targetUnavailable": "连接未成",
     "upgradingNotice": "「{{name}}」方更新，暂不可理。更新毕，乃可续之。",
-    "trialInstance": "云端 Cindy · 范例",
     "authScope": "于此机完成授权，名籍系于 {{name}}。",
     "authAdd": "增 {{provider}}",
     "authDisconnect": "断 {{name}} 上之 {{provider}} 乎？",

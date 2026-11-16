@@ -85,7 +85,6 @@
     "discard": "Abandonner les modifications et revenir",
     "targetUnavailable": "Échec de la connexion",
     "upgradingNotice": "« {{name}} » est en cours de mise à jour et sa gestion est momentanément indisponible. Vous pourrez continuer une fois la mise à jour terminée.",
-    "trialInstance": "Cindy cloud · Exemple",
     "authScope": "Autorisez sur cet ordinateur ; le compte est associé à {{name}}.",
     "authAdd": "Ajouter {{provider}}",
     "authDisconnect": "Déconnecter {{provider}} sur {{name}} ?",

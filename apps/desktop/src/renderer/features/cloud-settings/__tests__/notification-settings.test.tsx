@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CloudBotAuthorization } from '../CloudBotAuthorization';
-import { createTrialCloudSettingsClient } from '../trial';
+import { createTrialCloudSettingsClient } from '../trialClient';
 import type { CloudBotNotificationPreferences } from '../CloudBotNotificationSettings';
 import { BOT_NOTIFICATION_GROUP } from '../../../../shared/cloudBotNotifications';
 import { toast } from '@/lib/toast';

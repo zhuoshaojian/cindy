@@ -180,8 +180,7 @@ pnpm desktop:whoami --all
 - 以 `DESKTOP_DEV_VERDICT=ready` 和 `desktop:whoami` 的 checkout、区域、沙箱为准。首次在独立沙箱登录，
   不复制正式版或 Dev 包的凭证与数据。登录后操作的是账号的真实云实例。
 - 缺少服务地址与账号无权限分开诊断，不能用本地推断绕过准入。参数规则见 [Desktop 开发规则](dev-rules/desktop-development.md)。
-- DEV 构建的 `/cloud-settings-trial` 是内存试用页，不连真实实例或账号。UI 场景在
-  `apps/desktop/scripts/fixtures/cloud-*`。
+- 不连真实实例或账号的 UI 场景在 `apps/desktop/scripts/fixtures/cloud-*`。
 
 ### 隔离 Dev 发行包
 

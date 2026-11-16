@@ -85,7 +85,6 @@
     "discard": "Änderungen verwerfen und zurück",
     "targetUnavailable": "Verbindung fehlgeschlagen",
     "upgradingNotice": "„{{name}}“ wird aktualisiert und kann gerade nicht verwaltet werden. Nach dem Update kannst du weitermachen.",
-    "trialInstance": "Cloud-Cindy · Beispiel",
     "authScope": "Autorisiere auf diesem Computer; das Konto wird mit {{name}} verbunden.",
     "authAdd": "{{provider}} hinzufügen",
     "authDisconnect": "{{provider}} auf {{name}} trennen?",

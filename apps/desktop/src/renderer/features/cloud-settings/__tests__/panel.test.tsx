@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi, type M
 import { CLOUD_SYNC_DEBOUNCE_MS } from '../cloudSettingsSync';
 import { CLOUD_RECONNECT_DELAYS_MS, CloudSettingsPanel } from '../CloudSettingsView';
 import { toast } from '@/lib/toast';
-import { createTrialCloudSettingsClient } from '../trial';
+import { createTrialCloudSettingsClient } from '../trialClient';
 import { SETTINGS_SEARCH_ENTRIES } from '@/components/settings/settingsSearchCatalog';
 import { cloudSearchEntryAllowed } from '../search';
 import type { CloudSettingsClient } from '../client';

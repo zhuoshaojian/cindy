@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useMemo } from 'react';
 import { mountPage, forbid } from '../../ui-page/harness';
 import { CloudSettingsPanel } from '../../../src/renderer/features/cloud-settings/CloudSettingsView';
-import { createTrialCloudSettingsClient } from '../../../src/renderer/features/cloud-settings/trial';
+import { createTrialCloudSettingsClient } from '../../../src/renderer/features/cloud-settings/trialClient';
 import {
   CLOUD_SETTINGS_VISIBILITY,
 } from '../../../src/renderer/features/cloud-settings/cloudSettingsVisibility';
@@ -190,7 +190,7 @@ function Fixture({
 }
 
 mountPage({
-  route: '/cloud-settings-trial',
+  route: '/cloud-settings',
   host: {
     maker: new Proxy({}, { get: (_, name) => forbid(`maker.${String(name)}`) }),
     hostSettings: { update: forbid('hostSettings.update'), get: forbid('hostSettings.get') },

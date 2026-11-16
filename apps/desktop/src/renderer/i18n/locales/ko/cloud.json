@@ -85,7 +85,6 @@
     "discard": "편집 내용 버리고 돌아가기",
     "targetUnavailable": "연결 실패",
     "upgradingNotice": "“{{name}}”을(를) 업데이트하는 중이라 지금은 관리할 수 없습니다. 업데이트가 완료되면 계속할 수 있습니다.",
-    "trialInstance": "클라우드 Cindy · 예시",
     "authScope": "이 컴퓨터에서 인증하면 계정이 {{name}}에 연결됩니다.",
     "authAdd": "{{provider}} 추가",
     "authDisconnect": "{{name}}에서 {{provider}} 연결을 해제할까요?",

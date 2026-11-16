@@ -85,7 +85,6 @@
     "discard": "編集内容を破棄して戻る",
     "targetUnavailable": "接続に失敗しました",
     "upgradingNotice": "「{{name}}」は更新中のため、現在は管理できません。更新が完了すると続行できます。",
-    "trialInstance": "クラウド Cindy · サンプル",
     "authScope": "このコンピューターで認証すると、アカウントは {{name}} に接続されます。",
     "authAdd": "{{provider}} を追加",
     "authDisconnect": "{{name}} の {{provider}} を切断しますか？",

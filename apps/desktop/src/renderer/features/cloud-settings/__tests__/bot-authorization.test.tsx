@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CloudBotAuthorization } from '../CloudBotAuthorization';
-import { createTrialCloudSettingsClient } from '../trial';
+import { createTrialCloudSettingsClient } from '../trialClient';
 vi.mock('react-i18next', async (original) => ({
   ...(await original<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (key: string) => key }),
