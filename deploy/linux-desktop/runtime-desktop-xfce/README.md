@@ -13,6 +13,12 @@ part of this source archive.
 - `cindy-linux-desktop` is the Xfce-specific PID 1 wrapper. It waits for desktop
   readiness before Cindy and stops Cindy before the display, keyring and bus.
   The sibling `runtime-entrypoint/` retains the Openbox wrapper for old builds.
+- `application-watch` is the in-image liveness check for profile instances. Every
+  30 s it looks for Cindy under the profile supervisor; once Cindy has been gone
+  for three consecutive checks while the supervisor still runs, it exits and the
+  wrapper stops the container so Kubernetes restarts it. The CIS Pod template is
+  unchanged. The supervisor itself also exits with Cindy, even when background
+  processes started from Cindy still hold its inherited pipes.
 - `xfce-session` starts xfsettingsd, xfwm4, xfdesktop and Plank. It publishes final
   DISPLAY to D-Bus activation and waits for the WM/Dock strut. Dock restart recovery
   is bounded; failure of a critical desktop process stops the session.

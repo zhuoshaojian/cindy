@@ -107,19 +107,26 @@ if [[ "$1" = /opt/cindy/Cindy || "$1" = /opt/cindy-rollback/Cindy ]]; then
   node /usr/local/lib/cindy/profile-entry-check.mjs && profile_mode=0 || profile_mode=$?
 fi
 if [ "$profile_mode" -gt 1 ]; then exit 1; fi
+watch=''
 if [ "$profile_mode" = 0 ]; then
   node /usr/local/lib/cindy/profile-supervisor.mjs &
+  application=$!
+  # The supervisor exits with Cindy. This self-check stops the container if Cindy has been
+  # gone for over a minute while the supervisor is still running.
+  /usr/local/lib/cindy/application-watch "$application" &
+  watch=$!
 else
   "$@" &
+  application=$!
 fi
-application=$!
 exit_code=0
 finished=''
-if [ "$managed" = 1 ]; then
-  wait -n -p finished "$application" "$keyring" "$xvfb" "$bus" "$window_manager" || exit_code=$?
-else
-  wait -n -p finished "$application" "$xvfb" "$bus" "$window_manager" || exit_code=$?
-fi
+pids=("$application" "$xvfb" "$bus" "$window_manager")
+if [ "$managed" = 1 ]; then pids+=("$keyring"); fi
+if [ -n "$watch" ]; then pids+=("$watch"); fi
+wait -n -p finished "${pids[@]}" || exit_code=$?
+# application-watch has already reported INSTANCE_APPLICATION_GONE.
+if [ -n "$watch" ] && [ "${finished:-}" = "$watch" ]; then exit 1; fi
 if [ "${finished:-}" != "$application" ]; then
   echo 'INSTANCE_RUNTIME_DEPENDENCY_EXITED' >&2
   exit 1
