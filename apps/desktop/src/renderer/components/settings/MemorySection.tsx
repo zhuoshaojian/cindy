@@ -119,8 +119,7 @@ export function MemorySection() {
 
   useEffect(() => {
     void reloadSlots();
-    void window.electronAPI.maker
-      .memoryGetSettingsState()
+    void window.electronAPI.maker.memoryGetSettingsState()
       .then((settings) => setSettingsCustomized(settings.isCustomized))
       .catch(() => undefined);
     const onFocus = () => void reloadSlots();
@@ -161,9 +160,7 @@ export function MemorySection() {
         // 操作本身成功 → success(绿). next-session 只是信息性后缀, 不用 warning ——
         // 警告色会让用户误以为出错。文案 suffix 已经把 "新会话生效" 说清楚了。
         const suffix =
-          result.effective === 'next-session'
-            ? t('settings.memory.agent.toast.takesEffectSuffix')
-            : '';
+          result.effective === 'next-session' ? t('settings.memory.agent.toast.takesEffectSuffix') : '';
         const baseKey = next
           ? 'settings.memory.agent.toast.enabled'
           : 'settings.memory.agent.toast.disabled';
@@ -385,11 +382,8 @@ export function MemorySectionView({
           const supported = slot.enabled !== null;
           const loading = slot.enabled === undefined;
           const checked = slot.enabled === true;
-          const disabled =
-            (agent.requiresMaker ? !makerEnabled : makerEnabled) ||
-            !supported ||
-            slot.pending ||
-            loading;
+          const disabled = (agent.requiresMaker ? !makerEnabled : makerEnabled)
+            || !supported || slot.pending || loading;
           // Agent label/description 来自 i18n 表 (品牌名 Claude / Codex 也走 i18n
           // —— 各语种都保留品牌原文，只方便统一管理)。
           const definition = agent.kind === 'claude-code' ? personalizationDetailsSettings.memoryAgentsClaudeCodeLabel : agent.kind === 'codex' ? personalizationDetailsSettings.memoryAgentsCodexLabel : personalizationDetailsSettings.memoryAgentsPiLabel;

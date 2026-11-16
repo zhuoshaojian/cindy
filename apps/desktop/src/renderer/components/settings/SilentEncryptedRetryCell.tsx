@@ -38,9 +38,7 @@ export function SilentEncryptedRetryCell() {
       } catch (err) {
         log.warn('silentEncryptedRetrySet failed', err);
         toast.error(
-          err instanceof Error
-            ? err.message
-            : t('settings.silentEncryptedRetry.toast.toggleFailed'),
+          err instanceof Error ? err.message : t('settings.silentEncryptedRetry.toast.toggleFailed'),
         );
         setEnabled(prev);
       } finally {

@@ -42,7 +42,9 @@ export function LspBetaCell() {
       try {
         await window.electronAPI.maker.lspModeSet(next);
         toast.success(
-          next ? t('settings.lspMode.toast.enabled') : t('settings.lspMode.toast.disabled'),
+          next
+            ? t('settings.lspMode.toast.enabled')
+            : t('settings.lspMode.toast.disabled'),
         );
       } catch (err) {
         log.warn('lspModeSet failed', err);

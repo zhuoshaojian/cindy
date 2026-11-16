@@ -56,8 +56,7 @@ function StatusDot({ status }: { status: ReceivedStatus }) {
       aria-hidden="true"
       className="h-1.5 w-1.5 shrink-0 rounded-full"
       style={{
-        backgroundColor:
-          status === 'active' ? 'var(--remote-status-ready)' : 'var(--border-default)',
+        backgroundColor: status === 'active' ? 'var(--remote-status-ready)' : 'var(--border-default)',
       }}
     />
   );
@@ -121,19 +120,12 @@ export function ProviderShareReceivedRailGroup({
                   : 'hover:bg-[var(--settings-menu-bg-hover)]',
               )}
             >
-              <ShareAvatar
-                displayName={share.owner.displayName}
-                avatarUrl={share.owner.avatarUrl}
-                size="sm"
-              />
+              <ShareAvatar displayName={share.owner.displayName} avatarUrl={share.owner.avatarUrl} size="sm" />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span
                   className="truncate text-13 font-medium"
                   style={{
-                    color:
-                      status === 'active'
-                        ? 'var(--settings-section-title)'
-                        : 'var(--text-tertiary)',
+                    color: status === 'active' ? 'var(--settings-section-title)' : 'var(--text-tertiary)',
                   }}
                 >
                   {share.providerLabel}
@@ -207,10 +199,7 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
   const status = receivedStatus(share);
   const catalogDeviceId = providerShareAgentDeviceId(share.shareId);
   const catalog = useDeviceProviders(status === 'active' ? catalogDeviceId : undefined);
-  const provider =
-    catalog.providers.find((entry) => entry.id === share.providerId) ??
-    catalog.providers[0] ??
-    null;
+  const provider = catalog.providers.find((entry) => entry.id === share.providerId) ?? catalog.providers[0] ?? null;
 
   const models = useMemo(
     () => readOnlyProviderModels(provider, catalog.modelVisibilityOverrides),
@@ -267,18 +256,15 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
     // 分享者电脑拒绝(关了远程控制 / 允许被远程调用，或那边还没加载好分享)与连不上要分开说；
     // 其余错误带上错误代码，截图就能看出卡在哪一步。
     const code = extractIpcError(new Error(catalog.error))?.code ?? null;
-    body =
-      code === 'REMOTE_AGENT_SHARE_UNAVAILABLE'
-        ? t('providerShare.received.modelsRefused')
-        : t('providerShare.received.modelsFailedWithCode', { code: code ?? 'UNKNOWN' });
-  } else if (catalog.loading) body = t('providerShare.received.modelsLoading');
+    body = code === 'REMOTE_AGENT_SHARE_UNAVAILABLE'
+      ? t('providerShare.received.modelsRefused')
+      : t('providerShare.received.modelsFailedWithCode', { code: code ?? 'UNKNOWN' });
+  }
+  else if (catalog.loading) body = t('providerShare.received.modelsLoading');
   else if (models.length === 0) body = t('providerShare.received.modelsEmpty');
 
   return (
-    <div
-      data-testid="provider-share-received-detail"
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
-    >
+    <div data-testid="provider-share-received-detail" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="shrink-0 px-5 py-4">
         <div className="flex flex-wrap items-center gap-3 gap-y-2">
           <div className="flex min-w-0 flex-auto basis-[220px] items-center gap-3">
@@ -314,10 +300,7 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2.5">
-            <span
-              role="status"
-              className="inline-flex items-center gap-1.5 text-12 text-[var(--text-secondary)]"
-            >
+            <span role="status" className="inline-flex items-center gap-1.5 text-12 text-[var(--text-secondary)]">
               <StatusDot status={status} />
               {t(
                 status === 'active' && groupSize !== null
@@ -345,15 +328,8 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
         className="flex shrink-0 items-start gap-3 border-t px-5 py-3"
         style={{ borderColor: 'var(--settings-theme-card-border)' }}
       >
-        <ShareAvatar
-          displayName={share.owner.displayName}
-          avatarUrl={share.owner.avatarUrl}
-          size="sm"
-        />
-        <p
-          className="min-w-0 flex-1 text-13 leading-[1.5]"
-          style={{ color: 'var(--settings-section-desc)' }}
-        >
+        <ShareAvatar displayName={share.owner.displayName} avatarUrl={share.owner.avatarUrl} size="sm" />
+        <p className="min-w-0 flex-1 text-13 leading-[1.5]" style={{ color: 'var(--settings-section-desc)' }}>
           {t('providerShare.received.detailNote', { name: share.owner.displayName })}
         </p>
       </div>
@@ -386,12 +362,7 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
       </div>
 
       {status === 'active' && groupSize !== null && (
-        <SharedProviderGroupStatus
-          key={catalogDeviceId}
-          deviceId={catalogDeviceId}
-          providerId={share.providerId}
-          initialSize={groupSize}
-        />
+        <SharedProviderGroupStatus key={catalogDeviceId} deviceId={catalogDeviceId} providerId={share.providerId} initialSize={groupSize} />
       )}
 
       <ProviderShareInsightsSection key={share.shareId} share={share} />
@@ -401,20 +372,16 @@ export function ProviderShareReceivedDetail({ share }: { share: ProviderShareRec
           title={t('providerShare.received.modelsTitle')}
           models={models}
           note={body}
-          onRefresh={
-            status === 'active'
-              ? () => void refreshRemoteCatalogSnapshot(catalogDeviceId).catch(() => undefined)
-              : undefined
-          }
+          onRefresh={status === 'active'
+            ? () => void refreshRemoteCatalogSnapshot(catalogDeviceId).catch(() => undefined)
+            : undefined}
           refreshing={catalog.loading}
           action={
             status === 'active' && catalog.error ? (
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() =>
-                  void refreshRemoteCatalogSnapshot(catalogDeviceId).catch(() => undefined)
-                }
+                onClick={() => void refreshRemoteCatalogSnapshot(catalogDeviceId).catch(() => undefined)}
               >
                 {t('providerShare.received.retryModels')}
               </Button>

@@ -1276,8 +1276,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   companionImport: {
     sources: () => ipcRenderer.invoke('companion-import', 'sources'),
     preview: (sourceId: string) => ipcRenderer.invoke('companion-import', 'preview', sourceId),
-    start: (selection: CompanionImportSelection) =>
-      ipcRenderer.invoke('companion-import', 'start', selection),
+    start: (selection: CompanionImportSelection) => ipcRenderer.invoke('companion-import', 'start', selection),
     status: (requestId: string) => ipcRenderer.invoke('companion-import', 'status', requestId),
   } satisfies CompanionImportApi,
   platform: process.platform,
@@ -1586,10 +1585,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       packageSha256: string;
       unsupportedSlots: string[];
       iconDataUrl?: string;
-    }> =>
-      opts === undefined
-        ? ipcRenderer.invoke('ghosts:inspect', lizFilePath)
-        : ipcRenderer.invoke('ghosts:inspect', lizFilePath, opts),
+    }> => opts === undefined
+      ? ipcRenderer.invoke('ghosts:inspect', lizFilePath)
+      : ipcRenderer.invoke('ghosts:inspect', lizFilePath, opts),
     uninstall: (id: string): Promise<{ ok: true }> => ipcRenderer.invoke('ghosts:uninstall', id),
     /** 详情页「导出 .cindy」:main 打包安装目录 → 系统保存对话框落盘。 */
     export: (
@@ -1599,9 +1597,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openRetirement: (id: string): Promise<{ ok: true }> =>
       ipcRenderer.invoke('ghosts:open-retirement', id),
     onRetirementOpen: (callback: (id: string) => void): (() => void) =>
-      fanOutRetirementOpen((id: unknown) => {
-        if (typeof id === 'string') callback(id);
-      }),
+      fanOutRetirementOpen((id: unknown) => { if (typeof id === 'string') callback(id); }),
     acknowledgeRetirement: (id: string): Promise<{ ok: true }> =>
       ipcRenderer.invoke('ghosts:acknowledge-retirement', id),
     setEnabled: (
@@ -1758,12 +1754,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
           ext: string;
           mimeType: string;
         }
-    > =>
-      sourceToken !== undefined
-        ? ipcRenderer.invoke('ghosts:resolve-panel-media', uri, purpose, instanceId, sourceToken)
-        : instanceId === undefined
-          ? ipcRenderer.invoke('ghosts:resolve-panel-media', uri, purpose)
-          : ipcRenderer.invoke('ghosts:resolve-panel-media', uri, purpose, instanceId),
+    > => sourceToken !== undefined
+      ? ipcRenderer.invoke('ghosts:resolve-panel-media', uri, purpose, instanceId, sourceToken)
+      : instanceId === undefined
+      ? ipcRenderer.invoke('ghosts:resolve-panel-media', uri, purpose)
+      : ipcRenderer.invoke('ghosts:resolve-panel-media', uri, purpose, instanceId),
     runtimeStates: (): Promise<{ states: Record<string, string> }> =>
       ipcRenderer.invoke('ghosts:runtime-states'),
     reload: (id: string): Promise<{ state: string }> => ipcRenderer.invoke('ghosts:reload', id),
@@ -4414,11 +4409,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           ...(p.tab === 'providers' && p.connect !== undefined ? { connect: p.connect } : {}),
           ...(p.tab === 'im-bot' && (p.imGroup === 'cindy' || p.imGroup === 'personal') ? { imGroup: p.imGroup } : {}),
         });
-      } else if (
-        p.type === 'chat-invite' &&
-        typeof p.token === 'string' &&
-        /^[A-Za-z0-9_-]{43}$/.test(p.token)
-      ) {
+      } else if (p.type === 'chat-invite' && typeof p.token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(p.token)) {
         callback({ type: 'chat-invite', token: p.token });
       } else if (p.type === 'chat-invite-malformed') {
         callback({ type: 'chat-invite-malformed' });
@@ -6719,9 +6710,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('maker:chat-server:manage', input),
       ownedBots: (): ReturnType<import('../shared/botGroupChat').ChatServerApi['ownedBots']> =>
         ipcRenderer.invoke('maker:chat-server:ownedBots'),
-      refreshProfile: (): ReturnType<
-        import('../shared/botGroupChat').ChatServerApi['refreshProfile']
-      > => ipcRenderer.invoke('maker:chat-server:refreshProfile'),
+      refreshProfile: (): ReturnType<import('../shared/botGroupChat').ChatServerApi['refreshProfile']> =>
+        ipcRenderer.invoke('maker:chat-server:refreshProfile'),
       status: (): ReturnType<import('../shared/botGroupChat').ChatServerApi['status']> =>
         ipcRenderer.invoke('maker:chat-server:status'),
       thread: (
@@ -7019,17 +7009,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     localModelStatus: (): Promise<import('../shared/localModelRuntime').LocalRuntimeStatus> =>
       ipcRenderer.invoke('maker:local-model:status'),
     llamaCppEnsure: (): Promise<void> => ipcRenderer.invoke('maker:llamacpp:ensure'),
-    llamaCppStatus: (): Promise<import('../shared/llamaCpp').LlamaCppSnapshot> =>
-      ipcRenderer.invoke('maker:llamacpp:status'),
+    llamaCppStatus: (): Promise<import('../shared/llamaCpp').LlamaCppSnapshot> => ipcRenderer.invoke('maker:llamacpp:status'),
     llamaCppInstall: (): Promise<void> => ipcRenderer.invoke('maker:llamacpp:install'),
-    llamaCppFiles: (repo: string): Promise<import('../shared/llamaCpp').LlamaCppFile[]> =>
-      ipcRenderer.invoke('maker:llamacpp:files', repo),
-    llamaCppDownload: (input: import('../shared/llamaCpp').LlamaCppDownloadInput): Promise<void> =>
-      ipcRenderer.invoke('maker:llamacpp:download', input),
+    llamaCppFiles: (repo: string): Promise<import('../shared/llamaCpp').LlamaCppFile[]> => ipcRenderer.invoke('maker:llamacpp:files', repo),
+    llamaCppDownload: (input: import('../shared/llamaCpp').LlamaCppDownloadInput): Promise<void> => ipcRenderer.invoke('maker:llamacpp:download', input),
     llamaCppStart: (): Promise<void> => ipcRenderer.invoke('maker:llamacpp:start'),
     llamaCppStop: (): Promise<void> => ipcRenderer.invoke('maker:llamacpp:stop'),
-    llamaCppCancel: (action?: 'cancel' | 'pause' | 'resume'): Promise<void> =>
-      ipcRenderer.invoke('maker:llamacpp:cancel', action),
+    llamaCppCancel: (action?: 'cancel' | 'pause' | 'resume'): Promise<void> => ipcRenderer.invoke('maker:llamacpp:cancel', action),
     localModelStart: (): Promise<import('../shared/localModelRuntime').LocalRuntimeStatus> =>
       ipcRenderer.invoke('maker:local-model:start'),
     localModelList: (): Promise<{
@@ -7905,7 +7891,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('maker:session:commit-provisional', sessionId),
     setPermissionMode: (sessionId: string, mode: string): Promise<void> =>
       ipcRenderer.invoke('maker:set-permission-mode', sessionId, mode),
-    getPluginWriteAccessRecovery: (sessionId: string): Promise<{ available: boolean }> =>
+    getPluginWriteAccessRecovery: (sessionId: string): Promise<{available: boolean}> =>
       ipcRenderer.invoke('maker:get-plugin-write-access-recovery', sessionId),
     retryPluginWriteAccess: (
       sessionId: string,
