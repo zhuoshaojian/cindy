@@ -21,7 +21,7 @@ import {
   CatalogManagementNotice,
   PLUGIN_MANAGEMENT_FRAME_CLASS,
 } from '@/features/plugin/PluginManagementLayout';
-import { SettingsSection } from '@/components/ui/settings-rows';
+import { SettingsCard, SettingsSection } from '@/components/ui/settings-rows';
 import {
   CLOUD_RETRY_DELAYS_MS,
   errorCode,
@@ -86,8 +86,6 @@ const debounced = (set: Record<string, unknown>, clear?: string[]) =>
   !clear?.length &&
   Object.keys(set).length > 0 &&
   Object.values(set).every((value) => typeof value === 'number');
-const card =
-  'rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
 export function CloudSettingsPanel({
   name,
   client: ownClient,
@@ -874,14 +872,14 @@ export function CloudSettingsPanel({
                   >
                     {/* A page title as on this computer's pages. */}
                     <SettingsSection variant="page" title={t('cloudSettings.moreSettings')}>
-                      <div className={card}>
+                      <SettingsCard className="p-5">
                         <CloudDesktopFallback
                           deviceId={deviceId}
                           name={name}
                           description={t('cloudSettings.moreSettingsFallback', { name })}
                           disabled={!online || !deviceId}
                         />
-                      </div>
+                      </SettingsCard>
                     </SettingsSection>
                   </div>
                 )}

@@ -7,6 +7,7 @@ import { CloudRequestError } from './CloudRequestError';
 import { SETTLE_DELAYS_MS, useSettleUnknown } from './useSettleUnknown';
 import { FormField } from '@/components/ui/form-field';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
+import { SettingsCard } from '@/components/ui/settings-rows';
 import { SettingsTextInput } from '@/components/settings/SettingsTextInput';
 import { McpTokenField } from '@/components/settings/McpTokenField';
 import { McpAddRow, McpRow } from '@/components/settings/McpServersSection';
@@ -314,7 +315,7 @@ export function CloudMcpAuthorization({
       )}
       {/* While reading nothing; with no server, only the add row. */}
       {(items.length > 0 || (createItem && online)) && (
-      <div className="overflow-hidden rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)]">
+      <SettingsCard>
         {items.map((item, i) => {
           const edit = getAction(item, 'management.actions.edit');
           const field = (key: string) => edit?.fields.find((f) => f.name === key)?.value;
@@ -375,7 +376,7 @@ export function CloudMcpAuthorization({
             <McpAddRow onClick={() => !busy && setDialog({})} />
           </div>
         )}
-      </div>
+      </SettingsCard>
       )}
       {dialog && (
         <McpServerDialog

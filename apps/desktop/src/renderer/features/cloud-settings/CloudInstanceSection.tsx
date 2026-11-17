@@ -43,8 +43,6 @@ import {
   upgradeOutcome,
 } from './instanceState';
 
-const card =
-  'flex flex-col gap-4 rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)] p-5';
 const label = 'text-13 font-medium text-[var(--settings-section-sublabel)]';
 const description = 'text-12 leading-[1.5] text-[var(--settings-section-desc)]';
 // Inside a My devices card: standard settings rows, in an inset block like "Allow remote desktop".
@@ -53,6 +51,14 @@ const embeddedDescription = SETTINGS_HINT;
 const embeddedBox =
   'flex flex-col divide-y divide-[var(--border-default)] rounded-lg bg-[var(--settings-input-bg)] px-3 [&>*]:py-3';
 const Embedded = createContext(false);
+/** A block of instance rows: the inset block inside a My devices card, otherwise a settings card. */
+function InstanceBox({ embedded, children }: { embedded: boolean; children: ReactNode }) {
+  return embedded ? (
+    <div className={embeddedBox}>{children}</div>
+  ) : (
+    <SettingsCard className="flex flex-col gap-4 p-5">{children}</SettingsCard>
+  );
+}
 function Row({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
   const embedded = useContext(Embedded);
   return (
@@ -766,7 +772,6 @@ export function CloudInstanceSection({
   );
   const desc = embedded ? embeddedDescription : description;
   const value = 'text-13';
-  const box = embedded ? embeddedBox : card;
   const displayVersion = (version: string) =>
     embedded ? version.replace(/(-(cn|global))?-(amd64|arm64)$/, '') : version;
   const versionText = (version: string | null) =>
@@ -1068,7 +1073,7 @@ export function CloudInstanceSection({
           </>
         ) : (
           <>
-            <div className={box}>
+            <InstanceBox embedded={embedded}>
               {!embedded && (
                 <Row title={view.name || name} detail={tr(`state.${status}`)}>
                   <Button
@@ -1107,7 +1112,7 @@ export function CloudInstanceSection({
                   {upgradeButton}
                 </Row>
               )}
-            </div>
+            </InstanceBox>
             <section
               ref={maintenanceTarget}
               id="cloud-instance-maintenance"
@@ -1123,11 +1128,11 @@ export function CloudInstanceSection({
                   {fed && busy ? t('cloudSettings.loading') : tr('unavailable')}
                 </p>
               ) : (
-                <div className={box}>
+                <InstanceBox embedded={embedded}>
                   {autoSwitch(tr('autoUpdate'), embedded ? undefined : tr('autoDescription'))}
                   {schedule}
                   {policyNotes}
-                </div>
+                </InstanceBox>
               )}
             </section>
           </>

@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SettingsPageHeader } from '@/components/ui/settings-rows';
+import { SettingsCard, SettingsPageHeader } from '@/components/ui/settings-rows';
 import { LocalModelCatalogNotice } from '@/components/new-chat/LocalModelCatalogNotice';
 import { CloudAuthProgress } from './CloudAuthProgress';
 import { ProviderListEntry } from '@/components/settings/ProviderListEntry';
@@ -78,7 +78,7 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
         />
       )}
       {!!items.length && (
-        <div className="flex min-h-[340px] overflow-hidden rounded-xl border border-[var(--settings-theme-card-border)] bg-[var(--settings-theme-card-bg)]">
+        <SettingsCard className="flex min-h-[340px]">
           <div className="flex w-[224px] shrink-0 flex-col gap-0.5 border-r border-[var(--settings-theme-card-border)] p-2">
             {items.map((entry) => (
               <div
@@ -228,7 +228,7 @@ export function CloudProviderAuthorization(props: CloudAuthorizationProps) {
               </>
             )}
           </div>
-        </div>
+        </SettingsCard>
       )}
       {/* Nothing to sign in to, and no 「添加供应商」 on this list (as RemoteBotSettings). */}
       {!loading && !failure && !items.length && (
