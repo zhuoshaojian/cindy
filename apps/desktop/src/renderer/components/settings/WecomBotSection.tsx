@@ -52,6 +52,9 @@ export function WecomBotSection({
 }) {
   const controller = useWecomBot();
   const [routeSummary, setRouteSummary] = useImChannelSettingsSummary('wecom');
+  // The card body unmounts while collapsed; state read here and the unsaved URL outlive it.
+  const wecomGroup = useWecomGroupNotificationSettings();
+  const webhookDraft = useState('');
   return (
     <WecomBotSectionView
       expanded={expanded}
@@ -61,7 +64,9 @@ export function WecomBotSection({
       defaultSettings={
         <ImDefaultSettingsSection channel="wecom" embedded onSummaryChange={setRouteSummary} />
       }
-      notificationSettings={<WecomGroupNotificationSection />}
+      notificationSettings={
+        <WecomGroupNotificationSectionView wecomGroup={wecomGroup} webhookDraft={webhookDraft} />
+      }
     />
   );
 }
@@ -295,10 +300,6 @@ export function WecomBotSectionView({
       {notificationSettings}
     </ImChannelSettingsCard>
   );
-}
-
-function WecomGroupNotificationSection() {
-  return <WecomGroupNotificationSectionView wecomGroup={useWecomGroupNotificationSettings()} />;
 }
 
 /** Shared group-webhook control; the cloud surface supplies a target-scoped controller. */
