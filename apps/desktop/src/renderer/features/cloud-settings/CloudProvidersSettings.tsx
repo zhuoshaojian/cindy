@@ -99,6 +99,7 @@ import { CloudAddProviderDialog } from './CloudAddProviderDialog';
 import { CloudXdQuota } from './CloudXdQuota';
 import { useCloudProviderCatalog, type CloudProviderWrite } from './cloudProviderCatalog';
 import { CloudLoginPrompt, useCloudProviderSetup } from './cloudProviderSetup';
+import { useForeground } from './foreground';
 import { useCloudAuthorization, type CloudAuthorizationProps } from './useCloudAuthorization';
 
 type Action = ManagementItem['actions'][number];
@@ -275,6 +276,7 @@ function CloudProviderCatalogPage({
   management: boolean;
 }) {
   const { name, online, deviceId } = props;
+  const foreground = useForeground(props.active);
   const auth = useCloudAuthorization(props, 'providers', { all: true });
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
@@ -529,24 +531,35 @@ function CloudProviderCatalogPage({
   const byokStateOf = (status: unknown, id: string) =>
     (status as ByokStatus | null)?.providers?.find((item) => item.providerId === id)?.state ??
     'unavailable';
+  useEffect(() => setByokState(null), [byokSupported, managedId, deviceId]);
+  // Read while the page is shown in a window in front of the user, one call at a time: the
+  // next read is scheduled when the previous one settles. A pending configuration is read
+  // every 5 s like the local page; a settled one only every 15 s (§8.7). Coming back reads at
+  // once.
+  const byokPolling = byokSupported && !!managedId && online && props.active && foreground;
   useEffect(() => {
-    setByokState(null);
-    if (!byokSupported || !managedId) return;
+    if (!byokPolling || !managedId) return;
     let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const read = () =>
       void catalog
         .send({ op: 'byok', action: 'status' })
         .then((receipt) => {
-          if (!disposed) setByokState(byokStateOf(receipt.value, managedId));
+          const state = byokStateOf(receipt.value, managedId);
+          if (!disposed) setByokState(state);
+          return state;
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .then((state) => {
+          if (disposed) return;
+          timer = setTimeout(read, state && state !== 'pending' ? 15_000 : 5_000);
+        });
     read();
-    const timer = setInterval(read, 5_000);
     return () => {
       disposed = true;
-      clearInterval(timer);
+      clearTimeout(timer);
     };
-  }, [byokSupported, managedId, deviceId]);
+  }, [byokPolling, managedId, deviceId]);
   const refreshByok = async () => {
     if (byokBusy || !managedId) return;
     setByokBusy(true);

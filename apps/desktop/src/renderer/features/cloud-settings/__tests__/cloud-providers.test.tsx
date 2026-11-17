@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProviderView } from '@cindy/model-providers';
 
@@ -198,6 +198,8 @@ function setup(
     management?: boolean;
     /** The list cannot be read until this returns false. */
     listFails?: () => boolean;
+    /** Organization connection status of the instance; the catalog lists `byok` with it. */
+    byok?: () => Promise<unknown>;
   } = {},
 ) {
   let visibility = {
@@ -225,6 +227,7 @@ function setup(
           'model-edit',
           'cli-scan',
           ...(options.withoutShare ? [] : ['share']),
+          ...(options.byok ? ['byok'] : []),
         ],
         efforts: { 'codex:*': { 'm-1': 'high' } },
       };
@@ -254,6 +257,8 @@ function setup(
             : { skip: command.skip === true },
       };
     }
+    if (request.op === 'byok')
+      return { ok: true, ownerGeneration: 3, catalogChanged: false, value: await options.byok!() };
     if (request.op === 'cli-scan')
       return {
         ok: true,
@@ -542,6 +547,74 @@ describe('custom connection header on the instance', () => {
       ).toBeNull(),
     );
     expect(screen.getByText('settings.providers.pill.configured')).toBeTruthy();
+  });
+});
+
+// §8.3 / §8.7: each organization status read is a call to the instance. It stops while the
+// window is hidden, reads once when the window is back, never overlaps a slow reply and slows
+// down once the configuration settles. Before: a 5 s interval ran behind a hidden window and
+// stacked calls behind a slow reply.
+describe('organization connection status on the instance', () => {
+  const org = {
+    id: 'org-1',
+    name: 'Org pool',
+    source: 'organization',
+    agents: ['codex'],
+    auth: { method: 'apiKey' },
+    routing: {},
+    models: { codex: [model('o-1')] },
+    connected: true,
+  } as unknown as ProviderView;
+  const status = (state: string) => ({ state: 'ready', providers: [{ providerId: 'org-1', state }] });
+  const statusReads = (invoke: ReturnType<typeof setup>['invoke']) =>
+    invoke.mock.calls.filter(([, , [request]]) => request.op === 'byok').length;
+  const openOrg = async () => {
+    const row = (await screen.findAllByText('Org pool')).find((node) =>
+      node.closest('.provider-settings-sortable-row'),
+    );
+    fireEvent.click(row!);
+  };
+  afterEach(() => {
+    document.documentElement.removeAttribute('data-app-hidden');
+    vi.useRealTimers();
+  });
+
+  it('stops while the window is hidden and reads once when it is back', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { invoke } = setup({ extraProviders: [org], byok: async () => status('pending') });
+    await openOrg();
+    await waitFor(() => expect(statusReads(invoke)).toBe(1));
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(statusReads(invoke)).toBe(2);
+    await act(async () => document.documentElement.setAttribute('data-app-hidden', 'true'));
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(statusReads(invoke)).toBe(2);
+    await act(async () => document.documentElement.removeAttribute('data-app-hidden'));
+    expect(statusReads(invoke)).toBe(3);
+  });
+
+  it('waits for a slow reply and reads a settled configuration less often', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let answer!: () => void;
+    const slow = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const { invoke } = setup({
+      extraProviders: [org],
+      byok: async () => {
+        await slow;
+        return status('ready');
+      },
+    });
+    await openOrg();
+    await waitFor(() => expect(statusReads(invoke)).toBe(1));
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(statusReads(invoke)).toBe(1);
+    await act(async () => answer());
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(statusReads(invoke)).toBe(1);
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(statusReads(invoke)).toBe(2);
   });
 });
 
