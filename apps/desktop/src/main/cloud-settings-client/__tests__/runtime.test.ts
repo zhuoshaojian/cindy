@@ -128,6 +128,15 @@ it.each([
   cloudLoginWindowLifecycle.prewarm();
   expect(createWindow).toHaveBeenCalledTimes(windows);
 });
+// Ordinary clients: the access check of a region without a cloud instance service says so, so
+// the renderer stops asking; it still refuses an untrusted sender first and never reaches CIS.
+it('reports the access check of a client without a cloud instance service as unsupported', async () => {
+  mock.baseUrl = '';
+  await expect(call('instanceAccess', {})).rejects.toThrow('[CLOUD_SETTINGS_UNSUPPORTED]');
+  event.trusted = false;
+  await expect(call('instanceAccess', {})).rejects.toThrow('PERMISSION_DENIED');
+  expect(mock.fetch).not.toHaveBeenCalled();
+});
 it('registers the closed bridge once and rejects untrusted IPC before network access', async () => {
   registerCloudSettingsClientIpc();
   expect(mock.handle).not.toHaveBeenCalled();

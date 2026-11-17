@@ -1,9 +1,7 @@
 import { parseSettingsNavigationTarget, type SettingsNavigationTarget } from '@cindy/maker-shared/settings-navigation';
 import type { HostConnectionState } from '@cindy/maker-shared/host-event-stream';
 import { APP_PREFERENCE_REQUEST, APP_PREFERENCE_REPLY, APP_SETTINGS_CHANGED, type AppPreferenceControlBridge } from '../shared/appPreferenceControl.js';
-import { CLOUD_LOGIN_WINDOW } from '../shared/cloudLoginWindow';
-import { CLOUD_CLIENT_CHANNELS } from '../shared/cloudSettingsClient';
-import type { CloudSettingsRendererApi } from '../shared/cloudSettingsClient';
+import { cloudWindowBridges } from './cloudBridges';
 import type { VoiceConversationApi } from '../shared/voiceConversation';
 import { PERFORMANCE_TRACE_CHANNEL, PERFORMANCE_TRACE_EVENTS_CHANNEL, PERFORMANCE_TRACE_STATE_CHANNEL, type PerformanceTraceAPI, type PerformanceTraceState } from '../shared/performanceTrace';
 import { createAccessibilitySupportBridge } from './accessibilitySupport';
@@ -1337,41 +1335,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pageZoomOut: (): Promise<{ ok: true; zoomFactor: number }> => ipcRenderer.invoke('page-zoom:out'),
   pageZoomReset: (): Promise<{ ok: true; zoomFactor: number }> =>
     ipcRenderer.invoke('page-zoom:reset'),
-  cloudLoginWindow: {
-    open: (input: { deviceId: string }): Promise<void> => ipcRenderer.invoke(CLOUD_LOGIN_WINDOW.open, input),
-    onCompleted: (cb: () => void) => {
-      const listener = () => cb();
-      ipcRenderer.on(CLOUD_LOGIN_WINDOW.completed, listener);
-      return () => ipcRenderer.removeListener(CLOUD_LOGIN_WINDOW.completed, listener);
-    },
-  },
-  cloudSettings: {
-    instanceAccess: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceAccess, input),
-    instanceList: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceList, input),
-    instanceCapacity: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceCapacity, input),
-    instanceClaim: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceClaim, input),
-    instanceInitialize: (input) =>
-      ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceInitialize, input),
-    instanceLoginStart: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceLoginStart, input),
-    instanceLoginDispatch: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceLoginDispatch, input),
-    instanceLoginPoll: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceLoginPoll, input),
-    instanceLoginClose: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceLoginClose, input),
-    instanceRead: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceRead, input),
-    instanceUpgrade: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instanceUpgrade, input),
-    instancePower: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instancePower, input),
-    instancePolicy: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.instancePolicy, input),
-    open: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.open, input),
-    read: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.read, input),
-    save: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.save, input),
-    receipt: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.receipt, input),
-    manage: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.manage, input),
-    cancelAuthorizations: (input) =>
-      ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.cancelAuthorizations, input),
-    close: (input) => ipcRenderer.invoke(CLOUD_CLIENT_CHANNELS.close, input),
-  } satisfies CloudSettingsRendererApi,
-  hostSettings: {
-    hostOwned: ipcRenderer.sendSync('host-settings:host-owned') === true,
-  } satisfies import('../shared/hostSettings').HostSettingsRendererApi,
+  // Main window only (see cloudBridges.ts).
+  ...cloudWindowBridges(process.argv),
   appearanceSettings: {
     ...createPluginFontReader(),
     importWallpaper: () => ipcRenderer.invoke('appearance-settings:import-wallpaper'),
@@ -1636,11 +1601,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       fanOutRetirementOpen((id: unknown) => { if (typeof id === 'string') callback(id); }),
     acknowledgeRetirement: (id: string): Promise<{ ok: true }> =>
       ipcRenderer.invoke('ghosts:acknowledge-retirement', id),
-    setEnabled: (
-      id: string,
-      enabled: boolean,
-      expectedInstalledApproval?: string,
-    ): Promise<{ ok: true }> =>
+    setEnabled: (id: string, enabled: boolean, expectedInstalledApproval?: string): Promise<{ ok: true }> =>
       ipcRenderer.invoke('ghosts:set-enabled', id, enabled, expectedInstalledApproval),
     uiPrompts: (): Promise<Array<{id: string; name: string; version: string}>> => ipcRenderer.invoke('ghosts:ui-prompts'),
     deferUiPrompt: (id: string, version: string): Promise<void> => ipcRenderer.invoke('ghosts:defer-ui-prompt', id, version),
@@ -1852,9 +1813,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     libraryDelete: (id: string): Promise<{ ok: boolean; cancelled?: boolean; message?: string }> =>
       ipcRenderer.invoke('ghosts:library-delete', id),
     /** 接回裸 id 下以前留下的作品数据；确认框由 Main 弹出。 */
-    libraryReattachLegacy: (
-      id: string,
-    ): Promise<{ ok: boolean; cancelled?: boolean; message?: string }> =>
+    libraryReattachLegacy: (id: string): Promise<{ ok: boolean; cancelled?: boolean; message?: string }> =>
       ipcRenderer.invoke('ghosts:library-reattach-legacy', id),
     legacyRecoveryStatus: (): Promise<
       import('../shared/legacyGhostRecovery').LegacyGhostRecoveryStatus
@@ -6795,9 +6754,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('maker:chat-server:refreshProfile'),
       status: (): ReturnType<import('../shared/botGroupChat').ChatServerApi['status']> =>
         ipcRenderer.invoke('maker:chat-server:status'),
-      thread: (
-        input: Parameters<import('../shared/botGroupChat').ChatServerApi['thread']>[0],
-      ): ReturnType<import('../shared/botGroupChat').ChatServerApi['thread']> =>
+      thread: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['thread']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['thread']> =>
         ipcRenderer.invoke('maker:chat-server:thread', input),
       followThread: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['followThread']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['followThread']> =>
         ipcRenderer.invoke('maker:chat-server:followThread', input),
@@ -6813,17 +6770,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('maker:chat-server:reactors', input),
       createInvite: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['createInvite']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['createInvite']> =>
         ipcRenderer.invoke('maker:chat-server:createInvite', input),
-      revokeInvite: (
-        input: Parameters<import('../shared/botGroupChat').ChatServerApi['revokeInvite']>[0],
-      ): ReturnType<import('../shared/botGroupChat').ChatServerApi['revokeInvite']> =>
+      revokeInvite: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['revokeInvite']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['revokeInvite']> =>
         ipcRenderer.invoke('maker:chat-server:revokeInvite', input),
-      previewInvite: (
-        input: Parameters<import('../shared/botGroupChat').ChatServerApi['previewInvite']>[0],
-      ): ReturnType<import('../shared/botGroupChat').ChatServerApi['previewInvite']> =>
+      previewInvite: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['previewInvite']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['previewInvite']> =>
         ipcRenderer.invoke('maker:chat-server:previewInvite', input),
-      acceptInvite: (
-        input: Parameters<import('../shared/botGroupChat').ChatServerApi['acceptInvite']>[0],
-      ): ReturnType<import('../shared/botGroupChat').ChatServerApi['acceptInvite']> =>
+      acceptInvite: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['acceptInvite']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['acceptInvite']> =>
         ipcRenderer.invoke('maker:chat-server:acceptInvite', input),
     },
     listBotGroups: (): Promise<import('../shared/botGroupChat').BotGroupListResult> =>
@@ -6845,9 +6796,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       input: import('../shared/botGroupChat').BotGroupSetMembersInput,
     ): Promise<import('../shared/botGroupChat').BotGroupMutationResult> =>
       ipcRenderer.invoke('maker:bot-group:set-members', input),
-    deleteBotGroup: (
-      groupId: string,
-    ): Promise<import('../shared/botGroupChat').BotGroupMutationResult> =>
+    deleteBotGroup: (groupId: string): Promise<import('../shared/botGroupChat').BotGroupMutationResult> =>
       ipcRenderer.invoke('maker:bot-group:delete', groupId),
     sendBotGroupMessage: (
       input: import('../shared/botGroupChat').BotGroupSendInput,
@@ -6970,10 +6919,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       providerOrder: string[];
       disabledProviders?: Record<string, boolean>;
     }> => ipcRenderer.invoke('maker:provider:list'),
-    setProviderRemoteAccess: (input: {
-      providerId: string;
-      enabled: boolean;
-    }): Promise<{ ok: true; enabled: boolean }> =>
+    setProviderRemoteAccess: (input: { providerId: string; enabled: boolean }): Promise<{ ok: true; enabled: boolean }> =>
       ipcRenderer.invoke('maker:provider:remote-access:set', input),
     getOwnComputerModelUse: (): Promise<{ enabled: boolean }> =>
       ipcRenderer.invoke('maker:own-computer-model-use:get'),
@@ -7991,9 +7937,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('maker:set-permission-mode', sessionId, mode),
     getPluginWriteAccessRecovery: (sessionId: string): Promise<{available: boolean}> =>
       ipcRenderer.invoke('maker:get-plugin-write-access-recovery', sessionId),
-    retryPluginWriteAccess: (
-      sessionId: string,
-    ): Promise<{ granted: boolean; mode?: 'acceptEdits' | 'auto' }> =>
+    retryPluginWriteAccess: (sessionId: string): Promise<{granted: boolean; mode?: 'acceptEdits' | 'auto'}> =>
       ipcRenderer.invoke('maker:retry-plugin-write-access', sessionId),
     setFastMode: (sessionId: string, enabled: boolean | 'ultrafast'): Promise<void> =>
       ipcRenderer.invoke('maker:set-fast-mode', sessionId, enabled),

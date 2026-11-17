@@ -36,7 +36,7 @@ export function CloudMaintenanceDialog({
   // Instance operations only (upgrade, policy); no settings session is opened.
   const client = useMemo(
     () =>
-      !open
+      !open || !window.electronAPI?.cloudSettings
         ? null
         : createCloudSettingsClient(deviceId, window.electronAPI.cloudSettings, () => {
             if (!isDataOwnerGenerationCurrent(owner.current))

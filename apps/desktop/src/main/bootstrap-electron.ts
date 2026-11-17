@@ -667,6 +667,7 @@ import {
 import { initHeartbeatService } from './heartbeatService';
 import { markStartupMilestone } from './startupTimeline';
 import { getInstanceConfig } from './instance-runtime/config.js';
+import { createCloudWindowArgument } from '../shared/cloudWindow.js';
 import { startProfileTelemetry } from './instance-runtime/profile-telemetry.js';
 import { instanceAuthReady, instanceDurableObservation, instanceAuthRealm, instanceLoginRequired, instanceLoginRecovered } from './instance-runtime/host.js';
 import { startAuthRecoveryControl } from './instance-runtime/auth-recovery.js';
@@ -4659,6 +4660,7 @@ const createWindow = () => {
       preload: path.join(__dirname, 'preload.js'),
       additionalArguments: [
         createWindowBackdropMaterialArgument(winBackdropConfig.backgroundMaterial ?? 'none'),
+        createCloudWindowArgument({ instance: getInstanceConfig() !== null }),
       ],
       spellcheck: false,
       // 默认保留 Chromium 后台节流；只有 active turn 或 terminal grace 期间才由

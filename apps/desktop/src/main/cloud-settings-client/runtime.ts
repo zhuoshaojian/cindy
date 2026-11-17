@@ -127,9 +127,14 @@ export function registerCloudSettingsClientIpc(windowDeps?: {
     return { id: sender.id, assertCurrent: () => assertTrustedAppRendererEvent(event) };
   };
   for (const key of Object.keys(CLOUD_CLIENT_CHANNELS) as Array<keyof typeof handlers>) {
-    ipcMain.handle(CLOUD_CLIENT_CHANNELS[key], (event, raw: unknown) =>
-      handlers[key](caller(event), raw),
-    );
+    ipcMain.handle(CLOUD_CLIENT_CHANNELS[key], (event, raw: unknown) => {
+      const call = caller(event);
+      // No cloud instance service in this region: the access check says so once, and the
+      // renderer stops asking for this account.
+      if (key === 'instanceAccess' && !cloudInstanceApiBaseUrl(auth.getActiveAuthRealm()))
+        throwIpcError('CLOUD_SETTINGS_UNSUPPORTED', 'No cloud instance service in this region');
+      return handlers[key](call, raw);
+    });
   }
   if (windowDeps) {
     const manager = new CloudLoginWindow({

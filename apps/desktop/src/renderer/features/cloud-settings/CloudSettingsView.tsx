@@ -932,15 +932,16 @@ function AuthorizedCloudSettingsView({ plugins: Plugins }: { plugins?: CloudPlug
   const current = useRef({ scope });
   current.current = { scope };
   const [availability, setAvailability] = useState<{ scope: string; view?: CloudInstanceView }>();
+  const settingsApi = window.electronAPI?.cloudSettings;
   const own = useMemo(
     () =>
-      selected
-        ? createCloudSettingsClient(selected, window.electronAPI.cloudSettings, () => {
+      selected && settingsApi
+        ? createCloudSettingsClient(selected, settingsApi, () => {
             if (!isDataOwnerGenerationCurrent(owner) || current.current.scope !== scope)
               throw new Error('CLOUD_SETTINGS_SCOPE_CHANGED');
           })
         : undefined,
-    [scope],
+    [scope, settingsApi],
   );
   useEffect(() => {
     if (!own?.instance) return;

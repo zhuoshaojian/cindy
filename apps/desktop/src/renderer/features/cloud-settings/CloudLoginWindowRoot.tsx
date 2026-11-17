@@ -9,11 +9,12 @@ import { useAppShortcut } from '@/hooks/useAppShortcut';
 import { createLogger } from '@/lib/logger';
 import type { CloudLoginApi, CloudLoginWindowState } from '../../../shared/cloudLoginWindow';
 import { CloudInstanceLoginFlow } from './CloudInstanceLoginPage';
+import { cloudLoginWindowApi } from './cloudBridge';
 
 const log = createLogger('CloudLoginWindow');
 
 export function CloudLoginWindowLayout() {
-  const bridge = useMemo(() => window.electronAPI.cloudLoginWindow, []);
+  const bridge = useMemo(cloudLoginWindowApi, []);
   const { t, i18n } = useTranslation();
   const [state, setState] = useState<CloudLoginWindowState>({ generation: -1, target: null });
   useEffect(() => {
