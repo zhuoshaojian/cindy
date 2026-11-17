@@ -61,6 +61,8 @@ import {
 } from './useCloudInstances';
 
 import { isCloudDeviceId } from './cloudDeviceId';
+import { cloudInstancesApi } from './cloudBridge';
+import type { CloudSettingsRendererApi } from '../../../shared/cloudSettingsClient';
 
 export { isCloudDeviceId };
 
@@ -201,16 +203,8 @@ function AdmittedCloudDeviceDirectory({
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
-  const api = useMemo<
-    CloudInstancesApi & Pick<typeof window.electronAPI.cloudSettings, 'instanceRead'>
-  >(
-    () => ({
-      ...window.electronAPI.cloudSettings,
-      instanceInitialize: async ({ deviceId }: { deviceId: string }) => {
-        await window.electronAPI.cloudLoginWindow.open({ deviceId });
-      },
-      onLoginCompleted: (cb: () => void) => window.electronAPI.cloudLoginWindow.onCompleted(cb),
-    }),
+  const api = useMemo<CloudInstancesApi & Pick<CloudSettingsRendererApi, 'instanceRead'>>(
+    cloudInstancesApi,
     [],
   );
   const mounted = useRef(true);

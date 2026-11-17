@@ -250,3 +250,41 @@ it('bounds failed-read retries and cancels them when unmounted', async () => {
   await act(async () => vi.advanceTimersByTimeAsync(120_000));
   expect(instanceAccess).toHaveBeenCalledTimes(4);
 });
+
+// Ordinary clients: a window without the main window's cloud bridge, or a region whose Main
+// has no cloud instance service, must not keep a periodic or focus-driven check running.
+it('makes no check in a window without the cloud bridge', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('electronAPI', {});
+  render(content());
+  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  expect(access()).toBe('hidden');
+  expect(instanceAccess).not.toHaveBeenCalled();
+});
+
+it('stops checking an account once Main reports no cloud instance service', async () => {
+  vi.useFakeTimers();
+  instanceAccess.mockRejectedValueOnce(
+    new Error("Error invoking remote method: Error: [CLOUD_SETTINGS_UNSUPPORTED] No cloud instance service in this region"),
+  );
+  const view = render(content());
+  await act(async () => {});
+  expect(access()).toBe('hidden');
+  await act(async () => vi.advanceTimersByTimeAsync(180_000));
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(instanceAccess).toHaveBeenCalledTimes(1);
+
+  // Another account asks once again.
+  auth.dataOwnerId = 'owner-b';
+  auth.dataOwnerGeneration++;
+  setDataOwnerGeneration(auth.dataOwnerId, auth.dataOwnerGeneration);
+  view.rerender(content());
+  await act(async () => {});
+  expect(instanceAccess).toHaveBeenCalledTimes(2);
+  expect(access()).toBe('allowed');
+});

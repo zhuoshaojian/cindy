@@ -9,6 +9,7 @@ import { CloudInstancesPage } from './CloudInstancesPage';
 import { useCloudInstanceAccess } from './CloudInstanceAccess';
 import { cloudInstanceName } from './instanceName';
 import { CLOUD_INSTANCES_SETTINGS_PATH } from './cloudInstancesLink';
+import { cloudInstancesApi } from './cloudBridge';
 
 /** Account-level discovery belongs inside Settings → Remote connections; instance
  * configuration keeps its own explicit target and returns to that group. */
@@ -19,17 +20,9 @@ export function CloudInstancesSection() {
   const { t } = useTranslation();
   const devices = useDeviceLinkDeviceList();
   const owner = getDataOwnerGeneration();
-  const api = useMemo(
-    () => ({
-      ...window.electronAPI.cloudSettings,
-      instanceInitialize: async ({ deviceId }: { deviceId: string }) => {
-        await window.electronAPI.cloudLoginWindow.open({ deviceId });
-      },
-      onLoginCompleted: (cb: () => void) => window.electronAPI.cloudLoginWindow.onCompleted(cb),
-    }),
-    [],
-  );
-  if (mode !== 'cloud' || access !== 'allowed') return null;
+  const allowed = mode === 'cloud' && access === 'allowed';
+  const api = useMemo(() => (allowed ? cloudInstancesApi() : null), [allowed]);
+  if (!allowed || !api) return null;
   return (
     <CloudInstancesPage
       key={JSON.stringify([dataOwnerId, owner.generation])}
