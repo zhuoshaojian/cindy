@@ -63,7 +63,8 @@ describe('native dual-version projection from CIS qualified releases', () => {
     expect(canRequestUpgrade(project(raw))).toBe(false);
   });
   it('older CIS retains version display but cannot offer a manual upgrade', () => {
-    const { maintenanceUpgrade: _unused, ...raw } = owned('0.1.108', '0.1.109');
+    const raw: Partial<ReturnType<typeof owned>> & Omit<ReturnType<typeof owned>, 'maintenanceUpgrade'> = owned('0.1.108', '0.1.109');
+    delete raw.maintenanceUpgrade;
     raw.status.updateAvailable = true;
     const view = project(raw);
     expect(view.version).toBe('0.1.108');

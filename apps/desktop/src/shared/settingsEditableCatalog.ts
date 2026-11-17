@@ -7,6 +7,7 @@ export const CLOUD_SETTINGS_LOCALES = SETTINGS_DISPLAY_LOCALES.slice(0, 6);
 /** Fixed, reviewed settings only. This is not an arbitrary file or IPC interface. */
 const bool = z.boolean();
 const int = (min: number, max: number) => z.number().int().min(min).max(max);
+// eslint-disable-next-line no-control-regex
 const routeId = z.string().trim().min(1).max(256).regex(/^[^\x00-\x1f\x7f]+$/u);
 const backend = z.strictObject({ providerId: routeId, modelId: routeId });
 export type SettingsEditableValue = string | number | boolean | null | SettingsEditableValue[] | { [key: string]: SettingsEditableValue };

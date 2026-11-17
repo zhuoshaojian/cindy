@@ -93,7 +93,7 @@ describe('settings read catalog independent coverage anchors', () => {
     ] as const;
     for (const [prefix, path, name] of interfaces) {
       const declaration = text(path).match(new RegExp(`(?:export )?interface ${name} \\{([\\s\\S]*?)\\n\\}`))![1]!;
-      const keys = [...declaration.matchAll(/^  ([A-Za-z]+)(?:\?)?:/gm)].map(match => match[1]!);
+      const keys = [...declaration.matchAll(/^ {2}([A-Za-z]+)(?:\?)?:/gm)].map(match => match[1]!);
       expect(keys.length, name).toBeGreaterThan(0);
       expectIds(keys.map(key => `${prefix}.${key}`));
       expect(SETTINGS_READ_FIELD_IDS.filter(id => id.startsWith(`${prefix}.`)).length).toBe(keys.length);
@@ -101,7 +101,7 @@ describe('settings read catalog independent coverage anchors', () => {
     // Retired Smart Contacts keeps only its frozen snapshot fields.
     expectIds(['contacts.enabled', 'contacts.deviceSyncEnabled']);
     const voice = text('shared/voiceInputData.ts').match(/export interface VoiceInputSettings \{([\s\S]*?)\n\}/)![1]!;
-    const voiceKeys = [...voice.matchAll(/^  ([A-Za-z]+)(?:\?)?:/gm)].map(match => match[1]!);
+    const voiceKeys = [...voice.matchAll(/^ {2}([A-Za-z]+)(?:\?)?:/gm)].map(match => match[1]!);
     const resources = ['dictionaryEntries', 'dictionaryCandidates', 'suppressedAutomaticDictionaryTexts'];
     const configured = ['microphoneDeviceId', 'refinementInstructions', 'shortcut'];
     for (const key of voiceKeys) {
@@ -121,7 +121,7 @@ describe('settings read catalog independent coverage anchors', () => {
   });
   it('anchors ASR sources, builtin tools and plugin capabilities in their actual registries', () => {
     const asr = text('shared/voiceInputAsrProfiles.ts').split('export const VOICE_INPUT_ASR_PROFILES = {')[1]!.split('} as const satisfies')[0]!;
-    expect(SETTINGS_READ_ASR_PROVIDERS).toEqual([...asr.matchAll(/^  '([^']+)': \{/gm)].map(match => match[1]));
+    expect(SETTINGS_READ_ASR_PROVIDERS).toEqual([...asr.matchAll(/^ {2}'([^']+)': \{/gm)].map(match => match[1]));
     const tools = text('main/maker-host/plugins/builtin-plugins.ts');
     expect(SETTINGS_READ_BUILTIN_TOOL_IDS).toEqual([...tools.matchAll(/\{ id: '([^']+)',\s+name:/g)].map(match => match[1]));
     // Old snapshot enum values stay wire-compatible; active overrides only migrate oneshot.

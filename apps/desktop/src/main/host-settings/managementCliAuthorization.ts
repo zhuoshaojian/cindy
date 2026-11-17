@@ -12,8 +12,11 @@ export function cloudCliAuthorization(writeLine: (line: string) => void): ((outp
     execution.assertCurrent();
     buffer = (buffer + output).slice(-32_768);
     // Strip terminal hyperlinks and styling from the official CLI's fallback line.
+    // eslint-disable-next-line no-control-regex
     const plain = buffer.replace(/\x1b\]8;[^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+      // eslint-disable-next-line no-control-regex
       .replace(/\x1b\[[0-9;]*m/g, '');
+    // eslint-disable-next-line no-control-regex
     const line = plain.match(/If the browser didn't open, visit: (https:\/\/[^\s\x00-\x1f]+)\r?\n/);
     if (!line) return;
     const url = new URL(line[1]!);
@@ -35,6 +38,7 @@ export function cloudCliAuthorization(writeLine: (line: string) => void): ((outp
     execution.prompt({ kind: 'callback', url: url.href, expiresAt: Date.now() + 5 * 60_000 }, async (value) => {
       execution.assertCurrent();
       const parts = value.trim().split('#');
+      // eslint-disable-next-line no-control-regex
       if (used || parts.length !== 2 || !parts[0] || parts[1] !== state || /[\s\x00-\x1f]/.test(value))
         throw new Error('MANAGEMENT_AUTH_CALLBACK_INVALID');
       writeLine(`${parts[0]}#${parts[1]}\n`);

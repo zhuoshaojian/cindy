@@ -9,6 +9,7 @@ export const SETTINGS_WEB_MAX_BYTES = 64 * 1024;
 export const SETTINGS_WEB_MAX_CHOICES = 512;
 const id = z.string().uuid();
 const revision = z.string().min(1).max(128);
+// eslint-disable-next-line no-control-regex
 const routeId = z.string().trim().min(1).max(256).regex(/^[^\x00-\x1f]+$/u);
 const effort = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
 const newTask = z.strictObject({ harness: z.enum(['claude-code', 'codex', 'pi']), providerId: routeId.nullable(), modelId: routeId.nullable(), effort: effort.nullable(), fast: z.boolean(), thinking: z.boolean(), worktree: z.boolean(), planMode: z.boolean() });

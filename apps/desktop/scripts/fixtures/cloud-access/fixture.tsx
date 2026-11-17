@@ -24,10 +24,11 @@ mountPage({
     const allowed = ctx.data.access === 'allowed';
     const instances = (ctx.data.instances ?? []) as { deviceId: string; policy?: unknown }[];
     // As in Main: the list carries no maintenance policy, the per-instance read does.
-    const project = ({ policy, ...view }: (typeof instances)[number], maintenance: unknown) => ({
-      ...view,
-      maintenance,
-    });
+    const project = (instance: (typeof instances)[number], maintenance: unknown) => {
+      const view: Partial<typeof instance> = { ...instance };
+      delete view.policy;
+      return { ...view, maintenance };
+    };
     return {
       cloudLoginWindow: { open: forbid('cloudLoginWindow.open'), onCompleted: () => () => {} },
       cloudSettings: {

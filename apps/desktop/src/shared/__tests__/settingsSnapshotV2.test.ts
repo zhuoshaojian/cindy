@@ -217,7 +217,7 @@ describe('settings snapshot v2 byte budgets and completeness', () => {
   });
   it('never serializes catalog metadata in a report', () => {
     const report = maxReport();
-    for (const privateKey of ['valueSchema', 'sourcePath', 'control', 'reader', 'labelKey', 'platforms']) expect(JSON.stringify(report)).not.toContain(`\"${privateKey}\"`);
+    for (const privateKey of ['valueSchema', 'sourcePath', 'control', 'reader', 'labelKey', 'platforms']) expect(JSON.stringify(report)).not.toContain(`"${privateKey}"`);
     expect(Object.keys(createSettingsSnapshotV2UnavailableFields())).toHaveLength(SETTINGS_SNAPSHOT_V2_FIELD_IDS.length);
   });
 });

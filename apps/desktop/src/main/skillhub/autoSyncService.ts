@@ -7,7 +7,6 @@ import { cindyManagedHomeDir } from '../cloudPilotDistribution.js';
  * zip verification, registry writes, and global skill links stay centralized.
  */
 import { fetchOrganizationAutoInstallSkills } from './organizationAutoInstall';
-import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { app, net } from 'electron';

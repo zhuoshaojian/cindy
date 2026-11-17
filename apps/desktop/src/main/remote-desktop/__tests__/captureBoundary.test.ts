@@ -1112,12 +1112,12 @@ it.each([
   const { screen } = await import('electron');
   vi.spyOn(screen, 'getAllDisplays').mockReturnValue([
     { id: 1, size: { width: 1280, height: 800 } },
-  ] as any);
+  ] as unknown as ReturnType<typeof screen.getAllDisplays>);
   const settings = await import('../../device-link/settings-store.desktop');
   vi.spyOn(settings, 'readDeviceLinkSettings').mockReturnValue({
     remoteDesktopEnabled: true,
     remoteControlEnabled: true,
-  } as any);
+  } as unknown as ReturnType<typeof settings.readDeviceLinkSettings>);
   expect((await h.deps.capabilities()).canControl).toBe(scenario.allowed);
   if (scenario.allowed) {
     await h.deps.startInput('1');

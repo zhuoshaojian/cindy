@@ -35,20 +35,24 @@ export function publishRuntimeEvidence(value:unknown,file=PROFILE_STATUS):void {
  const bytes=Buffer.from(JSON.stringify(parsed));if(bytes.length>16384)throw new Error('PROFILE_EVIDENCE_REJECTED');
  atomicPrivateWrite(file,bytes);
 }
-export async function observeSandbox(invoke:(method:string,params?:Record<string,unknown>,sessionId?:string)=>Promise<any>,expectedPid?:number,observeProcess=processObservation){
+/** The CDP fields read here; anything else in a reply is ignored. */
+type CdpProcess={type:string;id:number};
+type CdpTarget={type:string;url:string;targetId:string};
+export async function observeSandbox(invoke:(method:string,params?:Record<string,unknown>,sessionId?:string)=>Promise<Record<string,unknown>>,expectedPid?:number,observeProcess=processObservation){
  const {processInfo}=await invoke('SystemInfo.getProcessInfo');
  if(!Array.isArray(processInfo))throw new Error('PROFILE_PROCESS_LIST_REJECTED');
- const browsers=processInfo.filter((p:any)=>p.type==='browser');
+ const processes=processInfo as CdpProcess[];
+ const browsers=processes.filter(p=>p.type==='browser');
  if(browsers.length!==1||(expectedPid!==undefined&&browsers[0].id!==expectedPid))throw new Error('PROFILE_BROWSER_REJECTED');
- const rendererIds=processInfo.filter((p:any)=>p.type==='renderer').map((p:any)=>p.id);
+ const rendererIds=processes.filter(p=>p.type==='renderer').map(p=>p.id);
  if(rendererIds.length>MAX_RUNTIME_RENDERERS)throw new Error('PROFILE_RENDERER_LIMIT_EXCEEDED');
- const {targetInfos}=await invoke('Target.getTargets');
+ const targetInfos=(await invoke('Target.getTargets')).targetInfos as CdpTarget[];
  const {SANDBOX_PAGE_URL,SANDBOX_PAGE_TEXT}=sandboxPage; // fixed page, never inspect a user's page
- const pages=targetInfos.filter((p:any)=>p.type==='page'&&p.url===SANDBOX_PAGE_URL);
+ const pages=targetInfos.filter(p=>p.type==='page'&&p.url===SANDBOX_PAGE_URL);
  if(pages.length!==1)throw new Error('PROFILE_PAGE_REJECTED');
- const {sessionId}=await invoke('Target.attachToTarget',{targetId:pages[0].targetId,flatten:true});
+ const sessionId=(await invoke('Target.attachToTarget',{targetId:pages[0].targetId,flatten:true})).sessionId as string;
  try {
- const result=await invoke('Runtime.evaluate',{expression:'document.body.textContent',returnByValue:true},sessionId);
+ const result=await invoke('Runtime.evaluate',{expression:'document.body.textContent',returnByValue:true},sessionId) as {exceptionDetails?:unknown;result?:{value?:unknown}};
  if(result.exceptionDetails||result.result?.value!==SANDBOX_PAGE_TEXT)throw new Error('PROFILE_PAGE_REJECTED');
  } finally {await invoke('Target.detachFromTarget',{sessionId});}
  const renderers=rendererIds.map((pid:number)=>observeProcess(pid));
@@ -56,7 +60,7 @@ export async function observeSandbox(invoke:(method:string,params?:Record<string
 }
 import * as sandboxPage from './profile-runtime-contract.js';
 export function createResourceClaimVerifier(fetcher:(url:string,init?:RequestInit)=>Promise<Response>=fetch,now=Date.now) {
- let cache:{at:number;issuer:string;keys:any[]}|null=null;
+ let cache:{at:number;issuer:string;keys:(JsonWebKey&{kid?:string})[]}|null=null;
  return async(token:string,identity:{authBaseUrl:string;membershipId:string;deviceId:string})=>{
  try {
  const base=new URL(identity.authBaseUrl);

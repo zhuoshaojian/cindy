@@ -54,7 +54,6 @@ export function CloudBotAuthorization(
     loading,
     failure,
     readFailure,
-    operation,
     operationItem,
     requesting,
     run,
