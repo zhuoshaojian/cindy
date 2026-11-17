@@ -131,7 +131,7 @@ test('extractRouterFacts: 真实 router.tsx 的三类去向逐条钉死', () => 
     '/cc-agent/new NewMakerDraftRoute',
     '/cc-agent/orca/:sessionId OrcaWorkflowRoute',
     '/cc-agent/scheduled SchedulerPage',
-    '/cloud-settings CloudSettingsView',
+    '/cloud-settings CloudSettingsRoute',
     '/issues IssueTrackerFeatureLayout',
     '/login LoginPage',
     '/maker-experimental MakerExperimentalView',

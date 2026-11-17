@@ -699,11 +699,11 @@ export function catalogSurfaces() {
       platform: 'desktop',
       title: '云实例设置',
       productionEntry:
-        'hash `/cloud-settings`（CloudSettingsView；只在配置了云实例服务的客户端出现入口）',
-      reachableComponents: ['CloudSettingsView', 'CloudPluginManagement'],
+        'hash `/cloud-settings`（CloudSettingsRoute → CloudSettingsView；只在配置了云实例服务的客户端出现入口）',
+      reachableComponents: ['CloudSettingsRoute', 'CloudSettingsView', 'CloudPluginManagement'],
       styleRoots: ['apps/desktop/src/renderer/features/cloud-settings'],
       routerPaths: ['/cloud-settings'],
-      routeEntryComponents: { '/cloud-settings': 'CloudSettingsView' },
+      routeEntryComponents: { '/cloud-settings': 'CloudSettingsRoute' },
     },
     {
       id: 'desktop.plugins.installed',

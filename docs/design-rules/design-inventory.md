@@ -24,7 +24,7 @@
 | `desktop.chat.orca-workflow` | desktop | Orca 协同工作台 | hash `/cc-agent/orca/:sessionId`（OrcaWorkflowRoute） |
 | `desktop.chat.scheduled` | desktop | 调度任务列表 | hash `/cc-agent/scheduled`（SchedulerPage） |
 | `desktop.chat.session` | desktop | 会话工作台 | hash `/cc-agent/:sessionId`；副窗经 `/cc-agent/boot` 解析后落到同一会话视图 |
-| `desktop.cloud.settings` | desktop | 云实例设置 | hash `/cloud-settings`（CloudSettingsView；只在配置了云实例服务的客户端出现入口） |
+| `desktop.cloud.settings` | desktop | 云实例设置 | hash `/cloud-settings`（CloudSettingsRoute → CloudSettingsView；只在配置了云实例服务的客户端出现入口） |
 | `desktop.dev.maker-experimental` | desktop | Maker 实验诊断页 | hash `/maker-experimental`（MakerExperimentalView；EXPERIMENTAL_FEATURES 现为空，仍是生产路由） |
 | `desktop.issues.guide` | desktop | Issue 引导页 | hash `/issues`（IssueTrackerFeatureLayout，已迁 GitHub 后的引导页） |
 | `desktop.native.app-menu` | desktop | 应用菜单 | Menu.setApplicationMenu（用户可见出口，不展开业务逻辑） |
@@ -103,7 +103,7 @@
 | `/cc-agent/new` | NewMakerDraftRoute | `desktop.chat.new-draft` |
 | `/cc-agent/orca/:sessionId` | OrcaWorkflowRoute | `desktop.chat.orca-workflow` |
 | `/cc-agent/scheduled` | SchedulerPage | `desktop.chat.scheduled` |
-| `/cloud-settings` | CloudSettingsView | `desktop.cloud.settings` |
+| `/cloud-settings` | CloudSettingsRoute | `desktop.cloud.settings` |
 | `/issues` | IssueTrackerFeatureLayout | `desktop.issues.guide` |
 | `/login` | LoginPage | `desktop.auth.login` |
 | `/maker-experimental` | MakerExperimentalView | `desktop.dev.maker-experimental` |

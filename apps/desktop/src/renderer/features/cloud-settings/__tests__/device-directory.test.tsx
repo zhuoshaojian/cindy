@@ -157,6 +157,8 @@ describe('cloud instances on My devices cards', () => {
   it.each(['allowed', 'checking', 'hidden'])('adds instance operations only for admitted accounts (%s)', async (access) => {
     mock.access = access;
     renderDevices();
+    // An admitted account loads the instance operations on first use; the card is drawn again.
+    if (access === 'allowed') await waitFor(() => expect(api.instanceList).toHaveBeenCalled());
     const cloudRow = row(CLOUD);
     if (access !== 'allowed') {
       expect(within(cloudRow).getByRole('button', { name: 'settings.devices.delete' })).toBeTruthy();
