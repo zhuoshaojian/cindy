@@ -28,6 +28,7 @@ import {
   type RemoteDraftDefaults,
 } from '../deviceLinkDraftDefaults';
 import { isSameNewMakerDevice } from '../lib/newMakerRouteState';
+import { isCloudDeviceId } from '@/features/cloud-settings/cloudDeviceId';
 import { rememberRemoteDraftDefaults } from '../remoteDraftDefaultsCache';
 
 // Run the real async project-selection and target-transition callbacks. Only their
@@ -1356,15 +1357,64 @@ describe('the remote draft holder follows the displayed model', () => {
       deviceLinkInitial: staleHolder,
       remoteDraftRevisionRef: { current: 0 },
       forgetRemoteDraftDefaults: vi.fn(),
+      isCloudDeviceId,
       window: { electronAPI: { deviceLink: { invoke } } },
       invoke,
     };
   }
   function pushPref(bindings: ReturnType<typeof pushBindings>) {
     return callback<
-      (patch: { effort?: Effort; fast?: boolean | 'ultrafast' }) => void
+      (
+        patch: { effort?: Effort; fast?: boolean | 'ultrafast' },
+        target?: { agent: string; providerId: string | null; modelId: string; markModelChoice?: boolean },
+      ) => void
     >('pushActiveDraftPref', bindings);
   }
+
+  // 测试价值:生产入口 pushActiveDraftPref / handleModelDidChange(编译路由源码里的真实回调,
+  // 只替换隧道);可观察结果是写给被控端 maker:apply-new-maker-draft-pref 的载荷。只有托管云实例
+  // 把选中的模型记成被控端的新建任务选择,其它电脑与上游一致:不打标、换模型不写穿。
+  // 最小失败输入:非云 device id 上带 markModelChoice 的显式目标 / 一次换模型。tier:unit。
+  const cloudDevice = 'cloud-device-0123456789abcdef01234567';
+  it.each([
+    { deviceId: 'target-device', markModelChoice: false },
+    { deviceId: cloudDevice, markModelChoice: true },
+  ])('records a picked model as the remote choice only on a managed cloud instance: $deviceId', ({ deviceId, markModelChoice }) => {
+    const bindings = { ...pushBindings(), effectiveDeviceLinkDeviceId: deviceId };
+    pushPref(bindings)({ effort: 'low' }, {
+      agent: 'pi', providerId: 'source', modelId: 'picked', markModelChoice: true,
+    });
+    expect(bindings.invoke).toHaveBeenCalledWith(deviceId, 'maker:apply-new-maker-draft-pref', [
+      expect.objectContaining({ modelId: 'picked', active: true, markModelChoice }),
+    ]);
+  });
+
+  it.each([
+    { deviceId: 'target-device', writes: 0 },
+    { deviceId: cloudDevice, writes: 1 },
+  ])('writes a model change through to the remote memory only on a managed cloud instance: $deviceId', ({ deviceId, writes }) => {
+    const pushActiveDraftPref = vi.fn();
+    const handleModelDidChange = compile<(modelId: string) => void>('handleModelDidChange:write-through',
+      node => ts.isVariableDeclaration(node) && node.name.getText(source) === 'handleModelDidChange'
+        && node.initializer && ts.isCallExpression(node.initializer)
+        ? node.initializer.arguments[0]
+        : undefined, {
+        sshCodexDraftHostId: null, patchSshDraftSelection: vi.fn(), usesDeviceCatalog: true,
+        dlRuntimeTouchedRef: { current: false }, dlExplicitChoiceRef: { current: false },
+        capabilities: {
+          availableModels: [{ id: 'shared-model', displayName: 'Shared model', contextWindow: 200_000,
+            efforts: [], defaultEffort: null, effortsUnknown: false }],
+          hasFastMode: false, effortLevels: [], permissionModes: [],
+        } satisfies AgentCapabilities,
+        deviceDraftDefaults: null, capabilityAgentKind: 'pi', agentCatalogProviders: [],
+        catalogDeviceId: deviceId, effectiveDeviceLinkDeviceId: deviceId,
+        resolveDeviceLinkDraftDefaults, setDlSel: vi.fn(), pushActiveDraftPref,
+        dlSel: staleHolder, deviceLinkInitial: staleHolder, isCloudDeviceId,
+        markDefaultTupleCustomized: vi.fn(), patchActiveTuplePrefs: vi.fn(),
+      });
+    handleModelDidChange('shared-model');
+    expect(pushActiveDraftPref).toHaveBeenCalledTimes(writes);
+  });
 
   it('writes the displayed model to the controlled draft, not the stale seed model', () => {
     const bindings = pushBindings();
@@ -1584,6 +1634,7 @@ describe('the seed keeps a restored explicit choice', () => {
       dlSeedDefaultsRef: { current: null as unknown },
       dlSeedProvidersRef: { current: null as unknown },
       deviceProvidersError: null,
+      isCloudDeviceId,
       dlRuntimeTouchedRef,
       dlExplicitChoiceRef,
       setDlSel,

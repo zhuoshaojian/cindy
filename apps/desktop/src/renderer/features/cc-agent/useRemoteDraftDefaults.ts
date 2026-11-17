@@ -7,6 +7,7 @@ import type { AgentCapabilities, AgentKind } from '@/hooks/useAgentCapabilities'
 import type { ProviderView } from '@cindy/model-providers';
 import { getRemoteDraftDefaults, rememberRemoteDraftDefaults } from './remoteDraftDefaultsCache';
 import { resolveDeviceLinkDraftDefaults, shouldReseedDeviceLinkDraftDefaults, type RemoteDraftDefaults, type DeviceLinkDraftSelection } from './deviceLinkDraftDefaults';
+import { isCloudDeviceId } from '@/features/cloud-settings/cloudDeviceId';
 
 export function useRemoteDraftDefaults({
   isDeviceLinkDraft, effectiveDeviceLinkDeviceId, capabilityAgentKind, wtPreferenceTransactionRef, dataOwnerId, dataOwnerGeneration
@@ -187,16 +188,18 @@ export function useRemoteDraftSelection({
     // 现代被控端还要等 provider:list；否则 flat capabilities 先播种后不会因目录到达而重校准。
     // 明确不支持该 channel 的旧端继续使用 capabilities fallback。
     const deviceProviderCatalogReady = deviceProvidersUnsupported || !deviceProvidersLoading;
+    // 托管云实例按已连接的供应商目录播种:目录读失败时等它恢复,目录变化与能力变化一样重新校准。
+    const cloudCatalog = isCloudDeviceId(catalogDeviceId);
     if (
       !capabilities ||
       capabilitiesLoading ||
       !deviceDraftDefaultsReady ||
       !deviceProviderCatalogReady ||
-      (!!deviceProvidersError && !deviceProvidersUnsupported)
+      (cloudCatalog && !!deviceProvidersError && !deviceProvidersUnsupported)
     ) return;
     const key = `${catalogDeviceId}:${capabilityAgentKind}`;
     const newTarget = dlSeedKeyRef.current !== key;
-    const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities || (dlSeedProvidersRef.current !== agentCatalogProviders && (!!dlSeedProvidersRef.current?.length || agentCatalogProviders.length > 0));
+    const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities || (cloudCatalog && dlSeedProvidersRef.current !== agentCatalogProviders && (!!dlSeedProvidersRef.current?.length || agentCatalogProviders.length > 0));
     if (
       !shouldReseedDeviceLinkDraftDefaults({
         currentSeedKey: dlSeedKeyRef.current,
@@ -226,7 +229,8 @@ export function useRemoteDraftSelection({
                 },
                 current.model,
                 capabilityAgentKind,
-                deviceProvidersUnsupported ? undefined : agentCatalogProviders,
+                cloudCatalog && deviceProvidersUnsupported ? undefined : agentCatalogProviders,
+                catalogDeviceId,
               )
             : current,
         );
@@ -251,7 +255,8 @@ export function useRemoteDraftSelection({
         deviceDraftDefaults,
         undefined,
         capabilityAgentKind,
-        deviceProvidersUnsupported ? undefined : agentCatalogProviders,
+        cloudCatalog && deviceProvidersUnsupported ? undefined : agentCatalogProviders,
+        catalogDeviceId,
       ),
     );
   }, [
@@ -308,6 +313,7 @@ export function useRemoteDraftPush({
             prev.model,
             capabilityAgentKind,
             agentCatalogProviders,
+            effectiveDeviceLinkDeviceId,
           );
           return { ...prev, effort: re.effort, fastMode: re.fastMode };
         });

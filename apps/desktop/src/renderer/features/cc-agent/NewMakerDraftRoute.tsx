@@ -339,6 +339,7 @@ import {
   type RemoteDraftDefaults,
 } from './deviceLinkDraftDefaults';
 import { recallAgentDeviceSelection, rememberAgentDeviceSelection } from './agentDeviceDraftMemory';
+import { isCloudDeviceId } from '@/features/cloud-settings/cloudDeviceId';
 import { makeMirrorAccessors, replaceScope, clearScope } from '@/state/deviceLinkModelMirror';
 import type { ModelMemoryAccessors } from '@/components/new-chat/ModelSelector';
 import { remoteAgentProviders } from '@/components/new-chat/unifiedModelSelection';
@@ -1927,6 +1928,7 @@ export function NewMakerDraftRoute() {
         undefined,
         capabilityAgentKind,
         agentCatalogProviders,
+        catalogDeviceId,
       );
     }
     return null;
@@ -1936,6 +1938,7 @@ export function NewMakerDraftRoute() {
     capabilities,
     capabilityAgentKind,
     agentCatalogProviders,
+    catalogDeviceId,
   ]);
 
   // 用户为这个目标**明确选过**的来源:被控端草稿里记着的那家(agent-device 则是本机为
@@ -2371,8 +2374,14 @@ export function NewMakerDraftRoute() {
               : (dlSel?.providerId ?? deviceLinkInitial?.providerId ?? ''),
             modelId: model,
             active: true,
-            // 显式目标只由选中模型的动作提供；纯 effort / Fast 调整保留原来的选择标记。
-            markModelChoice: target !== undefined && target.markModelChoice !== false,
+            markModelChoice: false,
+            // 托管云实例:显式目标只由选中模型的动作提供,记为用户选的模型;纯 effort / Fast
+            // 调整保留原来的选择标记。其它电脑不改被控端的选择标记。
+            ...(isCloudDeviceId(effectiveDeviceLinkDeviceId) &&
+            target !== undefined &&
+            target.markModelChoice !== false
+              ? { markModelChoice: true }
+              : {}),
             ...(activeEffort !== undefined ? { effort: activeEffort } : {}),
             ...(patch.fast !== undefined ? { fast: patch.fast } : {}),
           },
@@ -2971,6 +2980,7 @@ export function NewMakerDraftRoute() {
               undefined,
               capabilityAgentKind,
               freshProviders,
+              req.deviceId,
             ),
           );
           dlRuntimeTouchedRef.current = false;
@@ -2997,6 +3007,7 @@ export function NewMakerDraftRoute() {
                   undefined,
                   capabilityAgentKind,
                   freshProviders,
+                  req.deviceId,
                 )
               : resolveDeviceLinkDraftDefaults(
                   freshCaps,
@@ -3004,6 +3015,7 @@ export function NewMakerDraftRoute() {
                   undefined,
                   capabilityAgentKind,
                   freshProviders,
+                  req.deviceId,
                 ),
           );
         }
@@ -3394,18 +3406,22 @@ export function NewMakerDraftRoute() {
           newModelId,
           capabilityAgentKind,
           agentCatalogProviders,
+          catalogDeviceId,
         );
         setDlSel((prev) => ({
           ...resolved,
           permissionMode: prev?.permissionMode,
           providerId: prev?.providerId ?? null,
         }));
-        pushActiveDraftPref({ effort: resolved.effort ?? undefined, fast: resolved.fastMode }, {
-          agent: capabilityAgentKind,
-          providerId: dlSel?.providerId ?? deviceLinkInitial?.providerId ?? null,
-          modelId: newModelId,
-          effort: resolved.effort ?? undefined,
-        });
+        // 托管云实例的新建任务记忆跟随这次换模型;其它电脑只改控制端草稿。
+        if (isCloudDeviceId(effectiveDeviceLinkDeviceId)) {
+          pushActiveDraftPref({ effort: resolved.effort ?? undefined, fast: resolved.fastMode }, {
+            agent: capabilityAgentKind,
+            providerId: dlSel?.providerId ?? deviceLinkInitial?.providerId ?? null,
+            modelId: newModelId,
+            effort: resolved.effort ?? undefined,
+          });
+        }
         return;
       }
       markDefaultTupleCustomized();
@@ -3421,7 +3437,7 @@ export function NewMakerDraftRoute() {
       deviceDraftDefaults,
       patchActiveTuplePrefs,
       capabilityAgentKind,
-      pushActiveDraftPref, dlSel, deviceLinkInitial,
+      pushActiveDraftPref, dlSel, deviceLinkInitial, effectiveDeviceLinkDeviceId, catalogDeviceId,
       agentCatalogProviders,
     ],
   );
@@ -3693,6 +3709,7 @@ export function NewMakerDraftRoute() {
                 selection.modelId,
                 capabilityAgentKind,
                 agentCatalogProviders,
+                catalogDeviceId,
               )
             : previous;
           // 能力与镜像都还没到:推不出任何一档,保持原状而不是编一个默认值。
