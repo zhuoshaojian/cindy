@@ -6,6 +6,7 @@ import {
   type CloudImSettingsCall,
 } from '../../../shared/cloudImSettings';
 import type { NeutralHookProvider, SlackHookView } from '../../../shared/hookControlIpc';
+import { isForeground, onForegroundChange } from './foreground';
 import { openCloudExternal } from './openCloudExternal';
 
 type HookControl = SettingsTargetApi['hookControl'];
@@ -45,7 +46,12 @@ export function createCloudImCaller(deviceId: string) {
   };
 }
 
-const POLL_MS = 2500;
+/**
+ * Connection status that changes on the instance's side, such as a binding confirmed from the
+ * IM app. Writes from this page refresh on their own reply, and binding flows have their own
+ * ticket progress, so this follows the 5 s budget of time-sensitive status (§8.7).
+ */
+const POLL_MS = 5_000;
 
 /** The cards' target plus the raw caller for instance-only rows (WeChat directory, bot status). */
 export type CloudImTarget = SettingsTarget & {
@@ -57,8 +63,8 @@ export type CloudImTarget = SettingsTarget & {
 /**
  * The local IM cards' API for a cloud instance. Settings run the instance's own handlers; only
  * binding flows go through tickets, and provider links open on this computer. There is no push
- * across the link: the connection snapshot is polled while a card listens, other views reload
- * after each write as the local page does.
+ * across the link: the connection snapshot is polled while a card listens on a shown IM page in
+ * a window in front of the user, other views reload after each write as the local page does.
  */
 export function createCloudImTarget(
   deviceId: string,
@@ -75,24 +81,41 @@ export function createCloudImTarget(
   };
   const statusListeners = new Set<(view: SlackHookView) => void>();
   let timer: ReturnType<typeof setInterval> | null = null;
+  let stopFollowingWindow: (() => void) | null = null;
+  let polling = false;
   let last = '';
   let active = true;
+  // A slow reply never stacks a second read behind it in the instance's queue.
   const poll = () => {
-    if (document.visibilityState === 'hidden') return;
+    if (polling || !isForeground()) return;
+    polling = true;
     void get()
       .then(({ hook }) => {
         const serialized = JSON.stringify(hook);
-        if (serialized === last) return;
+        if (serialized === last || !statusListeners.size) return;
         last = serialized;
         for (const listener of statusListeners) listener(hook);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        polling = false;
+      });
   };
   // Each poll is a call in the instance's one-at-a-time queue: poll only while a card on a
-  // shown IM page listens.
+  // shown IM page listens and the window is in front of the user. The window is followed
+  // only while a card listens; coming back to the front reads once without waiting a tick.
   const sync = () => {
-    const wanted = active && statusListeners.size > 0;
-    if (wanted) timer ??= setInterval(poll, POLL_MS);
+    const listening = active && statusListeners.size > 0;
+    if (listening)
+      stopFollowingWindow ??= onForegroundChange((foreground) => {
+        sync();
+        if (foreground) poll();
+      });
+    else if (stopFollowingWindow) {
+      stopFollowingWindow();
+      stopFollowingWindow = null;
+    }
+    if (listening && isForeground()) timer ??= setInterval(poll, POLL_MS);
     else if (timer) {
       clearInterval(timer);
       timer = null;

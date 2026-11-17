@@ -16,6 +16,8 @@ const invoke = vi.fn(async (_device: string, _channel: string, args: unknown[]) 
   return { ownerGeneration: reply?.generation ?? 1, result: reply?.result ?? null };
 });
 const openExternal = vi.fn(async () => ({ success: true }));
+// Status subscriptions follow the document; each test ends its own so none outlives it.
+const subscriptions: Array<() => void> = [];
 
 function target(overrides: Partial<CloudImAuthorization> = {}) {
   const authorization: CloudImAuthorization = {
@@ -42,6 +44,9 @@ beforeEach(() => {
   Object.assign(window, { electronAPI: { deviceLink: { invoke }, openExternal } });
 });
 afterEach(() => {
+  for (const stop of subscriptions.splice(0)) stop();
+  document.documentElement.removeAttribute('data-app-hidden');
+  Reflect.deleteProperty(document, 'visibilityState');
   vi.useRealTimers();
   vi.restoreAllMocks();
   invoke.mockClear();
@@ -221,10 +226,10 @@ describe('cloud IM target', () => {
     const { target: t } = target();
     const listener = vi.fn();
     const stop = t.api.hookControl.onStatusChanged(listener);
-    await vi.advanceTimersByTimeAsync(2600);
+    await vi.advanceTimersByTimeAsync(5100);
     expect(listener).toHaveBeenCalledWith({ enabled: true });
     replies[0]!.result = { hook: { enabled: true } };
-    await vi.advanceTimersByTimeAsync(2600);
+    await vi.advanceTimersByTimeAsync(5100);
     expect(listener).toHaveBeenCalledTimes(1);
     stop();
     invoke.mockClear();
@@ -236,8 +241,8 @@ describe('cloud IM target', () => {
     vi.useFakeTimers();
     const { target: t } = target();
     const listener = vi.fn();
-    t.api.hookControl.onStatusChanged(listener);
-    await vi.advanceTimersByTimeAsync(2600);
+    subscriptions.push(t.api.hookControl.onStatusChanged(listener));
+    await vi.advanceTimersByTimeAsync(5100);
     expect(listener).toHaveBeenCalledTimes(1);
     t.setActive(false);
     invoke.mockClear();
@@ -248,7 +253,60 @@ describe('cloud IM target', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenLastCalledWith({ enabled: false });
-    await vi.advanceTimersByTimeAsync(2600);
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  // §8.3: a window the host hid or minimised keeps visibilityState visible when background
+  // throttling is off, so the hidden-animation gate's attribute must stop the poll as well.
+  // Before: the interval kept issuing instance calls behind a hidden window.
+  it.each([
+    [
+      'the host hides the window',
+      () => document.documentElement.setAttribute('data-app-hidden', 'true'),
+      () => document.documentElement.removeAttribute('data-app-hidden'),
+    ],
+    ['the document is hidden', () => setVisibility('hidden'), () => setVisibility('visible')],
+  ])('stops polling while %s and reads once when it is back', async (_case, hide, show) => {
+    vi.useFakeTimers();
+    const { target: t } = target();
+    const listener = vi.fn();
+    subscriptions.push(t.api.hookControl.onStatusChanged(listener));
+    hide();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(invoke).not.toHaveBeenCalled();
+    show();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({ enabled: true });
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  // Each read is a call in the instance's one-at-a-time queue; a slow reply must not stack
+  // further reads behind it. Before: every tick issued another call while one was out.
+  it('skips ticks while a read is still out', async () => {
+    vi.useFakeTimers();
+    let answer!: () => void;
+    invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = () => resolve({ ownerGeneration: 1, result: { hook: { enabled: true } } });
+        }),
+    );
+    const { target: t } = target();
+    const listener = vi.fn();
+    subscriptions.push(t.api.hookControl.onStatusChanged(listener));
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    answer();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(listener).toHaveBeenCalledTimes(1);
     expect(invoke).toHaveBeenCalledTimes(2);
   });
 });
+
+function setVisibility(state: DocumentVisibilityState) {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  document.dispatchEvent(new Event('visibilitychange'));
+}
