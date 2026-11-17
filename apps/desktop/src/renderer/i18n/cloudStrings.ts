@@ -3,7 +3,10 @@
  * It joins the `common` namespace when a language loads, so call sites keep their keys.
  * Upstream wins if it ever ships a key with the same path; `cloudStrings.test` reports that.
  */
+import { mergeCloudStrings } from '../../shared/cloudStrings';
 import enCloud from './locales/en/cloud.json';
+
+export { mergeCloudStrings };
 
 type JsonModule = { default: Record<string, unknown> };
 type Bundle = Record<string, unknown>;
@@ -22,20 +25,6 @@ const CLOUD_LOADERS: Record<string, () => Promise<JsonModule>> = {
   'zh-Hant-x-lzh': () => import('./locales/zh-Hant-x-lzh/cloud.json'),
   'zh-Hans-x-lzh': () => import('./locales/zh-Hans-x-lzh/cloud.json'),
 };
-
-const isObject = (value: unknown): value is Bundle =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
-
-/** Adds cloud keys to a common bundle without mutating either input. Existing keys win. */
-export function mergeCloudStrings(common: Bundle, cloud: Bundle): Bundle {
-  const merged: Bundle = { ...common };
-  for (const [key, value] of Object.entries(cloud)) {
-    const existing = merged[key];
-    if (existing === undefined) merged[key] = value;
-    else if (isObject(existing) && isObject(value)) merged[key] = mergeCloudStrings(existing, value);
-  }
-  return merged;
-}
 
 /** The statically bundled English fallback with its cloud copy. */
 export function withEnglishCloudStrings(common: Bundle): Bundle {
