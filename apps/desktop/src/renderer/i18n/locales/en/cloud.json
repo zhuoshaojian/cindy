@@ -1,12 +1,6 @@
 {
   "settings": {
     "wechatBot": {
-      "bound": {
-        "notes": {
-          "connectedOnHost": "Private WeChat messages go directly to Cindy on {{name}}, without passing through Cindy servers.",
-          "reconnectingOnHost": "{{name}} is reconnecting to WeChat. You do not need to scan again."
-        }
-      },
       "introOnHost": "After connecting, private messages sent to this WeChat connection go to Cindy on {{name}}. Tencent provides the authorization page, which may display OpenClaw."
     }
   },
@@ -40,7 +34,6 @@
   },
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "{{name}} didn’t return full account details. Only the returned information is shown.",
-    "desktopFallback": "Change this in Cindy settings on the cloud desktop.",
     "moreSettings": "More settings",
     "moreSettingsFallback": "Change other settings on “{{name}}”.",
     "openInCloudDesktop": "Open remote desktop",
@@ -53,7 +46,6 @@
     "storageCleanupTitle": "Cleanup and maintenance",
     "wecomGroupHint": "Used for automation completion notifications. Paste a WeCom group bot Webhook URL; it is encrypted on {{name}}.",
     "imReadFailed": "Couldn’t read the new conversation settings. Check the connection and try again.",
-    "imReadUnavailable": "This setting can't be changed here yet",
     "imReadTooLarge": "The settings are too large to read.",
     "title": "Cloud Cindy settings",
     "choose": "Choose the cloud Cindy to configure",
@@ -61,9 +53,6 @@
     "offline": "Cloud disconnected. Check status or wake it from its device card.",
     "unsupported": "The cloud service does not yet support settings access from the client. Web settings remain available.",
     "readFailed": "Couldn’t read the settings. Try again.",
-    "readFailedTitle": "Can't read Cloud Cindy's settings",
-    "providersReadFailedTitle": "Can't read the model provider list",
-    "blockReadFailed": "Some settings can't be read",
     "groupReadFailed": "Failed to load",
     "groupNameSeparator": ", ",
     "botsReadFailed": "Couldn’t read the IM bot settings. Check the connection and try again.",
@@ -77,13 +66,11 @@
     },
     "reload": "Retry",
     "loading": "Reading settings…",
-    "noFields": "No matching settings in this category",
     "saved": "Saved",
     "trialSaved": "Sample data saved",
     "trial": "Interactive trial · Sample data",
     "invalid": "Check the input range and format",
     "discard": "Discard Edits and Return",
-    "targetUnavailable": "Connection failed",
     "upgradingNotice": "“{{name}}” is updating and can’t be managed now. You can continue when the update finishes.",
     "authScope": "Authorize on this computer; the account connects to {{name}}.",
     "authAdd": "Add {{provider}}",
@@ -97,16 +84,6 @@
     "authCheck": "Check authorization status",
     "authTrialComplete": "Simulate authorization",
     "authTrial": "Interactive demo only. No third-party site opens or real account connects.",
-    "authPhase": {
-      "running": "Processing…",
-      "waiting": "Complete authorization in your browser",
-      "succeeded": "Cloud operation completed. Checking connection status.",
-      "failed": "Authorization did not complete. Try again.",
-      "cancelled": "Authorization cancelled.",
-      "expired": "Authorization expired.",
-      "unknown": "Authorization result unconfirmed.",
-      "starting": "Preparing authorization"
-    },
     "authConnected": "Connected",
     "authDisconnected": "Not connected",
     "cliDetect": {
@@ -250,7 +227,6 @@
       "emptyTitle": "No cloud Cindy yet",
       "emptyDescription": "Once claimed, it appears in My devices and can be controlled remotely like your other devices.",
       "claim": "Claim cloud Cindy",
-      "defaultName": "Cloud Cindy {{number}}",
       "defaultNameSole": "Cloud Cindy",
       "readFailed": "Couldn’t read your cloud Cindy. Try again.",
       "loginFailed": "Couldn’t open the sign-in page. Check your system browser settings",
@@ -280,7 +256,6 @@
     },
     "authNotDone": "Authorization failed",
     "authChecking": "Authorizing…",
-    "authWaitingDone": "Waiting for authorization to finish…",
     "authProgressUnreadable": "Couldn’t read the authorization progress. Try again.",
     "mcpRemoveBody": "Removing it deletes the token and headers saved on {{name}}.",
     "refusal": {

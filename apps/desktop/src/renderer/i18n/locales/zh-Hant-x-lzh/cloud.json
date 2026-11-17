@@ -1,12 +1,6 @@
 {
   "settings": {
     "wechatBot": {
-      "bound": {
-        "notes": {
-          "connectedOnHost": "微信私訊徑入 {{name}} 上之 Cindy，不經 Cindy 服務端轉遞。",
-          "reconnectingOnHost": "{{name}} 方復與微信之連線，無須重掃。"
-        }
-      },
       "introOnHost": "連後，君遣此微信連線之私訊，將入 {{name}} 上之 Cindy。授權網頁由騰訊所供，頁中或現 OpenClaw。"
     }
   },
@@ -40,7 +34,6 @@
   },
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "{{name}} 未供名籍全詳，此處唯示其所返者。",
-    "desktopFallback": "請於雲端桌面啟 Cindy 規制以改此項。",
     "moreSettings": "更多規制",
     "moreSettingsFallback": "餘項規制，請於「{{name}}」上改之。",
     "openInCloudDesktop": "啟遠端桌面",
@@ -53,7 +46,6 @@
     "storageCleanupTitle": "清理與維護",
     "wecomGroupHint": "用於自運完成之告。請貼企業微信群機器人之 Webhook URL，URL 將加密存於 {{name}}。",
     "imReadFailed": "未能讀新言談配置，請察連線後再試。",
-    "imReadUnavailable": "此項配置暫不可修",
     "imReadTooLarge": "配置過大，不能讀之。",
     "title": "雲端 Cindy 規制",
     "choose": "擇欲設之雲端 Cindy",
@@ -61,9 +53,6 @@
     "offline": "未連",
     "unsupported": "雲端服務尚未開放客戶端接入規制。現有網頁規制仍可用。",
     "readFailed": "未能讀規制，請再試。",
-    "readFailedTitle": "載入未成",
-    "providersReadFailedTitle": "載入未成",
-    "blockReadFailed": "部分規制未能載入",
     "groupReadFailed": "載入未成",
     "groupNameSeparator": "、",
     "botsReadFailed": "未能讀 IM 機器人之設，請察連線後再試。",
@@ -77,13 +66,11 @@
     },
     "reload": "再試",
     "loading": "方讀規制…",
-    "noFields": "此類無相符之規制",
     "saved": "已存",
     "trialSaved": "示例資料已存",
     "trial": "互動試用 · 範例資料",
     "invalid": "請核所輸之範圍與格式",
     "discard": "棄所改而返",
-    "targetUnavailable": "連線未成",
     "upgradingNotice": "「{{name}}」方更新，暫不可理。更新畢，乃可續之。",
     "authScope": "於此機完成授權，名籍繫於 {{name}}。",
     "authAdd": "增 {{provider}}",
@@ -97,16 +84,6 @@
     "authCheck": "察授權之狀",
     "authTrialComplete": "模擬完成授權",
     "authTrial": "此乃互動示範，不啟第三方網站，亦不繫真實名籍。",
-    "authPhase": {
-      "running": "方處理…",
-      "waiting": "請於瀏覽器中完成授權",
-      "succeeded": "雲端已畢其事，方核連線之狀。",
-      "failed": "授權未竟，請再試。",
-      "cancelled": "此番授權已罷。",
-      "expired": "此番授權已逾期。",
-      "unknown": "授權之果待確認。",
-      "starting": "方備授權"
-    },
     "authConnected": "已連",
     "authDisconnected": "未連",
     "cliDetect": {
@@ -250,7 +227,6 @@
       "emptyTitle": "尚無雲端 Cindy",
       "emptyDescription": "領取之後，見於「我之裝置」，可如他裝置般遠端操控。",
       "claim": "領取雲端 Cindy",
-      "defaultName": "雲端 Cindy {{number}}",
       "defaultNameSole": "雲端 Cindy",
       "readFailed": "未能讀雲端 Cindy，請再試。",
       "loginFailed": "登入頁未能開啟，請察系統瀏覽器之設定",
@@ -280,7 +256,6 @@
     },
     "authNotDone": "授權未成",
     "authChecking": "方授權…",
-    "authWaitingDone": "方候授權完成…",
     "authProgressUnreadable": "授權進度讀之未成，請再試。",
     "mcpRemoveBody": "除之，則 {{name}} 上所存之 Token 與請求標頭將一併刪去。",
     "refusal": {

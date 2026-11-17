@@ -1,12 +1,6 @@
 {
   "settings": {
     "wechatBot": {
-      "bound": {
-        "notes": {
-          "connectedOnHost": "WeChat のプライベートメッセージは Cindy のサーバーを経由せず、{{name}} の Cindy に直接届きます。",
-          "reconnectingOnHost": "{{name}} が WeChat に再接続しています。再スキャンは不要です。"
-        }
-      },
       "introOnHost": "接続後、この WeChat 接続へのプライベートメッセージは {{name}} の Cindy に届きます。認証ページは Tencent が提供し、OpenClaw と表示される場合があります。"
     }
   },
@@ -40,7 +34,6 @@
   },
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "{{name}} からアカウントの詳細情報が一部しか返されませんでした。返された情報のみ表示しています。",
-    "desktopFallback": "クラウドデスクトップで Cindy の設定を開いて変更してください。",
     "moreSettings": "その他の設定",
     "moreSettingsFallback": "その他の設定は「{{name}}」で変更してください。",
     "openInCloudDesktop": "リモートデスクトップを開く",
@@ -53,7 +46,6 @@
     "storageCleanupTitle": "整理とメンテナンス",
     "wecomGroupHint": "自動操作の完了通知に使用します。WeCom グループボットの Webhook URL を貼り付けると、{{name}} に暗号化保存されます。",
     "imReadFailed": "新しい会話の設定を読み込めませんでした。接続を確認して、もう一度お試しください。",
-    "imReadUnavailable": "この設定はまだ変更できません",
     "imReadTooLarge": "設定のサイズが大きすぎるため読み込めません。",
     "title": "クラウド Cindy の設定",
     "choose": "設定するクラウド Cindy を選択してください",
@@ -61,9 +53,6 @@
     "offline": "クラウド Cindy に接続されていません。デバイスカードで状態を確認するか、起動してください。",
     "unsupported": "クラウドサービスはまだクライアントからの設定に対応していません。Web の設定は引き続き利用できます。",
     "readFailed": "設定を読み込めませんでした。もう一度お試しください。",
-    "readFailedTitle": "クラウド Cindy の設定を読み込めませんでした",
-    "providersReadFailedTitle": "モデルプロバイダーの一覧を読み込めませんでした",
-    "blockReadFailed": "一部の設定を読み込めませんでした",
     "groupReadFailed": "読み込みに失敗しました",
     "groupNameSeparator": "、",
     "botsReadFailed": "IM ボットの設定を読み込めませんでした。接続を確認して、もう一度お試しください。",
@@ -77,13 +66,11 @@
     },
     "reload": "再試行",
     "loading": "設定を読み込み中…",
-    "noFields": "このカテゴリに一致する設定はありません",
     "saved": "保存しました",
     "trialSaved": "サンプルデータを保存しました",
     "trial": "操作体験 · サンプルデータ",
     "invalid": "入力値の範囲と形式を確認してください",
     "discard": "編集内容を破棄して戻る",
-    "targetUnavailable": "接続に失敗しました",
     "upgradingNotice": "「{{name}}」は更新中のため、現在は管理できません。更新が完了すると続行できます。",
     "authScope": "このコンピューターで認証すると、アカウントは {{name}} に接続されます。",
     "authAdd": "{{provider}} を追加",
@@ -97,16 +84,6 @@
     "authCheck": "認証状態を確認",
     "authTrialComplete": "認証完了をシミュレート",
     "authTrial": "操作デモです。外部サイトは開かず、実際のアカウントは接続しません。",
-    "authPhase": {
-      "running": "処理中…",
-      "waiting": "ブラウザで認証を完了してください",
-      "succeeded": "クラウドでの操作が完了しました。接続状態を確認しています。",
-      "failed": "認証が完了しませんでした。再試行してください。",
-      "cancelled": "認証をキャンセルしました。",
-      "expired": "認証の有効期限が切れました。",
-      "unknown": "認証結果は未確認です。",
-      "starting": "認証の準備中"
-    },
     "authConnected": "接続済み",
     "authDisconnected": "未接続",
     "cliDetect": {
@@ -250,7 +227,6 @@
       "emptyTitle": "クラウド Cindy はまだありません",
       "emptyDescription": "取得すると「マイデバイス」に表示され、ほかのデバイスと同じようにリモートで操作できます。",
       "claim": "クラウド Cindy を取得",
-      "defaultName": "クラウド Cindy {{number}}",
       "defaultNameSole": "クラウド Cindy",
       "readFailed": "クラウド Cindy を読み込めませんでした。もう一度お試しください。",
       "loginFailed": "ログインページを開けませんでした。システムのブラウザー設定を確認してください",
@@ -280,7 +256,6 @@
     },
     "authNotDone": "認証に失敗しました",
     "authChecking": "認証中…",
-    "authWaitingDone": "認証の完了を待っています…",
     "authProgressUnreadable": "認証の進行状況を取得できませんでした。もう一度お試しください。",
     "mcpRemoveBody": "削除すると、{{name}} に保存されたトークンとヘッダーも削除されます。",
     "refusal": {
