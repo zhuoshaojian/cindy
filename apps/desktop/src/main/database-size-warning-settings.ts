@@ -7,7 +7,6 @@ import {
   type OverrideSettingsMutation,
   type OverrideSettingsCommitOptions,
 } from './maker-host/override-settings-file.js';
-import { peekCommittedAppSession } from './appSessionState.js';
 import { createLogger } from './logger.js';
 import { throwIpcError } from './utils/ipcValidate.js';
 
@@ -94,8 +93,8 @@ const store = createOverrideSettingsFile<DatabaseSizeWarningSettings>({
   normalize,
   log,
   label: 'database-size-warning',
-  // Cloud settings commits only (commitAtomic); ordinary writes keep their existing semantics.
-  scopeKey: () => JSON.stringify(peekCommittedAppSession()),
+  // Cloud settings commits only (inspect / commitAtomic); their caller checks the owner on each
+  // step, so ordinary writes keep upstream's semantics, without a store-wide scope.
   validateOverrides: (raw) => {
     if (Object.keys(raw).length === 0) return;
     if (Object.keys(raw).some((key) => key !== 'thresholdGiB' && key !== 'disabled')
