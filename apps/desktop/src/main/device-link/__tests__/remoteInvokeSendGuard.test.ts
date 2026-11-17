@@ -200,7 +200,7 @@ it.each(['ready', 'recover', 'cancel', 'close', 'disabled'])('handles relay reco
   expect(reopen).toHaveBeenCalledTimes(mode === 'ready' ? 0 : 1);
 });
 
-it.each(['first-listing', 'recovery', 'unsubscribed', 'closed'])('replays only a still-owned listing subscription: %s', async mode => {
+it.each(['first-listing', 'recovery', 'unsubscribed', 'closed', 'closed and disabled'])('replays only a still-owned listing subscription: %s', async mode => {
   const declaration = source.statements.find((node): node is ts.FunctionDeclaration =>
     ts.isFunctionDeclaration(node) && node.name?.text === 'remoteSubscribe')!;
   const code = ts.transpileModule(declaration.getText(source).replace(/^export /, ''), {
@@ -211,12 +211,18 @@ it.each(['first-listing', 'recovery', 'unsubscribed', 'closed'])('replays only a
   const invoke = vi.fn(async () => ({ ok: true, result: null }));
   const reopen = vi.fn(async () => {
     if (mode === 'unsubscribed') topics = [];
-    if (mode === 'closed') epochs.set('host', 1);
+    if (mode.startsWith('closed')) epochs.set('host', 1);
   });
+  // As in production: control turned off during the reopen tears the link down again and throws.
+  const teardown = vi.fn();
   const deps = {
     DeviceLinkError, sharedTaskTopics: (_id: string, topics: string[]) => topics,
     assertNotStandby: () => {}, assertRemoteControlTargetEnabled: () => {},
-    assertRemoteControlTargetEnabledAfterReopen: () => {},
+    assertRemoteControlTargetEnabledAfterReopen: () => {
+      if (mode !== 'closed and disabled') return;
+      teardown();
+      throw new DeviceLinkError('REMOTE_DISABLED', 'disabled');
+    },
     client: { invoke, isLinkReady: () => false, needsLinkRecovery: () => mode !== 'first-listing' },
     snapshotSubscriptions: () => [{ deviceId: 'host', topics }],
     openLinkCloseEpochs: epochs, ensureOnlineForRequest: async () => {},
@@ -226,8 +232,10 @@ it.each(['first-listing', 'recovery', 'unsubscribed', 'closed'])('replays only a
   };
   const subscribe = new Function(...Object.keys(deps), code + '; return remoteSubscribe;')(...Object.values(deps));
   const pending = subscribe('host', ['sessions']);
-  if (mode === 'closed') await expect(pending).rejects.toMatchObject({ code: 'LINK_NOT_OPEN' });
+  if (mode.startsWith('closed')) await expect(pending).rejects.toMatchObject({ code: 'LINK_NOT_OPEN' });
   else await expect(pending).resolves.toEqual({ ok: true, result: null });
   expect(invoke).toHaveBeenCalledTimes(['first-listing', 'recovery'].includes(mode) ? 1 : 0);
   expect(reopen).toHaveBeenCalledTimes(mode === 'first-listing' ? 0 : 1);
+  // A subscription the user's close already superseded fails as closed and never tears the link down again.
+  expect(teardown).not.toHaveBeenCalled();
 });
