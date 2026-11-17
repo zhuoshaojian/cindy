@@ -52,9 +52,8 @@ export function inspectVoiceInputSettings(ownerRoot: string, platform = process.
   const inspection = inspectSettingsJson(path.join(ownerRoot, DATA_FILE_NAME), (raw) => {
     if (raw.settings !== undefined && !isSettingsRecord(raw.settings)) throw new Error('invalid settings');
     // Dictionary/history are content, not settings. Do not normalize or return them.
-    const { dictionaryEntries: _entries, dictionaryCandidates: _candidates,
-      suppressedAutomaticDictionaryTexts: _suppressed, customDictionary: _legacy,
-      ...settings } = (raw.settings ?? {}) as Record<string, unknown>;
+    const settings = { ...(raw.settings ?? {}) } as Record<string, unknown>;
+    for (const key of ['dictionaryEntries', 'dictionaryCandidates', 'suppressedAutomaticDictionaryTexts', 'customDictionary']) delete settings[key];
     validateOptionalSettingsFields(settings, {
       language: value => value === 'auto' || (typeof value === 'string' && (SUPPORTED_LOCALES as readonly string[]).includes(value)),
       microphoneDeviceId: value => value === null || typeof value === 'string',

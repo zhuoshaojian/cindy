@@ -91,6 +91,7 @@ export function normalizeHostSettingsChange(raw: unknown): HostSettingsChange {
         if (typeof value !== 'string' || !['claude-code', 'codex', 'pi'].includes(value)) throw new Error('INVALID_SETTINGS_CHANGE');
         set[key] = value as SettingsHarness;
       } else if (['providerId', 'modelId'].includes(key)) {
+        // eslint-disable-next-line no-control-regex
         if (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\x00-\x1f]/.test(value)) throw new Error('INVALID_SETTINGS_CHANGE');
         set[key] = value.trim();
       } else if (key === 'effort') {

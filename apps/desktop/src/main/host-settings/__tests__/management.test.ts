@@ -19,7 +19,7 @@ const field = {
   required: true,
   maxLength: 128,
 };
-function setup(run = vi.fn(async (_v: Record<string, string>, _e: ManagementExecution) => {})) {
+function setup(run = vi.fn<(values: Record<string, string>, execution: ManagementExecution) => Promise<void>>(async () => {})) {
   let time = 1_000;
   const manager = createSettingsManagement(
     {

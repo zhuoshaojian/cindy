@@ -217,6 +217,7 @@ export function isValidAppearanceSetting(key: string, value: unknown): value is 
   }
   if (key === 'uiFamily' || key === 'codeFamily' || key === 'terminalFamily') {
     return typeof value === 'string' && value.length <= MAX_APPEARANCE_FONT_FAMILY_LENGTH
+      // eslint-disable-next-line no-control-regex
       && !/[\x00-\x1f]/.test(value);
   }
   if (key === 'wallpaperId') return (WALLPAPER_IDS as readonly unknown[]).includes(value);

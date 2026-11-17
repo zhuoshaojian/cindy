@@ -55,6 +55,7 @@ export function resolveInstanceConfig(
     !/^cloud-device-[a-f0-9]{24}$/.test(deviceId) ||
     !/^[a-zA-Z0-9_-]{1,128}$/.test(membershipId) ||
     deviceName.length > 128 ||
+    // eslint-disable-next-line no-control-regex
     /[\r\n\x00]/.test(deviceName)
   ) {
     throw new Error("INSTANCE_IDENTITY_INVALID");

@@ -80,7 +80,7 @@ function fixture(org: string | null = null) {
     })),
     requestCode: vi.fn(async () => undefined),
   };
-  const openExternal = vi.fn(async (_url: string) => undefined),
+  const openExternal = vi.fn<(url: string) => Promise<undefined>>(async () => undefined),
     cancelLogin = vi.fn(async () => undefined);
   const caller = { id: 1, assertCurrent: vi.fn() };
   const service = createCloudInstanceLogin({

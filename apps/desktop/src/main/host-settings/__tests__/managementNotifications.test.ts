@@ -17,8 +17,8 @@ const execution: ManagementExecution = {
 const all = () => true;
 const wecom = (state: Record<string, unknown>) => {
   const calls = {
-    saveAndTest: vi.fn((..._args: unknown[]) => ({ configured: true, enabled: true })),
-    test: vi.fn((..._args: unknown[]) => ({ ok: true })),
+    saveAndTest: vi.fn<(...args: unknown[]) => { configured: boolean; enabled: boolean }>(() => ({ configured: true, enabled: true })),
+    test: vi.fn<(...args: unknown[]) => { ok: boolean }>(() => ({ ok: true })),
     clear: vi.fn(() => ({ configured: false, enabled: false })),
   };
   registerCloudDomainCall('wecomGroupNotification:get-state', () => state);

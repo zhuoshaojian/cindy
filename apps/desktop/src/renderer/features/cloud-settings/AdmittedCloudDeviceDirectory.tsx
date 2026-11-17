@@ -32,7 +32,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tip } from '@/components/ui/tooltip';
 import { Spinner } from '@/components/ui/spinner';
-import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import type { MyDevicesCloudSlot } from '@/components/settings/MyDevicesPanel';
@@ -50,7 +49,6 @@ import {
 import { byShownName, cloudBaseName, cloudDisplayName } from './instanceName';
 import { BlockReadFailure, InlineRetry, useBlockRetry } from './blockRetry';
 import {
-  sleepConfirmation,
   useCloudInstances,
   type CloudInstancesApi,
   type PowerNote,
@@ -158,7 +156,6 @@ export function AdmittedCloudDeviceDirectory({
 }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { confirm } = useConfirmDialog();
   const api = useMemo<CloudInstancesApi & Pick<CloudSettingsRendererApi, 'instanceRead'>>(
     cloudInstancesApi,
     [],
@@ -857,11 +854,8 @@ function CloudInstanceControls({
   listError,
   waiting,
   onLogin,
-  onPower,
   onRetryPower,
   retryingPower,
-  onOpenSettings,
-  onOpenMaintenance,
   maintenanceOpen,
   onMaintenanceOpenChange,
   opener,

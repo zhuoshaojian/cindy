@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   config: vi.fn(), open: vi.fn(), current: vi.fn(), formats: ['text/plain'],
-  text: '手机 ⇄ 云端 😀', primary: '选择文字', html: '', rtf: '', image: null as any,
+  text: '手机 ⇄ 云端 😀', primary: '选择文字', html: '', rtf: '',
   write: vi.fn(), readImage: vi.fn(),
 }));
 vi.mock('electron', () => ({

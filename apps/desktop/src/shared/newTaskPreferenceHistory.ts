@@ -27,6 +27,7 @@ export interface NewTaskPreferenceHistory {
 }
 const vendors = ['cc', 'codex', 'pi'];
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+// eslint-disable-next-line no-control-regex
 const text = (v: unknown): v is string => typeof v === 'string' && v.length <= 256 && !/[\x00-\x1f]/.test(v);
 function fields(v: Record<string, unknown>, keys: string[]) { if (Object.keys(v).some(k => !keys.includes(k))) throw new Error('INVALID_PREFERENCE_HISTORY'); }
 function dictionary(v: unknown, boolean: boolean, speed = false): void {

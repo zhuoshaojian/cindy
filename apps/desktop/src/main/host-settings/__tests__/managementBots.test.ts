@@ -5,6 +5,8 @@ import { configureCloudHookManagement, listOfficialBotManagement } from '../mana
 const caller = { key: 'isolated-cloud-owner', assertCurrent() {} };
 afterEach(() => vi.useRealTimers());
 function setup() {
+  // A partial Slack hook view the manager double hands to the real handlers.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const view: any = {
     url: 'https://hook.example.invalid',
     enabled: true,
