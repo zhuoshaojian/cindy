@@ -60,8 +60,9 @@ import {
   type PowerPending,
 } from './useCloudInstances';
 
-export const isCloudDeviceId = (deviceId: string | null | undefined): deviceId is string =>
-  !!deviceId && /^cloud-device-[a-f0-9]{24}$/.test(deviceId);
+import { isCloudDeviceId } from './cloudDeviceId';
+
+export { isCloudDeviceId };
 
 type Translate = (key: string, values?: Record<string, string | number>) => string;
 
