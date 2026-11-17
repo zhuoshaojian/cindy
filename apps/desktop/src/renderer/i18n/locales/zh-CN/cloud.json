@@ -1,12 +1,6 @@
 {
   "settings": {
     "wechatBot": {
-      "bound": {
-        "notes": {
-          "connectedOnHost": "微信私聊消息会直接进入 {{name}} 上的 Cindy，消息不经过 Cindy 服务端转发。",
-          "reconnectingOnHost": "{{name}} 正在恢复与微信的连接，无需重新扫码。"
-        }
-      },
       "introOnHost": "连接后，你发给该微信连接的私聊消息会进入 {{name}} 上的 Cindy。授权网页由腾讯提供，页面中可能显示 OpenClaw。"
     }
   },
@@ -40,7 +34,6 @@
   },
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "{{name}} 未提供完整的账号详情，此处仅展示已返回的信息。",
-    "desktopFallback": "请在远程桌面中修改",
     "moreSettings": "更多设置",
     "moreSettingsFallback": "其他设置请在「{{name}}」上修改。",
     "openInCloudDesktop": "打开远程桌面",
@@ -53,7 +46,6 @@
     "storageCleanupTitle": "清理与维护",
     "wecomGroupHint": "用于自动操作的完成通知。粘贴企微群机器人的 Webhook URL，URL 会加密保存在 {{name}}。",
     "imReadFailed": "未能读取新对话配置，请检查连接后重试。",
-    "imReadUnavailable": "暂不支持修改这项配置",
     "imReadTooLarge": "配置过大，无法读取。",
     "title": "云端 Cindy 设置",
     "choose": "选择要设置的云端 Cindy",
@@ -61,9 +53,6 @@
     "offline": "未连接",
     "unsupported": "暂不支持在客户端修改设置，请在网页端修改",
     "readFailed": "无法读取设置，请重试。",
-    "readFailedTitle": "加载失败",
-    "providersReadFailedTitle": "加载失败",
-    "blockReadFailed": "部分设置加载失败",
     "groupReadFailed": "加载失败",
     "groupNameSeparator": "、",
     "botsReadFailed": "未能读取 IM 机器人设置，请检查连接后重试。",
@@ -77,13 +66,11 @@
     },
     "reload": "重试",
     "loading": "正在读取设置…",
-    "noFields": "没有找到设置，试试其他关键词",
     "saved": "已保存",
     "trialSaved": "示例数据已保存",
     "trial": "交互试用 · 独立示例数据",
     "invalid": "请检查输入值的范围和格式",
     "discard": "放弃修改",
-    "targetUnavailable": "连接失败",
     "upgradingNotice": "「{{name}}」正在更新，暂时无法管理。更新完成后可继续。",
     "authScope": "在这台电脑完成授权，账号绑定到 {{name}}。",
     "authAdd": "添加 {{provider}}",
@@ -97,16 +84,6 @@
     "authCheck": "检查授权状态",
     "authTrialComplete": "模拟完成授权",
     "authTrial": "这里是交互演示，不会打开第三方网站，也不会绑定真实账号",
-    "authPhase": {
-      "running": "正在处理…",
-      "waiting": "请在浏览器中完成授权",
-      "succeeded": "授权已完成",
-      "failed": "授权失败",
-      "cancelled": "授权已取消",
-      "expired": "授权已过期",
-      "unknown": "授权结果加载失败",
-      "starting": "正在准备授权…"
-    },
     "authConnected": "已连接",
     "authDisconnected": "未连接",
     "cliDetect": {
@@ -250,7 +227,6 @@
       "emptyTitle": "还没有云端 Cindy",
       "emptyDescription": "领取后会出现在「我的设备」里，可以像其他设备一样远程控制。",
       "claim": "领取云端 Cindy",
-      "defaultName": "云端 Cindy {{number}}",
       "defaultNameSole": "云端 Cindy",
       "readFailed": "无法读取云端 Cindy，请重试。",
       "loginFailed": "无法打开登录页，请检查系统浏览器设置",
@@ -280,7 +256,6 @@
     },
     "authNotDone": "授权失败",
     "authChecking": "正在授权…",
-    "authWaitingDone": "正在等待授权完成…",
     "authProgressUnreadable": "授权进度读取失败，请重试。",
     "mcpRemoveBody": "移除后，{{name}} 上保存的 Token 和请求头会被删除。",
     "refusal": {

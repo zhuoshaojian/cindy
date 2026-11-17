@@ -1,12 +1,6 @@
 {
   "settings": {
     "wechatBot": {
-      "bound": {
-        "notes": {
-          "connectedOnHost": "微信私讯径入 {{name}} 上之 Cindy，不经 Cindy 服务端转递。",
-          "reconnectingOnHost": "{{name}} 方复与微信之连接，无须重扫。"
-        }
-      },
       "introOnHost": "连后，君遣此微信连接之私讯，将入 {{name}} 上之 Cindy。授权网页由腾讯所供，页中或现 OpenClaw。"
     }
   },
@@ -40,7 +34,6 @@
   },
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "{{name}} 未供名籍全详，此处唯示其所返者。",
-    "desktopFallback": "请于云端桌面启 Cindy 规制以改此项。",
     "moreSettings": "更多规制",
     "moreSettingsFallback": "余项规制，请于「{{name}}」上改之。",
     "openInCloudDesktop": "启远程桌面",
@@ -53,7 +46,6 @@
     "storageCleanupTitle": "清理与维护",
     "wecomGroupHint": "用于自运完成之告。请贴企业微信群机器人之 Webhook URL，URL 将加密存于 {{name}}。",
     "imReadFailed": "未能读新言谈配置，请察连接后再试。",
-    "imReadUnavailable": "此项配置暂不可修",
     "imReadTooLarge": "配置过大，不能读之。",
     "title": "云端 Cindy 规制",
     "choose": "择欲设之云端 Cindy",
@@ -61,9 +53,6 @@
     "offline": "未连",
     "unsupported": "云端服务尚未开放客户端接入规制。现有网页规制仍可用。",
     "readFailed": "未能读规制，请再试。",
-    "readFailedTitle": "加载未成",
-    "providersReadFailedTitle": "加载未成",
-    "blockReadFailed": "部分规制未能加载",
     "groupReadFailed": "加载未成",
     "groupNameSeparator": "、",
     "botsReadFailed": "未能读 IM 机器人之设，请察连接后再试。",
@@ -77,13 +66,11 @@
     },
     "reload": "再试",
     "loading": "方读规制…",
-    "noFields": "此类无相符之规制",
     "saved": "已存",
     "trialSaved": "示例数据已存",
     "trial": "互动试用 · 范例数据",
     "invalid": "请核所输之范围与格式",
     "discard": "弃所改而返",
-    "targetUnavailable": "连接未成",
     "upgradingNotice": "「{{name}}」方更新，暂不可理。更新毕，乃可续之。",
     "authScope": "于此机完成授权，名籍系于 {{name}}。",
     "authAdd": "增 {{provider}}",
@@ -97,16 +84,6 @@
     "authCheck": "察授权之状",
     "authTrialComplete": "模拟完成授权",
     "authTrial": "此乃互动演示，不启第三方网站，亦不系真实名籍。",
-    "authPhase": {
-      "running": "方处理…",
-      "waiting": "请于浏览器中完成授权",
-      "succeeded": "云端已毕其事，方核连接之状。",
-      "failed": "授权未竟，请再试。",
-      "cancelled": "此番授权已罢。",
-      "expired": "此番授权已逾期。",
-      "unknown": "授权之果待确认。",
-      "starting": "方备授权"
-    },
     "authConnected": "已连",
     "authDisconnected": "未连",
     "cliDetect": {
@@ -250,7 +227,6 @@
       "emptyTitle": "尚无云端 Cindy",
       "emptyDescription": "领取之后，见于「我之设备」，可如他设备般远程操控。",
       "claim": "领取云端 Cindy",
-      "defaultName": "云端 Cindy {{number}}",
       "defaultNameSole": "云端 Cindy",
       "readFailed": "未能读云端 Cindy，请再试。",
       "loginFailed": "登录页未能开启，请察系统浏览器之设置",
@@ -280,7 +256,6 @@
     },
     "authNotDone": "授权未成",
     "authChecking": "方授权…",
-    "authWaitingDone": "方候授权完成…",
     "authProgressUnreadable": "授权进度读之未成，请再试。",
     "mcpRemoveBody": "除之，则 {{name}} 上所存之 Token 与请求头将一并删去。",
     "refusal": {

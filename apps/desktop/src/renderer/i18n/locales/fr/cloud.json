@@ -1,12 +1,6 @@
 {
   "settings": {
     "wechatBot": {
-      "bound": {
-        "notes": {
-          "connectedOnHost": "Les messages privés WeChat arrivent directement dans Cindy sur {{name}}, sans passer par les serveurs de Cindy.",
-          "reconnectingOnHost": "{{name}} rétablit la connexion WeChat. Aucun nouveau scan n'est nécessaire."
-        }
-      },
       "introOnHost": "Une fois connecté, les messages privés envoyés à cette connexion WeChat arrivent dans Cindy sur {{name}}. La page d'autorisation est fournie par Tencent et peut afficher OpenClaw."
     }
   },
@@ -40,7 +34,6 @@
   },
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "{{name}} n'a pas renvoyé tous les détails du compte. Seules les informations reçues sont affichées.",
-    "desktopFallback": "Modifiez ce réglage dans les paramètres de Cindy sur le bureau cloud.",
     "moreSettings": "Autres paramètres",
     "moreSettingsFallback": "Modifiez les autres paramètres sur « {{name}} ».",
     "openInCloudDesktop": "Ouvrir le bureau à distance",
@@ -53,7 +46,6 @@
     "storageCleanupTitle": "Nettoyage et maintenance",
     "wecomGroupHint": "Utilisées pour les notifications de fin d'automatisation. Collez l'URL Webhook d'un bot de groupe WeCom ; elle est chiffrée sur {{name}}.",
     "imReadFailed": "Impossible de lire les paramètres des nouvelles conversations. Vérifiez la connexion et réessayez.",
-    "imReadUnavailable": "Ce paramètre ne peut pas encore être modifié ici",
     "imReadTooLarge": "Les paramètres sont trop volumineux pour être lus.",
     "title": "Paramètres de Cloud Cindy",
     "choose": "Choisissez la Cloud Cindy à configurer",
@@ -61,9 +53,6 @@
     "offline": "Cloud Cindy est déconnectée. Vérifiez son statut ou réveillez-la depuis sa carte d'appareil.",
     "unsupported": "Le service cloud ne permet pas encore d'accéder aux paramètres depuis le client. Les paramètres web restent disponibles.",
     "readFailed": "Impossible de lire les paramètres. Veuillez réessayer.",
-    "readFailedTitle": "Impossible de lire les paramètres de Cloud Cindy",
-    "providersReadFailedTitle": "Impossible de lire la liste des fournisseurs de modèles",
-    "blockReadFailed": "Certains paramètres ne peuvent pas être lus",
     "groupReadFailed": "Échec du chargement",
     "groupNameSeparator": ", ",
     "botsReadFailed": "Impossible de lire les paramètres des bots de messagerie. Vérifiez la connexion et réessayez.",
@@ -77,13 +66,11 @@
     },
     "reload": "Réessayer",
     "loading": "Lecture des paramètres…",
-    "noFields": "Aucun paramètre correspondant dans cette catégorie",
     "saved": "Enregistré",
     "trialSaved": "Données d'exemple enregistrées",
     "trial": "Essai interactif · Données d'exemple",
     "invalid": "Vérifiez la plage et le format de la saisie",
     "discard": "Abandonner les modifications et revenir",
-    "targetUnavailable": "Échec de la connexion",
     "upgradingNotice": "« {{name}} » est en cours de mise à jour et sa gestion est momentanément indisponible. Vous pourrez continuer une fois la mise à jour terminée.",
     "authScope": "Autorisez sur cet ordinateur ; le compte est associé à {{name}}.",
     "authAdd": "Ajouter {{provider}}",
@@ -97,16 +84,6 @@
     "authCheck": "Vérifier le statut de l'autorisation",
     "authTrialComplete": "Simuler l'autorisation",
     "authTrial": "Démonstration interactive uniquement. Aucun site tiers ne s'ouvre et aucun compte réel n'est connecté.",
-    "authPhase": {
-      "running": "Traitement en cours…",
-      "waiting": "Terminez l'autorisation dans votre navigateur",
-      "succeeded": "Opération cloud terminée. Vérification du statut de connexion.",
-      "failed": "L'autorisation n'a pas abouti. Veuillez réessayer.",
-      "cancelled": "Autorisation annulée.",
-      "expired": "Autorisation expirée.",
-      "unknown": "Résultat de l'autorisation non confirmé.",
-      "starting": "Préparation de l'autorisation"
-    },
     "authConnected": "Connecté",
     "authDisconnected": "Non connecté",
     "cliDetect": {
@@ -250,7 +227,6 @@
       "emptyTitle": "Aucune Cloud Cindy pour l'instant",
       "emptyDescription": "Une fois obtenue, elle apparaît dans « Mes appareils » et peut être contrôlée à distance comme vos autres appareils.",
       "claim": "Obtenir Cloud Cindy",
-      "defaultName": "Cloud Cindy {{number}}",
       "defaultNameSole": "Cloud Cindy",
       "readFailed": "Impossible de lire votre Cloud Cindy. Veuillez réessayer.",
       "loginFailed": "Impossible d'ouvrir la page de connexion. Vérifiez les paramètres du navigateur de votre système",
@@ -280,7 +256,6 @@
     },
     "authNotDone": "Échec de l'autorisation",
     "authChecking": "Autorisation en cours…",
-    "authWaitingDone": "En attente de la fin de l'autorisation…",
     "authProgressUnreadable": "Impossible de lire la progression de l'autorisation. Veuillez réessayer.",
     "mcpRemoveBody": "La suppression efface le jeton et les en-têtes enregistrés sur {{name}}.",
     "refusal": {

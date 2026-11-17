@@ -1,12 +1,6 @@
 {
   "settings": {
     "wechatBot": {
-      "bound": {
-        "notes": {
-          "connectedOnHost": "WeChat 개인 메시지는 Cindy 서버를 거치지 않고 {{name}}의 Cindy로 직접 전달됩니다.",
-          "reconnectingOnHost": "{{name}}에서 WeChat에 다시 연결하고 있습니다. 다시 스캔할 필요가 없습니다."
-        }
-      },
       "introOnHost": "연결하면 이 WeChat 연결로 보낸 개인 메시지가 {{name}}의 Cindy로 전달됩니다. 인증 페이지는 Tencent가 제공하며 OpenClaw로 표시될 수 있습니다."
     }
   },
@@ -40,7 +34,6 @@
   },
   "cloudSettings": {
     "imConnectionDetailsUnavailable": "{{name}}에서 계정 상세 정보를 모두 제공하지 않았습니다. 반환된 정보만 표시합니다.",
-    "desktopFallback": "클라우드 데스크톱에서 Cindy 설정을 열어 변경하세요.",
     "moreSettings": "추가 설정",
     "moreSettingsFallback": "그 밖의 설정은 “{{name}}”에서 변경하세요.",
     "openInCloudDesktop": "원격 데스크톱 열기",
@@ -53,7 +46,6 @@
     "storageCleanupTitle": "정리 및 유지 관리",
     "wecomGroupHint": "자동 작업 완료 알림에 사용됩니다. WeCom 그룹 봇 Webhook URL을 붙여넣으면 {{name}}에 암호화되어 저장됩니다.",
     "imReadFailed": "새 대화 설정을 불러오지 못했습니다. 연결을 확인한 후 다시 시도하세요.",
-    "imReadUnavailable": "이 설정은 아직 변경할 수 없습니다",
     "imReadTooLarge": "설정이 너무 커서 불러올 수 없습니다.",
     "title": "클라우드 Cindy 설정",
     "choose": "설정할 클라우드 Cindy를 선택하세요",
@@ -61,9 +53,6 @@
     "offline": "클라우드 Cindy가 연결되지 않았습니다. 기기 카드에서 상태를 확인하거나 깨우세요.",
     "unsupported": "클라우드 서비스에서 아직 클라이언트 설정 접근을 지원하지 않습니다. 기존 웹 설정은 계속 사용할 수 있습니다.",
     "readFailed": "설정을 불러오지 못했습니다. 다시 시도하세요.",
-    "readFailedTitle": "클라우드 Cindy 설정을 불러오지 못했습니다",
-    "providersReadFailedTitle": "모델 제공자 목록을 불러오지 못했습니다",
-    "blockReadFailed": "일부 설정을 불러오지 못했습니다",
     "groupReadFailed": "불러오지 못했습니다",
     "groupNameSeparator": ", ",
     "botsReadFailed": "IM 봇 설정을 불러오지 못했습니다. 연결을 확인한 후 다시 시도하세요.",
@@ -77,13 +66,11 @@
     },
     "reload": "다시 시도",
     "loading": "설정을 불러오는 중…",
-    "noFields": "이 분류에 일치하는 설정이 없습니다",
     "saved": "저장됨",
     "trialSaved": "예시 데이터를 저장했습니다",
     "trial": "기능 체험 · 예시 데이터",
     "invalid": "입력값의 범위와 형식을 확인하세요",
     "discard": "편집 내용 버리고 돌아가기",
-    "targetUnavailable": "연결 실패",
     "upgradingNotice": "“{{name}}”을(를) 업데이트하는 중이라 지금은 관리할 수 없습니다. 업데이트가 완료되면 계속할 수 있습니다.",
     "authScope": "이 컴퓨터에서 인증하면 계정이 {{name}}에 연결됩니다.",
     "authAdd": "{{provider}} 추가",
@@ -97,16 +84,6 @@
     "authCheck": "인증 상태 확인",
     "authTrialComplete": "인증 완료 시뮬레이션",
     "authTrial": "상호작용 데모입니다. 외부 사이트를 열거나 실제 계정을 연결하지 않습니다.",
-    "authPhase": {
-      "running": "처리 중…",
-      "waiting": "브라우저에서 인증을 완료하세요",
-      "succeeded": "클라우드 작업이 완료되었습니다. 연결 상태를 확인하고 있습니다.",
-      "failed": "인증을 완료하지 못했습니다. 다시 시도하세요.",
-      "cancelled": "인증이 취소되었습니다.",
-      "expired": "인증이 만료되었습니다.",
-      "unknown": "인증 결과가 확인되지 않았습니다.",
-      "starting": "인증 준비 중"
-    },
     "authConnected": "연결됨",
     "authDisconnected": "연결되지 않음",
     "cliDetect": {
@@ -250,7 +227,6 @@
       "emptyTitle": "아직 클라우드 Cindy가 없습니다",
       "emptyDescription": "받으면 「내 기기」에 표시되며 다른 기기처럼 원격으로 제어할 수 있습니다.",
       "claim": "클라우드 Cindy 받기",
-      "defaultName": "클라우드 Cindy {{number}}",
       "defaultNameSole": "클라우드 Cindy",
       "readFailed": "클라우드 Cindy를 불러오지 못했습니다. 다시 시도하세요.",
       "loginFailed": "로그인 페이지를 열지 못했습니다. 시스템 브라우저 설정을 확인하세요",
@@ -280,7 +256,6 @@
     },
     "authNotDone": "인증 실패",
     "authChecking": "인증 중…",
-    "authWaitingDone": "인증이 완료되기를 기다리는 중…",
     "authProgressUnreadable": "인증 진행 상황을 불러오지 못했습니다. 다시 시도하세요.",
     "mcpRemoveBody": "삭제하면 {{name}}에 저장된 토큰과 헤더가 삭제됩니다.",
     "refusal": {
