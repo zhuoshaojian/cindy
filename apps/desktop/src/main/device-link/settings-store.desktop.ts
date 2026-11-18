@@ -26,5 +26,8 @@ import { app } from 'electron';
 import { createDeviceLinkSettingsStore } from "./settings-store.js";
 export type * from "./settings-store.js";
 export const { inspectDeviceLinkSettings, readDeviceLinkSettings, onDeviceLinkSettingChanged, updateDeviceLinkSetting, writeDeviceLinkSetting, readLastKnownDeviceNames, writeLastKnownDeviceNames, setDeviceControlEnabled, rememberLastKnownDeviceName, forgetLastKnownDeviceName, normalizeCachedDeviceName, isPlaceholderDeviceName, __testing } = createDeviceLinkSettingsStore({
-getUserDataDir: () => app.getPath('userData'), withAvailabilityPolicyMutation,
+getUserDataDir: () => app.getPath('userData'),
+  // The availability policy reaches back into Device Link settings, so this module can
+  // initialize first. Preserve the live import across that cycle instead of capturing an unset port.
+  withAvailabilityPolicyMutation: (providerId, work) => withAvailabilityPolicyMutation(providerId, work),
 });
