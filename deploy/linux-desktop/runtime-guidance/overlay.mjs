@@ -7,30 +7,48 @@ export const settingsPrompt = fs.readFileSync(new URL('./settings.md', import.me
 export const promptSha256 = createHash('sha256').update(settingsPrompt).digest('hex');
 const virtualId = 'virtual:cindy-cloud-settings-guidance';
 const resolvedId = '\0' + virtualId;
-const targets = {
+
+// The guidance rides on the getter every engine's cloud prompt already uses.
+const promptFile = 'apps/desktop/src/main/plugin-oauth/prompt.ts';
+const getterAnchor = 'get: () => appendCloudPluginOauthPrompt(base, getInstanceConfig() !== null),';
+// Checked, not rewritten: each engine still has a host prompt and still goes
+// through that getter, so dropping one engine fails the cloud build.
+const wiring = {
+  'apps/desktop/src/main/maker-host/runtimeConfigsCore.ts': [
+    'systemPrompt: composeHostPrompt(claudeSystemPrompt),',
+    'systemPrompt: composeHostPrompt(codexSystemPrompt),',
+    'systemPrompt: composePiSystemPrompt(`${hostSystemPrompt.trim()}\\n\\n${businessOwnershipPrompt.trim()}`, piSystemPrompt),',
+  ],
   'apps/desktop/src/main/maker-host/runtime-configs.ts': [
-    'appendCloudPluginOauthPrompt(composeHostPrompt(claudeSystemPrompt), getInstanceConfig() !== null)',
-    'appendCloudPluginOauthPrompt(composeHostPrompt(codexSystemPrompt), getInstanceConfig() !== null)',
+    'withCloudPluginOauthPrompt(desktopRuntimeConfigs.buildClaudeRuntimeConfig(',
+    'withCloudPluginOauthPrompt(desktopRuntimeConfigs.buildCodexRuntimeConfig(',
   ],
   'apps/desktop/src/main/maker-host/pi-host.ts': [
-    'appendCloudPluginOauthPrompt(composePiSystemPrompt(`${hostSystemPrompt.trim()}\\n\\n${businessOwnershipPrompt.trim()}`, piSystemPrompt), getInstanceConfig() !== null)',
+    'withCloudPluginOauthPrompt(buildPiRuntimeConfig(',
   ],
 };
+export const targets = [promptFile, ...Object.keys(wiring)];
 
 export function appendCloudSettingsPrompt(existing, cloudInstance) {
   return cloudInstance ? `${existing}\n\n${settingsPrompt}` : existing;
 }
 
+const once = (code, anchor, relativePath) =>
+  assert.equal(code.split(anchor).length, 2, `Cloud prompt integration changed: ${relativePath}`);
+
 // A cloud packaging overlay, never a write to the upstream client checkout.
 export function transformCloudSource(code, relativePath) {
-  const anchors = targets[relativePath];
-  if (!anchors) return null;
-  assert.ok(!code.includes(virtualId), 'Cloud guidance must not be injected twice');
-  for (const anchor of anchors) {
-    assert.equal(code.split(anchor).length, 2, `Cloud prompt integration changed: ${relativePath}`);
-    code = code.replace(anchor, `appendCloudSettingsPrompt(${anchor}, getInstanceConfig() !== null)`);
+  if (relativePath === promptFile) {
+    assert.ok(!code.includes(virtualId), 'Cloud guidance must not be injected twice');
+    once(code, getterAnchor, relativePath);
+    const getter = getterAnchor.slice('get: () => '.length, -1);
+    code = code.replace(getterAnchor, `get: () => appendCloudSettingsPrompt(${getter}, getInstanceConfig() !== null),`);
+    return `import { appendCloudSettingsPrompt } from '${virtualId}';\n${code}`;
   }
-  return `import { appendCloudSettingsPrompt } from '${virtualId}';\n${code}`;
+  const anchors = wiring[relativePath];
+  if (!anchors) return null;
+  for (const anchor of anchors) once(code, anchor, relativePath);
+  return code;
 }
 
 export function cloudSettingsGuidancePlugin({ sourceRoot, onTransform = () => {} }) {
@@ -55,7 +73,7 @@ export function cloudSettingsGuidancePlugin({ sourceRoot, onTransform = () => {}
     buildEnd(error) {
       if (error) return;
       // Install on the main entry only: a missing engine is a failed cloud build.
-      assert.deepEqual([...seen].sort(), Object.keys(targets).sort(), 'Cloud guidance did not reach all three engines');
+      assert.deepEqual([...seen].sort(), [...targets].sort(), 'Cloud guidance did not reach all three engines');
     },
   };
 }

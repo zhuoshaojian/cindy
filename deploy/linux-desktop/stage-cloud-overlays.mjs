@@ -7,7 +7,7 @@ import { cloudAppVersion } from './build-version.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { transformCloudSource, cloudSettingsGuidancePlugin } from './runtime-guidance/overlay.mjs';
+import { transformCloudSource, cloudSettingsGuidancePlugin, targets as guidanceTargets } from './runtime-guidance/overlay.mjs';
 import { transformCloudWindowSource, targets as windowTargets } from './runtime-window-controls/overlay.mjs';
 import { transformCloudActivitySource, targets as activityTargets } from './runtime-activity/overlay.mjs';
 import { transformMaintenanceSource, cloudMaintenancePlugin, targets as maintenanceTargets } from './runtime-maintenance/overlay.mjs';
@@ -17,10 +17,6 @@ const freeze = JSON.parse(fs.readFileSync(recipe + '/source-freeze.json'));
 if (freeze.packagingAllowed !== true || freeze.upstream !== `v${process.env.CINDY_UPSTREAM_VERSION}`) throw Error('SOURCE_NOT_QUALIFIED');
 const APP_VERSION = cloudAppVersion(process.env.APP_VERSION, process.env.CINDY_UPSTREAM_VERSION);
 const sha = (s) => createHash('sha256').update(s).digest('hex');
-const guidanceTargets = [
-  'apps/desktop/src/main/maker-host/runtime-configs.ts',
-  'apps/desktop/src/main/maker-host/pi-host.ts',
-];
 
 const guidance = cloudSettingsGuidancePlugin({ sourceRoot: root });
 fs.writeFileSync(recipe + '/guidance-runtime.mjs', guidance.load(guidance.resolveId('virtual:cindy-cloud-settings-guidance')));

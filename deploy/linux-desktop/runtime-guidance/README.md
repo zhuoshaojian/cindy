@@ -5,10 +5,14 @@
 
 ## 接线
 
-在 `maker-host/runtime-configs.ts`（Claude、Codex）与 `maker-host/pi-host.ts`（Pi）中，
-于现有 `appendCloudPluginOauthPrompt(...)` 之后追加同一段静态正文。仍以
+Claude、Codex、Pi 三个引擎的系统提示都经 `plugin-oauth/prompt.ts` 的
+`withCloudPluginOauthPrompt` getter 读取。覆盖层只改写这一个 getter，在现有
+`appendCloudPluginOauthPrompt(...)` 之后追加同一段静态正文；每次读取仍以
 `getInstanceConfig() !== null` 判断云实例：既有前缀逐字节保留，非云实例不追加。
-三个装配点任一缺失、重复或源码接线变化都会使构建失败，不允许悄悄遗漏某个引擎。
+
+`maker-host/runtimeConfigsCore.ts`（三个引擎的宿主提示）、`maker-host/runtime-configs.ts`
+（Claude、Codex）与 `maker-host/pi-host.ts`（Pi）只校验不改写：每个引擎仍有宿主提示，且仍经该
+getter 包装。getter 或任一装配点缺失、重复或源码接线变化都会使构建失败，不允许悄悄遗漏某个引擎。
 
 `stage-cloud-overlays.mjs` 在打包前对构建用的源码导出应用转换，并用
 `cloudSettingsGuidancePlugin({ sourceRoot })` 生成虚拟模块
@@ -22,7 +26,8 @@
 
 ## 测试
 
-读取真实客户端 getter 并执行转换后的正文，不启动客户端，不修改源码：
+转译并执行改写后的真实 `prompt.ts` getter（只替换它的两个导入），并解析三个引擎的装配点，
+不启动客户端，不修改源码：
 
 ```sh
 CINDY_TEST_CLIENT_SOURCE=/absolute/path/to/client node --test deploy/linux-desktop/runtime-guidance/overlay.test.mjs

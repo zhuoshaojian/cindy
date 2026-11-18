@@ -64,8 +64,9 @@ jobs:
             /apps/desktop/src/main/updateService.ts
             /apps/desktop/src/main/relaunchBusyActivityIpc.ts
             /apps/desktop/src/main/maker-host/runtime-configs.ts
+            /apps/desktop/src/main/maker-host/runtimeConfigsCore.ts
             /apps/desktop/src/main/maker-host/pi-host.ts
-            /apps/desktop/src/main/maker-host/*.md
+            /apps/desktop/src/main/plugin-oauth/prompt.ts
             /apps/desktop/src/main/maker-ipc/register.ts
             /apps/desktop/src/main/maker-ipc/agent-input-coordinator.ts
             /apps/desktop/src/main/instance-runtime/status.ts
