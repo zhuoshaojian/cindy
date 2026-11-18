@@ -1246,5 +1246,3 @@ describe('a part of the page that cannot be read', () => {
     expect(lists - first).toBe(CLOUD_RECONNECT_DELAYS_MS.length + 1);
   });
 });
-
-
