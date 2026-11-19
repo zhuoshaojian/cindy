@@ -776,9 +776,13 @@ export function CloudInstanceSection({
     embedded ? version.replace(/(-(cn|global))?-(amd64|arm64)$/, '') : version;
   const versionText = (version: string | null) =>
     version ? displayVersion(version) : view?.imageId ? `#${view.imageId.slice(0, 12)}` : tr('unknown');
-  // The version being installed. TODO(backend): CIS has no targetVersion yet; latestVersion stands
-  // in, and can be newer than the one actually installing if a release lands meanwhile.
-  const target = versionText(view?.latestVersion ?? null);
+  // The version being installed. While queued, CIS still offers it as latestVersion (which can be
+  // newer than the one that installs if a release lands meanwhile). Once it is installing CIS
+  // offers nothing, but the instance's image is already that release, so its tag names it; only an
+  // image without a tag falls back to the image id.
+  const target = versionText(
+    view?.latestVersion ?? (outcome?.kind === 'updating' ? view?.version ?? null : null),
+  );
   // Only what adds to the title: queued behind tasks, or restarting.
   const upgradeLine =
     outcome?.kind === 'queued'

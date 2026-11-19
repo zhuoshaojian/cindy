@@ -469,6 +469,24 @@ describe('the card ⋯ menu', () => {
     fireEvent.click(updates);
     await screen.findByRole('dialog', { name: 'cloudSettings.instance.updates' });
   });
+  // Once it is installing CIS no longer offers the release, but the instance's image already is
+  // that release: the dialog names its version, never the image id.
+  it('names the version being installed, not the image id, once CIS stops offering it', async () => {
+    api.instanceList!.mockResolvedValue([
+      view(CLOUD, {
+        version: '0.1.139-cloud.1-cn-amd64',
+        imageId: '6291d1f063fc'.padEnd(64, '0'),
+        latestVersion: null,
+        upgradeOperation: { operationId: 'op', phase: 'backup-running', active: true, updatedAtMs: 1 },
+      }),
+    ]);
+    renderDevices();
+    await within(cloudRow()).findByText(/· cloudSettings\.instance\.cardUpdating$/);
+    fireEvent.click(item(await openMenu(), 'cloudSettings.instance.updates'));
+    const dialog = await screen.findByRole('dialog', { name: 'cloudSettings.instance.updates' });
+    await within(dialog).findByText(/cloudSettings\.instance\.upgradingTo 0\.1\.139-cloud\.1$/);
+    expect(dialog.textContent).not.toContain('#6291d1f063fc');
+  });
   it('disables Sleep while the instance is going to sleep on its own, without a spinner', async () => {
     api.instanceList!.mockResolvedValue([view(CLOUD, { desiredState: 'stopped', runtimeState: 'stopping', ready: false })]);
     renderDevices();
