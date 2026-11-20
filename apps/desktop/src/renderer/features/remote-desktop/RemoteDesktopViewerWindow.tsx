@@ -121,6 +121,15 @@ export function RemoteDesktopViewerWindow() {
     const id = toast.info(t(`remoteDesktop.${clipboardNotice}`), { duration: 4000 });
     return () => toast.dismiss(id);
   }, [clipboardNotice, clipboardNoticeVersion, t]);
+  const pasteFailure = state?.pasteFailure;
+  useEffect(() => {
+    if (!pasteFailure) return;
+    const id = toast.info(t(clipboardFailureKey(new Error(pasteFailure.code), 'paste')), {
+      duration: 4000,
+    });
+    return () => toast.dismiss(id);
+    // Each failure is a new object (with a new serial), so it reports once.
+  }, [pasteFailure, t]);
   // Only the latest clipboard click reports; queued earlier transfers stay silent.
   const clipboardAttempt = useRef(0);
   activePanel.current = settings;
@@ -720,7 +729,8 @@ export function RemoteDesktopViewerWindow() {
             restoreFocus={() => activePanel.current === null}
             onOpenChange={(open) => openPanel('clipboard', open)}
           >
-            {preference('clipboardSync')}
+            {/* A browser page cannot watch either clipboard; it pastes on request instead. */}
+            {!state?.browserClipboard && preference('clipboardSync')}
             {state && (
               <>
                 {(state.caps?.clipboardText || state.caps?.clipboardContent) && (
@@ -757,7 +767,13 @@ export function RemoteDesktopViewerWindow() {
                 )}
               </>
             )}
-            <p>{t('remoteDesktop.viewer.clipboardShortcutHint')}</p>
+            <p>
+              {t(
+                state?.browserClipboard
+                  ? 'remoteDesktop.viewer.clipboardShortcutHintBrowser'
+                  : 'remoteDesktop.viewer.clipboardShortcutHint',
+              )}
+            </p>
           </ViewerPanel>
           <ViewerPanel
             label={t('remoteDesktop.viewer.securityPanel')}

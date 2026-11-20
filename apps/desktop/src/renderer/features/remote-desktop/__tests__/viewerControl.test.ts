@@ -14,10 +14,16 @@ import {
 const runtime = vi.hoisted(() => ({
   post: null as ((message: Record<string, unknown>) => void) | null,
   receive: vi.fn(),
+  config: null as Record<string, unknown> | null,
 }));
 vi.mock('@cindy/maker-shared/remote-desktop-viewer', () => ({
-  mountRemoteDesktopViewer: (_root: HTMLElement, post: typeof runtime.post) => {
+  mountRemoteDesktopViewer: (
+    _root: HTMLElement,
+    post: typeof runtime.post,
+    config: Record<string, unknown>,
+  ) => {
     runtime.post = post;
+    runtime.config = config;
     return { receive: runtime.receive, dispose: vi.fn() };
   },
 }));
@@ -236,6 +242,80 @@ it('ignores clipboard messages from the picture; shortcuts reach the host as key
   const init = runtime.receive.mock.calls.find(([m]) => m.type === 'init')?.[0];
   expect(init).not.toHaveProperty('clipboardShortcuts');
   expect(init).toMatchObject({ macKeyboard: false });
+});
+
+// Regression: the cloud web page had no way to paste local text into the computer.
+// Unit tier: the controller between a scripted picture and a recorded browser adapter.
+it('a browser build answers the held paste key at once and opens its gate once the computer has the text', async () => {
+  const pushed = deferred<void>();
+  const picturePaste = vi.fn(() => ({ forward: false, done: pushed.promise }));
+  const pictureCopy = vi.fn();
+  await fixture(undefined, false, { api: { picturePaste, pictureCopy } });
+  present();
+  expect(runtime.config).toMatchObject({ browserPaste: true });
+  expect(snapshot.browserClipboard).toBe(true);
+  runtime.post?.({ type: 'clipboardIntent', action: 'copy', epoch: 'lease' });
+  expect(pictureCopy).toHaveBeenCalledExactlyOnceWith(1);
+  runtime.receive.mockClear();
+  runtime.post?.({
+    type: 'clipboardPaste',
+    text: 'from this computer',
+    shortcut: true,
+    remoteChord: false,
+    epoch: 'lease',
+  });
+  expect(picturePaste).toHaveBeenCalledExactlyOnceWith(1, {
+    text: 'from this computer',
+    shortcut: true,
+    remoteChord: false,
+  });
+  // Synchronous: the picture is still inside the browser's paste event.
+  expect(runtime.receive).toHaveBeenCalledWith({ type: 'pasteKey', forward: false });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(gateReleases()).toBe(0);
+  pushed.resolve();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(gateReleases()).toBe(1);
+  expect(snapshot.pasteFailure ?? null).toBeNull();
+});
+
+it('a failed browser paste opens the gate and reports why, once per failure', async () => {
+  const picturePaste = vi.fn(() => ({
+    forward: false,
+    done: Promise.reject(new Error('CLIPBOARD_TOO_LONG')),
+  }));
+  await fixture(undefined, false, { api: { picturePaste } });
+  present();
+  const paste = () =>
+    runtime.post?.({ type: 'clipboardPaste', text: 'x', shortcut: false, remoteChord: false, epoch: 'lease' });
+  paste();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(gateReleases()).toBe(1);
+  // A paste from the browser's menu holds no key to answer.
+  expect(runtime.receive.mock.calls.some(([m]) => m.type === 'pasteKey')).toBe(false);
+  expect(snapshot.pasteFailure).toEqual({ code: 'CLIPBOARD_TOO_LONG', serial: 1 });
+  expect(clipboardFailureKey(new Error(snapshot.pasteFailure!.code), 'paste')).toBe(
+    'remoteDesktop.viewer.clipboardTooLong',
+  );
+  paste();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(snapshot.pasteFailure).toEqual({ code: 'CLIPBOARD_TOO_LONG', serial: 2 });
+});
+
+it('a native window keeps the chord on the computer: no browser paste, no clipboard hooks', async () => {
+  await fixture();
+  present();
+  expect(runtime.config).toMatchObject({ browserPaste: false });
+  expect(snapshot.browserClipboard).toBeUndefined();
+});
+
+it('explains a browser that refused the clipboard', () => {
+  expect(clipboardFailureKey(new Error('CLIPBOARD_READ_DENIED'), 'paste')).toBe(
+    'remoteDesktop.viewer.clipboardReadDenied',
+  );
+  expect(clipboardFailureKey(new Error('CLIPBOARD_WRITE_DENIED'), 'copy')).toBe(
+    'remoteDesktop.viewer.clipboardWriteDenied',
+  );
 });
 
 const syncOn = async (clipboardSync: RemoteDesktopViewerApi['clipboardSync']) => {

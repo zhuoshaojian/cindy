@@ -12,6 +12,7 @@ import {
 } from '../../shared/remoteDesktopViewer';
 import { CisSignedOutError } from './cisHttp';
 import { HostCallError, type HostRelay } from './hostRelay';
+import { PictureClipboard } from './pictureClipboard';
 
 /** Viewer choices stay in this browser, per instance, like the native per-device files. */
 const PREFERENCES_KEY = (device: string) => `cindy.cloudWeb.viewer.${device}`;
@@ -23,6 +24,26 @@ function readJson(key: string): unknown {
     return null;
   }
 }
+/**
+ * The page's own clipboard, for the explicit copy and paste buttons. The browser
+ * asks the user about reading it (once, or each time) and may refuse writing when
+ * the page lost focus or its click is too long ago; either refusal is reported.
+ */
+async function readBrowserClipboard(): Promise<string> {
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    throw new Error('CLIPBOARD_READ_DENIED');
+  }
+}
+async function writeBrowserClipboard(value: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    throw new Error('CLIPBOARD_WRITE_DENIED');
+  }
+}
+
 /** Clipboard content sync needs the native clipboard helper; it stays off on the web. */
 function readPreferences(device: string): RemoteViewerPreferences {
   const stored = readJson(PREFERENCES_KEY(device));
@@ -66,8 +87,8 @@ export function createWebRemoteDesktopViewer(relay: HostRelay, target: RemoteVie
     owner: () => 'web',
     request,
     // Clipboard copy and paste use the page's own clipboard; content sync is not offered.
-    readClipboard: () => '',
-    writeClipboard: (value) => void navigator.clipboard?.writeText(value).catch(() => {}),
+    readClipboard: readBrowserClipboard,
+    writeClipboard: writeBrowserClipboard,
     focused: () => document.hasFocus(),
     preferences: readPreferences,
     savePreferences: async (device, patch) => {
@@ -101,6 +122,9 @@ export function createWebRemoteDesktopViewer(relay: HostRelay, target: RemoteVie
   document.addEventListener('visibilitychange', () => {
     for (const listener of hiddenListeners) listener(document.visibilityState === 'hidden');
   });
+  // Local text can only change while the page is in the background.
+  const pictureClipboard = new PictureClipboard();
+  window.addEventListener('blur', () => pictureClipboard.blur());
   // Closing the tab ends the session at once instead of waiting for the lease to lapse.
   window.addEventListener('pagehide', () => {
     try {
@@ -141,6 +165,13 @@ export function createWebRemoteDesktopViewer(relay: HostRelay, target: RemoteVie
       const result = await connection.clipboard(generation, action);
       if (!result.ok) throw ipc(result.code);
     },
+    pictureCopy: () => pictureClipboard.copy(),
+    // The computer pastes the text itself (with its own paste keys), as for the button.
+    picturePaste: (generation, paste) =>
+      pictureClipboard.paste(paste, async (text) => {
+        const result = await connection.clipboard(generation, 'paste', text);
+        if (!result.ok) throw new Error(result.code);
+      }),
     async close(generation) {
       if (generation !== connection.generation) return;
       try {

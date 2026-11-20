@@ -152,6 +152,8 @@ export function mountRemoteDesktopViewer(root, postMessage, config) {
     // and which modifier is copy/paste on the controlled computer.
     inputGateUntil = 0,
     clipboardModifier = "control",
+    // Browser pages: the paste key waiting for the controller's `pasteKey`.
+    browserPasteKey = null,
     cx = 0.5,
     cy = 0.5,
     drag = false,
@@ -1048,6 +1050,7 @@ export function mountRemoteDesktopViewer(root, postMessage, config) {
     gestureFrame = null;
     // A paste still waiting for its clipboard push is abandoned, never sent
     // late; the release itself must reach the computer at once.
+    browserPasteKey = null;
     if (inputGateUntil) {
       inputGateUntil = 0;
       pending = [];
@@ -1733,6 +1736,57 @@ export function mountRemoteDesktopViewer(root, postMessage, config) {
     } else if (code === "KeyC" || code === "KeyX")
       post({ type: "clipboardIntent", action: "copy" });
   }
+  // Browser pages only (`config.browserPaste`: no native clipboard helper). A
+  // browser hands a page the local clipboard only inside its paste event, so
+  // Cmd/Ctrl+V is left to the browser instead of being sent at once. The key
+  // waits behind the input gate until the controller answers `pasteKey`:
+  // forwarded, the computer pastes its own clipboard; otherwise the computer
+  // pastes the local text itself and the key is never sent.
+  function holdBrowserPaste(e, code) {
+    if (!config.browserPaste || code !== "KeyV" || e.altKey || !(e.ctrlKey || e.metaKey))
+      return false;
+    // Auto-repeat would paste over and over; only the first press pastes.
+    if (e.repeat) {
+      e.preventDefault();
+      return true;
+    }
+    const held = {
+      code,
+      released: false,
+      // Whether the computer itself pastes with this chord.
+      remoteChord: clipboardModifier === "meta" ? e.metaKey : e.ctrlKey,
+    };
+    browserPasteKey = held;
+    inputGateUntil = performance.now() + 1200;
+    // A browser that fires no paste event for this chord (Ctrl+V on a Mac)
+    // has no local text to give: the controller decides with none.
+    setTimeout(() => {
+      if (browserPasteKey === held) browserPasted("");
+    }, 0);
+    return true;
+  }
+  function browserPasted(text) {
+    const held = browserPasteKey;
+    if (!held) inputGateUntil = performance.now() + 1200;
+    post({
+      type: "clipboardPaste",
+      text,
+      shortcut: !!held,
+      remoteChord: held?.remoteChord === true,
+    });
+    // The controller answers at once; a key it did not answer is never sent.
+    if (browserPasteKey === held) browserPasteKey = null;
+  }
+  if (config.browserPaste)
+    listen(keyboardInput, "paste", (e) => {
+      // The text is pasted on the computer, never typed from the hidden input.
+      e.preventDefault();
+      if (!control || e.isComposing || composing) {
+        browserPasteKey = null;
+        return;
+      }
+      browserPasted(e.clipboardData?.getData("text/plain") ?? "");
+    });
   listen(document, "keydown", (e) => {
     if (config.desktop) {
       if (e.ctrlKey && e.altKey && e.code === "Escape") {
@@ -1765,14 +1819,16 @@ export function mountRemoteDesktopViewer(root, postMessage, config) {
     )
       return;
     if (control && validKeys.has(normalizedKey(e.code))) {
-      e.preventDefault();
       const code = normalizedKey(e.code);
+      if (holdBrowserPaste(e, code)) return;
+      e.preventDefault();
       clipboardShortcut(e, code);
       pressKey(code);
     }
   });
   listen(document, "keyup", (e) => {
     const code = normalizedKey(e.code);
+    if (browserPasteKey?.code === code) browserPasteKey.released = true;
     if (releaseKey(code, control && validKeys.has(code))) e.preventDefault();
   });
   if (config.desktop)
@@ -2386,6 +2442,16 @@ export function mountRemoteDesktopViewer(root, postMessage, config) {
         inputGateUntil = 0;
         flush();
         break;
+      // The controller's answer to a browser paste chord (see holdBrowserPaste).
+      case "pasteKey": {
+        const held = browserPasteKey;
+        browserPasteKey = null;
+        if (!held || message.forward !== true || !control) break;
+        pressKey(held.code);
+        if (held.released) releaseKey(held.code, true);
+        flush();
+        break;
+      }
       case "theme":
         if (/^#[0-9a-f]{3,8}$/i.test(message.surface)) {
           document.body.style.background = config.nativeMedia

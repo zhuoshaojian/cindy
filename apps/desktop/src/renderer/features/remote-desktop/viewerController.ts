@@ -71,6 +71,10 @@ export interface ViewerSnapshot {
   fittedDisplay: Size | null;
   /** 代输入 window view: the one window shown (only it can be clicked or typed into). */
   window?: { app: string; title?: string } | null;
+  /** Browser builds: the local paste chord pastes local text; clipboard sync is unavailable. */
+  browserClipboard?: boolean;
+  /** Latest failed paste made in the picture (browser builds); `serial` marks each one. */
+  pasteFailure?: { code: string; serial: number } | null;
 }
 
 const sameAspect = (display: Size, width: number, height: number) =>
@@ -97,6 +101,8 @@ const CLIPBOARD_FAILURE_KEYS: Record<string, string> = {
   CLIPBOARD_UNSUPPORTED: 'remoteDesktop.viewer.clipboardUnsupported',
   CLIPBOARD_EMPTY: 'remoteDesktop.viewer.clipboardEmpty',
   CLIPBOARD_TOO_LONG: 'remoteDesktop.viewer.clipboardTooLong',
+  CLIPBOARD_READ_DENIED: 'remoteDesktop.viewer.clipboardReadDenied',
+  CLIPBOARD_WRITE_DENIED: 'remoteDesktop.viewer.clipboardWriteDenied',
 };
 
 /** Explains a failed manual clipboard transfer (decoded code); same wording as Mobile. */
@@ -231,7 +237,9 @@ export class DesktopViewerController {
       net: REMOTE_DESKTOP_NETWORK,
       iceServers: REMOTE_DESKTOP_ICE_SERVERS,
       keyCodes: DESKTOP_KEY_CODES,
+      browserPaste: !!api.picturePaste,
     });
+    if (api.picturePaste) this.state = { ...this.state, browserClipboard: true };
     this.unsubscribers = [
       api.onActive((scope) => this.updateScope(scope)),
       ...(api.onChannelRequest
@@ -1202,6 +1210,10 @@ export class DesktopViewerController {
         if (message.action === 'paste' || message.action === 'copy')
           this.clipboardIntent(message.action);
         break;
+      case 'clipboardPaste':
+        if (typeof message.text === 'string')
+          this.picturePaste(message.text, message.shortcut === true, message.remoteChord === true);
+        break;
       case 'input':
         if (
           !Number.isSafeInteger(message.sequence) ||
@@ -1243,6 +1255,7 @@ export class DesktopViewerController {
   private clipboardIntent(action: 'copy' | 'paste'): void {
     const wanted =
       this.state.preferences.clipboardSync && this.state.controlling && !!this.api.clipboardSync;
+    if (action === 'copy' && this.state.controlling) this.api.pictureCopy?.(this.scope.generation);
     if (action === 'copy') {
       if (!wanted) return;
       if (this.copyTimer) clearTimeout(this.copyTimer);
@@ -1273,6 +1286,40 @@ export class DesktopViewerController {
       this.pasteSync,
       new Promise<void>((resolve) => setTimeout(resolve, CLIPBOARD_PASTE_WAIT_MS)),
     ]).then(release, release);
+  }
+  /**
+   * Browser builds: a paste the browser handed the picture. The held paste key is
+   * answered at once (the picture is still inside the paste event); its gate opens
+   * once the computer has the text, so later keys never overtake the paste.
+   */
+  private picturePaste(text: string, shortcut: boolean, remoteChord: boolean): void {
+    const epoch = this.epoch,
+      wait = ++this.pasteWait;
+    const current = () => !this.disposed && epoch === this.epoch;
+    const release = () => {
+      if (current() && wait === this.pasteWait) this.runtime.receive({ type: 'inputGate' });
+    };
+    let outcome: { forward: boolean; done: Promise<void> } = {
+      forward: true,
+      done: Promise.resolve(),
+    };
+    if (this.api.picturePaste && this.state.controlling && this.state.ready && !this.state.closing) {
+      try {
+        outcome = this.api.picturePaste(this.scope.generation, { text, shortcut, remoteChord });
+      } catch {
+        /* Keep the keys: the computer pastes its own clipboard, as before. */
+      }
+    }
+    if (shortcut) this.runtime.receive({ type: 'pasteKey', forward: outcome.forward });
+    outcome.done.then(release, (error: unknown) => {
+      release();
+      const code = extractIpcError(error)?.message ?? (error instanceof Error ? error.message : '');
+      // A stopped connection already shows its own state.
+      if (current() && code !== 'DESKTOP_STOPPED')
+        this.publish({
+          pasteFailure: { code, serial: (this.state.pasteFailure?.serial ?? 0) + 1 },
+        });
+    });
   }
   private async syncClipboard(): Promise<void> {
     if (!this.state.ready || this.state.closing || !this.api.clipboardSync) return;

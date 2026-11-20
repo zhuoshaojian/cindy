@@ -5,6 +5,7 @@ import { createHostRelay, HostCallError } from '../hostRelay';
 import { installWebElectronApi } from '../electronApi';
 import { createWebCloudApi, routeDeviceLinkCall, unwrapProviderManagementReply } from '../webApi';
 import { createWebRemoteDesktopViewer } from '../remoteDesktopViewer';
+import { REMOTE_DESKTOP_MAX_CLIPBOARD_CHARS } from '@cindy/device-link';
 
 const instanceId = 'cloud-instance-0123456789abcdef';
 const deviceId = `cloud-device-${'a'.repeat(24)}`;
@@ -203,6 +204,83 @@ describe('web bridge', () => {
     await expect(viewer.request(generation, { op: 'capabilities' })).resolves.toEqual({ version: 1 });
     expect(calls).toEqual([{ kind: 'desktop', request: { op: 'capabilities' } }]);
     await expect(viewer.credential!(generation, 'unlock')).rejects.toThrow('CREDENTIAL_UNAVAILABLE');
+  });
+});
+
+// Regression: the web viewer read an empty local clipboard (every paste failed as
+// empty) and dropped a refused write (copy looked successful). Unit tier: the real
+// adapter and connection; the instance is an in-memory relay, the clipboard a stub.
+describe('the clipboard of the web remote desktop', () => {
+  async function controlling() {
+    const sent: Record<string, unknown>[] = [];
+    const call = vi.fn(async (_device: string, command: { kind: string; request?: Record<string, unknown> }) => {
+      const request = command.request ?? {};
+      sent.push(request);
+      switch (request.op) {
+        case 'capabilities':
+          return { version: 1, clipboardText: true };
+        case 'start':
+          return { lease: 'lease', controlling: false, display: { id: 'screen' } };
+        case 'control':
+          return { controlling: true };
+        case 'clipboard':
+          return request.action === 'copy' ? { text: 'from the computer' } : { ok: true };
+        default:
+          return {};
+      }
+    });
+    const clipboard = { readText: vi.fn(async () => 'from this computer'), writeText: vi.fn(async () => {}) };
+    vi.stubGlobal('navigator', { ...navigator, clipboard });
+    const viewer = createWebRemoteDesktopViewer(
+      { call, desktop: vi.fn(async () => true), forget: vi.fn() } as never,
+      { deviceId, name: 'fixture' },
+    );
+    await viewer.rendererReady();
+    const { generation } = await viewer.state();
+    await viewer.request(generation, { op: 'capabilities' });
+    await viewer.request(generation, { op: 'start', displayId: 'screen' } as never);
+    await viewer.request(generation, { op: 'control', lease: 'lease', enabled: true });
+    await viewer.safety!(generation);
+    const pastes = () => sent.filter((r) => r.op === 'clipboard' && r.action === 'paste').map((r) => r.text);
+    return { viewer, generation, clipboard, pastes };
+  }
+
+  it('reads this computer only for a click, and pastes what it read', async () => {
+    const { viewer, generation, clipboard, pastes } = await controlling();
+    await viewer.clipboardSync?.(generation).catch(() => {});
+    expect(clipboard.readText).not.toHaveBeenCalled();
+    await viewer.clipboard(generation, 'paste');
+    expect(clipboard.readText).toHaveBeenCalledOnce();
+    expect(pastes()).toEqual(['from this computer']);
+    clipboard.readText.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));
+    await expect(viewer.clipboard(generation, 'paste')).rejects.toThrow(/CLIPBOARD_READ_DENIED/);
+    expect(pastes()).toHaveLength(1);
+  });
+
+  it('reports a copy the browser refused to write instead of claiming success', async () => {
+    const { viewer, generation, clipboard } = await controlling();
+    await viewer.clipboard(generation, 'copy');
+    expect(clipboard.writeText).toHaveBeenCalledExactlyOnceWith('from the computer');
+    clipboard.writeText.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));
+    await expect(viewer.clipboard(generation, 'copy')).rejects.toThrow(/CLIPBOARD_WRITE_DENIED/);
+  });
+
+  it('pastes the text of a paste in the picture without reading the clipboard again', async () => {
+    const { viewer, generation, clipboard, pastes } = await controlling();
+    const pasted = viewer.picturePaste!(generation, { text: 'typed elsewhere', shortcut: true, remoteChord: false });
+    expect(pasted.forward).toBe(false);
+    await pasted.done;
+    expect(pastes()).toEqual(['typed elsewhere']);
+    const tooLong = viewer.picturePaste!(generation, {
+      text: 'x'.repeat(REMOTE_DESKTOP_MAX_CLIPBOARD_CHARS + 1),
+      shortcut: true,
+      remoteChord: false,
+    });
+    await expect(tooLong.done).rejects.toThrow('CLIPBOARD_TOO_LONG');
+    const empty = viewer.picturePaste!(generation, { text: '', shortcut: false, remoteChord: false });
+    await expect(empty.done).rejects.toThrow('CLIPBOARD_EMPTY');
+    expect(pastes()).toEqual(['typed elsewhere']);
+    expect(clipboard.readText).not.toHaveBeenCalled();
   });
 });
 

@@ -145,6 +145,20 @@ export interface RemoteDesktopViewerApi {
   safety?(generation: number, retry?: boolean): Promise<RemoteViewerSafety>;
   /** One clipboard sync pass now (copy/paste in the picture) instead of at the next poll. */
   clipboardSync?(generation: number): Promise<RemoteViewerSafety>;
+  /** Browser builds (no native clipboard helper): a copy shortcut was typed into the picture. */
+  pictureCopy?(generation: number): void;
+  /**
+   * Browser builds: a paste the browser handed this page while the picture had
+   * focus (`shortcut`: from Cmd/Ctrl+V, whose key the picture is holding;
+   * `remoteChord`: the computer pastes with that same chord). `forward` sends the
+   * held key, so the computer pastes its own clipboard; otherwise the computer
+   * pastes `text` itself. `done` settles once that paste, and any earlier one,
+   * has reached the computer.
+   */
+  picturePaste?(
+    generation: number,
+    paste: { text: string; shortcut: boolean; remoteChord: boolean },
+  ): { forward: boolean; done: Promise<void> };
   /** Main routes channel-eligible requests through the window's media data channel. */
   onChannelRequest?(listener: (request: RemoteViewerChannelRequest) => void): () => void;
   channelReply?(generation: number, id: string, outcome: RemoteViewerChannelOutcome): Promise<void>;

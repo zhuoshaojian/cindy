@@ -61,8 +61,9 @@ export class RemoteViewerConnection {
     private readonly deps: {
       owner(): string;
       request(deviceId: string, request: RemoteDesktopRequest, check: () => void): Promise<unknown>;
-      readClipboard(): string;
-      writeClipboard(value: string): void;
+      /** A browser may deny either; the code it throws is the failure reported. */
+      readClipboard(): string | Promise<string>;
+      writeClipboard(value: string): void | Promise<void>;
       clipboard?: ViewerClipboard;
       credentials?: Pick<ViewerCredentials, 'run' | 'dispose'>;
       focused?(): boolean;
@@ -314,7 +315,8 @@ export class RemoteViewerConnection {
       return viewerFailure(error);
     }
   }
-  async clipboard(generation: number, action: unknown): Promise<RemoteViewerReply> {
+  /** `text`: a paste whose local text the caller already holds (a browser paste event). */
+  async clipboard(generation: number, action: unknown, text?: string): Promise<RemoteViewerReply> {
     const transfer = {};
     try {
       this.check(generation);
@@ -331,7 +333,7 @@ export class RemoteViewerConnection {
           throw new Error('DESKTOP_VIEW_ONLY');
       };
       if (action !== 'copy' && action !== 'paste') throw new Error('INVALID_REQUEST');
-      if (this.caps?.clipboardContent && this.deps.clipboard) {
+      if (text === undefined && this.caps?.clipboardContent && this.deps.clipboard) {
         const current = () => {
           try {
             check();
@@ -374,14 +376,15 @@ export class RemoteViewerConnection {
         if (!result.text) throw new Error('CLIPBOARD_EMPTY');
         if (result.text.length > REMOTE_DESKTOP_MAX_CLIPBOARD_CHARS)
           throw new Error('CLIPBOARD_TOO_LONG');
-        this.deps.writeClipboard(result.text);
+        await this.deps.writeClipboard(result.text);
       } else if (action === 'paste') {
-        const text = this.deps.readClipboard();
-        if (!text) throw new Error('CLIPBOARD_EMPTY');
-        if (text.length > REMOTE_DESKTOP_MAX_CLIPBOARD_CHARS) throw new Error('CLIPBOARD_TOO_LONG');
+        const local = text ?? (await this.deps.readClipboard());
+        check();
+        if (!local) throw new Error('CLIPBOARD_EMPTY');
+        if (local.length > REMOTE_DESKTOP_MAX_CLIPBOARD_CHARS) throw new Error('CLIPBOARD_TOO_LONG');
         await this.deps.request(
           this.target!.deviceId,
-          { op: 'clipboard', lease, action: 'paste', text },
+          { op: 'clipboard', lease, action: 'paste', text: local },
           check,
         );
         check();
