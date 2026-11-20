@@ -66,7 +66,6 @@ export function createTrialCloudSettingsClient(): CloudSettingsClient &
     privacy: { analyticsEnabled: true },
     subagentModel: { claudeCode: null, codexSmartSubagentRouting: false },
     auxiliaryModel: { models: [] },
-    visionBridge: { enabled: false, primary: null, fallback: null, targetModels: [] },
     browserBackend: { kind: 'external' },
     memory: { maker: true, claudeCode: false, codex: false, pi: true },
     chatEmbedding: { enabled: true },

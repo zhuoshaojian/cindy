@@ -40,7 +40,8 @@ export function ImBotGroupSection({
   sectionRef,
   idPrefix = '',
 }: {
-  group: ImBotSettingsGroup;
+  /** 「插件」分区不是 ?imGroup= 深链目标，但和其他分区同一套标题与 Tips。 */
+  group: ImBotSettingsGroup | 'plugins';
   children: ReactNode;
   sectionRef?: Ref<HTMLElement>;
   idPrefix?: string;

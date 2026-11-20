@@ -48,7 +48,6 @@ import { CloudDesktopFallback } from './CloudDesktopFallback';
 import {
   CloudAuxiliarySettings,
   CloudSubagentSettings,
-  CloudVisionBridgeSettings,
 } from './CloudModelSettings';
 import type { AvailableShell, ShellId } from '../../../shared/terminal-bridge';
 import { CLOUD_SETTINGS_LOCALES } from '../../../shared/settingsEditableCatalog';
@@ -149,7 +148,6 @@ export const CLOUD_GROUP_TITLE_KEYS: Partial<Record<CloudSettingsDomain, string>
   memory: 'settings.memory.title',
   subagentModel: 'settings.subagentModels.title',
   auxiliaryModel: 'settings.sections.auxiliaryModels',
-  visionBridge: 'settings.visionBridge.title',
   terminal: 'settings.terminalShell.title',
   silentEncryptedRetry: 'settings.compatMode.title',
   chatEmbedding: 'settings.compatMode.title',
@@ -601,18 +599,6 @@ export function NativeCloudSections(props: Props) {
             <CloudAuxiliarySettings
               headingStatus={keptStatus(['auxiliaryModel'])}
               state={s('auxiliaryModel')}
-              disabled={disabled}
-              attempt={confirmSave}
-            />,
-          )}
-        {unreadableHere(['visionBridge'], 'settings-search-target-personalization-vision-bridge')}
-        {ready('visionBridge') &&
-          section(
-            'settings-search-target-personalization-vision-bridge',
-            <CloudVisionBridgeSettings
-              headingStatus={keptStatus(['visionBridge'])}
-              state={s('visionBridge')}
-              deviceId={deviceId}
               disabled={disabled}
               attempt={confirmSave}
             />,

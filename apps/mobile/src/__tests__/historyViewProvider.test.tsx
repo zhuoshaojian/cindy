@@ -115,7 +115,7 @@ const transport = vi.hoisted(() => {
     getStatus = () => this.status;
     getConnectionIssue = () => null;
     getConnectionEpoch = () => 1;
-    needsLinkRecovery = () => false;
+    needsLinkRecovery = (_deviceId: string) => false;
     getReliableSendQueueDepth = () => 0;
     onPeerRouteStateChanged = () => () => {};
     onPeerStreamAccepted = () => () => {};
@@ -128,7 +128,6 @@ const transport = vi.hoisted(() => {
     serverCapabilities: string[] = [];
     hasServerCapability = (capability: string) => this.serverCapabilities.includes(capability);
     isOutboundExplicitlyClosed = vi.fn((_deviceId: string) => false);
-    needsLinkRecovery = (_deviceId: string) => false;
     closeLink = vi.fn();
     // No background recovery owner; each test explicitly starts the fresh read.
     hasPendingRequestsTo = vi.fn((_deviceId: string) => false);

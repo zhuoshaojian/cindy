@@ -9,7 +9,6 @@ import { inspectLspModeSettings } from '../../maker-host/lsp-mode-store.js';
 import { inspectSubagentModelSettings } from '../../maker-host/subagent-model-settings-store.js';
 import { inspectAuxiliaryModelSettings } from '../../utility-model/auxiliary-model-settings-store.js';
 import { inspectBotModelChainSettings } from '../../maker-host/bot-model-chain-settings-store.js';
-import { inspectVisionBridgeSettings } from '../../vision-bridge/vision-bridge-settings-store.js';
 import { inspectTerminalPrefs } from '../../terminal/terminalPrefsStore.js';
 import { inspectWindowBehaviorSettings } from '../../window-behavior-settings-store.js';
 import { inspectDeviceLinkSettings } from '../../device-link/settings-store.desktop.js';
@@ -35,7 +34,6 @@ const stores: CoreSettingsStores = {
   subagentModel: inspectSubagentModelSettings,
   auxiliaryModel: inspectAuxiliaryModelSettings,
   botModelChain: inspectBotModelChainSettings,
-  visionBridge: inspectVisionBridgeSettings,
   terminal: inspectTerminalPrefs,
   windowBehavior: inspectWindowBehaviorSettings,
   deviceLink: inspectDeviceLinkSettings,

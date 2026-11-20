@@ -62,23 +62,6 @@ export function projectCloudSettings(
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 /**
- * Lists whose order means nothing. The shared vision bridge view writes its whole list and appends
- * a model turned back on, so off → on must not leave the same models in a new order as an explicit
- * override. Ordered lists, such as the auxiliary model order, keep the exact comparison.
- */
-const UNORDERED: Partial<Record<CloudSettingsDomain, readonly string[]>> = {
-  visionBridge: ['targetModels'],
-};
-const equal = (domain: CloudSettingsDomain, key: string, a: unknown, b: unknown) => {
-  if (!UNORDERED[domain]?.includes(key) || !Array.isArray(a) || !Array.isArray(b)) return same(a, b);
-  const items = new Set(a.map((item) => JSON.stringify(item)));
-  return (
-    a.length === b.length &&
-    items.size === new Set(b.map((item) => JSON.stringify(item))).size &&
-    b.every((item) => items.has(JSON.stringify(item)))
-  );
-};
-/**
  * What is left to write once the patch is compared with the instance's confirmed state: a value it
  * already holds, or a clear of a key it does not store, is no change, so on → off → on merged into
  * a write of the original value leaves no explicit override.
@@ -96,13 +79,13 @@ const effective = (
     const isDefault =
       !!state.defaults &&
       Object.hasOwn(state.defaults, key) &&
-      equal(state.domain, key, state.defaults[key], value);
+      same(state.defaults[key], value);
     // Back to the default on a key this page's own writes made explicit: clear it instead.
     if (isDefault && unset.has(key)) {
       if (customized(key) && !clear.includes(key)) clear.push(key);
       continue;
     }
-    if (state.value && Object.hasOwn(state.value, key) && equal(state.domain, key, state.value[key], value))
+    if (state.value && Object.hasOwn(state.value, key) && same(state.value[key], value))
       continue;
     set[key] = value;
   }
@@ -110,7 +93,7 @@ const effective = (
 };
 const landed = (state: CloudSettingsState, patch: CloudSettingsPatch) =>
   state.status === 'ready' &&
-  Object.entries(patch.set).every(([key, value]) => equal(state.domain, key, state.value?.[key], value)) &&
+  Object.entries(patch.set).every(([key, value]) => same(state.value?.[key], value)) &&
   patch.clear.every((key) => !state.customizedKeys?.includes(key));
 
 function classify(error: unknown): CloudSyncFailureReason | 'unconfirmed' | 'scope' {

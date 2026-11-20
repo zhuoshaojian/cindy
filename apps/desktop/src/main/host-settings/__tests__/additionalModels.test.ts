@@ -63,7 +63,6 @@ import { readModelContextLimit } from '../../maker-host/model-context-limit-stor
 import { readModelDisableOverrides } from '../../maker-host/model-disable-store.js';
 import { readSubagentModelSettings } from '../../maker-host/subagent-model-settings-store.js';
 import { createHostImDefaultsStore, readImDefaultSettings } from '../../im/defaultSettingsStore.js';
-import { readVisionBridgeSettings, isTargetModelsCustomized } from '../../vision-bridge/vision-bridge-settings-store.js';
 import { nativePluginSettings } from '../additionalPlugins.js';
 import { configureAdditionalNativeOperations } from '../additionalRuntime.js';
 import { commitHostModelPrices, getHostModelPriceStore, readModelPriceOverrideView, inspectModelPriceOverrides } from '../../usage/modelPriceOverrideStore.js';
@@ -137,7 +136,7 @@ describe('model and IM settings native persistence', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toMatchObject({ ...previous, inflightLimits: { 'fixture-plugin': 3 } });
   });
   it('passive reads do not claim legacy files or create defaults', async () => {
-    for (const domain of ['subagentModel', 'auxiliaryModel', 'visionBridge', 'imGlobal', 'imFeishu', 'imWechat'] as const) {
+    for (const domain of ['subagentModel', 'auxiliaryModel', 'imGlobal', 'imFeishu', 'imWechat'] as const) {
       expect(await getHostSettings(caller, domain)).toMatchObject({ status: 'ready', customizedKeys: [] });
     }
     expect(fs.readdirSync(context.root)).toEqual([]);
@@ -218,13 +217,10 @@ describe('model and IM settings native persistence', () => {
     expect(await updateHostSettings(caller, await request('imWechat', { set: { permissionMode: 'bypassPermissions' } }))).toMatchObject({ saved: false });
     expect(readImDefaultSettings('wechat').agentKind).toBe('claude-code');
   });
-  it('invalidates the native vision cache and preserves explicit empty target selection', async () => {
-    expect(readVisionBridgeSettings().enabled).toBe(false);
-    await updateHostSettings(caller, await request('visionBridge', { set: { enabled: true, primary: route, targetModels: [] } }));
-    expect(readVisionBridgeSettings()).toMatchObject({ enabled: true, primary: route, targetModels: [] });
-    expect(isTargetModelsCustomized()).toBe(true);
-    await updateHostSettings(caller, await request('visionBridge', { clear: ['targetModels'] }));
-    expect(isTargetModelsCustomized()).toBe(false);
+  // Upstream removed the vision bridge; the domain stays in the catalog for older clients.
+  it('reports the removed vision bridge as unavailable and rejects writes', async () => {
+    expect(await getHostSettings(caller, 'visionBridge')).toMatchObject({ status: 'unavailable', revision: null });
+    await expect(validateModelSettingsChange('visionBridge', { set: { enabled: true }, clear: [] })).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
   });
   it('updates actual context limits and disabled model/provider maps', async () => {
     const target = { ...route, harness: 'codex' };
@@ -238,9 +234,10 @@ describe('model and IM settings native persistence', () => {
     expect(readModelContextLimit('codex', route.providerId, route.modelId)).toBeNull();
   });
   it('fails closed on corrupt native fields without normalizing away the bytes', async () => {
-    const file = path.join(context.root, 'vision-bridge-settings.json');
-    const raw = '{"enabled":"bad-value"}'; fs.writeFileSync(file, raw);
-    expect(await getHostSettings(caller, 'visionBridge')).toMatchObject({ status: 'unreadable' });
+    const dir = path.join(context.root, 'owners', `test-${context.owner}`); fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'subagent-model-settings.json');
+    const raw = '{"claudeCode":42}'; fs.writeFileSync(file, raw);
+    expect(await getHostSettings(caller, 'subagentModel')).toMatchObject({ status: 'unreadable' });
     expect(fs.readFileSync(file, 'utf8')).toBe(raw);
   });
 });

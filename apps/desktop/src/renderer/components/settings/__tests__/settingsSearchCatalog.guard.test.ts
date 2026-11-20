@@ -84,7 +84,7 @@ describe('settings search anchor contract', () => {
           source.includes('id={`cindy-im-${provider}`}');
         // The shared IM group section builds its anchor from the group for both pages.
         const dynamicGroupAnchor =
-          /^im-bot-group-(cindy|personal)$/.test(target) &&
+          /^im-bot-group-(cindy|personal|plugins)$/.test(target) &&
           source.includes('id={`${idPrefix}im-bot-group-${group}`}');
         expect(
           source.includes('id="' + target + '"') ||

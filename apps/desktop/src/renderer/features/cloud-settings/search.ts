@@ -13,7 +13,6 @@ const targetDomain: Record<string, CloudSettingsDomain> = {
   'settings-search-target-personalization-memory': 'memory',
   'settings-search-target-personalization-subagents': 'subagentModel',
   'settings-search-target-personalization-auxiliary-models': 'auxiliaryModel',
-  'settings-search-target-personalization-vision-bridge': 'visionBridge',
   'settings-search-target-personalization-terminal-shell': 'terminal',
   'settings-search-target-general-language': 'desktopGeneral',
 };

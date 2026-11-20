@@ -186,7 +186,6 @@ describe('production reader to v2 coverage seam', () => {
     write('memory-settings.json', { maker: false });
     write('auxiliary-model-settings.json', { models: [encodeCatalogModelPin({ agentKind: 'codex', providerId: 'private-provider', model: 'private-model' })] });
     write('bot-model-chain-settings.json', { modelChain: [{ harness: 'claude', providerId: 'private-provider', model: 'private-model', effort: 'high', fastMode: true }] });
-    write('vision-bridge-settings.json', { enabled: true, primary: { providerId: 'private-provider', modelId: 'private-model' }, targetModels: ['private-model'] }, false);
     write('voice-input-data.v1.json', { settings: { language: 'ja', microphoneDeviceId: 'private-microphone', dictionarySyncEnabledOverride: false } });
     write('worklouder-codex-settings.json', { customAgentKeys: [{ type: 'task', sessionId: 'private-session' }], deviceEnabled: true });
     write('im-default-settings.json', { schemaVersion: 3, channels: { telegram: { agents: { codex: { model: 'private-model', effort: 'high' } } } } });
@@ -207,6 +206,8 @@ describe('production reader to v2 coverage seam', () => {
     for (const [id, collection] of Object.entries(report.collections)) {
       // Visibility, engines, favorites and per-model tuning live in the app window, as upstream keeps them.
       if (['modelVisibility', 'modelEngines', 'modelFavorites', 'modelParameterHistory'].includes(id)) { expect(collection.status, id).toBe('unavailable'); continue; }
+      // Upstream removed the vision bridge; its frozen collection reads unsupported.
+      if (id === 'visionBridgeTargets') { expect(collection.status, id).toBe('unsupported'); continue; }
       expect(collection.status, id).toBe(id === 'builtinToolOverrides' ? 'partial' : 'complete');
       expect(collection.entries.length, id).toBeGreaterThan(0);
     }

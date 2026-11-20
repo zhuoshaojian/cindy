@@ -9,7 +9,7 @@ import { desktopPreferencePatch, isDesktopPreferenceDomain } from './desktopPref
  */
 const SECTION_OF = {
   appearance: 'appearance', gitSafety: 'git-safety', agentResource: 'agent-resources', memory: 'memory',
-  subagentModel: 'subagent-models', visionBridge: 'vision-bridge', auxiliaryModel: 'auxiliary-models',
+  subagentModel: 'subagent-models', auxiliaryModel: 'auxiliary-models',
   desktopGeneral: 'preferences', desktopChat: 'preferences', desktopNotifications: 'preferences',
 } as const;
 export type UpstreamSectionDomain = keyof typeof SECTION_OF;
@@ -17,7 +17,7 @@ export const isUpstreamSectionDomain = (domain: string): domain is UpstreamSecti
 
 // Defaults these sections cannot restore by writing a value; only a section reset does.
 const RESET_ONLY: Partial<Record<UpstreamSectionDomain, readonly string[]>> = {
-  gitSafety: ['autoSnapshotEnabled'], visionBridge: ['targetModels'], auxiliaryModel: ['models'],
+  gitSafety: ['autoSnapshotEnabled'], auxiliaryModel: ['models'],
 };
 
 type Values = Record<string, unknown>;

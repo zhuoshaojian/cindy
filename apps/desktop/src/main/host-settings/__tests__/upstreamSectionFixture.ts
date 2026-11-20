@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { registerRuntimeSettingsSection } from '../../app-settings/runtime.js';
 import { writeMemorySetting, resetMemorySettings, readMemorySettingsState } from '../../maker-host/memory-settings-store.js';
 import { writeSubagentModelSettingsPatch, resetSubagentModelSettings, readSubagentModelSettingsState } from '../../maker-host/subagent-model-settings-store.js';
-import { writeVisionBridgeSettings, resetVisionBridgeSettings, readVisionBridgeSettingsState } from '../../vision-bridge/vision-bridge-settings-store.js';
 import { writeAuxiliaryModelSettingsPatch, resetAuxiliaryModelSettings, readAuxiliaryModelSettingsState } from '../../utility-model/auxiliary-model-settings-store.js';
 
 /**
@@ -17,8 +16,6 @@ export function registerUpstreamRuntimeSectionsForTest(): void {
     reset: () => { resetMemorySettings(); } });
   registerRuntimeSettingsSection({ ...meta, id: 'subagent-models', read: readSubagentModelSettingsState,
     update: patch => writeSubagentModelSettingsPatch(patch as never), reset: () => { resetSubagentModelSettings(); } });
-  registerRuntimeSettingsSection({ ...meta, id: 'vision-bridge', read: readVisionBridgeSettingsState,
-    update: patch => writeVisionBridgeSettings(patch as never), reset: () => { resetVisionBridgeSettings(); } });
   registerRuntimeSettingsSection({ ...meta, id: 'auxiliary-models', read: readAuxiliaryModelSettingsState,
     update: patch => writeAuxiliaryModelSettingsPatch(patch as never), reset: async () => { await resetAuxiliaryModelSettings(); } });
 }

@@ -173,7 +173,8 @@ const core = {
     codexSmartSubagentRouting: bool }, 'personalization', 'SubagentModelSection', 'shared/subagentModelSettings.ts#SUBAGENT_MODEL_CARD_KEYS', 'owner', 'nextAgentStart', 'publicReference'),
   ...group('auxiliaryModel', { models: z.array(modelRoute).max(3) }, 'personalization', 'AuxiliaryModelSection', 'shared/auxiliaryModelSettings.ts#AuxiliaryModelSettings', 'owner', 'nextTask', 'safeProjection'),
   ...group('botModelChain', { modelChain: z.array(route).max(5) }, 'general', 'BotsGlobalSettingsSection', 'shared/botModelChain.ts#BotModelRoute', 'owner', 'nextTask', 'safeProjection'),
-  ...group('visionBridge', { enabled: bool, primary: modelRoute.nullable(), fallback: modelRoute.nullable() }, 'personalization', 'VisionBridgeSection', 'shared/visionBridgeSettings.ts#VisionBridgeSettings', 'profile', 'nextTask', 'safeProjection'),
+  // Upstream removed the vision bridge; the frozen v2 fields always read unsupported.
+  ...group('visionBridge', { enabled: bool, primary: modelRoute.nullable(), fallback: modelRoute.nullable() }, 'personalization', 'VisionBridgeSection', 'main/host-settings/readers/core.ts', 'profile', 'nextTask', 'safeProjection'),
   // Smart Contacts lives in the cindy-contacts plugin; the frozen v2 fields always read unsupported.
   ...group('contacts', { enabled: bool, deviceSyncEnabled: bool }, 'personalization', 'ContactsSection', 'main/host-settings/readers/core.ts', 'owner'),
   ...group('silentEncryptedRetry', { enabled: bool }, 'general', 'SilentEncryptedRetryCell', 'main/maker-host/silent-encrypted-retry-store.ts'),
@@ -305,7 +306,7 @@ export const SETTINGS_READ_COLLECTION_CATALOG = {
     cacheReadPerMtok: number(0, Number.MAX_VALUE).nullable().optional(), cacheCreatePerMtok: number(0, Number.MAX_VALUE).nullable().optional(),
   }), 'providers', 'ModelPriceOverrideDialog', 'shared/modelPriceOverride.ts'),
   modelParameterHistory: collectionDefinition(z.strictObject({ ...entryBase, effort: effort.optional(), fast: bool.optional(), thinking: bool.optional(), lastSelected: bool }), 'providers', 'UnifiedModelList', 'shared/newTaskPreferenceHistory.ts'),
-  visionBridgeTargets: collectionDefinition(z.strictObject({ ...entryBase, model: settingsReadReferenceSchema }), 'personalization', 'VisionBridgeSection', 'shared/visionBridgeSettings.ts', 'profile'),
+  visionBridgeTargets: collectionDefinition(z.strictObject({ ...entryBase, model: settingsReadReferenceSchema }), 'personalization', 'VisionBridgeSection', 'main/host-settings/readers/core.ts', 'profile'),
   imWorkspacePrefs: collectionDefinition(z.strictObject({ ...entryBase, channel: z.enum(['slack', 'telegram', 'x']), harness: harness.nullable(), modelConfigured: bool,
     effort: effort.nullable(), permissionMode: permission.nullable(), dirty: bool }), 'im-bot', 'HookWorkspacePrefsEditor', 'main/hook-control/workspacePrefsStore.ts'),
   telegramGroupActivation: collectionDefinition(z.strictObject({ ...entryBase, mode: z.enum(['mention', 'always']) }), 'im-bot', 'TelegramBehaviorSettings', 'main/im/telegram/behaviorStore.ts'),

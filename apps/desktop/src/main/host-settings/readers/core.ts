@@ -31,7 +31,6 @@ export interface CoreSettingsStores {
   subagentModel: typeof import('../../maker-host/subagent-model-settings-store.js').inspectSubagentModelSettings;
   auxiliaryModel: typeof import('../../utility-model/auxiliary-model-settings-store.js').inspectAuxiliaryModelSettings;
   botModelChain: typeof import('../../maker-host/bot-model-chain-settings-store.js').inspectBotModelChainSettings;
-  visionBridge: typeof import('../../vision-bridge/vision-bridge-settings-store.js').inspectVisionBridgeSettings;
   terminal: typeof import('../../terminal/terminalPrefsStore.js').inspectTerminalPrefs;
   windowBehavior: typeof import('../../window-behavior-settings-store.js').inspectWindowBehaviorSettings;
   deviceLink: typeof import('../../device-link/settings-store.desktop.js').inspectDeviceLinkSettings;
@@ -131,13 +130,11 @@ export function readCoreSettings(deps: {
   // 语音润色共用辅助模型链；复用同一次观察，不能二次读出另一份事实。
   fields['voice.refinerChain'] = fields['auxiliaryModel.models']!;
   read('botModelChain', ['modelChain'], () => s.botModelChain(context.ownerRoot));
-  const vision = inspect(() => s.visionBridge());
-  publish('visionBridge', ['enabled', 'primary', 'fallback'], vision);
-  collections.visionBridgeTargets = vision.status === 'ready'
-    ? { status: 'value', total: vision.value.targetModels.length, complete: true,
-      entries: vision.value.targetModels.map((model, index) => ({ key: String(index + 1),
-        fields: { model: inspectedValue(model, vision.sources.targetModels) } })) }
-    : { status: vision.status };
+  // Upstream removed the vision bridge; the snapshot contract keeps its fields, now unsupported.
+  fields['visionBridge.enabled'] = { status: 'unsupported' };
+  fields['visionBridge.primary'] = { status: 'unsupported' };
+  fields['visionBridge.fallback'] = { status: 'unsupported' };
+  collections.visionBridgeTargets = { status: 'unsupported' };
   read('terminal', ['defaultShellPref'], () => s.terminal());
   fields['windowBehavior.windowsCloseBehavior'] = { status: 'unsupported' };
   fields['windowBehavior.linuxCloseBehavior'] = { status: 'unsupported' };

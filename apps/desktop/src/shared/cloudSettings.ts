@@ -22,7 +22,6 @@ export const CLOUD_SETTINGS_GROUPS = {
     'memory',
     'subagentModel',
     'auxiliaryModel',
-    'visionBridge',
     'chatEmbedding',
     'silentEncryptedRetry',
     'terminal',

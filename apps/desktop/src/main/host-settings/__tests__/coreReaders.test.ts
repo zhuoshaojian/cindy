@@ -57,7 +57,6 @@ import { inspectLspModeSettings } from '../../maker-host/lsp-mode-store.js';
 import { inspectSubagentModelSettings } from '../../maker-host/subagent-model-settings-store.js';
 import { inspectAuxiliaryModelSettings } from '../../utility-model/auxiliary-model-settings-store.js';
 import { inspectBotModelChainSettings } from '../../maker-host/bot-model-chain-settings-store.js';
-import { inspectVisionBridgeSettings } from '../../vision-bridge/vision-bridge-settings-store.js';
 import { inspectTerminalPrefs } from '../../terminal/terminalPrefsStore.js';
 import { inspectWindowBehaviorSettings } from '../../window-behavior-settings-store.js';
 import { inspectDeviceLinkSettings } from '../../device-link/settings-store.desktop.js';
@@ -79,7 +78,7 @@ const stores: CoreSettingsStores = {
   silentEncryptedRetry: inspectSilentEncryptedRetrySettings,
   chatEmbedding: inspectChatEmbeddingSettings, lsp: inspectLspModeSettings,
   subagentModel: inspectSubagentModelSettings, auxiliaryModel: inspectAuxiliaryModelSettings,
-  botModelChain: inspectBotModelChainSettings, visionBridge: inspectVisionBridgeSettings,
+  botModelChain: inspectBotModelChainSettings,
   terminal: inspectTerminalPrefs, windowBehavior: inspectWindowBehaviorSettings,
   deviceLink: inspectDeviceLinkSettings, updateChannel: inspectUpdateChannelSettings,
   autoUpdate: inspectAutoUpdateSettings, analytics: inspectAnalyticsSettings,
@@ -124,7 +123,6 @@ const fixtures: Fixture[] = [
   { file: 'bot-model-chain-settings.json', owner: true, inspect: () => inspectBotModelChainSettings(ownerRoot()), leaf: 'modelChain',
     value: [{ harness: 'pi', model: 'retired-private-model', providerId: 'private-provider', effort: 'old-effort', fastMode: true }],
     expected: [{ harness: 'pi', model: 'retired-private-model', providerId: 'private-provider', effort: 'old-effort', fastMode: true }], bad: [{ model: false }] },
-  { file: 'vision-bridge-settings.json', inspect: inspectVisionBridgeSettings, leaf: 'primary', value: { providerId: 'private-provider', modelId: 'retired-private-model' }, expected: { providerId: 'private-provider', modelId: 'retired-private-model' }, bad: { providerId: 42, modelId: 'x' } },
   { file: 'terminal-prefs.json', inspect: inspectTerminalPrefs, leaf: 'defaultShellPref', value: 'wsl', expected: 'wsl', bad: 'unknown-shell', source: 'unknown' },
   { file: 'window-behavior-settings.json', inspect: inspectWindowBehaviorSettings, leaf: 'windowsCloseBehavior', value: 'tray', expected: 'tray', bad: 'hide' },
   { file: 'device-link-settings.json', inspect: inspectDeviceLinkSettings, leaf: 'keepAwake', value: true, expected: true, bad: 'true', source: 'unknown' },
@@ -291,13 +289,13 @@ it('does not silently accept empty consent or crash preference records', () => {
 it('aggregates all fixed leaves with native facts, bounded-domain error isolation, and no private device records', () => {
   write(path.join(state.root, 'collaboration-settings.json'), { workerSoftLimit: 'invalid' });
   write(path.join(state.root, 'device-link-settings.json'), { keepAwake: true, revokedControllers: ['private-device'], lastKnownDeviceNames: { secret: 'private-name' } });
-  write(path.join(state.root, 'vision-bridge-settings.json'), { targetModels: ['private-model-a', 'private-model-b'] });
   const result = unchanged(() => readCoreSettings({ getContext: context, stores }));
   expect(Object.keys(result.fields).sort()).toEqual([...CORE_SETTINGS_FIELD_IDS].sort());
   expect(result.fields['collaboration.workerSoftLimit']).toEqual({ status: 'unreadable' });
   expect(result.fields['gitSafety.autoSnapshotEnabled']).toEqual({ status: 'value', value: true, source: 'default' });
-  expect(result.collections?.visionBridgeTargets).toMatchObject({ status: 'value', total: 2, complete: true,
-    entries: [{ key: '1', fields: { model: { value: 'private-model-a', source: 'override' } } }, { key: '2' }] });
+  // Upstream removed the vision bridge; its snapshot fields stay in the contract as unsupported.
+  expect(result.fields['visionBridge.enabled']).toEqual({ status: 'unsupported' });
+  expect(result.collections?.visionBridgeTargets).toEqual({ status: 'unsupported' });
   expect(JSON.stringify(result)).not.toContain('private-device');
   expect(JSON.stringify(result)).not.toContain('private-name');
   for (const id of CORE_SETTINGS_FIELD_IDS) expect(SETTINGS_READ_CATALOG[id]).toBeDefined();
@@ -332,8 +330,6 @@ it.each(['owner', 'generation', 'profile'] as const)('invalidates the complete a
 });
 
 it.each([
-  ['vision-bridge-settings.json', { targetModels: [true] }, inspectVisionBridgeSettings],
-  ['vision-bridge-settings.json', { fallback: [] }, inspectVisionBridgeSettings],
   ['device-link-settings.json', { lastKnownDeviceNames: [] }, inspectDeviceLinkSettings],
   ['device-link-settings.json', { revokedControllers: [false] }, inspectDeviceLinkSettings],
   ['device-link-settings.json', { lastKnownDeviceNames: { device: 2 } }, inspectDeviceLinkSettings],

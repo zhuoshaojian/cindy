@@ -8,7 +8,6 @@ import { additionalSettingsSchema, settingsValuesEqual, isImSettingsDomain, isMo
 import type { HostSettingState } from '../../shared/hostSettings.js';
 import { getSubagentModelSettingsStore } from '../maker-host/subagent-model-settings-store.js';
 import { getAuxiliaryModelSettingsStore, inspectAuxiliaryModelSettings } from '../utility-model/auxiliary-model-settings-store.js';
-import { getVisionBridgeSettingsStore } from '../vision-bridge/vision-bridge-settings-store.js';
 import { ownerScopedUserDataPath } from '../appSessionState.js';
 import { currentSettingsOwner } from './personalization.js';
 import { readSettingsModelCatalog } from './catalog.js';
@@ -27,8 +26,7 @@ import { getHostModelPriceCurrencies } from '../usage/modelPriceOverrideStore.js
 type Values = Record<string, SettingsEditableValue>;
 type State = HostSettingState<Values>;
 export type SettingsChoice = { value: SettingsEditableValue; label: string; efforts?: string[]; supportsFast?: boolean };
-const stores = { subagentModel: getSubagentModelSettingsStore, auxiliaryModel: getAuxiliaryModelSettingsStore,
-  visionBridge: getVisionBridgeSettingsStore };
+const stores = { subagentModel: getSubagentModelSettingsStore, auxiliaryModel: getAuxiliaryModelSettingsStore };
 function storeFor(domain: ModelSettingsDomain) { return stores[domain as keyof typeof stores]() as unknown as OverrideSettingsFile<Values>; }
 function project(domain: ModelSettingsDomain, state: State): State {
   if (state.status !== 'ready') return state;
@@ -46,6 +44,8 @@ export function inspectModelSettings(domain: ModelSettingsDomain): State {
   try {
     if (isModelPreferenceDomain(domain)) return inspectModelPreferences(domain);
     if (isImSettingsDomain(domain)) return inspectImSettings(domain);
+    // Upstream removed the vision bridge; the editable catalog keeps the domain for older clients.
+    if (domain === 'visionBridge') return { status: 'unavailable', revision: null };
     if (domain === 'auxiliaryModel') {
       const ownerId = currentSettingsOwner()?.dataOwnerId;
       if (!ownerId || inspectAuxiliaryModelSettings({ ownerId, ownerRoot: ownerScopedUserDataPath(), userDataPath: app.getPath('userData') }).status !== 'ready') {
@@ -92,11 +92,7 @@ export async function modelSettingsChoices(domain: ModelSettingsDomain): Promise
       ])),
     };
   } else if (domain === 'subagentModel') choices = { claudeCode: models.filter(item => item.agent === 'claude-code').map(({ provider, model }) => ({ value: { providerId: provider.id, modelId: model.id }, label: `${model.name} · ${provider.name}` })) };
-  else if (domain === 'visionBridge') {
-    const backends = unique(models.filter(({ provider, model }) => provider.auth.method !== 'oauth' && classifyVisionCapability(model.id) !== 'no-vision')
-      .map(({ provider, model }) => ({ value: { providerId: provider.id, modelId: model.id }, label: `${model.name} · ${provider.name}` })));
-    choices = { primary: backends, fallback: backends, targetModels: unique(models.map(({ model }) => ({ value: model.id, label: model.name }))) };
-  } else if (domain === 'auxiliaryModel') {
+  else if (domain === 'auxiliaryModel') {
     choices = { models: buildTextOneshotPinOptions(getActiveCatalog(), readModelDisableOverrides(), readProviderOrder(), hasOneshotProviderCredential)
       .map(option => ({ value: option.id, label: option.label })) };
   } else choices = { modelChain: models.map(({ provider, model, agent }) => ({ value: {
@@ -116,7 +112,8 @@ export function captureSettingsModelGuard() {
   return assertCurrent;
 }
 export async function validateModelSettingsChange(domain: ModelSettingsDomain, change: { set: Values; clear: string[] }) {
-  if (domain === 'botModelChain') throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
+  // Upstream has no teammate model chain editor and no vision bridge; neither can be written here.
+  if (domain === 'botModelChain' || domain === 'visionBridge') throw new HostSettingsError('UNSUPPORTED_CAPABILITY');
   const assertCurrent = captureSettingsModelGuard();
   const choices = await modelSettingsChoices(domain);
   assertCurrent();
@@ -146,7 +143,7 @@ export async function commitModelSettings(domain: ModelSettingsDomain, change: {
   if (isModelPresentationDomain(domain)) return commitModelPresentationDomain(domain, change, () => options.assertCurrent?.());
   if (isModelPreferenceDomain(domain)) return commitModelPreferences(domain, change, options);
   if (isImSettingsDomain(domain)) return commitImSettings(domain, change, options);
-  // subagentModel, auxiliaryModel and visionBridge are saved through their upstream sections.
+  // subagentModel and auxiliaryModel are saved through their upstream sections.
   const result = await storeFor(domain).commitAtomic(change, options);
   return project(domain, result as State) as State & { status: 'ready' };
 }
@@ -154,16 +151,12 @@ export async function commitModelSettings(domain: ModelSettingsDomain, change: {
 /** Interpret dynamic defaults without writing them as overrides. */
 export async function readModelSettings(domain: ModelSettingsDomain) {
   // Upstream has no global teammate model chain editor; it stays read-only.
-  if (domain === 'botModelChain') return { status: 'unavailable' as const, revision: null };
+  if (domain === 'botModelChain' || domain === 'visionBridge') return { status: 'unavailable' as const, revision: null };
   const before = await currentModelSettings(domain);
   if (before.status !== 'ready') return before;
   const choices = await modelSettingsChoices(domain);
   let value = before.value, defaults = before.defaults;
-  if (domain === 'visionBridge') {
-    const targetModels = choices.targetModels!.map(choice => choice.value as string).filter(id => classifyVisionCapability(id) === 'no-vision');
-    defaults = { ...defaults, targetModels };
-    if (!before.customizedKeys.includes('targetModels')) value = { ...value, targetModels };
-  } else if (domain === 'auxiliaryModel') {
+  if (domain === 'auxiliaryModel') {
     const native = inspectAuxiliaryModelSettings({ ownerId: currentSettingsOwner()!.dataOwnerId!, ownerRoot: ownerScopedUserDataPath(), userDataPath: app.getPath('userData') });
     if (native.status !== 'ready') throw new HostSettingsError('UNREADABLE');
     if (native.sources.models === 'override' && !before.customizedKeys.includes('models')) {

@@ -1,11 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { SubagentModelSectionView } from '@/components/settings/SubagentModelSection';
-import { VisionBridgeSectionView } from '@/components/settings/VisionBridgeSection';
 import { AuxiliaryModelSectionView } from '@/components/settings/AuxiliaryModelSection';
 import { useDeviceProviders } from '@/hooks/useDeviceProviders';
 import { decodeCatalogModelPin } from '../../../shared/catalogModelPin';
 import type { AuxiliaryModelOption } from '../../../shared/auxiliaryModelSettings';
-import type { VisionBackendRef } from '../../../shared/visionBridgeSettings';
 import type { CloudSettingsDomain, CloudSettingsState } from '../../../shared/cloudSettings';
 
 /** Resolves true once the target confirmed the write; failures are already reported. */
@@ -67,49 +65,6 @@ export function CloudSubagentSettings({
       setSmartRouting={(next) =>
         void attempt('subagentModel', { codexSmartSubagentRouting: next })
       }
-    />
-  );
-}
-
-/**
- * Vision bridge on the target. Rows and backend candidates come from the target
- * catalog. The view's pickers receive that catalog directly rather than a
- * deviceId: the picker ignores its catalog override for remote devices, which
- * would drop the vision-capable filter.
- */
-export function CloudVisionBridgeSettings({
-  state,
-  deviceId,
-  disabled,
-  attempt,
-  headingStatus,
-}: {
-  state: CloudSettingsState;
-  deviceId: string;
-  disabled: boolean;
-  attempt: Attempt;
-  /** The group could not be read: the status in its heading row. */
-  headingStatus?: ReactNode;
-}) {
-  const catalog = useDeviceProviders(deviceId);
-  const value = state.value ?? {};
-  const backend = (raw: unknown) => (isRoute(raw) && raw.providerId ? (raw as VisionBackendRef) : null);
-  return (
-    <VisionBridgeSectionView
-      headingStatus={headingStatus}
-      providers={catalog.providers}
-      providersLoading={catalog.loading}
-      enabled={value.enabled === true}
-      targetModels={Array.isArray(value.targetModels) ? value.targetModels.map(String) : []}
-      primary={backend(value.primary)}
-      fallback={backend(value.fallback)}
-      isCustomized={!!state.isCustomized}
-      targetModelsCustomized={state.customizedKeys?.includes('targetModels') ?? false}
-      pending={disabled}
-      persistPatch={(patch) => attempt('visionBridge', patch)}
-      resetTargetModels={async () => {
-        await attempt('visionBridge', {}, ['targetModels']);
-      }}
     />
   );
 }

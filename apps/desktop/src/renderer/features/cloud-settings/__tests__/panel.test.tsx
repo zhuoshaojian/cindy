@@ -44,7 +44,6 @@ vi.mock('../CloudModelSettings', () => ({
   CloudAuxiliarySettings: () => null,
   CloudBotsSettings: () => null,
   CloudSubagentSettings: () => null,
-  CloudVisionBridgeSettings: () => null,
 }));
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({
   useConfirmDialog: () => ({ confirm: vi.fn(async () => true) }),
@@ -648,7 +647,6 @@ describe('the shown cloud settings', () => {
     for (const shown of [
       'settings-search-target-personalization-subagents',
       'settings-search-target-personalization-auxiliary-models',
-      'settings-search-target-personalization-vision-bridge',
       'settings-search-target-personalization-terminal-shell',
       'settings-search-target-personalization-tips',
     ])

@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => {
       collaboration: inspect(), agentResource: inspect(), gitSafety: inspect(), memory: inspect(),
       compaction: inspect(), piCompaction: inspect(), silentEncryptedRetry: inspect(),
       chatEmbedding: inspect(), lsp: inspect(), subagentModel: inspect(), auxiliaryModel: inspect(),
-      botModelChain: inspect(), visionBridge: inspect(), terminal: inspect(), windowBehavior: inspect(),
+      botModelChain: inspect(), terminal: inspect(), windowBehavior: inspect(),
       deviceLink: inspect(), updateChannel: inspect(), autoUpdate: inspect(), analytics: inspect(),
       logUpload: inspect(),
     },
@@ -32,7 +32,6 @@ vi.mock('../../maker-host/lsp-mode-store.js', () => ({ inspectLspModeSettings: m
 vi.mock('../../maker-host/subagent-model-settings-store.js', () => ({ inspectSubagentModelSettings: mocks.stores.subagentModel }));
 vi.mock('../../utility-model/auxiliary-model-settings-store.js', () => ({ inspectAuxiliaryModelSettings: mocks.stores.auxiliaryModel }));
 vi.mock('../../maker-host/bot-model-chain-settings-store.js', () => ({ inspectBotModelChainSettings: mocks.stores.botModelChain }));
-vi.mock('../../vision-bridge/vision-bridge-settings-store.js', () => ({ inspectVisionBridgeSettings: mocks.stores.visionBridge }));
 vi.mock('../../terminal/terminalPrefsStore.js', () => ({ inspectTerminalPrefs: mocks.stores.terminal }));
 vi.mock('../../window-behavior-settings-store.js', () => ({ inspectWindowBehaviorSettings: mocks.stores.windowBehavior }));
 vi.mock('../../device-link/settings-store.desktop.js', () => ({ inspectDeviceLinkSettings: mocks.stores.deviceLink }));
@@ -80,7 +79,8 @@ describe('core production reader adapter', () => {
       expect(inspect, name).toHaveBeenCalledTimes(applicable ? 1 : 0);
     }
     expect(result.fields['collaboration.workerSoftLimit']).toEqual({ status: 'unreadable' });
-    expect(result.collections?.visionBridgeTargets).toEqual({ status: 'unreadable' });
+    // Upstream removed the vision bridge; its frozen collection reads unsupported without a store.
+    expect(result.collections?.visionBridgeTargets).toEqual({ status: 'unsupported' });
     expect(result.fields['voice.refinerChain']).toBe(result.fields['auxiliaryModel.models']);
     const context = mocks.context!;
     for (const name of ['memory', 'compaction', 'piCompaction', 'subagentModel', 'botModelChain'] as const) {

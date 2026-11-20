@@ -259,49 +259,14 @@ describe('optimistic cloud settings sync', () => {
       expect(memory().customizedKeys).toEqual(['maker']);
     });
 
-    // The shared vision bridge view writes its whole list and appends a model turned back on, so
-    // off → on gives the same models in a new order, which is not an override.
-    describe('vision bridge models, which are a set', () => {
-      const MODELS = ['deepseek-v4', 'glm-5.2', 'kimi-k3'];
-      async function vision(customizedKeys: string[], targetModels = MODELS) {
-        const { save, sync } = await setupGroups();
-        const [state] = await createTrialCloudSettingsClient().read(['visionBridge']);
-        sync.ingest(
-          [
-            {
-              ...state!,
-              value: { ...state!.value, enabled: true, targetModels },
-              defaults: { ...state!.defaults, targetModels: MODELS },
-              customizedKeys,
-              isCustomized: customizedKeys.length > 0,
-            },
-          ],
-          sync.stamp(),
-        );
-        const view = () => sync.view().visionBridge!;
-        return { save, sync, view };
-      }
-      it.each([
-        ['at the default', ['enabled']],
-        ['already customized', ['enabled', 'targetModels']],
-      ])('writes nothing for a model turned off and on %s', async (_label, customizedKeys) => {
-        const { save, sync, view } = await vision(customizedKeys, ['kimi-k3', 'deepseek-v4', 'glm-5.2']);
-        sync.change('visionBridge', { targetModels: ['kimi-k3', 'glm-5.2'] });
-        sync.change('visionBridge', { targetModels: ['kimi-k3', 'glm-5.2', 'deepseek-v4'] });
-        await vi.advanceTimersByTimeAsync(0);
-        expect(save).not.toHaveBeenCalled();
-        // enabled keeps its own customization either way.
-        expect(view().customizedKeys).toEqual(customizedKeys);
-      });
-      it('still writes a new order of a list whose order matters', async () => {
-        const { save, sync } = await vision([]);
-        const [auxiliary] = await createTrialCloudSettingsClient().read(['auxiliaryModel']);
-        sync.ingest([{ ...auxiliary!, value: { models: ['a', 'b'] } }], sync.stamp());
-        sync.change('auxiliaryModel', { models: ['b', 'a'] });
-        await vi.advanceTimersByTimeAsync(0);
-        expect(save).toHaveBeenCalledTimes(1);
-        expect(save.mock.calls[0][1]).toEqual({ models: ['b', 'a'] });
-      });
+    it('writes a new order of a list whose order matters', async () => {
+      const { save, sync } = await setupGroups();
+      const [auxiliary] = await createTrialCloudSettingsClient().read(['auxiliaryModel']);
+      sync.ingest([{ ...auxiliary!, value: { models: ['a', 'b'] } }], sync.stamp());
+      sync.change('auxiliaryModel', { models: ['b', 'a'] });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(save.mock.calls[0][1]).toEqual({ models: ['b', 'a'] });
     });
 
     it('writes nothing when a stepper is clamped back to the saved value', async () => {

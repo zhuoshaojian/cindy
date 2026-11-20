@@ -42,6 +42,7 @@ function authValue(session: CisSession): AuthContextValue {
     isAuthenticated: true,
     isCanary: false,
     isInitializing: false,
+    hostUnavailableReason: null,
     deviceId: null,
     loginState: null,
     loadLoginState: unavailable,
