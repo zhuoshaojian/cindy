@@ -1,0 +1,10 @@
+{
+  "commit": "084779948b2c995d1954e20f4d690b6a659804a6",
+  "upstream": "v0.1.136",
+  "cloudParent": "d6978c2c09ccbfd4734e0315da97c9e412767228",
+  "baseRecipeCommit": "832c04c8179438a30beb8ab58c5067194e7eb204",
+  "packagingAllowed": true,
+  "formalPromotionAllowed": false,
+  "includedPatch": {},
+  "scope": "fork-upstream-0136-validation"
+}

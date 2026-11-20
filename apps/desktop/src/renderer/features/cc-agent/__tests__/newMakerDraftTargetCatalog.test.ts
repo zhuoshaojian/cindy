@@ -30,6 +30,7 @@ import {
   type RemoteDraftDefaults,
 } from '../deviceLinkDraftDefaults';
 import { isSameNewMakerDevice } from '../lib/newMakerRouteState';
+import { isCloudDeviceId } from '@/features/cloud-settings/cloudDeviceId';
 import { rememberRemoteDraftDefaults } from '../remoteDraftDefaultsCache';
 
 // Run the real async project-selection and target-transition callbacks. Only their
@@ -1392,13 +1393,17 @@ describe('the remote draft holder follows the displayed model', () => {
       deviceLinkInitial: staleHolder,
       remoteDraftRevisionRef: { current: 0 },
       forgetRemoteDraftDefaults: vi.fn(),
+      isCloudDeviceId,
       window: { electronAPI: { deviceLink: { invoke } } },
       invoke,
     };
   }
   function pushPref(bindings: ReturnType<typeof pushBindings>) {
     return callback<
-      (patch: { effort?: Effort; fast?: boolean | 'ultrafast' }) => void
+      (
+        patch: { effort?: Effort; fast?: boolean | 'ultrafast' },
+        target?: { agent: string; providerId: string | null; modelId: string; markModelChoice?: boolean },
+      ) => void
     >('pushActiveDraftPref', bindings);
   }
 
@@ -1427,6 +1432,37 @@ describe('the remote draft holder follows the displayed model', () => {
       agent: 'codex', providerId: 'new-source', modelId: 'new-model', active: true, fast: false,
       markModelChoice: explicit, ...(explicit ? { selectDraftAgent: true } : {}),
     }]);
+  });
+
+  // 测试价值:生产入口 handleModelDidChange(编译路由源码里的真实回调，只替换隧道)。只有托管云实例
+  // 把换模型写穿到被控端的新建任务记忆;其它电脑与上游一致，换模型只改控制端草稿。
+  // 最小失败输入:非云 device id 上的一次换模型。tier:unit。
+  const cloudDevice = 'cloud-device-0123456789abcdef01234567';
+  it.each([
+    { deviceId: 'target-device', writes: 0 },
+    { deviceId: cloudDevice, writes: 1 },
+  ])('writes a model change through to the remote memory only on a managed cloud instance: $deviceId', ({ deviceId, writes }) => {
+    const pushActiveDraftPref = vi.fn();
+    const handleModelDidChange = compile<(modelId: string) => void>('handleModelDidChange:write-through',
+      node => ts.isVariableDeclaration(node) && node.name.getText(source) === 'handleModelDidChange'
+        && node.initializer && ts.isCallExpression(node.initializer)
+        ? node.initializer.arguments[0]
+        : undefined, {
+        sshCodexDraftHostId: null, patchSshDraftSelection: vi.fn(), usesDeviceCatalog: true,
+        dlRuntimeTouchedRef: { current: false }, dlExplicitChoiceRef: { current: false },
+        capabilities: {
+          availableModels: [{ id: 'shared-model', displayName: 'Shared model', contextWindow: 200_000,
+            efforts: [], defaultEffort: null, effortsUnknown: false }],
+          hasFastMode: false, effortLevels: [], permissionModes: [],
+        } satisfies AgentCapabilities,
+        deviceDraftDefaults: null, capabilityAgentKind: 'pi', agentCatalogProviders: [],
+        catalogDeviceId: deviceId, effectiveDeviceLinkDeviceId: deviceId,
+        resolveDeviceLinkDraftDefaults, setDlSel: vi.fn(), pushActiveDraftPref,
+        dlSel: staleHolder, deviceLinkInitial: staleHolder, isCloudDeviceId,
+        markDefaultTupleCustomized: vi.fn(), patchActiveTuplePrefs: vi.fn(),
+      });
+    handleModelDidChange('shared-model');
+    expect(pushActiveDraftPref).toHaveBeenCalledTimes(writes);
   });
 
   it('writes the displayed model to the controlled draft, not the stale seed model', () => {
@@ -1645,6 +1681,9 @@ describe('the seed keeps a restored explicit choice', () => {
       dlSeedKeyRef: { current: null as string | null },
       dlSeedCapabilitiesRef: { current: null as unknown },
       dlSeedDefaultsRef: { current: null as unknown },
+      dlSeedProvidersRef: { current: null as unknown },
+      deviceProvidersError: null,
+      isCloudDeviceId,
       dlRuntimeTouchedRef,
       dlExplicitChoiceRef,
       setDlSel,

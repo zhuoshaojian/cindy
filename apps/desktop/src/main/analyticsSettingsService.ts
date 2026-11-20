@@ -98,7 +98,7 @@ export function analyticsSettingsPayload(): AnalyticsSettingsPayload {
   };
 }
 
-function broadcastSettingsChange(): void {
+export function broadcastAnalyticsSettingsChange(): void {
   productTokens?.prepare();
   const payload = analyticsSettingsPayload();
   for (const win of BrowserWindow.getAllWindows()) {
@@ -144,7 +144,7 @@ function broadcastSettingsChange(): void {
  */
 function migrateOrLog(): void {
   try {
-    if (migrateExistingLoginAsConsented(true)) broadcastSettingsChange();
+    if (migrateExistingLoginAsConsented(true)) broadcastAnalyticsSettingsChange();
   } catch (err) {
     log.warn('existing-login consent migration failed (non-fatal)', err);
   }
@@ -267,7 +267,7 @@ export function initAnalyticsSettingsService(reporter?: ProductTokens): void {
     // 那道闸在密钥链暂不可用时会保守地拒绝关窗,而此处的确定性不依赖任何探测。
     // 幂等(closeLegacyConsentMigration 自带 no-op 早返回),不写用户偏好。
     if (authManager.isLocalMode()) sealMigrationWindowOrLog();
-    broadcastSettingsChange();
+    broadcastAnalyticsSettingsChange();
   });
 
   ipcMain.handle('analytics:settings-get', (event) => {
@@ -281,7 +281,7 @@ export function initAnalyticsSettingsService(reporter?: ProductTokens): void {
     const enabled = rawEnabled === true;
     if (!enabled) writeOrThrowIpcError(() => productTokens?.revokeAll(), 'clear token reporting grants failed');
     writeOrThrowIpcError(() => setAnalyticsEnabled(enabled), 'write analytics setting failed');
-    broadcastSettingsChange();
+    broadcastAnalyticsSettingsChange();
     return analyticsSettingsPayload();
   });
 
@@ -293,14 +293,14 @@ export function initAnalyticsSettingsService(reporter?: ProductTokens): void {
       () => clearAnalyticsEnabledOverride(),
       'clear analytics enabled override failed',
     );
-    broadcastSettingsChange();
+    broadcastAnalyticsSettingsChange();
     return analyticsSettingsPayload();
   });
 
   ipcMain.handle('analytics:consent-accept', (event) => {
     assertTrustedAppRendererEvent(event);
     writeOrThrowIpcError(() => acceptPrivacyConsent(), 'record privacy consent failed');
-    broadcastSettingsChange();
+    broadcastAnalyticsSettingsChange();
     return analyticsSettingsPayload();
   });
 
@@ -322,5 +322,5 @@ export const __testing = {
     unsubscribeAuthState?.();
     unsubscribeAuthState = null;
   },
-  broadcastSettingsChange,
+  broadcastSettingsChange: broadcastAnalyticsSettingsChange,
 };

@@ -1,0 +1,24 @@
+#!/bin/bash
+# In-image liveness check for the profile supervisor's application.
+# Usage: application-watch <supervisor-pid> [interval-seconds] [consecutive-misses]
+# The first check runs one interval after launch; the supervisor starts Cindy within a second.
+# Exits 1 once Cindy, the supervisor's only child, has been missing for the given number of
+# consecutive checks (default 3 x 30 s: gone for over 60 s) while the supervisor is still
+# running, including a Cindy that died before the first check. The PID 1 wrapper then stops
+# the container and Kubernetes restarts it. The check ends quietly with the supervisor.
+set -euo pipefail
+supervisor=${1:?usage: application-watch <supervisor-pid> [interval] [misses]}
+interval=${2:-30}
+misses=${3:-3}
+missing=0
+while sleep "$interval" && kill -0 "$supervisor" 2>/dev/null; do
+  if pgrep -P "$supervisor" >/dev/null 2>&1; then
+    missing=0
+  else
+    missing=$((missing + 1))
+    if [ "$missing" -ge "$misses" ]; then
+      echo 'INSTANCE_APPLICATION_GONE' >&2
+      exit 1
+    fi
+  fi
+done

@@ -104,6 +104,11 @@ ID 分开保存。官方在入队前组装引用，沿用既有任务持久化�
 机器人」重新选择模型的指引，失败原因写入主日志。服务端快照（主动推送与重连镜像）改动某目录
 的 Agent 或模型时，同键的配对来源一并清除；多个 Slack team 共用的 null-team 兜底来源不因
 单个 team 改路由被清，以免其它 team 静默改走默认来源。
+云桌面授权窗口：官方 Telegram、Slack、X、飞书在云实例中使用专用 Chromium 授权窗口，
+绑定完成、取消或过期（最长 15 分钟）后回收该次窗口；等待用户确认时保留。个人 bot 的
+Token 配置不打开这类窗口，普通 Desktop 仍使用系统浏览器。窗口回收不撤销绑定、不删除
+浏览器登录资料，也不关闭用户另外打开的页面；实现位于
+`main/instance-runtime/hook-authorization-windows.ts`。
 
 > 这张表存在的理由与 `botCommands.ts` 注册表一样：把「散落两个仓、谁也不知道差在哪」
 > 变成「表里显式登记」。**新增或修改任一 bot 的用户可见行为时，必须同步更新本表对应
@@ -564,6 +569,14 @@ bot 身份按入站使用的稳定 ID 校验；Discord 取 gateway application i
 - 呈现大脑：`apps/desktop/src/main/im/shared/turnPresenter.ts`
 - 呈现能力契约：`packages/lizi-im/src/telegram/presentationCapabilities.ts`
 - 任务 / 对话 / 消息的用词：`docs/product-rules/task-and-conversation-naming.md`
+
+### 云实例设置入口
+
+云实例设置页的个人 Telegram 复用本地 `TelegramBotSectionView`（表单、状态、指南与解绑）
+及人设 / 行为 / 群激活组件，控制器只提交目标实例的票据与配置，不借用本机数据。新运行时经
+`cloud:im-settings:v1` 读写，旧运行时回落到 CIS 设置域 `telegramBehavior` / `telegramGroups`；
+未在发现列表中的已保存群也保留。官方 Telegram 走独立 Hook 作用域，不能通过个人行为域修改。
+完整规则见 [云实例设置与运维](../cloud-settings.md#im)。
 
 ## 按消息号读取群历史图片（2026-10-29）
 
