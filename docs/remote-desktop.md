@@ -72,6 +72,14 @@ older sections below differ, this section wins.
   `startLinuxAwayCover()` driving the compositor cover from its idle time. Windows reads
   "follow system" from `powercfg` (`parseWindowsDisplayOffMs`); Hyprland uses 10 minutes.
 
+## Cloud instance defaults
+
+A validated cloud runtime enables both conversation control and remote desktop
+when creating a new profile. Existing settings, including an explicitly disabled
+desktop or a revoked controller, are preserved on subsequent starts. Ordinary
+local Desktop installations keep their existing opt-in defaults. Same-account
+authentication, controller revocation and the single-viewer lease still apply.
+
 ## Idle protection
 
 > 2026-11-14: hosts advertising `hostIdle` replace the per-viewer minutes below with
@@ -471,6 +479,13 @@ WebRTC carries a video track and an ordered input DataChannel. Capture runs in
 a dedicated sandboxed renderer with a narrow preload and exact Main-side host
 identity checks. The main application renderer does not receive capture frames
 or the capture bridge. Main destroys the capture host when its authority ends.
+
+If eight input batches are still awaiting the capture renderer's Main IPC replies,
+the next valid batch releases held input and drops further input until that release
+settles. Video, the lease, control requests and viewing heartbeats stay alive;
+malformed input still ends the session. The recovery runs on the controlled
+computer, including a cloud desktop, not in the viewer.
+
 The phone runs a dedicated trusted inline WebView document; the untrusted HTML
 preview's restrictions are unchanged. The mobile presentation module requests scene rotation and a playback audio session
 for system picture in picture. This requires a new native mobile build. Voice
@@ -792,6 +807,52 @@ and key/button release on EOF, SIGTERM and heartbeat loss. It never injects into
 the user's desktop. Host/unit tests separately cover geometry, opt-in, ownership,
 and the unsupported-input message. Full Air-to-GX102 UI validation remains a
 separate acceptance step after installing a build containing this change.
+
+## Managed X11 clipboard and relay recovery
+
+Managed cloud Xfce uses Electron's native X11 CLIPBOARD and PRIMARY selections.
+The existing peer-bound control lease, opt-in synchronization, transfer limits,
+version/conflict checks and file-flavor exclusions still apply. The display must
+be local, authenticated and unchanged across each operation. This path is only
+for managed Xvfb instances, which have no OS login/locker; it does not advertise
+lock-on-exit or bypass the Hyprland lock checks for ordinary Linux desktops.
+Explicit paste uses Shift+Insert so terminal input is not mistaken for Ctrl+V's
+literal-input binding. Typing remains native XTest and never writes the clipboard.
+
+After a relay connection recovers, Desktop and Mobile reopen a previously
+negotiated reliable peer link before admitting new invokes or subscription replay,
+including listing-only subscriptions. First-use legacy listing subscriptions need
+no handshake. Recovery reuses the existing peer-scoped single flight and original
+pending frame IDs; it does not restart the shared relay or retry an already-sent
+business write. Close, revocation, subscription ownership and account changes are
+rechecked before sending. No wire messages or server requirements are added.
+When two controllers share one host, losing one controller's connection leaves
+the other controller's link and requests intact.
+
+## X11 native input
+
+The managed cloud X11 receiver delivers pointer events, physical keys and committed
+text through its authenticated X11/XTest helper. Text uses the system `libxdo.so.3` library
+(provided by the existing `xdotool` dependency); the capability probe verifies it
+before advertising control. Cindy, personal Chrome (including the address bar),
+managed browser windows and terminals share this path. No CDP connection,
+renderer script, app allowlist or implicit clipboard write is used for typing.
+It uses the existing wire protocol and peer/lease opt-ins.
+
+A logical text packet retains input ownership and queue ordering. The existing
+4096 UTF-16-unit limit and control-character checks apply before delivery; native
+chunks contain at most 32 Unicode code points. Main rechecks the lease and display
+between chunks, and the helper verifies the original active window, PID and
+keyboard-focus ancestry before each character. Focus changes stop delivery,
+without retrying a prefix or redirecting it to another window. The helper restores
+keyboard modifiers and Caps Lock after text, preserves pointer-button state, and
+releases held remote keys/buttons when stopped. Unicode uses a bounded cache of
+otherwise unused keycodes, retaining mappings long enough for applications to
+consume events; physical bindings are never taken, and still-owned mappings are
+restored on helper exit. Cancellation terminates only that
+lease's helper. Posting native events does not prove application consumption, and
+physical input from another device is outside Cindy's input ownership lock.
+Wayland/compositor input and the macOS/Windows adapters do not use this path.
 
 ## Wayland capture lifetime
 

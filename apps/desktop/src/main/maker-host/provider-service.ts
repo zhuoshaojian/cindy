@@ -52,6 +52,8 @@ export interface ConnectionReadOptions {
 }
 
 export interface ProviderListOptions extends ConnectionReadOptions {
+  /** 设置默认值只需要聊天目录，跳过可选媒体运行时的额外读取；不来自 IPC 输入。 */
+  includeMediaReadiness?: boolean;
   /**
    * Internal catalog override for policy consumers that need the routing truth
    * rather than the user-selectable projection. Never sourced from IPC input.
@@ -212,7 +214,7 @@ export function createProviderService(deps: ProviderServiceDeps): ProviderServic
     }
     let media: readonly { providerId: string; id: string }[] | undefined;
     try {
-      media = deps.getAvailableMediaModels?.();
+      media = opts?.includeMediaReadiness === false ? undefined : deps.getAvailableMediaModels?.();
     } catch (error) {
       // Media is optional enrichment; configuration and chat providers remain usable.
       media = [];

@@ -2,6 +2,7 @@ import { chatgptAccountIdFromIdToken, chatgptAccountIdFromTokens, currentCodexCr
 export { chatgptAccountIdFromIdToken, chatgptAccountIdFromTokens } from './codexCredentialRead.js';
 import { readCodexLocalAuthState } from './codex-local-auth-state.js';
 import { cindyManagedSkillRoots, listCindyManagedSkills } from './managed-skills.js';
+import { cloudPilotClaudeCliEnv } from '../cloudPilotDistribution.js';
 import { retainInvalidatedProviderPresentation, retainProviderPresentationAfterAuthChange } from './provider-presentation-store.js';
 import { subscriptionAccountKind, subscriptionAccountState } from './subscription-account-auth.js';
 import { attachDefaultSubscriptionPool, disconnectSubscriptionPool } from '../subscription-accounts/runtime.js';
@@ -600,7 +601,8 @@ export class DesktopClaudeAuthAdapter implements AuthAdapter {
         else env.ANTHROPIC_API_KEY = CLAUDE_PROVIDER_AUTH_PLACEHOLDER_KEY;
       }
     }
-    // 所有来源都用 CLI 默认配置目录(dev 多实例与正式版一致,不设 CLAUDE_CONFIG_DIR):
+    Object.assign(env, cloudPilotClaudeCliEnv());
+    // 普通发行版所有来源都用 CLI 默认配置目录(dev 多实例与正式版一致,不设 CLAUDE_CONFIG_DIR):
     // 订阅会话的凭证库按配置目录区分,隔离会看不到本机已有的 Claude Code 登录。
     // 旧版 dev 隔离在 <userData>/claude-home 的转录,拉起 CLI 前补拷到默认目录供 resume。
     await ensureLegacyClaudeConfigMigrated();

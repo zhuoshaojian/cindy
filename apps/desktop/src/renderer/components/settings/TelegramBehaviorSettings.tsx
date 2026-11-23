@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
  * 改动即写 main 侧 store(transport 每次使用现读), 无需重启 bot。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useSettingsTarget } from './settingsTarget';
@@ -262,17 +262,41 @@ export function TelegramBehaviorSettings({
   };
 
   return (
+    <TelegramBehaviorSettingsView
+      source={source}
+      behavior={behavior}
+      patch={patch}
+      notice={
+        error !== null && (
+          <SettingsRequestError
+            message={t(`${root}.behavior.error.${error}`)}
+            retryLabel={t(`${root}.behavior.error.retry`)}
+            onRetry={() => setReloadToken((value) => value + 1)}
+          />
+        )
+      }
+    />
+  );
+}
+export function TelegramBehaviorSettingsView({
+  source = 'personal',
+  behavior,
+  patch,
+  notice,
+}: {
+  source?: SettingsSource;
+  behavior: Behavior;
+  patch(change: Partial<Behavior>): void;
+  notice?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const root = i18nRoot(source);
+  return (
     <div className="flex flex-col gap-4">
       <div className="text-13 font-medium text-[var(--settings-section-title)]">
         {t(`${root}.behavior.title`)}
       </div>
-      {error !== null && (
-        <SettingsRequestError
-          message={t(`${root}.behavior.error.${error}`)}
-          retryLabel={t(`${root}.behavior.error.retry`)}
-          onRetry={() => setReloadToken((value) => value + 1)}
-        />
-      )}
+      {notice}
       <SegmentedRow
         label={t(`${root}.behavior.emojiLabel`)}
         hint={t(`${root}.behavior.emojiHint.${behavior.emojiReactions}`)}
@@ -601,6 +625,38 @@ export function TelegramGroupActivationSettings({
   };
 
   return (
+    <TelegramGroupActivationSettingsView
+      source={source}
+      groups={groups}
+      setMode={setMode}
+      notice={
+        error !== null && (
+          <SettingsRequestError
+            message={t(`${root}.groups.error.${error}`)}
+            retryLabel={t(`${root}.groups.error.retry`)}
+            onRetry={() => setReloadToken((value) => value + 1)}
+          />
+        )
+      }
+    />
+  );
+}
+export function TelegramGroupActivationSettingsView({
+  source = 'personal',
+  groups,
+  setMode,
+  notice,
+  contactsHint,
+}: {
+  source?: SettingsSource;
+  groups: readonly TelegramHookKnownGroup[];
+  setMode(id: string, mode: TelegramHookGroupActivationMode): void;
+  notice?: ReactNode;
+  contactsHint?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const root = i18nRoot(source);
+  return (
     <div className="flex flex-col gap-3">
       <div className="text-13 font-medium text-[var(--settings-section-title)]">
         {t(`${root}.groups.title`)}
@@ -608,13 +664,8 @@ export function TelegramGroupActivationSettings({
       <div className="text-11 leading-[1.5] text-[var(--text-secondary)]">
         {t(`${root}.groups.hint`)}
       </div>
-      {error !== null && (
-        <SettingsRequestError
-          message={t(`${root}.groups.error.${error}`)}
-          retryLabel={t(`${root}.groups.error.retry`)}
-          onRetry={() => setReloadToken((value) => value + 1)}
-        />
-      )}
+      {notice}
+      {contactsHint}
       {groups.length === 0 ? (
         <div className="text-12 text-[var(--settings-section-desc)]">
           {t(`${root}.groups.empty`)}

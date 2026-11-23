@@ -1,3 +1,4 @@
+import { isCloudPilotDistribution } from './cloudPilotDistribution.js';
 import { parseSettingsNavigationUrl, parseSettingsNavigationTarget, type SettingsNavigationTarget } from '@cindy/maker-shared/settings-navigation';
 import { normalizeGiftCardCode } from '../shared/giftCard.js';
 /**
@@ -750,6 +751,7 @@ export function registerDeepLinkProtocol(): void {
   // outside that profile and must remain with the installed desktop client.
   if (!app.isPackaged || process.argv.includes('--smoke-test')
     || process.argv.includes('--no-protocol-registration')) return;
+  if (isCloudPilotDistribution()) return;
 
   for (const scheme of DEEP_LINK_SCHEMES) {
     const registered = app.setAsDefaultProtocolClient(scheme);

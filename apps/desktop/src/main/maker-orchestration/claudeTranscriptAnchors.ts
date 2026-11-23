@@ -1,5 +1,5 @@
+import { cindyManagedHomeDir } from '../cloudPilotDistribution.js';
 import { promises as fs } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 const PROJECT_KEY_MAX_LENGTH = 200;
@@ -158,7 +158,7 @@ function uniqueTruthy(values: Array<string | undefined>): string[] {
 export function defaultClaudeConfigDirCandidates(): string[] {
   return uniqueTruthy([
     process.env.CLAUDE_CONFIG_DIR,
-    path.join(os.homedir(), '.claude'),
+    path.join(cindyManagedHomeDir(), '.claude'),
     process.env.XDT_USER_DATA_DIR
       ? path.join(process.env.XDT_USER_DATA_DIR, 'claude-home')
       : undefined,

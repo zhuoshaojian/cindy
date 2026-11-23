@@ -998,7 +998,7 @@ function contextForRequestRoute(
     if (!context || (resolved && !isSameCodexMcpSessionContext(resolved, context))) {
       return undefined;
     }
-    resolved = context;
+    resolved ??= context;
   }
   if (sawToolCall) return resolved;
   const threadId = extractCodexThreadId(body);
@@ -1008,9 +1008,7 @@ function contextForRequestRoute(
       instanceQuery,
     );
   }
-  return instanceQuery === null
-    ? undefined
-    : threadContextStore.getContextForSessionInstanceId(instanceQuery);
+  return contextForInstanceOnlyRoute(threadContextStore, instanceQuery);
 }
 
 function contextForToolCallRoute(
@@ -1026,9 +1024,21 @@ function contextForToolCallRoute(
       instanceQuery,
     );
   }
-  return instanceQuery === null
-    ? undefined
-    : threadContextStore.getContextForSessionInstanceId(instanceQuery);
+  return contextForInstanceOnlyRoute(threadContextStore, instanceQuery);
+}
+
+/** An instance URL proves the owning Session, not which native thread made the call. */
+function contextForInstanceOnlyRoute(
+  threadContextStore: ReturnType<typeof createCodexMcpThreadContextStore>,
+  instanceQuery: string | null,
+): LiziMcpSessionContext | undefined {
+  if (instanceQuery === null) return undefined;
+  // Resolve before downgrading: mixed root/descendant aliases must remain ambiguous.
+  const context = threadContextStore.getContextForSessionInstanceId(instanceQuery);
+  if (!context) return undefined;
+  // Keep legacy session-aware tools and instance capabilities, but do not attest
+  // root provenance merely because a descendant has not been registered yet.
+  return { ...context, mcpCallerKind: 'unknown', mcpCallerAttested: false };
 }
 
 function hasToolCall(body: unknown): boolean {
