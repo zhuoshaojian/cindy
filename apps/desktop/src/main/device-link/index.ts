@@ -217,6 +217,7 @@ import { createSubscriptionReplayScheduler, isPermanentSubscriptionReplayError }
 import { getNotificationImageLabel, getSessionNotificationBody } from '../sessionNotificationCopy';
 import { deviceLinkApiFetch, officialDeviceLinkApiBase, resolveDeviceLinkApiBase } from './deviceLinkApi.desktop.js';
 import { activeSelfHostedRelay } from './selfHostedRelayRouting.js';
+import { rejoinRemovedDevice, type AgentNetRejoinOutcome } from './deviceRejoin.js';
 import { currentRelayFrameAuth } from './selfHostedRelayFrameAuth.js';
 import { installAgentNetMediaRouting } from './agentNetMedia.js';
 import { bindAgentNetSharing, stopAgentNetSharing, agentNetSharingRoute } from './agentNetSharing.js';
@@ -2065,6 +2066,30 @@ export function handleDeviceLinkSystemSuspend(): void {
 
 export function getDeviceLinkConnectionIssue(): ConnectionIssuePayload | null {
   return client?.getConnectionIssue() ?? agentNetRelayIssue;
+}
+
+/**
+ * 「重新加入」：这台设备被移除后让它回来（deviceRejoin.ts，移植自上游 #12214 的 Device Link 部分；Agent-Net 的撤销解除
+ * 不在这次移植内，按 'skipped' 处理）。账号与中转按调用时的为准，中途切号就整个停下。
+ */
+export function rejoinThisDevice(): Promise<{ agentNet: AgentNetRejoinOutcome }> {
+  const scope = activeOwnerScopeKey();
+  const assertCurrent = () => {
+    if (activeOwnerScopeKey() !== scope || isAppSessionBoundaryPending() || activeSelfHostedRelay())
+      throw new Error('DEVICE_REJOIN_SCOPE_CHANGED');
+  };
+  return rejoinRemovedDevice({
+    selfHostedRelaySelected: () => activeSelfHostedRelay() !== null,
+    officialFetch: (path, opts) => serverApiFetch(path, { ...opts, baseUrl: () => { assertCurrent(); return officialDeviceLinkApiBase(); } }),
+    rejoinAgentNet: async () => 'skipped',
+    agentNetRequired: () => agentNetRequiresEncryption(),
+    restartConnection: () => {
+      if (!client || !arbiter?.isOwner() || !authManager.getAuthState().isAuthenticated) return;
+      client.start();
+    },
+    assertCurrent,
+    warn: (message, error) => log.warn(message, error),
+  });
 }
 
 /**

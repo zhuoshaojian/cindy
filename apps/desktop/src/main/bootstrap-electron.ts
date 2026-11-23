@@ -678,6 +678,7 @@ import { createCloudWindowArgument } from '../shared/cloudWindow.js';
 import { startProfileTelemetry } from './instance-runtime/profile-telemetry.js';
 import { instanceAuthReady, instanceDurableObservation, instanceAuthRealm, instanceLoginRequired, instanceLoginRecovered } from './instance-runtime/host.js';
 import { startAuthRecoveryControl } from './instance-runtime/auth-recovery.js';
+import { instanceLoginRecoveryHandlers } from './instance-runtime/login-recovery.js';
 import { startInstanceStatus } from './instance-runtime/status.js';
 import { registerCloudProviderSettings } from './instance-runtime/providerSettingsRegistration.js';
 import { publishedPluginOauthIdentity } from './plugin-oauth/runtime.js';
@@ -724,6 +725,7 @@ import {
   initDeviceLinkService,
   getDeviceLinkStatus,
   getDeviceLinkConnectionIssue,
+  rejoinThisDevice,
   restartDeviceLinkForRelayChange,
   isSharedTaskAvailable,
   isSharedTaskRelayOnline,
@@ -10939,18 +10941,19 @@ app.on('ready', async () => {
       maker: getMakerIfReady() !== null,
       deviceLink: getDeviceLinkStatus() === 'online',
     });
-    // Device-link removed this instance's device (4410): it stops reconnecting, and only the
-    // owner's explicit login can register it again, so surface it as a required login.
+    // Device-link removed this instance's device (4410): it stops reconnecting until the owner
+    // takes it back, so surface it as a required login.
     const deviceRegistrationLost = () => getDeviceLinkConnectionIssue()?.kind === 'device-removed';
     const stopRecovery = instance.authProtocol === 'resource-v1' ? await startAuthRecoveryControl({ identity: instance,
-      recover: async input => {
-        const registrationLost = deviceRegistrationLost();
-        await authManager.recoverManagedInstanceLogin(input.requestId, input.refreshToken,
-          { accessToken: input.accessToken, registrationLost });
-        // Reconnect with the freshly published token; a removed device registers again with it.
-        if (registrationLost) restartDeviceLinkForRelayChange();
-      },
-      recovered: input => instanceLoginRecovered(input.requestId, input.refreshToken) }) : undefined;
+      ...instanceLoginRecoveryHandlers({
+        loginRecovered: instanceLoginRecovered,
+        recoverLogin: (input, registrationLost) => authManager.recoverManagedInstanceLogin(input.requestId,
+          input.refreshToken, { accessToken: input.accessToken, registrationLost }),
+        registrationLost: deviceRegistrationLost,
+        rejoin: rejoinThisDevice,
+        reconnect: restartDeviceLinkForRelayChange,
+        warn: code => createLogger('instance-runtime').warn('device rejoin after owner login failed', { code }),
+      }) }) : undefined;
     if (stopRecovery) app.once('before-quit', stopRecovery);
     const stopStatus = startInstanceStatus(instance, readInstanceReadiness, () => createLogger('instance-runtime').warn('runtime status unavailable'), publishedPluginOauthIdentity,
       stopRecovery ? () => ({ version: 1, state: instanceLoginRequired() || deviceRegistrationLost() ? 'login-required' : readInstanceReadiness().auth ? 'ready' : 'pending' }) : undefined);

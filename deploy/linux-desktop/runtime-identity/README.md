@@ -29,7 +29,11 @@
 - 设备被 device-link 移除（4410）后，实例不会自动重新登记，`authRecovery` 报告
   `login-required`：CIS 和客户端显示需要登录，启动检查按等待登录放行，不再反复重启。此时即使
   账号会话仍有效，也接受一次恢复，并在恢复后重建设备连接。
-- device-link 只接受显式登录换来的令牌（非空 `amr`、晚于移除时间的 `auth_time`）重新登记。
+- 主人经 CIS 的这次显式登录就是“让这台设备回来”的决定：登录写入后，实例调用 device-link
+  `POST /api/device-link/rejoin`（移植自上游 `deviceRejoin.ts`，本设备任一有效令牌即可）再重连。
+  设备重新登记之前恢复不算完成：`/v1/recover` 返回未完成，CIS 继续投递同一次登录，后续投递只重试
+  rejoin，不再消耗凭证。没有 `/rejoin` 的 device-link 退回下面的显式令牌重连。
+- device-link 也接受显式登录换来的令牌（非空 `amr`、晚于移除时间的 `auth_time`）重新登记。
   同时出现 `authRecovery` 时，`status.json` 顶层写 `authRecoveryCapabilities: ["explicit-access-token"]`，
   表示 `/v1/recover` 接受可选的 `accessToken`（主人这次显式登录的访问令牌）。实例只在它绑定本设备、
   且带显式登录信息时采用，否则用 refresh token 换来的令牌。旧 CIS 会丢弃顶层未知字段，也不会发
