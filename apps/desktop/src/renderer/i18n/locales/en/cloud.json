@@ -27,7 +27,7 @@
     "reset": "Restore defaults",
     "loadFailed": "Settings could not be read. Reopen Settings to try again.",
     "changed": "Settings changed elsewhere. Keep a copy of your draft and reopen Settings before editing again.",
-    "savedApplyFailed": "Settings were saved, but could not be applied to every Host window.",
+    "savedApplyFailed": "Settings were saved, but could not be applied to every window of the Cindy background service.",
     "card": {
       "automatic": "Automatic"
     }

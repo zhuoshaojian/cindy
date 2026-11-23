@@ -283,7 +283,7 @@ export function initAnalyticsSettingsService(reporter?: ProductTokens): void {
     } catch {
       throwIpcError('INTERNAL', 'failed to persist product token preference');
     }
-    broadcastSettingsChange();
+    broadcastAnalyticsSettingsChange();
     return analyticsSettingsPayload();
   });
 

@@ -53,7 +53,8 @@ export function LanguageSectionView({
 }: {
   locale: LocalePreference;
   effectiveLocale?: string;
-  onChange(next: LocalePreference): void;
+  /** Local saves report whether they persisted; a cloud target reports its own failures. */
+  onChange(next: LocalePreference): boolean | void | Promise<boolean | void>;
   classicalStyle?: ClassicalReplyStyleId;
   onClassicalStyleChange?(next: ClassicalReplyStyleId): void;
   disabled?: boolean;
@@ -69,7 +70,7 @@ export function LanguageSectionView({
   );
 
   const saveLanguage = async (preference: LocalePreference) => {
-    if (!await setLocale(preference)) toast.error(t('regionScreenshot.translation.saveFailed'));
+    if (await setLocale(preference) === false) toast.error(t('regionScreenshot.translation.saveFailed'));
   };
 
   const chooseLanguage = (option: LanguageOption) => {

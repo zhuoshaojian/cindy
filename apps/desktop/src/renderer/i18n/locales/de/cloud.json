@@ -27,7 +27,7 @@
     "reset": "Standardwerte wiederherstellen",
     "loadFailed": "Die Einstellungen konnten nicht gelesen werden. Öffne die Einstellungen erneut, um es noch einmal zu versuchen.",
     "changed": "Die Einstellungen wurden an anderer Stelle geändert. Sichere eine Kopie deines Entwurfs und öffne die Einstellungen erneut, bevor du sie erneut bearbeitest.",
-    "savedApplyFailed": "Die Einstellungen wurden gespeichert, konnten aber nicht auf alle Host-Fenster angewendet werden.",
+    "savedApplyFailed": "Die Einstellungen wurden gespeichert, konnten aber nicht auf alle Fenster des Cindy-Hintergrunddienstes angewendet werden.",
     "card": {
       "automatic": "Automatisch"
     }
