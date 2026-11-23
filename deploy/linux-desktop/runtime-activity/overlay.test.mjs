@@ -52,6 +52,15 @@ test('actual cloud transforms compile, preserve native source and IPC authorizat
       probe.queueRestorePromises.set('restoring',Promise.resolve());
       probe.steerRequestLineages.set('private-session',new Map([['request',{unsettledTokens:new Set([Symbol()])}]]));
       assert.deepEqual({...probe.readCloudInputCounts()},{active:1,queued:2,interactions:1,settling:3});
+      // A queue held after restart (no running turn) is not counted; its compacts and steering still are.
+      const held={activeTurn:null,pendingQueue:[sensitive,sensitive],pendingCompacts:[],directSteeringItems:[],queueInteractionLocks:[],
+        queueAbortPending:false,drainScheduled:false,autoResumePending:null,pendingExternalTerminalDone:false,queuePausedByRestore:true};
+      probe.states=new Map([['held-session',held]]);probe.queueRestorePromises=new Map();probe.steerRequestLineages=new Map();
+      assert.deepEqual({...probe.readCloudInputCounts()},{active:0,queued:0,interactions:0,settling:0});
+      probe.states.set('held-session',{...held,activeTurn:{item:sensitive}});
+      assert.deepEqual({...probe.readCloudInputCounts()},{active:1,queued:2,interactions:0,settling:0});
+      probe.states.set('held-session',{...held,queuePausedByRestore:false});
+      assert.deepEqual({...probe.readCloudInputCounts()},{active:0,queued:2,interactions:0,settling:0});
     }
   }
   plugin.buildEnd(null);

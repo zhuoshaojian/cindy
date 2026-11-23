@@ -69,7 +69,10 @@ ${code}`;
     let settling = this.queueRestorePromises.size + this.pendingAutoResumeRecoveries.size;
     for (const state of this.states.values()) {
       active += Number(state.activeTurn !== null);
-      queued += state.pendingQueue.length + state.pendingCompacts.length + state.directSteeringItems.length;
+      // A queue held after a restart never sends without the owner; it stays in the durable
+      // snapshot across a maintenance restart, so it is not work that maintenance must wait for.
+      queued += (state.queuePausedByRestore && state.activeTurn === null ? 0 : state.pendingQueue.length)
+        + state.pendingCompacts.length + state.directSteeringItems.length;
       interactions += state.queueInteractionLocks.length;
       settling += Number(state.queueAbortPending) + Number(state.drainScheduled)
         + Number(state.autoResumePending !== null) + Number(state.pendingExternalTerminalDone);
