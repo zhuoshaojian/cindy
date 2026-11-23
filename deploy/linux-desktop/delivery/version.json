@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "upstreamVersion": "0.1.133",
-  "upstreamCommit": "4a068d08cf9ea6633f6ee48cea800944bf70f746",
-  "cloudRevision": 8,
+  "upstreamVersion": "0.1.143",
+  "upstreamCommit": "55d3b6ac45ea68c489122ed891148699fb55e477",
+  "cloudRevision": 1,
   "region": "cn",
   "platform": "linux/amd64"
 }
