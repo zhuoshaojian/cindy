@@ -80,7 +80,9 @@ export async function startAuthRecoveryControl(options: {
       try {
         if (!options.recovered(input)) await options.recover(input);
         if (!options.recovered(input)) throw new Error('INSTANCE_RECOVERY_UNVERIFIED');
-        reply(200, { version: 1, requestId: input.requestId, ...options.identity, status: 'applied' });
+        // Exactly the receipt CIS parses; the caller may pass its whole instance config as identity.
+        reply(200, { version: 1, requestId: input.requestId, deviceId: options.identity.deviceId,
+          membershipId: options.identity.membershipId, status: 'applied' });
       } finally { active = null; input.refreshToken = ''; if (input.accessToken) input.accessToken = ''; }
     } catch {
       // Never emit dependency errors (which may contain upstream credentials).

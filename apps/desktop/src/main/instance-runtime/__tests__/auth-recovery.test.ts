@@ -80,6 +80,16 @@ it('reclaims only a dead owned socket after a crash', async () => {
   expect((await send(socket, request())).status).toBe(200);
 });
 
+it('replies with only the receipt fields even when identity is the whole instance config', async () => {
+  const socket = fixture(), input = request();
+  const config = { ...identity, authProtocol: 'resource-v1', userDataDir: '/fixture/user-data',
+    keyringPasswordFile: '/fixture/keyring', statusFile: '/fixture/status.json' };
+  cleanup.push(await startAuthRecoveryControl({ identity: config, recover: async () => {}, recovered: () => true }, socket));
+  const result = await send(socket, input);
+  expect(result.status).toBe(200);
+  expect(JSON.parse(result.body)).toEqual({ version: 1, requestId: input.requestId, ...identity, status: 'applied' });
+});
+
 it('passes the optional explicit-login access token through and still rejects unknown fields', async () => {
   const socket = fixture(), input = { ...request(), accessToken: 'synthetic-explicit-access' };
   let seen: AuthRecoveryRequest | null = null, done = false;
