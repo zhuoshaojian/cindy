@@ -79,3 +79,15 @@ it('reclaims only a dead owned socket after a crash', async () => {
   cleanup.push(await startAuthRecoveryControl({ identity, recover: async () => {}, recovered: () => true }, socket));
   expect((await send(socket, request())).status).toBe(200);
 });
+
+it('passes the optional explicit-login access token through and still rejects unknown fields', async () => {
+  const socket = fixture(), input = { ...request(), accessToken: 'synthetic-explicit-access' };
+  let seen: AuthRecoveryRequest | null = null, done = false;
+  const recover = vi.fn(async (value: AuthRecoveryRequest) => { seen = { ...value }; done = true; });
+  cleanup.push(await startAuthRecoveryControl({ identity, recover, recovered: () => done }, socket));
+  expect((await send(socket, { ...input, unexpected: true })).status).toBe(409);
+  const result = await send(socket, input);
+  expect(result.status).toBe(200);
+  expect(result.body).not.toContain(input.accessToken);
+  expect(seen!.accessToken).toBe(input.accessToken);
+});

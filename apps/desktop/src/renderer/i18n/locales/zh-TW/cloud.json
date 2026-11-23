@@ -2,6 +2,9 @@
   "settings": {
     "wechatBot": {
       "introOnHost": "連線後，你發給該微信連線的私聊訊息會進入 {{name}} 上的 Cindy。授權網頁由騰訊提供，頁面中可能顯示 OpenClaw。"
+    },
+    "devices": {
+      "deleteCloudMessage": "這是一台雲端 Cindy。刪除後它會與帳號中斷連線，無法遠端使用，直到擁有者在 Cindy 中重新登入這台雲端 Cindy；任務和檔案會保留。"
     }
   },
   "login": {

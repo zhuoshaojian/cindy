@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { InstanceConfig } from "./config.js";
 import type { PluginOauthPublicIdentity } from '@cindy/device-link';
+import { AUTH_RECOVERY_CAPABILITIES } from "./auth-recovery.js";
 
 export type InstanceReadiness = Record<
   "auth" | "database" | "binaries" | "maker" | "deviceLink",
@@ -23,7 +24,8 @@ export function buildInstanceStatus(
     instanceId: config.deviceId,
     phase: stopping ? "stopping" : ready ? "ready" : "starting",
     heartbeatAtMs: now,
-    ...(authRecovery ? { authRecovery } : {}),
+    // Top level on purpose: older CIS strips unknown top-level fields but parses authRecovery strictly.
+    ...(authRecovery ? { authRecovery, authRecoveryCapabilities: [...AUTH_RECOVERY_CAPABILITIES] } : {}),
     ...(ready && !stopping && oauthIdentity ? {oauthIdentity} : {}),
     readiness: Object.fromEntries(
       Object.entries(readiness).map(([component, passed]) => [

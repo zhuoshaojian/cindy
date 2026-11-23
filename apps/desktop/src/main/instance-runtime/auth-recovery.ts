@@ -9,7 +9,12 @@ export const authRecoveryRequest = z.strictObject({
   version: z.literal(1), requestId: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/),
   deviceId: z.string(), membershipId: z.string(),
   expiresAtMs: z.number().int().positive(), refreshToken: z.string().min(1).max(4096),
+  /** The owner's explicit login access token (CIS sends it only to runtimes advertising
+   * `explicit-access-token`); it lets a removed device register again with device-link. */
+  accessToken: z.string().min(1).max(8192).optional(),
 });
+/** Advertised in the runtime status so CIS knows the optional `accessToken` is accepted. */
+export const AUTH_RECOVERY_CAPABILITIES = ['explicit-access-token'] as const;
 export type AuthRecoveryRequest = z.infer<typeof authRecoveryRequest>;
 
 async function removeStaleSocket(socket: string): Promise<void> {
@@ -63,7 +68,7 @@ export async function startAuthRecoveryControl(options: {
       const chunks: Buffer[] = [];
       for await (const chunk of req) {
         bytes += chunk.length;
-        if (bytes > 8192) throw new Error('INSTANCE_RECOVERY_REJECTED');
+        if (bytes > 16384) throw new Error('INSTANCE_RECOVERY_REJECTED');
         chunks.push(Buffer.from(chunk));
       }
       const input = authRecoveryRequest.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
@@ -76,7 +81,7 @@ export async function startAuthRecoveryControl(options: {
         if (!options.recovered(input)) await options.recover(input);
         if (!options.recovered(input)) throw new Error('INSTANCE_RECOVERY_UNVERIFIED');
         reply(200, { version: 1, requestId: input.requestId, ...options.identity, status: 'applied' });
-      } finally { active = null; input.refreshToken = ''; }
+      } finally { active = null; input.refreshToken = ''; if (input.accessToken) input.accessToken = ''; }
     } catch {
       // Never emit dependency errors (which may contain upstream credentials).
       reply(409, { error: { code: 'INSTANCE_RECOVERY_UNVERIFIED' } });

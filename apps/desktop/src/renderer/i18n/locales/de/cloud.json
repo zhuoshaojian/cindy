@@ -2,6 +2,9 @@
   "settings": {
     "wechatBot": {
       "introOnHost": "Nach dem Verbinden gehen private Nachrichten an diese WeChat-Verbindung an Cindy auf {{name}}. Tencent stellt die Autorisierungsseite bereit, auf der möglicherweise OpenClaw angezeigt wird."
+    },
+    "devices": {
+      "deleteCloudMessage": "Dies ist ein Cloud-Cindy. Nach dem Entfernen ist es vom Konto getrennt und lässt sich nicht mehr aus der Ferne nutzen, bis sich der Eigentümer in Cindy erneut bei diesem Cloud-Cindy anmeldet. Aufgaben und Dateien bleiben erhalten."
     }
   },
   "login": {

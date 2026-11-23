@@ -416,3 +416,40 @@ describe("durable refresh telemetry", () => {
     expect(test.restart().observation()).toBeNull();
   });
 });
+
+describe("recovering a device that device-link removed", () => {
+  it("refuses a ready session unless the device registration was lost", async () => {
+    const h = fixture();
+    h.session.acknowledge(await h.session.rotate());
+    await expect(h.session.recover("recovery_request_0003", refreshToken(90))).rejects.toThrow("INSTANCE_RECOVERY_NOT_REQUIRED");
+    const restored = await h.session.recover("recovery_request_0003", refreshToken(90), { registrationLost: true });
+    h.session.acknowledge(restored);
+    expect(h.session.recovered("recovery_request_0003")).toBe(true);
+  });
+
+  it("publishes the owner's explicit login access token when it is bound to this device", async () => {
+    const h = fixture();
+    h.session.acknowledge(await h.session.rotate());
+    const explicit = pair(50, { amr: ["otp"], auth_time: now / 1000 - 5 }).accessToken;
+    const restored = await h.session.recover("recovery_request_0004", refreshToken(91), { registrationLost: true, accessToken: explicit });
+    expect(restored.accessToken).toBe(explicit);
+    expect(h.dependencies.exchange).toHaveBeenLastCalledWith(refreshToken(91));
+    expect(restored.refreshToken).not.toBe(refreshToken(91));
+    h.session.acknowledge(restored);
+    expect(h.session.isReady(explicit)).toBe(true);
+  });
+
+  it("keeps the exchanged token when the supplied one is unbound or not from an explicit login", async () => {
+    for (const claims of [
+      { amr: ["otp"], auth_time: now / 1000, device: "other-device" },
+      { amr: [], auth_time: now / 1000 },
+      {},
+    ]) {
+      const h = fixture();
+      h.session.acknowledge(await h.session.rotate());
+      const supplied = pair(60, claims).accessToken;
+      const restored = await h.session.recover("recovery_request_0005", refreshToken(92), { registrationLost: true, accessToken: supplied });
+      expect(restored.accessToken).not.toBe(supplied);
+    }
+  });
+});

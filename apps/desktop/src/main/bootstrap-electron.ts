@@ -723,6 +723,8 @@ import { configureProjectDirectoryProbe } from './projectDirectoryValidation.js'
 import {
   initDeviceLinkService,
   getDeviceLinkStatus,
+  getDeviceLinkConnectionIssue,
+  restartDeviceLinkForRelayChange,
   isSharedTaskAvailable,
   isSharedTaskRelayOnline,
   waitForSharedTaskRelay,
@@ -10937,12 +10939,21 @@ app.on('ready', async () => {
       maker: getMakerIfReady() !== null,
       deviceLink: getDeviceLinkStatus() === 'online',
     });
+    // Device-link removed this instance's device (4410): it stops reconnecting, and only the
+    // owner's explicit login can register it again, so surface it as a required login.
+    const deviceRegistrationLost = () => getDeviceLinkConnectionIssue()?.kind === 'device-removed';
     const stopRecovery = instance.authProtocol === 'resource-v1' ? await startAuthRecoveryControl({ identity: instance,
-      recover: input => authManager.recoverManagedInstanceLogin(input.requestId, input.refreshToken),
+      recover: async input => {
+        const registrationLost = deviceRegistrationLost();
+        await authManager.recoverManagedInstanceLogin(input.requestId, input.refreshToken,
+          { accessToken: input.accessToken, registrationLost });
+        // Reconnect with the freshly published token; a removed device registers again with it.
+        if (registrationLost) restartDeviceLinkForRelayChange();
+      },
       recovered: input => instanceLoginRecovered(input.requestId, input.refreshToken) }) : undefined;
     if (stopRecovery) app.once('before-quit', stopRecovery);
     const stopStatus = startInstanceStatus(instance, readInstanceReadiness, () => createLogger('instance-runtime').warn('runtime status unavailable'), publishedPluginOauthIdentity,
-      stopRecovery ? () => ({ version: 1, state: instanceLoginRequired() ? 'login-required' : readInstanceReadiness().auth ? 'ready' : 'pending' }) : undefined);
+      stopRecovery ? () => ({ version: 1, state: instanceLoginRequired() || deviceRegistrationLost() ? 'login-required' : readInstanceReadiness().auth ? 'ready' : 'pending' }) : undefined);
     const stopProfileTelemetry = startProfileTelemetry({ deviceId: instance.deviceId, membershipId: instance.membershipId, realm: instanceAuthRealm, read: readInstanceReadiness, readAuth: instanceDurableObservation, onFailure: () => createLogger('instance-runtime').warn('profile observation unavailable') });
     const stopSettingsSnapshot = startCloudSettingsSnapshotPublisher();
     const stopReturningPreferences = startReturningRetiredHostPreferences();

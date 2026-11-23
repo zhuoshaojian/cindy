@@ -2,6 +2,9 @@
   "settings": {
     "wechatBot": {
       "introOnHost": "Após conectar, as mensagens privadas enviadas a esta conexão do WeChat vão para o Cindy em {{name}}. A Tencent fornece a página de autorização, que pode exibir OpenClaw."
+    },
+    "devices": {
+      "deleteCloudMessage": "Este é um Cindy na nuvem. Ao removê-lo, ele é desconectado da conta e não poderá ser usado remotamente até que o proprietário entre novamente neste Cindy na nuvem pelo Cindy. As tarefas e os arquivos são mantidos."
     }
   },
   "login": {

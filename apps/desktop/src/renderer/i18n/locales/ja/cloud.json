@@ -2,6 +2,9 @@
   "settings": {
     "wechatBot": {
       "introOnHost": "接続後、この WeChat 接続へのプライベートメッセージは {{name}} の Cindy に届きます。認証ページは Tencent が提供し、OpenClaw と表示される場合があります。"
+    },
+    "devices": {
+      "deleteCloudMessage": "これはクラウド Cindy です。削除するとアカウントから切断され、所有者が Cindy でこのクラウド Cindy に再ログインするまでリモートで使えません。タスクとファイルは保持されます。"
     }
   },
   "login": {

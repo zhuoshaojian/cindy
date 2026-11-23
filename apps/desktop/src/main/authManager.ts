@@ -22,6 +22,7 @@ import { resolveRuntimeDeviceId } from './deviceId.js';
 import { BrowserWindow, net, safeStorage, app, shell, powerMonitor } from 'electron';
 import { getInstanceConfig, instanceRefreshDelay } from './instance-runtime/config.js';
 import { acknowledgeInstanceLogin, assertInstanceAuthMutationAllowed, getInstanceSession, instanceAuthReady } from './instance-runtime/host.js';
+import type { InstanceRecoveryOptions } from './instance-runtime/session.js';
 import { projectCommittedAuthIdentity, type CommittedAuthIdentity } from './authCommittedIdentity.js';
 import crypto from 'node:crypto';
 import { createServer } from 'node:http';
@@ -4657,13 +4658,17 @@ export async function updateServerProfile(
 let managedAuthFlight: Promise<void> | null = null;
 
 /** Only the Pod-local CIS control calls this; never exposed through account IPC. */
-export async function recoverManagedInstanceLogin(requestId: string, refreshToken: string): Promise<void> {
+export async function recoverManagedInstanceLogin(
+  requestId: string,
+  refreshToken: string,
+  options: InstanceRecoveryOptions = {},
+): Promise<void> {
   if (!getInstanceConfig()) throw new Error('INSTANCE_NOT_CONFIGURED');
   if (managedAuthFlight) await managedAuthFlight.catch(() => undefined);
   if (managedAuthFlight) throw new Error('INSTANCE_RECOVERY_BUSY');
   managedAuthFlight = (async () => {
     const managed = getInstanceSession(authServerUrl(AUTH_REGION), AUTH_REGION, hasNoPersistedAuthCredentials);
-    const pair = await managed.recover(requestId, refreshToken);
+    const pair = await managed.recover(requestId, refreshToken, options);
     await completeLogin({ status: 'ok', ...pair });
   })().finally(() => { managedAuthFlight = null; });
   return managedAuthFlight;

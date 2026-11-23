@@ -651,7 +651,7 @@ export function MyDevicesPanel({
                       >
                         <Pencil size={13} />
                       </button>
-                      {/* CIS 管理的云实例:删除只会移走目录记录,实例下次上线又会回来,故不提供。 */}
+                      {/* CIS 管理的云实例不提供删除:设备被删后实例不能自行重新登记,要主人重新登录才能恢复。 */}
                       {!cloud?.isManaged(d.deviceId) && (
                       <button data-settings-search-action="Open confirmation to remove this device"
                         type="button"

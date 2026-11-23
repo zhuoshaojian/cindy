@@ -111,6 +111,24 @@ export function validateResourcePair(
   }
 }
 
+export interface InstanceRecoveryOptions {
+  /** Access token from the owner's explicit login, when CIS forwarded it. */
+  accessToken?: string;
+  /** Device-link removed this device; recovery is needed even though auth is ready. */
+  registrationLost?: boolean;
+}
+
+/** A token minted by an explicit login carries authentication methods and auth_time;
+ * refreshed tokens do not, and device-link only restores a removed device for the former. */
+export function isExplicitLoginAccessToken(token: string): boolean {
+  try {
+    const claims = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"));
+    return Array.isArray(claims.amr) && claims.amr.length > 0 && Number.isFinite(claims.auth_time);
+  } catch {
+    return false;
+  }
+}
+
 export class InstanceSession {
   private flight: Promise<AuthTokenPair> | null = null;
   private pending: { pair: AuthTokenPair; record: InstanceRecord } | null =
@@ -208,14 +226,14 @@ export class InstanceSession {
   /** CIS supplies a newly authorized, same-device resource credential. Never
    * import account credentials or overwrite the profile from another process.
    * The normal auth manager must acknowledge the durable pair before success. */
-  recover(requestId: string, refreshToken: string): Promise<AuthTokenPair> {
+  recover(requestId: string, refreshToken: string, options: InstanceRecoveryOptions = {}): Promise<AuthTokenPair> {
     if (this.flight) return Promise.reject(new Error("INSTANCE_RECOVERY_BUSY"));
-    const flight = this.recoverOnce(requestId, refreshToken).finally(() => { this.flight = null; });
+    const flight = this.recoverOnce(requestId, refreshToken, options).finally(() => { this.flight = null; });
     this.flight = flight;
     return flight;
   }
 
-  private async recoverOnce(requestId: string, token: string): Promise<AuthTokenPair> {
+  private async recoverOnce(requestId: string, token: string, options: InstanceRecoveryOptions): Promise<AuthTokenPair> {
     if (this.protocol !== "resource-v1" || !/^[A-Za-z0-9_-]{16,128}$/.test(requestId)
       || !isResourceRefreshToken(token)) throw new Error("INSTANCE_RECOVERY_REJECTED");
     this.dependencies.store.preflight();
@@ -232,9 +250,17 @@ export class InstanceSession {
       if (this.pending.record.recoveryCredentialDigest !== digest) throw new Error("INSTANCE_RECOVERY_REJECTED");
       return this.rotateOnce();
     }
-    if (this.pending || this.isReady(this.acceptedPair?.accessToken ?? null))
+    // A ready session needs no recovery unless device-link removed this device: only a
+    // token from the owner's explicit login can register it again.
+    if (this.pending || (this.isReady(this.acceptedPair?.accessToken ?? null) && !options.registrationLost))
       throw new Error("INSTANCE_RECOVERY_NOT_REQUIRED");
-    const pair = await this.dependencies.exchange(token);
+    let pair = await this.dependencies.exchange(token);
+    if (options.accessToken && isExplicitLoginAccessToken(options.accessToken)) {
+      // Keep the rotated refresh token and membership, but publish the login's own access
+      // token first so device-link sees the explicit authentication. Unbound tokens are ignored.
+      const explicit = { ...pair, accessToken: options.accessToken };
+      try { this.validatePair(explicit); pair = explicit; } catch { /* keep the exchanged pair */ }
+    }
     const identity = this.validatePair(pair);
     this.acceptedPair = null;
     this.pending = { pair, record: { ...identity, deviceId: previous.deviceId,

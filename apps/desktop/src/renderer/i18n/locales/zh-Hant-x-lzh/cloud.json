@@ -2,6 +2,9 @@
   "settings": {
     "wechatBot": {
       "introOnHost": "連後，君遣此微信連線之私訊，將入 {{name}} 上之 Cindy。授權網頁由騰訊所供，頁中或現 OpenClaw。"
+    },
+    "devices": {
+      "deleteCloudMessage": "此乃雲端 Cindy。刪之則與帳號相離，不可遠用，待其主於 Cindy 中重登此雲端 Cindy 乃復；任務與檔案皆存。"
     }
   },
   "login": {

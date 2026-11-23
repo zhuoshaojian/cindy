@@ -26,6 +26,14 @@
 - 提交走维护门禁的 `remote-input` 入口，未完成的写入不会被停机封存。
 - `status.json` 的可选 `authRecovery` 报告 `login-required` / `pending` / `ready`。云 activity
   publisher 必须保留此字段；`cindy-cloud-healthcheck.mjs --startup` 也读取它。
+- 设备被 device-link 移除（4410）后，实例不会自动重新登记，`authRecovery` 报告
+  `login-required`：CIS 和客户端显示需要登录，启动检查按等待登录放行，不再反复重启。此时即使
+  账号会话仍有效，也接受一次恢复，并在恢复后重建设备连接。
+- device-link 只接受显式登录换来的令牌（非空 `amr`、晚于移除时间的 `auth_time`）重新登记。
+  同时出现 `authRecovery` 时，`status.json` 顶层写 `authRecoveryCapabilities: ["explicit-access-token"]`，
+  表示 `/v1/recover` 接受可选的 `accessToken`（主人这次显式登录的访问令牌）。实例只在它绑定本设备、
+  且带显式登录信息时采用，否则用 refresh token 换来的令牌。旧 CIS 会丢弃顶层未知字段，也不会发
+  `accessToken`，此时恢复后设备仍被拒绝，实例继续报告需要登录。
 
 ## 测试
 
