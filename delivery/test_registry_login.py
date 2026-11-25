@@ -122,29 +122,26 @@ class RegistryLoginTest(unittest.TestCase):
 
 
 class WorkflowRunnerBoundaryTest(unittest.TestCase):
-    def test_docs_cannot_provision_runners_but_packaged_guidance_remains_eligible(self):
-        # Guard: README-only pushes must not enter the private runner pool.
-        # Keep runtime Markdown eligible; this protects the workflow scheduling
-        # boundary, not a source-format preference. Real doc-push proof is separate.
-        root = Path(__file__).resolve().parents[3]
+    def test_docs_cannot_provision_runners(self):
+        # Guard: documentation-only pushes must not enter the private runner pool.
+        # The delivery branch holds no packaged guidance: every Markdown file is a doc.
+        root = Path(__file__).resolve().parents[1]
         workflow = (root / '.github/workflows/cloud-image-delivery.yml').read_text()
         triggers = workflow.split('  workflow_dispatch:')[0]
-        for pattern in ['!deploy/linux-desktop/*.md',
-                        '!deploy/linux-desktop/**/README.md',
-                        '!deploy/linux-desktop/delivery/**/*.md']:
-            self.assertIn("- '" + pattern + "'", triggers)
-        self.assertIn("- 'deploy/linux-desktop/**'", triggers)
-        self.assertNotIn('!deploy/linux-desktop/**/*.md', triggers)
-        self.assertNotIn('!deploy/linux-desktop/runtime-guidance/', triggers)
+        self.assertIn("- '!delivery/**/*.md'", triggers)
+        self.assertIn("- 'delivery/**'", triggers)
+        self.assertIn("branches: ['cloud-image-delivery']", triggers)
+        # Application source never lives here: nothing outside the tools triggers a run.
+        self.assertNotIn('deploy/', triggers)
 
     def test_build_cache_login_is_step_scoped_and_smoke_still_precedes_publication(self):
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[1]
         workflow = (root / '.github/workflows/cloud-image-delivery.yml').read_text()
         candidate = workflow.split('  candidate:',1)[1].split('  cache:',1)[0]
         self.assertIn('--cache-repository "$BUILD_CACHE_REPOSITORY"', candidate)
         self.assertIn('test "$BUILD_CACHE_REPOSITORY" != "$IMAGE_REPOSITORY"', candidate)
         before_build = candidate.index('      - name: Login for the isolated build cache')
-        build = candidate.index('      - name: Freeze plan')
+        build = candidate.index('      - name: Build the upstream release')
         smoke = candidate.index('      - name: Native isolated')
         publish_login = candidate.index('      - name: Login to the unified runtime')
         publish = candidate.index('      - name: Publish tested bytes')
@@ -156,7 +153,7 @@ class WorkflowRunnerBoundaryTest(unittest.TestCase):
         self.assertNotIn('ACCESS_KEY', candidate.split('    steps:',1)[0])
 
     def test_only_fork_private_runner_pools_and_no_external_pr_trigger(self):
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[1]
         workflow = (root / '.github/workflows/cloud-image-delivery.yml').read_text()
         self.assertEqual(set(re.findall(r'^    runs-on: (.+)$', workflow, re.M)), {
             "[self-hosted, Linux, X64, cindy-fork-cloud-check, 'cindy-fork-run-${{ github.run_id }}-${{ github.run_attempt }}']",
@@ -166,11 +163,11 @@ class WorkflowRunnerBoundaryTest(unittest.TestCase):
         self.assertNotIn('pull_request', triggers)
         verify = workflow.split('  verify:')[1].split('    steps:')[0]
         self.assertIn("github.repository == 'zhuoshaojian/cindy'", verify)
-        self.assertIn("github.ref == 'refs/heads/feat/cloud-settings-native-client'", verify)
+        self.assertIn("github.ref == 'refs/heads/cloud-image-delivery'", verify)
         self.assertIn("github.event_name == 'push'", verify)
 
     def test_cache_keys_stay_in_cache_step_without_oidc_or_registry_keys(self):
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[1]
         workflow = (root / '.github/workflows/cloud-image-delivery.yml').read_text()
         before, cache = workflow.split('  cache:', 1)
         self.assertNotIn('id-token:', workflow)

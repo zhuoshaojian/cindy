@@ -1,0 +1,5 @@
+{
+  "DEBIAN_BUILD_MIRROR": "https://mirrors.aliyun.com",
+  "PLANK_SOURCE_URL": "https://mirrors.aliyun.com/debian/pool/main/p/plank/plank_0.11.89.orig.tar.xz",
+  "PLANK_DEBIAN_SOURCE_URL": "https://mirrors.aliyun.com/debian/pool/main/p/plank/plank_0.11.89-4.debian.tar.xz"
+}

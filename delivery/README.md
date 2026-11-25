@@ -1,42 +1,51 @@
 # 云镜像交付流水线
 
-[`cloud-image-delivery.yml`](../../../.github/workflows/cloud-image-delivery.yml) 在 fork 的
-`feat/cloud-settings-native-client` 上构建、隔离验收并发布候选镜像，再为它准备 ACS 镜像缓存。
+本分支只放交付工具，不含客户端代码。[`cloud-image-delivery.yml`](../.github/workflows/cloud-image-delivery.yml)
+按 [`version.json`](version.json) 取上游 `makecindy/cindy` 的正式版本，用上游自带的镜像配方
+（`deploy/linux-desktop/`，见上游该目录的 README）构建，隔离验收后发布候选镜像，再准备 ACS 镜像缓存。
 它不修改 CIS、实例或新领取默认；产品验收和实例准入在流水线之外完成。
 首次配置见 [BOOTSTRAP.md](BOOTSTRAP.md)，runner 见 [runner/README.md](runner/README.md)。
 
-每个版本只交付一份镜像。主容器和本仓提供的 init 使用同一个精确引用；Runner、DinD 和
-BuildKit 只是构建工具，不进入云实例。
+每个版本只交付一份镜像。Runner、DinD 和 BuildKit 只是构建工具，不进入云实例。
+
+## 交付一个版本
+
+1. 等上游发布正式版本（tag `vX.Y.Z`，不用 `-beta`）。只能交付已合入云实例配方的版本，否则检查失败。
+2. 改 `version.json`：`upstreamVersion`、该 tag 指向的完整 `upstreamCommit`，`cloudRevision`
+   从 1 开始；同一上游版本再交付时只把 `cloudRevision` 加 1，提交不变。
+3. 推送到 `cloud-image-delivery`。
+
+镜像版本为 `X.Y.Z-cloud.N`，两个不可变标签：`X.Y.Z-cloud.N-cn-amd64` 与 `sha-<本分支提交>-cn-amd64`。
 
 ## 触发
 
 | 推送内容 | 行为 |
 | --- | --- |
-| 只改说明文档（`deploy/linux-desktop/*.md`、其下任何 `README.md`、`delivery/**/*.md`），或只改 `deploy/linux-desktop/` 与本 workflow 之外的文件 | 不触发 |
-| 配方、运行时资源或交付工具变化，`version.json` 未变 | 只运行 `verify` |
+| 只改说明文档（`delivery/**/*.md`），或 `delivery/` 与本 workflow 之外的文件 | 不触发 |
+| 交付工具或构建设置变化，`version.json` 未变 | 只运行 `verify` |
 | `version.json` 合法递增 | `verify → candidate → cache` |
 | `workflow_dispatch` | 完整交付，仍受分支、Environment 和不可变标签约束 |
 
-- 排除规则写在 workflow 的 `push.paths`。`runtime-guidance/settings.md` 会打包进应用，不算
-  说明文档，交付它的修改要递增修订号。
-- 应用源码通过 `source-freeze.json` 进入镜像，改应用源码本身不会触发。
-- 只接受本 fork 该分支的 push 和 dispatch，不运行 PR。workflow 的 `concurrency` 保证同一分支
-  同时只有一个运行。
-- 版本规则见 [DUAL-VERSION-UPDATES.md](../DUAL-VERSION-UPDATES.md)。
+- 只接受本 fork 该分支的 push 和 dispatch，不运行 PR；`concurrency` 保证同时只有一个运行。
+- 国内下载镜像写在 [`build-sources.json`](build-sources.json)，只能是上游配方允许替换的下载项
+  （`build-image.py` 的 `--source-arg`），配方仍校验每个校验和与签名。上游升级 Plank 版本时这里的
+  地址要随之更新，否则构建因校验和不符失败。
 
 ## Job
 
 1. `verify`（`cindy-fork-cloud-check`，无发布凭据、无 Docker）：使用 runner 自带的 Node 24，
-   只安装 `checks/package-lock.json` 锁定的检查依赖；保留完整历史，只稀疏检出回归需要的文件；
-   `plan.py --fetch-upstream` 从 `makecindy/cindy` 取上游 tag，核对 commit 和版本递增；运行
-   [离线检查](../README.md#local-checks)。
+   只安装 `checks/package-lock.json` 锁定的检查依赖；`upstream.py --plan-only` 只取该 tag 和计划要读的
+   两个文件，`plan.py` 核对 tag 与提交、检出位置、该版本含云实例配方、Electron 版本精确固定，以及
+   `version.json` 相对上次合法递增；运行本目录的 Node 与 Python 测试。
 2. `candidate`（`cindy-fork-cloud-build`，Environment `cloud-image-candidate-cn`）：
    - 先确认已声明不可变标签、构建缓存仓库不是运行时仓库、x86_64、Python >= 3.12、
      Docker 存储驱动为 `overlay2`；
    - 按固定 SHA-256 把 Git LFS 和（`acr-ak` 模式下的）阿里云 CLI 装到 job 临时目录，不用 sudo；
-   - 登录构建缓存仓库，执行 `build-image.py --builder --cache-repository`
-     （见 [SOURCE-BUILD.md](../SOURCE-BUILD.md)），再执行 `smoke.py`；
-   - 重新登录运行时仓库，执行 `publish.py`；
+   - 登录构建缓存仓库；`upstream.py --history` 检出该版本（含提交历史，文件内容按需下载），
+     `build.py` 用上游 `build-image.py --builder --cache-repository` 与 `build-sources.json` 构建；
+     再执行 `smoke.py`；
+   - 重新登录运行时仓库，执行 `publish.py`：只发布 smoke 过的那份，核对镜像标签、构建记录里的
+     上游提交与版本、打包后原生模块加载的 Electron 版本；
    - 上传不含凭据的记录 artifact，保留 30 天：`candidate.json`、smoke 结果、构建日志与记录。
 3. `cache`（`cindy-fork-cloud-cache`，Environment `cloud-image-cache-cn`）：按 artifact ID 取回
    `candidate.json`，运行 `cache.mjs`，上传 `cache-status.json`。
@@ -65,7 +74,7 @@ smoke 不验证真实身份、OAuth 或 DeviceLink。
 
 - 发布前核对交付计划、image ID、标签、两层布局、smoke 的全部检查项和应用版本，以及五份构建
   记录（含打包后的 SQLite/sqlite-vec/PTY 结果）。
-- 写入两个不可变标签：`<版本>-cn-amd64` 与 `sha-<配方 commit>-cn-amd64`，二者必须读回同一
+- 写入两个不可变标签：`<版本>-cn-amd64` 与 `sha-<本分支提交>-cn-amd64`，二者必须读回同一
   manifest digest。写入前并行检查两个标签在公开端点和 VPC 上传端点都没有冲突；冲突或读取失败
   时不写任何标签。
 - CI 传 `--reuse-buildkit-export`：用已测的 BuildKit 结果按 digest 上传（不带标签），确认
@@ -101,7 +110,7 @@ runner 一次性使用，跨运行的缓存放在独立的私有 Registry 仓库
 - 两个缓存标签：`fork-cloud-settings-cn-amd64-v2-base`（基座，`mode=max`）和
   `fork-cloud-settings-cn-amd64-v4-prepared`（应用准备层，`mode=min`）。
 - 基座按 `baseRecipeCommit` 标识，只随 `runtime-base` 输入变化。准备层含安装好的 pnpm 依赖、
-  Electron、Agent 资源、构建头文件和预编译的 native 模块，随冻结源码、上游版本和准备脚本变化；
+  Electron、Agent 资源、构建头文件和预编译的 native 模块，随上游源码、版本和准备脚本变化；
   云修订号和说明文档不影响它。
 - 执行顺序：`prepare-build`（解析准备层缓存）→ `materialize-build`（断网的
   `prepared-materialized` 目标，实际读取恢复的文件）→ `full-build`（基座、运行时、记录）。

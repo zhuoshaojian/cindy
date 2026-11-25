@@ -1,6 +1,6 @@
 # fork 专属一次性 runner
 
-这些 runner 只为 fork 的 `feat/cloud-settings-native-client` 交付服务。仓库、分支和命名空间
+这些 runner 只为 fork 的 `cloud-image-delivery` 交付服务。仓库、分支和命名空间
 固定在 [provision.py](provision.py)。runner 镜像由 [Dockerfile](Dockerfile) 在官方 runner 的固定
 digest 上加装 Python 3.12、编译工具和 dnsmasq；也可以使用字节一致的搬运副本。它是 CI 工具
 镜像，不是 Cindy 运行时基座。
@@ -73,7 +73,7 @@ digest 上加装 Python 3.12、编译工具和 dnsmasq；也可以使用字节�
    # 确认 kubectl context 是目标 ACK；不要使用业务命名空间。
    kubectl -n cindy-fork-runners create secret generic cindy-fork-autosupply-github \
      --from-file=token=/private/path/github-token
-   python3 deploy/linux-desktop/delivery/runner/render.py --config /private/path/controller.json \
+   python3 delivery/runner/render.py --config /private/path/controller.json \
      > /private/path/controller-manifest.json
    kubectl apply -f /private/path/controller-manifest.json
    kubectl -n cindy-fork-runners rollout status deployment/cindy-fork-autosupply

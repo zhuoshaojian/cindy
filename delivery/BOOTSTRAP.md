@@ -7,7 +7,7 @@ Repository/Environment 设置或仓库外的私有配置里，不写进源码、
 
 1. 在 fork 启用 Actions。不需要修改主仓、默认分支或组织/企业 runner。
 2. 创建两个 Environment，部署分支规则选 **Selected branches and tags**，只允许分支
-   `feat/cloud-settings-native-client`，不加 tag 规则；reviewer 按团队政策设置。
+   `cloud-image-delivery`，不加 tag 规则；reviewer 按团队政策设置。
 3. 填写下表。两个开关等其余配置和下文的权限验证完成后再设为 `true`。
 
 | 位置 | 名称 | 用途 |

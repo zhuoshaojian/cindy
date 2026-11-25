@@ -50,11 +50,11 @@ class InstallCliTest(unittest.TestCase):
                 self.assertFalse(output.exists())
 
     def test_workflow_installs_without_privilege_before_build(self):
-        workflow = (Path(__file__).resolve().parents[3] / '.github/workflows/cloud-image-delivery.yml').read_text()
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/cloud-image-delivery.yml').read_text()
         self.assertNotIn('setup-aliyun-cli-action', workflow)
         candidate = workflow.split('  candidate:', 1)[1].split('  cache:', 1)[0]
-        self.assertLess(candidate.index('install_aliyun_cli.py'), candidate.index('build-image.py'))
-        self.assertEqual(workflow.count('python3 deploy/linux-desktop/delivery/install_aliyun_cli.py'), 2)
+        self.assertLess(candidate.index('install_aliyun_cli.py'), candidate.index('delivery/build.py'))
+        self.assertEqual(workflow.count('python3 delivery/install_aliyun_cli.py'), 2)
 
 
 if __name__ == '__main__':

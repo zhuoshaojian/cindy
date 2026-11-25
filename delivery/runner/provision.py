@@ -4,7 +4,7 @@ import ipaddress
 import re
 
 REPOSITORY = 'zhuoshaojian/cindy'
-BRANCH = 'feat/cloud-settings-native-client'
+BRANCH = 'cloud-image-delivery'
 WORKFLOW = '.github/workflows/cloud-image-delivery.yml'
 MANAGER = 'cindy-fork-autosupply'
 LABEL = 'app.kubernetes.io/managed-by'

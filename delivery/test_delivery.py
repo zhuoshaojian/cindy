@@ -8,9 +8,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from versioning import load, cloud_version, image_tag, version_key, require_successor, require_same_release, validate
+from versioning import load, cloud_version, image_tag, source_tag, version_key, require_successor, require_same_release, validate
 from publish import publish_tags, publish, registry_manifest, check_build
-from plan import plan
+from plan import plan, git as delivery_git
+import upstream as upstream_checkout
+import upstream_fixture
 
 HERE = Path(__file__).resolve().parent
 ACTUAL = load(HERE / 'version.json')
@@ -46,15 +48,57 @@ class VersionTest(unittest.TestCase):
         require_same_release(existing, VERSION, 'sha256:' + 'a'*64)
         with self.assertRaises(ValueError): require_same_release(existing, VERSION, 'sha256:' + 'b'*64)
 
-    def test_plan_binds_real_frozen_upstream_without_formal_promotion(self):
-        result = plan()
-        self.assertEqual(result['version'], ACTUAL)
-        self.assertFalse(result['releaseApproved'])
-        self.assertEqual(result['channel'], 'candidate')
+
+class PlanTest(unittest.TestCase):
+    """Real Git: a local upstream stand-in and this branch as the delivery repository."""
+
+    def checkout(self, temporary, **fixture):
+        origin, tagged, later = upstream_fixture.upstream(temporary, **fixture)
+        value = {**VERSION, 'upstreamVersion': '0.1.150', 'upstreamCommit': tagged}
+        directory = Path(temporary) / 'upstream'
+        upstream_checkout.fetch(directory, value, url=origin.as_uri())
+        return directory, value, tagged, later
+
+    def test_binds_the_upstream_release_and_names_the_delivery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory, value, tagged, _ = self.checkout(temporary)
+            with patch('plan.load', return_value=value):
+                result = plan(directory)
+            delivery = delivery_git('rev-parse', 'HEAD')
+            self.assertEqual(result['sourceCommit'], tagged)
+            self.assertEqual(result['upstreamTag'], 'v0.1.150')
+            self.assertEqual(result['deliveryCommit'], delivery)
+            self.assertEqual(result['sourceTag'], source_tag(delivery))
+            self.assertEqual(result['imageTag'], '0.1.150-cloud.1-cn-amd64')
+            self.assertEqual(result['electronVersion'], '42.11.12')
+            self.assertEqual((result['channel'], result['releaseApproved']), ('candidate', False))
+
+    def test_rejects_a_moved_tag_a_moved_checkout_and_releases_without_the_recipe(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory, value, tagged, later = self.checkout(temporary)
+            with patch('plan.load', return_value={**value, 'upstreamCommit': later}):
+                with self.assertRaisesRegex(ValueError, 'UPSTREAM_TAG_COMMIT_MISMATCH'): plan(directory)
+            upstream_fixture.git(directory, 'fetch', '-q', 'origin', 'main')
+            upstream_fixture.git(directory, 'checkout', '-q', '--detach', 'FETCH_HEAD')
+            with patch('plan.load', return_value=value):
+                with self.assertRaisesRegex(ValueError, 'UPSTREAM_CHECKOUT_MISMATCH'): plan(directory)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory, value, _, _ = self.checkout(temporary, recipe=False)
+            with patch('plan.load', return_value=value):
+                with self.assertRaisesRegex(ValueError, 'NO_CLOUD_RECIPE'): plan(directory)
+
+    def test_electron_must_be_an_exact_release(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory, value, _, _ = self.checkout(temporary, electron='^42.11.12')
+            with patch('plan.load', return_value=value):
+                with self.assertRaisesRegex(ValueError, 'ELECTRON_VERSION_UNPINNED'): plan(directory)
 
     def test_missing_previous_object_is_not_treated_as_first_release(self):
-        with patch('plan.git', side_effect=[ACTUAL['upstreamCommit'], subprocess.CalledProcessError(1, ['git'])]):
-            with self.assertRaises(subprocess.CalledProcessError): plan('a'*40)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory, value, _, _ = self.checkout(temporary)
+            with patch('plan.load', return_value=value):
+                with self.assertRaises(subprocess.CalledProcessError): plan(directory, 'f'*40)
+                with self.assertRaisesRegex(ValueError, 'PREVIOUS_MUST_BE_COMMIT_SHA'): plan(directory, 'main')
 
 class PublishTest(unittest.TestCase):
     def test_vpc_transport_preserves_public_identity_and_checks_both_endpoints(self):
@@ -227,16 +271,18 @@ class PublishTest(unittest.TestCase):
     def test_prepublication_gate_rejects_wrong_source_and_incomplete_smoke(self):
         with tempfile.TemporaryDirectory() as temporary:
             records = Path(temporary)
-            p = {'version': VERSION, 'imageTag': image_tag(VERSION), 'channel': 'candidate', 'releaseApproved': False, 'recipeCommit': 'a'*40}
+            p = {'version': VERSION, 'imageTag': image_tag(VERSION), 'channel': 'candidate', 'releaseApproved': False,
+                 'sourceCommit': 'a'*40, 'electronVersion': '42.11.12'}
             image_id = 'sha256:'+'c'*64
             info = {'Id': image_id, 'Os': 'linux', 'Architecture': 'amd64', 'RootFS': {'Layers': ['a','b']}, 'Config': {'Labels': {
                 'io.cindy.source-commit': 'a'*40, 'io.cindy.upstream-version': VERSION['upstreamVersion'],
                 'io.cindy.cloud-revision': str(VERSION['cloudRevision']), 'io.cindy.region': 'cn', 'io.cindy.target-architecture': 'amd64'}}}
-            result = {'imageId': image_id, 'recipeCommit': 'a'*40}
+            result = {'imageId': image_id, 'sourceCommit': 'a'*40}
             proof = {'imageId': image_id, 'passed': True, 'nativeArchitecture': 'x86_64', 'applicationVersion': '0.1.108-cloud.1', **{k:True for k in ['dockPreferencesHidden','networkIsolated','readOnlyRoot','sandboxedRenderers','legacyHome','desktopReady','shutdown']}}
             for n in ['runtime-layer-audit.json','agent-source-proof.json','overlay-application.json']:
                 (records/n).write_text('{}')
-            (records/'build-inputs.json').write_text(json.dumps({'recipeCommit':'a'*40,'version':VERSION}))
+            identity = {'upstreamVersion': VERSION['upstreamVersion'], 'cloudRevision': VERSION['cloudRevision']}
+            (records/'build-inputs.json').write_text(json.dumps({'sourceCommit':'a'*40,'baseRecipeCommit':'b'*40,'version':identity}))
             native = records/'native-modules.json'
             native.write_text(json.dumps({'passed':True,'sqlite':True,'sqliteVec':True,'pty':True,'electronVersion':'42.11.12','abi':'145'}))
             self.assertEqual(len(check_build(p,info,result,proof,records)),5)
@@ -254,5 +300,15 @@ class PublishTest(unittest.TestCase):
                 with self.subTest(key=key), self.assertRaises(ValueError): check_build(p,info,result,{**proof,key:value},records)
             broken = copy.deepcopy(info);broken['Config']['Labels']['io.cindy.cloud-revision']='99'
             with self.assertRaisesRegex(ValueError, 'LABEL'): check_build(p,broken,result,proof,records)
+            # Another source commit anywhere in the records is another build.
+            with self.assertRaisesRegex(ValueError, 'BUILD_IDENTITY_MISMATCH'): check_build(p,info,{**result,'sourceCommit':'d'*40},proof,records)
+            broken = copy.deepcopy(info);broken['Config']['Labels']['io.cindy.source-commit']='d'*40
+            with self.assertRaisesRegex(ValueError, 'LABEL'): check_build(p,broken,result,proof,records)
+            # The packaged modules must load in the Electron the release pins.
+            with self.assertRaisesRegex(ValueError, 'NATIVE_PROBE_MISSING'): check_build({**p,'electronVersion':'43.0.0'},info,result,proof,records)
+            for inputs in ({'sourceCommit':'d'*40,'version':identity}, {'sourceCommit':'a'*40,'version':VERSION}):
+                (records/'build-inputs.json').write_text(json.dumps(inputs))
+                with self.subTest(inputs=inputs), self.assertRaisesRegex(ValueError, 'BUILD_RECORD_IDENTITY_MISMATCH'):
+                    check_build(p,info,result,proof,records)
 
 if __name__ == '__main__': unittest.main()

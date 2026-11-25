@@ -37,10 +37,11 @@ def check_build(plan, info, result, smoke, records):
     version = validate(plan['version'])
     if plan['imageTag'] != image_tag(version) or plan['channel'] != 'candidate' or plan['releaseApproved'] is not False:
         raise ValueError('INVALID_CANDIDATE_PLAN')
-    if result['imageId'] != info['Id'] or result['recipeCommit'] != plan['recipeCommit']:
+    # The image is upstream's release built by its own recipe: one source commit throughout.
+    if result['imageId'] != info['Id'] or result.get('sourceCommit') != plan['sourceCommit']:
         raise ValueError('BUILD_IDENTITY_MISMATCH')
     labels = info['Config']['Labels']
-    expected = {'io.cindy.source-commit': plan['recipeCommit'],
+    expected = {'io.cindy.source-commit': plan['sourceCommit'],
                 'io.cindy.upstream-version': version['upstreamVersion'],
                 'io.cindy.cloud-revision': str(version['cloudRevision']),
                 'io.cindy.region': version['region'], 'io.cindy.target-architecture': 'amd64'}
@@ -59,10 +60,11 @@ def check_build(plan, info, result, smoke, records):
     hashes = {name: hashlib.sha256((records / name).read_bytes()).hexdigest() for name in required}
     native = json.loads((records / 'native-modules.json').read_text())
     if (native.get('passed') is not True or native.get('sqlite') is not True or native.get('sqliteVec') is not True or native.get('pty') is not True
-            or native.get('electronVersion') != '42.11.12' or not str(native.get('abi', '')).isdigit()):
+            or native.get('electronVersion') != plan['electronVersion'] or not str(native.get('abi', '')).isdigit()):
         raise ValueError('PACKAGED_NATIVE_PROBE_MISSING')
     inputs = json.loads((records / 'build-inputs.json').read_text())
-    if inputs.get('recipeCommit') != plan['recipeCommit'] or inputs.get('version') != version:
+    identity = {'upstreamVersion': version['upstreamVersion'], 'cloudRevision': version['cloudRevision']}
+    if inputs.get('sourceCommit') != plan['sourceCommit'] or inputs.get('version') != identity:
         raise ValueError('BUILD_RECORD_IDENTITY_MISMATCH')
     return hashes
 
@@ -190,8 +192,9 @@ if __name__ == '__main__':
     smoke = json.loads(args.smoke.read_text())
     hashes = check_build(plan, info, result, smoke, args.build / 'records')
     reference = args.repository + ':' + plan['imageTag']
-    alias = args.repository + ':' + source_tag(plan['recipeCommit'])
-    if plan.get('sourceTag') != source_tag(plan['recipeCommit']):
+    # The second tag names this delivery commit: one upstream release may have several revisions.
+    alias = args.repository + ':' + source_tag(plan['deliveryCommit'])
+    if plan.get('sourceTag') != source_tag(plan['deliveryCommit']):
         raise ValueError('SOURCE_TAG_MISMATCH')
     transport = validate_push_repository(args.repository, args.push_repository)
     exporter = (lambda: export_tested_image(args.build.resolve(), image_id, transport)) if args.reuse_buildkit_export else None
