@@ -39,9 +39,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The previous version.json decides whether this push is a new release.
-          fetch-depth: 0
           persist-credentials: false
+      - name: Fetch the previous delivery commit
+        # The previous version.json decides whether this push is a new release. Fetch only that
+        # commit; a full-depth checkout would download every branch and tag of the fork.
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          PREVIOUS: ${{ github.event.before }}
+        run: git fetch --no-tags --depth=1 origin "$PREVIOUS"
       - name: Use Node bundled in the pinned fork runner
         run: bash delivery/use-runner-node.sh
       - name: Install only locked delivery check dependencies
