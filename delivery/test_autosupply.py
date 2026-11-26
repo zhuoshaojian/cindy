@@ -281,11 +281,12 @@ class AutosupplyTest(unittest.TestCase):
                 self.assertTrue(all('@sha256:' in v['image'] for v in pod['containers']))
                 privileged = [v['name'] for v in pod['containers'] if v['securityContext'].get('privileged')]
                 self.assertEqual(privileged, ['dind'] if role == 'build' else [])
-                # Docker redirects blobs to another host: the build
-                # template must route both CDNs, without widening check/cache DNS.
+                # Docker redirects blobs to another host and the image's pnpm install
+                # downloads every tarball from the npm registry: the build template must
+                # route them (directly npm runs at tens of KiB/s), without widening check/cache DNS.
                 dns_env = {v['name']: v.get('value') for v in next(v for v in pod['containers'] if v['name'] == 'dns')['env']}
                 domains = dns_env['SNI_FORWARD_DOMAINS'].split(',')
-                for cdn in ['production.cloudflare.docker.com', 'production.cloudfront.docker.com']:
+                for cdn in ['production.cloudflare.docker.com', 'production.cloudfront.docker.com', 'registry.npmjs.org']:
                     self.assertEqual(cdn in domains, role == 'build')
                 self.assertFalse(pod['automountServiceAccountToken'])
                 self.assertTrue(all(set(v) <= {'name', 'emptyDir', 'secret', 'configMap'} for v in pod['volumes']))
