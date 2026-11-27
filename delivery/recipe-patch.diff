@@ -1,0 +1,50 @@
+diff --git a/deploy/linux-desktop/runtime-updates/overlay.test.mjs b/deploy/linux-desktop/runtime-updates/overlay.test.mjs
+index 2e37d347e3..33099ca4d5 100644
+--- a/deploy/linux-desktop/runtime-updates/overlay.test.mjs
++++ b/deploy/linux-desktop/runtime-updates/overlay.test.mjs
+@@ -113,6 +113,8 @@ async function searchCatalog(cloud) {
+   const bundle = await require('esbuild').build({
+     entryPoints: [catalog], bundle: true, write: false, platform: 'node', format: 'cjs',
+     alias: { '@': renderer },
++    // As the cloud build defines it (stage-cloud-overlays.mjs); sidecars may read the region.
++    define: { 'import.meta.env.VITE_CINDY_AUTH_REGION': '"cn"' },
+     plugins: [{ name: 'real-cloud-search-fixture', setup(build) {
+       // Workspace packages resolve through their own exports, as the app build does.
+       build.onResolve({ filter: /^@cindy\// }, ({ path: specifier }) => {
+diff --git a/deploy/linux-desktop/runtime-window-controls/overlay.mjs b/deploy/linux-desktop/runtime-window-controls/overlay.mjs
+index 518a6a5188..58ff75fad1 100644
+--- a/deploy/linux-desktop/runtime-window-controls/overlay.mjs
++++ b/deploy/linux-desktop/runtime-window-controls/overlay.mjs
+@@ -33,8 +33,9 @@ const cloudMainWindowControls = createCloudMainWindowControls({
+     code = once(code, "  mainWindow.on('close', (event) => {\n    if (isQuitting) return;",
+       "  mainWindow.on('close', (event) => {\n    if (isQuitting) return;\n    if (cloudMainWindowControls.preventClose(event)) return;");
+     // The Dock restores a minimized window, so the minimize IPC stays unchanged.
+-    code = once(code, "  ipcMain.on('window-close', (event) => {\n    const win = BrowserWindow.fromWebContents(event.sender);",
+-      "  ipcMain.on('window-close', (event) => {\n    const win = BrowserWindow.fromWebContents(event.sender);\n    if (cloudMainWindowControls.blocksAction(win)) return;");
++    // Blocked before the close-once branch too: on Linux it can quit the app.
++    code = once(code, "  ipcMain.on('window-close', (event, once: unknown) => {\n    const win = BrowserWindow.fromWebContents(event.sender);",
++      "  ipcMain.on('window-close', (event, once: unknown) => {\n    const win = BrowserWindow.fromWebContents(event.sender);\n    if (cloudMainWindowControls.blocksAction(win)) return;");
+   } else if (relativePath === preload) {
+     code = `import { hasCloudMainWindowControls } from '${virtualId}';\n${code}`;
+     code = once(code, '  platform: process.platform,',
+diff --git a/deploy/linux-desktop/runtime-window-controls/overlay.test.mjs b/deploy/linux-desktop/runtime-window-controls/overlay.test.mjs
+index 5b36984ddd..fc82f02982 100644
+--- a/deploy/linux-desktop/runtime-window-controls/overlay.test.mjs
++++ b/deploy/linux-desktop/runtime-window-controls/overlay.test.mjs
+@@ -76,13 +76,15 @@ test('real integration transforms compile, preserve native files, and render the
+     if (target.endsWith('bootstrap-electron.ts')) {
+       // The minimize IPC is untouched; on Xfce it is a native minimize.
+       assert.match(transformed, /const window = BrowserWindow\.fromWebContents\(event\.sender\) \?\? mainWindowRef;\n\s+if \(window\) minimizeWindow\(window\);/);
++      // The close IPC is refused before its close-once branch, which may quit on Linux.
++      assert.match(transformed, /const win = BrowserWindow\.fromWebContents\(event\.sender\);\n\s+if \(cloudMainWindowControls\.blocksAction\(win\)\) return;\n\s+if \(once !== undefined\) \{/);
+     }
+     if (!target.endsWith('WindowControls.tsx')) continue;
+     const api = { platform: 'linux', windowMaximize() {}, windowMinimize() {}, windowClose() {} };
+     const context = { module: { exports: {} }, window: { electronAPI: api }, require: (id) => {
+       if (id === 'react-i18next') return { useTranslation: () => ({ t: value => value }) };
+       if (id === '@/lib/utils') return { cn: (...parts) => parts.join(' ') };
+-      if (id.startsWith('@/lib/')) return new Proxy({}, { get: () => () => false });
++      if (id.startsWith('@/lib/') || id.startsWith('@/utils/')) return new Proxy({}, { get: () => () => false });
+       if (id.startsWith('@/components/')) return new Proxy({}, { get: () => () => null });
+       return require(id);
+     } };

@@ -52,6 +52,11 @@ class VersionTest(unittest.TestCase):
 class PlanTest(unittest.TestCase):
     """Real Git: a local upstream stand-in and this branch as the delivery repository."""
 
+    def setUp(self):
+        # Fixture releases are built as-is; a committed recipe patch names the real release
+        # (test_recipe_patch.py covers patched plans).
+        self.enterContext(patch('recipe_patch.load', return_value=None))
+
     def checkout(self, temporary, **fixture):
         origin, tagged, later = upstream_fixture.upstream(temporary, **fixture)
         value = {**VERSION, 'upstreamVersion': '0.1.150', 'upstreamCommit': tagged}
