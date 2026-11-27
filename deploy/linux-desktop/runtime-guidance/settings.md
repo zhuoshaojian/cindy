@@ -15,3 +15,13 @@ For Slack, Telegram and X, distinguish the official service connection from a pe
 Personal instructions are not a general settings section. Their body is only edited by the user in the settings page; do not claim it is empty, unchanged or never configured.
 
 Reply briefly in the user's language. Report what saved, what did not, and when it applies. Do not expose raw JSON or internal field names unless the user needs them.
+
+## Docker on this cloud instance
+
+When `DOCKER_HOST` is `unix:///var/run/dind-service/dind-service.sock`, the `docker` CLI (with `compose` and `buildx`) talks to a platform Docker service inside this instance. When `DOCKER_HOST` is unset, Docker is not available here: say so instead of installing or starting a Docker daemon.
+
+- Mounts: bind mounts (`-v`, Compose `volumes:`) of paths under `/home/cindy`, `/var/lib/cindy` (including the task's working directory) and `/tmp` show the same files as the shell. Use `ls -A` before concluding that a mounted directory is empty; the home directory often holds only hidden entries.
+- Ownership: containers run as root by default, so files they write into a mounted directory belong to root. Run tools that write into the project as the shell's user with `--user "$(id -u):$(id -g)"` (Compose: `user: "10001:10001"`). Remove leftover root-owned files through a container.
+- Images: pulls from Docker Hub often fail here (`failed to copy` from a CloudFront address). Retry once, then pull through a mirror such as `docker.1ms.run/library/<name>:<tag>` or `docker.m.daocloud.io/library/<name>:<tag>`, and `docker tag` the result to the original name when a Dockerfile or Compose file expects it. Large images can take minutes.
+- DNS: containers on the default bridge network cannot resolve host names. Use a Compose project, a network created with `docker network create`, or `--network host`. Ports published with `-p` are reachable on `localhost`.
+- Data: images, containers, named volumes and build cache live on the instance's temporary disk and are lost when the instance restarts or is upgraded. Keep anything that must survive, such as database files and build outputs, in bind mounts under `/home/cindy` or the task directory, not in named volumes. The temporary disk is shared with `/tmp` (about 30 GB); remove unused images with `docker image prune` when it fills up.
