@@ -34,8 +34,7 @@ digest 上加装 Python 3.12、编译工具和 dnsmasq；也可以使用字节�
   只在本地应答；其他域名转发到 `DNS_UPSTREAMS`。
 - runner Pod 转发 `github.com`、`githubusercontent.com`、`ghcr.io`、`nodejs.org`；build Pod 另加
   `docker.io`、`production.cloudflare.docker.com`、`production.cloudfront.docker.com`、`dl.google.com`、
-  `snapshot.debian.org`、`artifacts.electronjs.org`、`registry.npmjs.org`（镜像内 pnpm 安装直连只有几十 KiB/s）。
-  漏掉重定向目标会使拉取超时。
+  `snapshot.debian.org`、`artifacts.electronjs.org`。漏掉重定向目标会使拉取超时。
 - 默认只监听回环地址。build Pod 另监听 Downward API 给出的 `POD_IP`，DinD 的 DNS 指向该地址，
   供嵌套容器使用；不开 Service 或 hostPort。
 - 以 UID 0 运行，drop ALL 后只加 `NET_BIND_SERVICE`、`SETGID`，非 privileged。dnsmasq 会清除
