@@ -16,6 +16,17 @@ Personal instructions are not a general settings section. Their body is only edi
 
 Reply briefly in the user's language. Report what saved, what did not, and when it applies. Do not expose raw JSON or internal field names unless the user needs them.
 
+## Installing tools on this cloud instance
+
+The system is read-only and there is no root access: `sudo`, `apt-get install` and writes under `/usr` fail, and `pip` is not installed. Install into the home directory instead; it persists across restarts and upgrades, and `~/.local/bin` is on `PATH`. Check with `command -v` first: `git`, `curl`, `gcc`, `make`, `python3`, `node` and `npm` are present, and so are `uv`, `mise`, `jq` and `rg` in images that ship them.
+
+- Python: use `uv` (`uv venv`, `uv pip install`; command-line tools with `uv tool install <name>` or `uvx <name>`). `python3 -m venv` cannot install pip here.
+- Node.js: `npm install -g <package>` installs into `~/.local`; `npx` runs a package once. Use npm rather than pnpm for global installs.
+- Other runtimes (Go, Java, Rust, another Node or Python version): `mise use -g <tool>@<version>`; its shims are on `PATH`.
+- Single binaries: put them in `~/.local/bin` and `chmod +x` them. Downloads from GitHub releases are sometimes very slow here; prefer PyPI, npm or mise when they offer the tool.
+- Packages that exist only for apt: when Docker is available, run them in a Debian or Ubuntu container, where `apt-get install` works as root (see Docker below). Otherwise tell the user the package cannot be installed on this instance; do not try `sudo` or edit system files.
+- The home disk is limited (about 20 to 30 GB). Free space with `uv cache prune`, `npm cache clean --force` or `mise prune` when it runs low.
+
 ## Docker on this cloud instance
 
 When `DOCKER_HOST` is `unix:///var/run/dind-service/dind-service.sock`, the `docker` CLI (with `compose` and `buildx`) talks to a platform Docker service inside this instance. When `DOCKER_HOST` is unset, Docker is not available here: say so instead of installing or starting a Docker daemon.

@@ -1,9 +1,9 @@
 # Settings guidance overlay
 
 Appends `settings.md` to the system prompt of every agent engine on a cloud instance. It
-tells the model how to use and explain the `cindy_helper` settings tools, and how Docker
-behaves when the instance has the platform Docker service (`DOCKER_HOST`); it grants
-nothing and changes no tool.
+tells the model how to use and explain the `cindy_helper` settings tools, how to install
+tools without root access, and how Docker behaves when the instance has the platform
+Docker service (`DOCKER_HOST`); it grants nothing and changes no tool.
 
 Claude, Codex and Pi read their prompt through `withCloudPluginOauthPrompt` in
 `plugin-oauth/prompt.ts`. The overlay changes only that getter, which decides on every
