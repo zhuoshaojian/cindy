@@ -1,0 +1,17 @@
+diff --git a/apps/desktop/src/main/device-link/pluginAutomationHost.desktop.ts b/apps/desktop/src/main/device-link/pluginAutomationHost.desktop.ts
+index 62781c4ac5..a2daa38bc5 100644
+--- a/apps/desktop/src/main/device-link/pluginAutomationHost.desktop.ts
++++ b/apps/desktop/src/main/device-link/pluginAutomationHost.desktop.ts
+@@ -3,7 +3,11 @@ import { getClientEndpoint } from '../clientEndpointsService.js';
+ import { serverApiFetch, type ApiFetchOptions } from '../serverApiClient.desktop.js';
+ import { createOfficialDeviceLinkApiFetch } from './deviceLinkApi.js';
+ 
+-const officialDeviceLinkApiFetch = createOfficialDeviceLinkApiFetch({ getClientEndpoint, serverApiFetch });
++// Forward at call time: in an import cycle this module can load before serverApiClient.desktop.
++const officialDeviceLinkApiFetch = createOfficialDeviceLinkApiFetch({
++  getClientEndpoint,
++  serverApiFetch: (...args) => serverApiFetch(...args),
++});
+ 
+ const endpoint = '/api/device-link/plugin-automation-host';
+ export interface AutomationHostChoice {

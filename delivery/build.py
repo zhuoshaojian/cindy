@@ -11,7 +11,7 @@ import re
 import subprocess
 from pathlib import Path
 
-import recipe_patch
+import release_patch
 from versioning import validate
 
 HERE = Path(__file__).resolve().parent
@@ -33,8 +33,8 @@ def load_sources(path=HERE / 'build-sources.json'):
 
 def command(upstream, plan, tag, builder, cache_repository, output, sources):
     version = validate(plan['version'])
-    # The release commit itself, or (only with a recipe patch) a commit made from it.
-    if (plan['sourceCommit'] != version['upstreamCommit']) != bool(plan.get('recipePatch')):
+    # The release commit itself, or (only with release patches) a commit made from it.
+    if (plan['sourceCommit'] != version['upstreamCommit']) != bool(plan.get('releasePatch')):
         raise ValueError('PLAN_SOURCE_MISMATCH')
     return ['python3', str(Path(upstream) / 'deploy/linux-desktop/build-image.py'),
             '--version', version['upstreamVersion'], '--cloud-revision', str(version['cloudRevision']),
@@ -45,10 +45,10 @@ def command(upstream, plan, tag, builder, cache_repository, output, sources):
 
 def build(upstream, plan, tag, builder, cache_repository, output, sources, run=subprocess.run):
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=upstream, text=True).strip()
-    patched = plan.get('recipePatch')
+    patched = plan.get('releasePatch')
     if patched and head == validate(plan['version'])['upstreamCommit']:
-        # plan.py made the patched commit in this checkout; build from it, recipe edits only.
-        recipe_patch.verify(upstream, plan['sourceCommit'], head, patched['paths'])
+        # plan.py made the patched commit in this checkout; build from it, declared files only.
+        release_patch.verify(upstream, plan['sourceCommit'], head, patched['paths'])
         subprocess.run(['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', '--detach', plan['sourceCommit']],
                        cwd=upstream, check=True)
         head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=upstream, text=True).strip()

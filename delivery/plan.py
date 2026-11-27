@@ -4,8 +4,8 @@ credential-free delivery plan.
 
 The image is built from upstream's own source and recipe at `upstreamCommit`; this branch
 only adds delivery tools and build settings, so its commit names the delivery (sourceTag).
-The one exception is a committed recipe patch (recipe_patch.py): the source commit is then
-that patch on the release, and the plan records it.
+The one exception is committed release patches (release_patch.py): the source commit is then
+those patches on the release, and the plan records them.
 """
 import argparse
 import json
@@ -14,7 +14,7 @@ import re
 import subprocess
 from pathlib import Path
 
-import recipe_patch
+import release_patch
 from versioning import COMMIT, cloud_version, image_tag, source_tag, load, require_successor
 
 HERE = Path(__file__).resolve().parent
@@ -49,11 +49,11 @@ def plan(upstream, previous=None):
     except subprocess.CalledProcessError:
         raise ValueError('UPSTREAM_RELEASE_HAS_NO_CLOUD_RECIPE') from None
     source, patched = value['upstreamCommit'], None
-    patch = recipe_patch.load()
-    if patch:
-        source, paths = recipe_patch.apply(upstream, patch, value['upstreamCommit'])
-        patched = {'upstreamPullRequest': patch['upstreamPullRequest'], 'sha256': patch['sha256'],
-                   'paths': paths, 'reason': patch['reason']}
+    release = release_patch.load()
+    if release:
+        source, paths = release_patch.apply(upstream, release, value['upstreamCommit'])
+        patched = {'paths': paths, 'patches': [{k: p[k] for k in ('upstreamPullRequest', 'sha256', 'paths', 'reason')}
+                                               for p in release['patches']]}
     changed = True
     if previous and previous != '0' * 40:
         if not COMMIT.fullmatch(previous):
@@ -66,7 +66,7 @@ def plan(upstream, previous=None):
     delivery = git('rev-parse', 'HEAD')
     return {'schemaVersion': 2, 'version': value, 'cloudVersion': cloud_version(value),
             'imageTag': image_tag(value), 'sourceTag': source_tag(delivery),
-            'upstreamTag': tag, 'sourceCommit': source, 'recipePatch': patched, 'deliveryCommit': delivery,
+            'upstreamTag': tag, 'sourceCommit': source, 'releasePatch': patched, 'deliveryCommit': delivery,
             'electronVersion': electron_version(upstream, value['upstreamCommit']),
             'releaseChanged': changed, 'channel': 'candidate', 'releaseApproved': False}
 
