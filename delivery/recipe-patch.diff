@@ -1,3 +1,227 @@
+diff --git a/deploy/linux-desktop/README.md b/deploy/linux-desktop/README.md
+index b80a70df2e..7f7a562597 100644
+--- a/deploy/linux-desktop/README.md
++++ b/deploy/linux-desktop/README.md
+@@ -66,7 +66,9 @@ would still occupy its layers. `io.cindy.*` labels record commit, versions and r
+ | [`runtime-support/`](runtime-support/README.md) | Seccomp launcher, health check, keyring check |
+ | [`runtime-desktop-xfce/`](runtime-desktop-xfce/README.md) | PID 1 wrapper, Xfce/Plank desktop, seccomp profile |
+ 
+-Overlays match exact source anchors and fail the build when the source changes.
++Overlays match exact source anchors and fail the build when the source changes. They add
++imports after a module's own imports ([`overlay-imports.mjs`](overlay-imports.mjs)), so
++upstream modules load in the same order as in the desktop build; staging checks this.
+ 
+ ## Runtime contract
+ 
+diff --git a/deploy/linux-desktop/overlay-imports.mjs b/deploy/linux-desktop/overlay-imports.mjs
+new file mode 100644
+index 0000000000..223674ad1f
+--- /dev/null
++++ b/deploy/linux-desktop/overlay-imports.mjs
+@@ -0,0 +1,30 @@
++// Overlays add imports after a module's own imports, never before them. The main bundle runs
++// modules in import order: an import placed first loads its whole graph ahead of the module's
++// own imports, and a module in an import cycle can then read a binding before it is initialized.
++import assert from 'node:assert/strict';
++import ts from 'typescript';
++
++function moduleRequests(code, file) {
++  const kind = file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
++  const source = ts.createSourceFile(file, code, ts.ScriptTarget.Latest, true, kind);
++  return source.statements.filter(node => ts.isImportDeclaration(node)
++    || (ts.isExportDeclaration(node) && node.moduleSpecifier)
++    || (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)));
++}
++
++/** Insert import lines right after the module's last import or re-export. */
++export function addImports(code, file, lines) {
++  const own = moduleRequests(code, file);
++  const text = lines.join('\n');
++  if (!own.length) return `${text}\n${code}`;
++  const end = own[own.length - 1].end;
++  return `${code.slice(0, end)}\n${text}${code.slice(end)}`;
++}
++
++/** The module's own imports must still come first, in their order. */
++export function assertImportOrderKept(before, after, file) {
++  const specifiers = code => moduleRequests(code, file)
++    .map(node => (node.moduleSpecifier ?? node.moduleReference.expression).text);
++  const original = specifiers(before);
++  assert.deepEqual(specifiers(after).slice(0, original.length), original, `Cloud overlay changed the import order of ${file}`);
++}
+diff --git a/deploy/linux-desktop/overlay-imports.test.mjs b/deploy/linux-desktop/overlay-imports.test.mjs
+new file mode 100644
+index 0000000000..b5ab8b8041
+--- /dev/null
++++ b/deploy/linux-desktop/overlay-imports.test.mjs
+@@ -0,0 +1,43 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import path from 'node:path';
++import { addImports, assertImportOrderKept } from './overlay-imports.mjs';
++import { transformCloudSource, targets as guidanceTargets } from './runtime-guidance/overlay.mjs';
++import { transformCloudWindowSource, targets as windowTargets } from './runtime-window-controls/overlay.mjs';
++import { transformCloudActivitySource, targets as activityTargets } from './runtime-activity/overlay.mjs';
++import { transformMaintenanceSource, targets as maintenanceTargets } from './runtime-maintenance/overlay.mjs';
++import { transformCloudIdentitySource, targets as identityTargets } from './runtime-identity/overlay.mjs';
++import { transformCloudUpdateSource, targets as updateTargets } from './runtime-updates/overlay.mjs';
++
++const source = "import { a } from './a.js';\nexport { b } from './b.js';\nconst value = a();\n";
++
++test('added imports follow the module\'s own imports and re-exports', () => {
++  const added = addImports(source, 'x.ts', ["import { c } from './c.js';"]);
++  assert.equal(added, "import { a } from './a.js';\nexport { b } from './b.js';\nimport { c } from './c.js';\nconst value = a();\n");
++  assertImportOrderKept(source, added, 'x.ts');
++  assert.equal(addImports('const value = 1;\n', 'x.ts', ["import { c } from './c.js';"]), "import { c } from './c.js';\nconst value = 1;\n");
++});
++
++test('an import placed before the module\'s own imports is rejected', () => {
++  assert.throws(() => assertImportOrderKept(source, `import { c } from './c.js';\n${source}`, 'x.ts'), /changed the import order of x\.ts/);
++  assert.throws(() => assertImportOrderKept(source, source.replace("export { b } from './b.js';\n", ''), 'x.ts'), /import order/);
++});
++
++// The overlays in the order stage-cloud-overlays.mjs applies them.
++const overlays = [[guidanceTargets, transformCloudSource], [windowTargets, transformCloudWindowSource],
++  [updateTargets, transformCloudUpdateSource], [identityTargets, transformCloudIdentitySource],
++  [activityTargets, transformCloudActivitySource], [maintenanceTargets, transformMaintenanceSource]];
++const client = process.env.CINDY_TEST_CLIENT_SOURCE;
++test('real sources keep their own imports first after every overlay', { skip: !client }, () => {
++  const files = new Map();
++  for (const [targets, transform] of overlays) {
++    for (const relative of targets) {
++      const before = files.get(relative) ?? fs.readFileSync(path.join(client, relative), 'utf8');
++      const after = transform(before, relative);
++      assertImportOrderKept(before, after, relative);
++      files.set(relative, after);
++    }
++  }
++  assert.ok(files.size > 10);
++});
+diff --git a/deploy/linux-desktop/runtime-activity/overlay.mjs b/deploy/linux-desktop/runtime-activity/overlay.mjs
+index 43c7617356..0640444b56 100644
+--- a/deploy/linux-desktop/runtime-activity/overlay.mjs
++++ b/deploy/linux-desktop/runtime-activity/overlay.mjs
+@@ -3,6 +3,7 @@ import fs from 'node:fs';
+ import path from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ import ts from 'typescript';
++import { addImports } from '../overlay-imports.mjs';
+ 
+ const virtualId = 'virtual:cindy-cloud-task-activity';
+ const bootstrap = 'apps/desktop/src/main/bootstrap-electron.ts';
+@@ -20,11 +21,12 @@ export function transformCloudActivitySource(code, relative) {
+   if (!targets.includes(relative)) return null;
+   assert.ok(!code.includes('/* cloud-task-activity */'), 'Cloud activity overlay applied twice');
+   if (relative === bootstrap) {
+-    code = `import { cloudActivitySources, configureCloudActivity, readSchedulerActivity } from '${virtualId}';
+-import { readCloudInputActivity } from './maker-ipc/register.js';
+-import { getCurrentDbClientSnapshot as cloudActivityDbSnapshot } from './localDb/client/current.js';
+-import { isHumanDesktopInputActive, isAgentDesktopInputActive } from './remote-desktop/inputOwnership.js';
+-${code}`;
++    code = addImports(code, relative, [
++      `import { cloudActivitySources, configureCloudActivity, readSchedulerActivity } from '${virtualId}';`,
++      "import { readCloudInputActivity } from './maker-ipc/register.js';",
++      "import { getCurrentDbClientSnapshot as cloudActivityDbSnapshot } from './localDb/client/current.js';",
++      "import { isHumanDesktopInputActive, isAgentDesktopInputActive } from './remote-desktop/inputOwnership.js';",
++    ]);
+     code = once(code, '      registerRelaunchBusyActivityIpc(readRelaunchActivitySources, {',
+       '      registerRelaunchBusyActivityIpc(cloudActivitySources(readRelaunchActivitySources), {');
+     code = once(code, '    const stopStatus = startInstanceStatus(', `    configureCloudActivity({
+@@ -51,7 +53,8 @@ ${code}`;
+     assert.deepEqual(method.parameters.map(p => p.name.getText(ast)), ['config', 'read', 'onFailure', 'readOauthIdentity', 'readAuthRecovery']);
+     assert.ok(method.body && method.body.getText(ast).includes('write(true)'), 'Cloud status shutdown changed');
+     const offset = method.body.getStart(ast), end = method.body.end;
+-    code = `import { startCloudStatus } from '${virtualId}';\n${code.slice(0, offset)}{\n  return startCloudStatus({ config, read, onFailure, readOauthIdentity, readAuthRecovery, build: buildInstanceStatus });\n}${code.slice(end)}`;
++    code = addImports(`${code.slice(0, offset)}{\n  return startCloudStatus({ config, read, onFailure, readOauthIdentity, readAuthRecovery, build: buildInstanceStatus });\n}${code.slice(end)}`,
++      relative, [`import { startCloudStatus } from '${virtualId}';`]);
+   } else if (relative === coordinator) {
+     code = once(code, '  collectQueuedPayloadTexts(): string[] {', `  readCloudInputCounts() {
+     let active = 0, queued = 0, interactions = 0;
+diff --git a/deploy/linux-desktop/runtime-guidance/overlay.mjs b/deploy/linux-desktop/runtime-guidance/overlay.mjs
+index 76d4c5032b..db95cb2de9 100644
+--- a/deploy/linux-desktop/runtime-guidance/overlay.mjs
++++ b/deploy/linux-desktop/runtime-guidance/overlay.mjs
+@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
+ import fs from 'node:fs';
+ import path from 'node:path';
+ import { createHash } from 'node:crypto';
++import { addImports } from '../overlay-imports.mjs';
+ 
+ export const settingsPrompt = fs.readFileSync(new URL('./settings.md', import.meta.url), 'utf8').trimEnd();
+ export const promptSha256 = createHash('sha256').update(settingsPrompt).digest('hex');
+@@ -43,7 +44,7 @@ export function transformCloudSource(code, relativePath) {
+     once(code, getterAnchor, relativePath);
+     const getter = getterAnchor.slice('get: () => '.length, -1);
+     code = code.replace(getterAnchor, `get: () => appendCloudSettingsPrompt(${getter}, getInstanceConfig() !== null),`);
+-    return `import { appendCloudSettingsPrompt } from '${virtualId}';\n${code}`;
++    return addImports(code, relativePath, [`import { appendCloudSettingsPrompt } from '${virtualId}';`]);
+   }
+   const anchors = wiring[relativePath];
+   if (!anchors) return null;
+diff --git a/deploy/linux-desktop/runtime-maintenance/overlay.mjs b/deploy/linux-desktop/runtime-maintenance/overlay.mjs
+index cbce115249..07c1385d45 100644
+--- a/deploy/linux-desktop/runtime-maintenance/overlay.mjs
++++ b/deploy/linux-desktop/runtime-maintenance/overlay.mjs
+@@ -3,6 +3,7 @@ import fs from 'node:fs';
+ import path from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ import ts from 'typescript';
++import { addImports } from '../overlay-imports.mjs';
+ 
+ const virtualId = 'virtual:cindy-cloud-maintenance';
+ const bootstrap = 'apps/desktop/src/main/bootstrap-electron.ts';
+@@ -38,12 +39,13 @@ export function transformMaintenanceSource(code, relative) {
+     // controllers, the quit chain's outcome, and activity sampling.
+     const marker = '    const stopStatus = startInstanceStatus(';
+     assert.equal(code.split(marker).length, 2, 'Maintenance activity integration changed');
+-    return `/* cloud-maintenance-v1 */\nimport { cloudMaintenance, cloudMaintenanceQuit, configureMaintenanceActivity } from '${virtualId}';\n`
+-      + `import { readMaintenanceActivity } from 'virtual:cindy-cloud-task-activity';\n`
+-      + `import { connectInstanceMaintenance as connectCloudMaintenance } from './instance-runtime/maintenance.js';\n`
+-      + `import { observeQuitSteps as observeCloudQuitSteps } from './lifecycle.js';\n`
+-      + code.replace(marker, `    connectCloudMaintenance(cloudMaintenance);\n    observeCloudQuitSteps(cloudMaintenanceQuit);\n`
+-        + `    configureMaintenanceActivity(readMaintenanceActivity);\n${marker}`);
++    return '/* cloud-maintenance-v1 */\n' + addImports(code.replace(marker, `    connectCloudMaintenance(cloudMaintenance);\n    observeCloudQuitSteps(cloudMaintenanceQuit);\n`
++        + `    configureMaintenanceActivity(readMaintenanceActivity);\n${marker}`), relative, [
++      `import { cloudMaintenance, cloudMaintenanceQuit, configureMaintenanceActivity } from '${virtualId}';`,
++      "import { readMaintenanceActivity } from 'virtual:cindy-cloud-task-activity';",
++      "import { connectInstanceMaintenance as connectCloudMaintenance } from './instance-runtime/maintenance.js';",
++      "import { observeQuitSteps as observeCloudQuitSteps } from './lifecycle.js';",
++    ]);
+   }
+   if (relative === 'packages/maker-scheduler/src/engine/scheduler.ts') {
+     // An unfinished Once claim computes no wake; the gate keeps an undefined wake unchanged.
+@@ -71,7 +73,7 @@ export function transformMaintenanceSource(code, relative) {
+   walk(source);
+   assert.deepEqual([...found].sort(), Object.keys(required).sort(), `Maintenance entry drift: ${relative}`);
+   for (const edit of edits.sort((a,b) => b.start-a.start)) code = code.slice(0,edit.start) + edit.text + code.slice(edit.end);
+-  return `/* cloud-maintenance-v1 */\nimport { cloudMaintenance } from '${virtualId}';\n${code}`;
++  return '/* cloud-maintenance-v1 */\n' + addImports(code, relative, [`import { cloudMaintenance } from '${virtualId}';`]);
+ }
+ export function cloudMaintenancePlugin({ sourceRoot, expectedRegion, onTransform = () => {} }) {
+   const seen = new Set();
+diff --git a/deploy/linux-desktop/runtime-updates/overlay.mjs b/deploy/linux-desktop/runtime-updates/overlay.mjs
+index b43bbac040..5b512c08a9 100644
+--- a/deploy/linux-desktop/runtime-updates/overlay.mjs
++++ b/deploy/linux-desktop/runtime-updates/overlay.mjs
+@@ -1,6 +1,7 @@
+ import assert from 'node:assert/strict';
+ import path from 'node:path';
+ import { createHash } from 'node:crypto';
++import { addImports } from '../overlay-imports.mjs';
+ 
+ const service = 'apps/desktop/src/main/updateService.ts';
+ const preload = 'apps/desktop/src/preload/preload.ts';
+@@ -21,7 +22,8 @@ export function transformCloudUpdateSource(code, relativePath) {
+   if (!targets.includes(relativePath)) return null;
+   assert.ok(!code.includes('cloudUpdatesManaged'), 'Cloud update overlay must not be injected twice');
+   if (relativePath === service) {
+-    code = `import { getInstanceConfig } from './instance-runtime/config.js';\nfunction cloudUpdatesManaged() { return process.platform === 'linux' && getInstanceConfig() !== null; }\n${code}`;
++    code = addImports(code, relativePath, ["import { getInstanceConfig } from './instance-runtime/config.js';"])
++      + "\nfunction cloudUpdatesManaged() { return process.platform === 'linux' && getInstanceConfig() !== null; }\n";
+     // The personal-build guards already fence staging, staged patches, installer
+     // execution and polling; ordinary-desktop paths stay unchanged.
+     assert.equal(code.split('isCindyPersonalRuntime()').length, 9, 'Cloud update guards changed');
 diff --git a/deploy/linux-desktop/runtime-updates/overlay.test.mjs b/deploy/linux-desktop/runtime-updates/overlay.test.mjs
 index 2e37d347e3..33099ca4d5 100644
 --- a/deploy/linux-desktop/runtime-updates/overlay.test.mjs
@@ -12,10 +236,27 @@ index 2e37d347e3..33099ca4d5 100644
        // Workspace packages resolve through their own exports, as the app build does.
        build.onResolve({ filter: /^@cindy\// }, ({ path: specifier }) => {
 diff --git a/deploy/linux-desktop/runtime-window-controls/overlay.mjs b/deploy/linux-desktop/runtime-window-controls/overlay.mjs
-index 518a6a5188..58ff75fad1 100644
+index 518a6a5188..c79afaf7a3 100644
 --- a/deploy/linux-desktop/runtime-window-controls/overlay.mjs
 +++ b/deploy/linux-desktop/runtime-window-controls/overlay.mjs
-@@ -33,8 +33,9 @@ const cloudMainWindowControls = createCloudMainWindowControls({
+@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
+ import fs from 'node:fs';
+ import path from 'node:path';
+ import { createHash } from 'node:crypto';
++import { addImports } from '../overlay-imports.mjs';
+ 
+ const virtualId = 'virtual:cindy-cloud-main-window-controls';
+ const resolvedId = '\0' + virtualId;
+@@ -20,7 +21,7 @@ export function transformCloudWindowSource(code, relativePath) {
+   if (!targets.includes(relativePath)) return null;
+   assert.ok(!code.includes('cloudMainWindowControls'), 'Cloud window overlay must not be injected twice');
+   if (relativePath === bootstrap) {
+-    code = `import { createCloudMainWindowControls, CLOUD_MAIN_WINDOW_ARGUMENT } from '${virtualId}';\n${code}`;
++    code = addImports(code, relativePath, [`import { createCloudMainWindowControls, CLOUD_MAIN_WINDOW_ARGUMENT } from '${virtualId}';`]);
+     code = once(code, 'let isQuitting = false;', `let isQuitting = false;
+ const cloudMainWindowControls = createCloudMainWindowControls({
+   enabled: () => process.platform === 'linux' && getInstanceConfig() !== null,
+@@ -33,10 +34,11 @@ const cloudMainWindowControls = createCloudMainWindowControls({
      code = once(code, "  mainWindow.on('close', (event) => {\n    if (isQuitting) return;",
        "  mainWindow.on('close', (event) => {\n    if (isQuitting) return;\n    if (cloudMainWindowControls.preventClose(event)) return;");
      // The Dock restores a minimized window, so the minimize IPC stays unchanged.
@@ -25,8 +266,11 @@ index 518a6a5188..58ff75fad1 100644
 +    code = once(code, "  ipcMain.on('window-close', (event, once: unknown) => {\n    const win = BrowserWindow.fromWebContents(event.sender);",
 +      "  ipcMain.on('window-close', (event, once: unknown) => {\n    const win = BrowserWindow.fromWebContents(event.sender);\n    if (cloudMainWindowControls.blocksAction(win)) return;");
    } else if (relativePath === preload) {
-     code = `import { hasCloudMainWindowControls } from '${virtualId}';\n${code}`;
+-    code = `import { hasCloudMainWindowControls } from '${virtualId}';\n${code}`;
++    code = addImports(code, relativePath, [`import { hasCloudMainWindowControls } from '${virtualId}';`]);
      code = once(code, '  platform: process.platform,',
+       '  platform: process.platform,\n  cloudMainWindowControls: hasCloudMainWindowControls(process.argv, process.platform),');
+   } else {
 diff --git a/deploy/linux-desktop/runtime-window-controls/overlay.test.mjs b/deploy/linux-desktop/runtime-window-controls/overlay.test.mjs
 index 5b36984ddd..fc82f02982 100644
 --- a/deploy/linux-desktop/runtime-window-controls/overlay.test.mjs
@@ -48,3 +292,24 @@ index 5b36984ddd..fc82f02982 100644
        if (id.startsWith('@/components/')) return new Proxy({}, { get: () => () => null });
        return require(id);
      } };
+diff --git a/deploy/linux-desktop/stage-cloud-overlays.mjs b/deploy/linux-desktop/stage-cloud-overlays.mjs
+index 328a32ab25..c2745cc9a2 100644
+--- a/deploy/linux-desktop/stage-cloud-overlays.mjs
++++ b/deploy/linux-desktop/stage-cloud-overlays.mjs
+@@ -10,6 +10,7 @@ import { transformMaintenanceSource, cloudMaintenancePlugin, targets as maintena
+ import { transformCloudIdentitySource, targets as identityTargets } from './runtime-identity/overlay.mjs';
+ import { transformCloudUpdateSource, targets as updateTargets } from './runtime-updates/overlay.mjs';
+ import { cloudAppVersion } from './build-version.mjs';
++import { assertImportOrderKept } from './overlay-imports.mjs';
+ 
+ const root = path.resolve(process.argv[2] || '/workspace/source'), recipe = path.resolve(process.argv[3] || '/workspace/recipe'), records = [];
+ // Written by build-image.py: the exported source has no Git metadata.
+@@ -45,6 +46,8 @@ for (const [overlay, targets, transform] of transforms) {
+     if (!after) throw Error(`overlay ${overlay} missing for ${relative}`);
+     for (const [id, target] of virtuals) after = after.replaceAll(`'${id}'`, JSON.stringify(target));
+     if (after.includes("'virtual:cindy-cloud")) throw Error(`unresolved virtual import in ${relative}`);
++    // Upstream modules must load in the same order as in the desktop build.
++    assertImportOrderKept(before, after, relative);
+     fs.writeFileSync(file, after);
+     records.push({ overlay, file: relative, beforeSha256: sha(before), afterSha256: sha(after) });
+   }

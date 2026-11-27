@@ -1,12 +1,13 @@
-"""Reviewed patches to one upstream release, each pending in an upstream pull request.
+"""Reviewed patches to one upstream release's cloud image recipe, each pending upstream.
 
 An exception to building upstream as-is: used only when a release cannot build or start
-in the cloud and the fixes are pending upstream. `release-patch.json` names the release
-commit and, per patch, its diff, SHA-256, upstream pull request, reason and the exact files
-it edits (existing files only). All patches go into one commit on the release with a fixed
-identity, so the checks and build jobs compute the same commit; the plan and the candidate
-records name it. A patch file for another release fails the plan: remove the files when
-delivering a release that contains the fixes.
+in the cloud and the fixes are pending upstream. The cloud image adapts to the release, so
+patches change the recipe (`deploy/linux-desktop/`) only, never the client. `release-patch.json`
+names the release commit and, per patch, its diff, SHA-256, upstream pull request, reason
+and the exact files it edits or adds. All patches go into one commit on the release with a
+fixed identity, so the checks and build jobs compute the same commit; the plan and the
+candidate records name it. A patch file for another release fails the plan: remove the
+files when delivering a release that contains the fixes.
 """
 import hashlib
 import json
@@ -20,12 +21,14 @@ HERE = Path(__file__).resolve().parent
 CONFIG = HERE / 'release-patch.json'
 KEYS = {'upstreamCommit', 'patches'}
 PATCH_KEYS = {'file', 'sha256', 'upstreamPullRequest', 'reason', 'paths'}
+RECIPE = 'deploy/linux-desktop/'
 _IDENTITY = {'NAME': 'Cindy cloud delivery', 'EMAIL': 'cloud-delivery@example.invalid', 'DATE': '1789344000 +0000'}
 IDENTITY = {f'GIT_{role}_{key}': value for role in ('AUTHOR', 'COMMITTER') for key, value in _IDENTITY.items()}
 
 
 def _path_ok(p):
-    return isinstance(p, str) and p and not p.startswith('/') and '..' not in p.split('/') and '\\' not in p
+    return (isinstance(p, str) and p.startswith(RECIPE) and p != RECIPE
+            and '..' not in p.split('/') and '\\' not in p)
 
 
 def load(path=CONFIG):
@@ -75,9 +78,10 @@ def apply(repo, release, upstream_commit):
         for n, patch in enumerate(release['patches']):
             diff = Path(temporary) / f'{n}.diff'
             diff.write_bytes(patch['diff'])
-            # Edits of existing files only: no created, deleted, renamed or re-moded paths.
-            if _git(repo, 'apply', '--summary', str(diff)):
-                raise ValueError('RELEASE_PATCH_CHANGES_FILE_SET')
+            # Edits and new regular files only: no deleted, renamed, copied or re-moded paths.
+            for line in _git(repo, 'apply', '--summary', str(diff)).splitlines():
+                if not line.strip().startswith('create mode 100644 '):
+                    raise ValueError('RELEASE_PATCH_CHANGES_FILE_SET')
             paths = sorted(line.split('\t', 2)[2] for line in _git(repo, 'apply', '--numstat', str(diff)).splitlines())
             if paths != patch['paths']:
                 raise ValueError('RELEASE_PATCH_UNDECLARED_PATH')

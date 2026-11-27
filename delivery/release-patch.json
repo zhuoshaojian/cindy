@@ -3,22 +3,21 @@
   "patches": [
     {
       "file": "recipe-patch.diff",
-      "sha256": "df4e8542a26a3dd229230d25b711658c3ff58ded0514a8818f6ab565a506a5dd",
+      "sha256": "0e74193b0c18f9f0d8b9f1e0f23aca5429ab72d6e7e1b13564d014aaa0352a25",
       "upstreamPullRequest": 13422,
-      "reason": "v0.1.148's window overlay no longer matches the window-close handler (97c8ed7b4b), so its cloud build stops",
+      "reason": "v0.1.148's recipe no longer matches the window-close handler (97c8ed7b4b), and its overlays' imports reorder the main bundle so the image quits at start",
       "paths": [
+        "deploy/linux-desktop/README.md",
+        "deploy/linux-desktop/overlay-imports.mjs",
+        "deploy/linux-desktop/overlay-imports.test.mjs",
+        "deploy/linux-desktop/runtime-activity/overlay.mjs",
+        "deploy/linux-desktop/runtime-guidance/overlay.mjs",
+        "deploy/linux-desktop/runtime-maintenance/overlay.mjs",
+        "deploy/linux-desktop/runtime-updates/overlay.mjs",
         "deploy/linux-desktop/runtime-updates/overlay.test.mjs",
         "deploy/linux-desktop/runtime-window-controls/overlay.mjs",
-        "deploy/linux-desktop/runtime-window-controls/overlay.test.mjs"
-      ]
-    },
-    {
-      "file": "client-patch.diff",
-      "sha256": "402adef92445122fc60fa2435b1907e7b2a8ade3e6516e7a4a29433d4e33410d",
-      "upstreamPullRequest": 13452,
-      "reason": "the plugin automation host reads serverApiFetch while loading; the cloud bundle order runs it first, so v0.1.148 stops at start",
-      "paths": [
-        "apps/desktop/src/main/device-link/pluginAutomationHost.desktop.ts"
+        "deploy/linux-desktop/runtime-window-controls/overlay.test.mjs",
+        "deploy/linux-desktop/stage-cloud-overlays.mjs"
       ]
     }
   ]

@@ -14,20 +14,23 @@ from plan import plan
 VERSION = {'schemaVersion': 1, 'upstreamVersion': '0.1.150', 'upstreamCommit': 'a'*40,
            'cloudRevision': 2, 'region': 'cn', 'platform': 'linux/amd64'}
 RECIPE = 'deploy/linux-desktop/build-image.py'
+NEW = 'deploy/linux-desktop/new.py'
 CLIENT = 'apps/desktop/package.json'
 RECIPE_EDIT = (f'diff --git a/{RECIPE} b/{RECIPE}\n--- a/{RECIPE}\n+++ b/{RECIPE}\n'
                '@@ -1 +1 @@\n-print("recipe")\n+print("patched recipe")\n')
 CLIENT_EDIT = (f'diff --git a/{CLIENT} b/{CLIENT}\n--- a/{CLIENT}\n+++ b/{CLIENT}\n@@ -1 +1 @@\n'
                '-{"devDependencies": {"electron": "42.11.12"}}\n\\ No newline at end of file\n'
                '+{"devDependencies": {"electron": "42.11.12"}, "patched": true}\n\\ No newline at end of file\n')
-CREATE = ('diff --git a/deploy/linux-desktop/new.py b/deploy/linux-desktop/new.py\nnew file mode 100644\n'
-          '--- /dev/null\n+++ b/deploy/linux-desktop/new.py\n@@ -0,0 +1 @@\n+x\n')
+CREATE = f'diff --git a/{NEW} b/{NEW}\nnew file mode 100644\n--- /dev/null\n+++ b/{NEW}\n@@ -0,0 +1 @@\n+x\n'
+CREATE_EXECUTABLE = CREATE.replace('100644', '100755')
+DELETE = f'diff --git a/{RECIPE} b/{RECIPE}\ndeleted file mode 100644\n--- a/{RECIPE}\n+++ /dev/null\n@@ -1 +0,0 @@\n-print("recipe")\n'
+MODE = f'diff --git a/{RECIPE} b/{RECIPE}\nold mode 100644\nnew mode 100755\n'
 
 
 def committed(directory, release, patches=None, **top):
     """release-patch.json and its diffs as they would be committed on the delivery branch."""
     entries = []
-    for n, (diff, paths, pr) in enumerate(patches or [(RECIPE_EDIT, [RECIPE], 13422), (CLIENT_EDIT, [CLIENT], 13452)]):
+    for n, (diff, paths, pr) in enumerate(patches or [(RECIPE_EDIT, [RECIPE], 13422), (CREATE, [NEW], 13423)]):
         (Path(directory) / f'p{n}.diff').write_text(diff)
         entries.append({'file': f'p{n}.diff', 'sha256': hashlib.sha256(diff.encode()).hexdigest(),
                         'upstreamPullRequest': pr, 'reason': 'release cannot build or start', 'paths': paths})
@@ -53,17 +56,18 @@ class ReleasePatchTest(unittest.TestCase):
             upstream.fetch(sparse, value, url=origin.as_uri(), files=upstream.PLAN_FILES)
             upstream.fetch(full, value, url=origin.as_uri(), history=True)
             first, paths = release_patch.apply(sparse, loaded, tagged)
-            self.assertEqual(release_patch.apply(full, loaded, tagged), (first, sorted([CLIENT, RECIPE])))
+            self.assertEqual(release_patch.apply(full, loaded, tagged), (first, sorted([NEW, RECIPE])))
             # The checkout is untouched; the commit is the release plus the declared edits only.
             self.assertEqual(upstream_fixture.git(full, 'rev-parse', 'HEAD'), tagged)
             self.assertEqual(upstream_fixture.git(full, 'rev-parse', first + '^'), tagged)
-            self.assertEqual(upstream_fixture.git(full, 'diff', '--name-only', tagged, first).splitlines(), sorted([CLIENT, RECIPE]))
+            self.assertEqual(upstream_fixture.git(full, 'diff', '--name-only', tagged, first).splitlines(), sorted([NEW, RECIPE]))
             self.assertEqual(upstream_fixture.git(full, 'show', f'{first}:{RECIPE}'), 'print("patched recipe")')
+            self.assertEqual(upstream_fixture.git(full, 'ls-tree', first, NEW).split()[0], '100644')
             message = upstream_fixture.git(full, 'log', '-1', '--format=%B', first)
             self.assertIn('#13422', message)
-            self.assertIn('#13452', message)
+            self.assertIn('#13423', message)
 
-    def test_rejects_changed_diffs_other_releases_undeclared_and_new_files(self):
+    def test_rejects_changed_diffs_other_releases_client_and_undeclared_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             origin, tagged, value = self.release(temporary)
             directory = Path(temporary) / 'checkout'
@@ -74,7 +78,10 @@ class ReleasePatchTest(unittest.TestCase):
                 release_patch.load(path)
             with self.assertRaisesRegex(ValueError, 'FOR_ANOTHER_RELEASE'):
                 release_patch.apply(directory, release_patch.load(committed(temporary, 'b'*40)), tagged)
-            cases = [([(CLIENT_EDIT, [RECIPE], 1)], 'UNDECLARED_PATH'), ([(CREATE, ['deploy/linux-desktop/new.py'], 1)], 'CHANGES_FILE_SET')]
+            # A patch declared as recipe-only that edits the client, and file set changes other than new regular files.
+            cases = [([(CLIENT_EDIT, [RECIPE], 1)], 'UNDECLARED_PATH'), ([(CREATE, [RECIPE], 1)], 'UNDECLARED_PATH'),
+                     ([(CREATE_EXECUTABLE, [NEW], 1)], 'CHANGES_FILE_SET'), ([(DELETE, [RECIPE], 1)], 'CHANGES_FILE_SET'),
+                     ([(MODE, [RECIPE], 1)], 'CHANGES_FILE_SET')]
             for patches, error in cases:
                 with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
                     release_patch.apply(directory, release_patch.load(committed(temporary, tagged, patches)), tagged)
@@ -83,7 +90,9 @@ class ReleasePatchTest(unittest.TestCase):
             for broken in [empty, committed(temporary, tagged, extra=1)]:
                 with self.subTest(broken=broken.name), self.assertRaisesRegex(ValueError, 'INVALID_RELEASE_PATCH'):
                     release_patch.load(broken)
-            for patches in [[(RECIPE_EDIT, ['../x'], 1)], [(RECIPE_EDIT, [RECIPE], '1')],
+            # Paths outside the recipe, the client included, are refused before anything is applied.
+            for patches in [[(RECIPE_EDIT, ['../x'], 1)], [(RECIPE_EDIT, [RECIPE], '1')], [(CLIENT_EDIT, [CLIENT], 1)],
+                            [(RECIPE_EDIT, ['deploy/linux-desktop/../../x'], 1)],
                             [(RECIPE_EDIT, [RECIPE], 1), (RECIPE_EDIT, [RECIPE], 2)]]:
                 with self.subTest(patches=[p[1:] for p in patches]), self.assertRaisesRegex(ValueError, 'INVALID_RELEASE_PATCH'):
                     release_patch.load(committed(temporary, tagged, patches))
@@ -101,8 +110,8 @@ class ReleasePatchTest(unittest.TestCase):
             checks, built = results
             self.assertEqual(checks['sourceCommit'], built['sourceCommit'])
             self.assertNotEqual(built['sourceCommit'], tagged)
-            self.assertEqual(built['releasePatch']['paths'], sorted([CLIENT, RECIPE]))
-            self.assertEqual([p['upstreamPullRequest'] for p in built['releasePatch']['patches']], [13422, 13452])
+            self.assertEqual(built['releasePatch']['paths'], sorted([NEW, RECIPE]))
+            self.assertEqual([p['upstreamPullRequest'] for p in built['releasePatch']['patches']], [13422, 13423])
             self.assertEqual(built['version']['upstreamCommit'], tagged)
             self.assertEqual(built['electronVersion'], '42.11.12')
 
