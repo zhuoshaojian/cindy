@@ -23,6 +23,8 @@ SOURCE_DATE_EPOCH = '1789344000'
 VERSION = r'(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}'
 # Download locations that may point at a mirror of the same artifacts.
 SOURCE_ARGS = ('DEBIAN_SNAPSHOT_URL', 'DEBIAN_BUILD_MIRROR', 'CHROME_DEB_URL', 'GH_TARBALL_URL',
+               'DOCKER_TARBALL_URL', 'COMPOSE_BINARY_URL', 'BUILDX_BINARY_URL', 'UV_TARBALL_URL',
+               'JQ_BINARY_URL', 'RIPGREP_TARBALL_URL', 'MISE_BINARY_URL',
                'PLANK_SOURCE_URL', 'PLANK_DEBIAN_SOURCE_URL')
 
 def stage_recipe_contexts(context):

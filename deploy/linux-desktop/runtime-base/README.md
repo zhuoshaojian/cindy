@@ -16,14 +16,17 @@ no `/opt/cindy`, no Cindy-owned programs.
 | Debian packages | `packages.lock`: every package with version, architecture and manual mark, from two dated snapshot.debian.org archives, verified with the Debian keyring |
 | Themes, emoji font, `libturbojpeg0`, `libjson-c5`, locales | Version and SHA-256; only the needed files are copied, the packages are not installed. The remote-desktop native module loads the two libraries |
 | Google Chrome, GitHub CLI | Version and SHA-256 |
+| Docker CLI with the Compose and Buildx plugins, uv, jq, ripgrep, mise | Version and SHA-256 of the static release builds; only the programs are copied, to `/usr/local/bin` and `/usr/local/lib/docker/cli-plugins`. No Docker daemon |
 
 The `cindy` account (UID/GID 10001, no login shell), the D-Bus machine ID and all
 timestamps are fixed, so the layer depends only on these inputs. `zh_CN.UTF-8` is the
 default locale.
 
-`NODE_IMAGE`, `DEBIAN_SNAPSHOT_URL`, `CHROME_DEB_URL` and `GH_TARBALL_URL` may name a
-mirror of the same artifacts. Google serves only recent Chrome builds, so keep a copy of
-the pinned `.deb`.
+`NODE_IMAGE`, `DEBIAN_SNAPSHOT_URL`, `CHROME_DEB_URL`, `GH_TARBALL_URL`,
+`DOCKER_TARBALL_URL`, `COMPOSE_BINARY_URL`, `BUILDX_BINARY_URL`, `UV_TARBALL_URL`,
+`JQ_BINARY_URL`, `RIPGREP_TARBALL_URL` and `MISE_BINARY_URL` may name a mirror of the
+same artifacts. Google serves only recent Chrome builds, so keep a copy of the pinned
+`.deb`.
 
 ## Changing packages
 

@@ -44,10 +44,32 @@ FROM snapshot AS fetch
 # override the URL when upstream stops serving it; the checksum stays pinned.
 ARG CHROME_DEB_URL=https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_155.0.8059.84-1_amd64.deb
 ARG GH_TARBALL_URL=https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_amd64.tar.gz
+# Developer tools for a home without root: static release binaries only.
+ARG DOCKER_TARBALL_URL=https://download.docker.com/linux/static/stable/x86_64/docker-29.7.2.tgz
+ARG COMPOSE_BINARY_URL=https://github.com/docker/compose/releases/download/v5.8.0/docker-compose-linux-x86_64
+ARG BUILDX_BINARY_URL=https://github.com/docker/buildx/releases/download/v0.39.1/buildx-v0.39.1.linux-amd64
+ARG UV_TARBALL_URL=https://github.com/astral-sh/uv/releases/download/0.13.10/uv-x86_64-unknown-linux-musl.tar.gz
+ARG JQ_BINARY_URL=https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+ARG RIPGREP_TARBALL_URL=https://github.com/BurntSushi/ripgrep/releases/download/16.0.0/ripgrep-16.0.0-x86_64-unknown-linux-musl.tar.gz
+ARG MISE_BINARY_URL=https://github.com/jdx/mise/releases/download/v2026.11.14/mise-v2026.11.14-linux-x64-musl
 ADD --checksum=sha256:8fbd2ae69cdf7ee98b7513c3396a7b5e06f974f8625fdd590df3091dd0c3e9de \
     ${CHROME_DEB_URL} /downloads/google-chrome-stable_155.0.8059.84-1_amd64.deb
 ADD --checksum=sha256:e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be \
     ${GH_TARBALL_URL} /downloads/gh_2.100.0_linux_amd64.tar.gz
+ADD --checksum=sha256:803d433f226db4776e1768fd319fc6c6e4935a456acf84fcc0080818b854bc8f \
+    ${DOCKER_TARBALL_URL} /downloads/docker-29.7.2.tgz
+ADD --checksum=sha256:b8840f5008c447f41fce0a57ae3adeab42c89b1eb6e6012524bcabbfb4ffbaf6 \
+    ${COMPOSE_BINARY_URL} /downloads/docker-compose-v5.8.0-linux-x86_64
+ADD --checksum=sha256:903090816da68f8bc1a2ff5346dd163a5adacfce4548d003c75df42cd47a9bf4 \
+    ${BUILDX_BINARY_URL} /downloads/buildx-v0.39.1.linux-amd64
+ADD --checksum=sha256:5597970380083a340b7983af05a84824b4db1c62b7059c796935b7fd6dc95fd2 \
+    ${UV_TARBALL_URL} /downloads/uv-0.13.10-x86_64-unknown-linux-musl.tar.gz
+ADD --checksum=sha256:b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f \
+    ${JQ_BINARY_URL} /downloads/jq-1.8.2-linux-amd64
+ADD --checksum=sha256:54268ab4643c00a290a29b0086066d64b3f56236dd805ec64629a86f9bd29fd0 \
+    ${RIPGREP_TARBALL_URL} /downloads/ripgrep-16.0.0-x86_64-unknown-linux-musl.tar.gz
+ADD --checksum=sha256:3b2dbc7011bfd96c4b1160db2bca9f0937f226cc61ae5beddfd1fec536e81b2a \
+    ${MISE_BINARY_URL} /downloads/mise-v2026.11.14-linux-x64-musl
 RUN --mount=type=bind,source=.,target=/recipe <<'EOF'
 umask 022
 install -d -o _apt /debs
@@ -95,6 +117,23 @@ install -D -m 0644 /x/locale /out/etc/default/locale
 tar --extract --gzip --file /downloads/gh_2.100.0_linux_amd64.tar.gz --directory /x \
   gh_2.100.0_linux_amd64/bin/gh
 install -D -m 0755 /x/gh_2.100.0_linux_amd64/bin/gh /out/usr/local/bin/gh
+# Developer tools: the Docker CLI with its Compose and Buildx plugins (no
+# daemon), uv and uvx, jq, ripgrep and mise. Their data lives under HOME.
+tar --extract --gzip --file /downloads/docker-29.7.2.tgz --directory /x docker/docker
+install -D -m 0755 /x/docker/docker /out/usr/local/bin/docker
+install -D -m 0755 /downloads/docker-compose-v5.8.0-linux-x86_64 \
+  /out/usr/local/lib/docker/cli-plugins/docker-compose
+install -D -m 0755 /downloads/buildx-v0.39.1.linux-amd64 \
+  /out/usr/local/lib/docker/cli-plugins/docker-buildx
+tar --extract --gzip --file /downloads/uv-0.13.10-x86_64-unknown-linux-musl.tar.gz --directory /x \
+  uv-x86_64-unknown-linux-musl/uv uv-x86_64-unknown-linux-musl/uvx
+install -m 0755 /x/uv-x86_64-unknown-linux-musl/uv /x/uv-x86_64-unknown-linux-musl/uvx \
+  /out/usr/local/bin/
+install -m 0755 /downloads/jq-1.8.2-linux-amd64 /out/usr/local/bin/jq
+tar --extract --gzip --file /downloads/ripgrep-16.0.0-x86_64-unknown-linux-musl.tar.gz --directory /x \
+  ripgrep-16.0.0-x86_64-unknown-linux-musl/rg
+install -m 0755 /x/ripgrep-16.0.0-x86_64-unknown-linux-musl/rg /out/usr/local/bin/rg
+install -m 0755 /downloads/mise-v2026.11.14-linux-x64-musl /out/usr/local/bin/mise
 EOF
 
 FROM snapshot AS assembled

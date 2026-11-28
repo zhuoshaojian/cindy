@@ -31,7 +31,8 @@ python3 deploy/linux-desktop/build-image.py --version X.Y.Z [--cloud-revision N]
   `--cache-repository REGISTRY/REPO` it also imports and exports build cache; use a
   private repository with mutable tags. `--no-cache` ignores existing cache.
 - `--source-arg NAME=URL`: fetch a pinned download from an https mirror.
-  `DEBIAN_SNAPSHOT_URL`, `CHROME_DEB_URL` and `GH_TARBALL_URL` apply to the base,
+  `DEBIAN_SNAPSHOT_URL`, `CHROME_DEB_URL`, `GH_TARBALL_URL` and the developer-tool
+  URLs listed in [the base](runtime-base/README.md) apply to the base,
   `DEBIAN_BUILD_MIRROR`, `PLANK_SOURCE_URL` and `PLANK_DEBIAN_SOURCE_URL` to the
   application build. Checksums, signatures and versions still apply.
 

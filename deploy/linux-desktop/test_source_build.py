@@ -400,9 +400,19 @@ class BuildGraphTest(unittest.TestCase):
     def test_only_https_mirrors_of_known_downloads_can_be_overridden(self):
         self.assertEqual(build.source_args(['DEBIAN_SNAPSHOT_URL=https://mirror.example.com/a?b=c']),
                          {'DEBIAN_SNAPSHOT_URL': 'https://mirror.example.com/a?b=c'})
-        declared = {line.split()[1].split('=')[0] for name in ('Dockerfile', 'runtime-base/Dockerfile')
-                    for line in (HERE / name).read_text().splitlines() if line.startswith('ARG ')}
+        recipes = [(HERE / name).read_text() for name in ('Dockerfile', 'runtime-base/Dockerfile')]
+        declared = {line.split()[1].split('=')[0] for text in recipes
+                    for line in text.splitlines() if line.startswith('ARG ')}
         self.assertLessEqual(set(build.SOURCE_ARGS), declared)
+        # Conversely, every download is checksum-pinned and its URL can name a mirror.
+        downloads = [line for text in recipes for line in text.replace('\\\n', ' ').splitlines()
+                     if line.startswith('ADD ')]
+        self.assertGreaterEqual(len(downloads), 11)
+        for line in downloads:
+            with self.subTest(download=line):
+                match = re.fullmatch(r'ADD --checksum=sha256:[0-9a-f]{64} +\$\{([A-Z_]+)\} \S+', line)
+                self.assertIsNotNone(match)
+                self.assertIn(match.group(1), build.SOURCE_ARGS)
         for bad in ['DEBIAN_SNAPSHOT_URL', 'DEBIAN_SNAPSHOT_URL=http://mirror.example.com',
                     'NODE_IMAGE=https://mirror.example.com', 'CHROME_DEB_URL=https://a b']:
             with self.subTest(value=bad), self.assertRaisesRegex(ValueError, 'INVALID_SOURCE_ARG'):
