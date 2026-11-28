@@ -14,10 +14,10 @@ index 3d396de2fa..d91e5f2bd3 100644
        io.cindy.entrypoint-sha256=${CINDY_ENTRYPOINT_SHA256} \
        io.cindy.runtime-version=${CINDY_RUNTIME_VERSION} \
 diff --git a/deploy/linux-desktop/assemble-runtime.py b/deploy/linux-desktop/assemble-runtime.py
-index a23c43685a..e754445bd4 100644
+index a23c43685a..c943b6d600 100644
 --- a/deploy/linux-desktop/assemble-runtime.py
 +++ b/deploy/linux-desktop/assemble-runtime.py
-@@ -31,6 +31,13 @@ install(desktop / 'xfce-session', 'usr/local/lib/cindy/xfce-session', 0o755)
+@@ -31,10 +31,18 @@ install(desktop / 'xfce-session', 'usr/local/lib/cindy/xfce-session', 0o755)
  install(desktop / 'seccomp.json', 'usr/local/lib/cindy/seccomp.json')
  for name in ['apply-appearance.py', 'apply-dock.py', 'apply-dock-apps.py']:
      install(desktop / name, 'usr/local/share/cindy/appearance/' + name)
@@ -31,6 +31,11 @@ index a23c43685a..e754445bd4 100644
  for name in ['com.cindy.cloud-terminal.desktop', 'com.cindy.cloud-chrome.desktop']:
      install(desktop / name, 'usr/share/applications/' + name)
  install(desktop / 'cindy-cloud-chrome.helper.desktop', 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop')
+ install(desktop / 'helpers.rc', 'etc/xdg/xfce4/helpers.rc')
++install(desktop / 'cindy-user-tools.sh', 'etc/profile.d/cindy-user-tools.sh')
+ install(recipe / 'runtime-support/chromium-compat', 'usr/bin/chromium', 0o755)
+ for name, target in {'claude': '/opt/cindy/resources/cloud-runtimes/claude/claude',
+                      'codex': '/opt/cindy/resources/cloud-runtimes/codex/bin/codex'}.items():
 diff --git a/deploy/linux-desktop/build-image.py b/deploy/linux-desktop/build-image.py
 index 1ddcca3ee3..64f8770eb9 100644
 --- a/deploy/linux-desktop/build-image.py
@@ -131,18 +136,22 @@ index aad0216437..3d9384aed9 100644
  ## Changing packages
  
 diff --git a/deploy/linux-desktop/runtime-desktop-xfce/README.md b/deploy/linux-desktop/runtime-desktop-xfce/README.md
-index f8cfce346b..0ab572bf5f 100644
+index f8cfce346b..9549a9b221 100644
 --- a/deploy/linux-desktop/runtime-desktop-xfce/README.md
 +++ b/deploy/linux-desktop/runtime-desktop-xfce/README.md
-@@ -12,6 +12,8 @@ Files that `../assemble-runtime.py` installs into the application layer.
+@@ -12,7 +12,12 @@ Files that `../assemble-runtime.py` installs into the application layer.
  - `apply-appearance.py`, `apply-dock.py`, `apply-dock-apps.py`: theme, wallpaper, Dock
    settings and pinned Terminal and Chrome. Each runs once per home (markers in
    `~/.config/cindy-desktop/`) and keeps unrelated settings. `~/.local/share` is not used.
 +  After them the session writes the [agent Skills](../runtime-skills/README.md); a
 +  failure of that step does not stop the session.
  - `cindy-dock-terminal` starts bash explicitly, because the account has no login shell.
++- `cindy-user-tools.sh`: installed as `/etc/profile.d/cindy-user-tools.sh`. `/etc/profile`
++  resets `PATH` for login shells, which agents use to run commands; this puts the home's
++  `~/.local/bin` and mise's shims first again, as the image's `PATH` does elsewhere.
    `cindy-dock-chrome` uses a personal Chrome profile with its sandbox and the keyring.
  - `helpers.rc`, `cindy-cloud-chrome.helper.desktop`: links opened by Cindy use the same
+   Chrome unless the user's own `helpers.rc` says otherwise.
 diff --git a/deploy/linux-desktop/runtime-desktop-xfce/cindy-linux-desktop b/deploy/linux-desktop/runtime-desktop-xfce/cindy-linux-desktop
 index b8546290c0..c6bfc1af84 100644
 --- a/deploy/linux-desktop/runtime-desktop-xfce/cindy-linux-desktop
@@ -156,6 +165,20 @@ index b8546290c0..c6bfc1af84 100644
    gnome-keyring-daemon --foreground --unlock --components=secrets \
      --control-directory="$XDG_RUNTIME_DIR/keyring" \
      < "$CINDY_POD_KEYRING_PASSWORD_FILE" >/dev/null 2>&1 &
+diff --git a/deploy/linux-desktop/runtime-desktop-xfce/cindy-user-tools.sh b/deploy/linux-desktop/runtime-desktop-xfce/cindy-user-tools.sh
+new file mode 100644
+index 0000000000..985e23eca7
+--- /dev/null
++++ b/deploy/linux-desktop/runtime-desktop-xfce/cindy-user-tools.sh
+@@ -0,0 +1,8 @@
++# Installed as /etc/profile.d/cindy-user-tools.sh. /etc/profile resets PATH for login
++# shells, and agents run commands in login shells. Put the home's tool directories first
++# again, as the image's PATH does for every other process.
++case ":$PATH:" in
++  *":$HOME/.local/bin:"*) ;;
++  *) PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH" ;;
++esac
++export PATH
 diff --git a/deploy/linux-desktop/runtime-desktop-xfce/xfce-session b/deploy/linux-desktop/runtime-desktop-xfce/xfce-session
 index 0da55f3b60..b4b32c81fc 100644
 --- a/deploy/linux-desktop/runtime-desktop-xfce/xfce-session
@@ -554,7 +577,7 @@ index 51f0de3278..9916df203e 100644
  import net from "node:net";
  import path from "node:path";
 diff --git a/deploy/linux-desktop/test_source_build.py b/deploy/linux-desktop/test_source_build.py
-index c45cf6fade..7f39452e54 100644
+index c45cf6fade..c1762d441f 100644
 --- a/deploy/linux-desktop/test_source_build.py
 +++ b/deploy/linux-desktop/test_source_build.py
 @@ -400,9 +400,19 @@ class BuildGraphTest(unittest.TestCase):
@@ -579,7 +602,13 @@ index c45cf6fade..7f39452e54 100644
          for bad in ['DEBIAN_SNAPSHOT_URL', 'DEBIAN_SNAPSHOT_URL=http://mirror.example.com',
                      'NODE_IMAGE=https://mirror.example.com', 'CHROME_DEB_URL=https://a b']:
              with self.subTest(value=bad), self.assertRaisesRegex(ValueError, 'INVALID_SOURCE_ARG'):
-@@ -459,6 +469,16 @@ class RuntimeLayerTest(unittest.TestCase):
+@@ -455,10 +465,22 @@ class RuntimeLayerTest(unittest.TestCase):
+                          (HERE / 'runtime-support/chromium-compat').read_bytes())
+         self.assertEqual((self.layer / 'etc/xdg/xfce4/helpers.rc').read_bytes(),
+                          (HERE / 'runtime-desktop-xfce/helpers.rc').read_bytes())
++        self.assertEqual((self.layer / 'etc/profile.d/cindy-user-tools.sh').read_bytes(),
++                         (HERE / 'runtime-desktop-xfce/cindy-user-tools.sh').read_bytes())
+         self.assertIn(b'X-XFCE-Binaries=cindy-dock-chrome;',
                        (self.layer / 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop').read_bytes())
          self.assertEqual((self.layer / 'usr/local/bin/codex').readlink(),
                           Path('/opt/cindy/resources/cloud-runtimes/codex/bin/codex'))
@@ -596,7 +625,7 @@ index c45cf6fade..7f39452e54 100644
  
      def test_installed_programs(self):
          installed = {p.relative_to(self.layer / 'usr/local').as_posix()
-@@ -468,10 +488,29 @@ class RuntimeLayerTest(unittest.TestCase):
+@@ -468,14 +490,46 @@ class RuntimeLayerTest(unittest.TestCase):
              'bin/cindy-dock-terminal', 'bin/cindy-dock-chrome', 'bin/claude', 'bin/codex',
              'lib/cindy/xfce-session', 'lib/cindy/keyring-check.mjs', 'lib/cindy/seccomp.json',
              'lib/cindy/github-device-login.py'})
@@ -625,6 +654,24 @@ index c45cf6fade..7f39452e54 100644
 +                self.assertRegex(script, r'(/usr/local/bin/node|/usr/bin/python3) ')
 +        probe = (self.layer / 'usr/local/bin/cindy-cloud-healthcheck.mjs').read_text()
 +        self.assertEqual(probe.splitlines()[0], '#!/usr/local/bin/node')
++
++    def test_login_shells_keep_the_home_tool_directories_first(self):
++        # /etc/profile resets PATH for login shells, and agents run commands in login shells.
++        profile = self.layer / 'etc/profile.d/cindy-user-tools.sh'
++        tools, system = '/home/u/.local/bin:/home/u/.local/share/mise/shims', '/usr/local/bin:/usr/bin:/bin'
++        def login_path(path, times=1):
++            command = '. "$0"; ' * times + 'printf %s "$PATH"'
++            return subprocess.run(['/bin/sh', '-c', command, str(profile)], env={'HOME': '/home/u', 'PATH': path},
++                                  capture_output=True, text=True, check=True).stdout
++        self.assertEqual(login_path(system), f'{tools}:{system}')
++        self.assertEqual(login_path(system, times=2), f'{tools}:{system}')
++        self.assertEqual(login_path(f'{tools}:{system}'), f'{tools}:{system}')
  
      def test_shell_scripts_parse(self):
          desktop = HERE / 'runtime-desktop-xfce'
+-        for script in [desktop / 'cindy-linux-desktop', desktop / 'xfce-session', desktop / 'plank/build.sh',
++        for script in [desktop / 'cindy-linux-desktop', desktop / 'xfce-session', desktop / 'cindy-user-tools.sh',
++                       desktop / 'plank/build.sh',
+                        HERE / 'build-runtime.sh', HERE / 'prepare-linux.sh']:
+             subprocess.run(['bash', '-n', str(script)], check=True)
+ 

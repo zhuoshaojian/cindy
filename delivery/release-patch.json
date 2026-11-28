@@ -22,7 +22,7 @@
     },
     {
       "file": "cloud-dev-tools.diff",
-      "sha256": "591fc867d7bcd611321bd85eed43ebf64641c29722ec6bc1507f7791848d3c90",
+      "sha256": "21f1871a3a6306bfbc9e0a514b615f0cb9d070c05860a6b431e916c1f65675e9",
       "upstreamPullRequest": null,
       "reason": "the cloud image preinstalls developer tools and writes a cloud-only agent Skill on how to install tools and use Docker; verified in a candidate before the upstream pull request (fork branch feat/cloud-dev-tools, without its README.md edit, which #13422 also patches)",
       "paths": [
@@ -33,6 +33,7 @@
         "deploy/linux-desktop/runtime-base/README.md",
         "deploy/linux-desktop/runtime-desktop-xfce/README.md",
         "deploy/linux-desktop/runtime-desktop-xfce/cindy-linux-desktop",
+        "deploy/linux-desktop/runtime-desktop-xfce/cindy-user-tools.sh",
         "deploy/linux-desktop/runtime-desktop-xfce/xfce-session",
         "deploy/linux-desktop/runtime-skills/README.md",
         "deploy/linux-desktop/runtime-skills/apply-agent-skills.py",
