@@ -465,6 +465,8 @@ class RuntimeLayerTest(unittest.TestCase):
                          (HERE / 'runtime-support/chromium-compat').read_bytes())
         self.assertEqual((self.layer / 'etc/xdg/xfce4/helpers.rc').read_bytes(),
                          (HERE / 'runtime-desktop-xfce/helpers.rc').read_bytes())
+        self.assertEqual((self.layer / 'etc/profile.d/cindy-user-tools.sh').read_bytes(),
+                         (HERE / 'runtime-desktop-xfce/cindy-user-tools.sh').read_bytes())
         self.assertIn(b'X-XFCE-Binaries=cindy-dock-chrome;',
                       (self.layer / 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop').read_bytes())
         self.assertEqual((self.layer / 'usr/local/bin/codex').readlink(),
@@ -478,14 +480,39 @@ class RuntimeLayerTest(unittest.TestCase):
             'bin/cindy-dock-terminal', 'bin/cindy-dock-chrome', 'bin/claude', 'bin/codex',
             'lib/cindy/xfce-session', 'lib/cindy/keyring-check.mjs', 'lib/cindy/seccomp.json',
             'lib/cindy/github-device-login.py'})
-        # Everything the wrapper starts from this layer is installed.
+        # Everything the wrapper starts from this layer is installed; node is the base's.
         wrapper = (self.layer / 'usr/local/bin/cindy-linux-desktop').read_text()
-        for name in re.findall(r'/usr/local/(lib/cindy/[a-z.-]+|bin/[a-z.-]+)', wrapper):
+        for name in set(re.findall(r'/usr/local/(lib/cindy/[a-z.-]+|bin/[a-z.-]+)', wrapper)) - {'bin/node'}:
             self.assertIn(name, installed)
+
+    def test_startup_ignores_interpreters_installed_by_the_user(self):
+        # PATH starts with directories in the home. A node or python3 that a user or a
+        # tool manager puts there must not run the PID 1 wrapper, the desktop session or
+        # the health probe; a broken one would otherwise stop the instance from starting.
+        for name in ['usr/local/bin/cindy-linux-desktop', 'usr/local/lib/cindy/xfce-session']:
+            with self.subTest(script=name):
+                script = (self.layer / name).read_text()
+                self.assertNotRegex(script, r'(?m)(^|[\s;&|(])(node|python3?)\s')
+                self.assertRegex(script, r'(/usr/local/bin/node|/usr/bin/python3) ')
+        probe = (self.layer / 'usr/local/bin/cindy-cloud-healthcheck.mjs').read_text()
+        self.assertEqual(probe.splitlines()[0], '#!/usr/local/bin/node')
+
+    def test_login_shells_keep_the_home_tool_directories_first(self):
+        # /etc/profile resets PATH for login shells, and agents run commands in login shells.
+        profile = self.layer / 'etc/profile.d/cindy-user-tools.sh'
+        tools, system = '/home/u/.local/bin:/home/u/.local/share/mise/shims', '/usr/local/bin:/usr/bin:/bin'
+        def login_path(path, times=1):
+            command = '. "$0"; ' * times + 'printf %s "$PATH"'
+            return subprocess.run(['/bin/sh', '-c', command, str(profile)], env={'HOME': '/home/u', 'PATH': path},
+                                  capture_output=True, text=True, check=True).stdout
+        self.assertEqual(login_path(system), f'{tools}:{system}')
+        self.assertEqual(login_path(system, times=2), f'{tools}:{system}')
+        self.assertEqual(login_path(f'{tools}:{system}'), f'{tools}:{system}')
 
     def test_shell_scripts_parse(self):
         desktop = HERE / 'runtime-desktop-xfce'
-        for script in [desktop / 'cindy-linux-desktop', desktop / 'xfce-session', desktop / 'plank/build.sh',
+        for script in [desktop / 'cindy-linux-desktop', desktop / 'xfce-session', desktop / 'cindy-user-tools.sh',
+                       desktop / 'plank/build.sh',
                        HERE / 'build-runtime.sh', HERE / 'prepare-linux.sh']:
             subprocess.run(['bash', '-n', str(script)], check=True)
 

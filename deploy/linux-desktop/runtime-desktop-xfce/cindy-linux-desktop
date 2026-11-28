@@ -48,7 +48,7 @@ test -S "$XDG_RUNTIME_DIR/bus"
 managed=0
 if [ -n "${CINDY_POD_DEVICE_ID:-}${CINDY_POD_MEMBERSHIP_ID:-}${CINDY_POD_KEYRING_PASSWORD_FILE:-}" ]; then
   managed=1
-  node /usr/local/lib/cindy/keyring-check.mjs
+  /usr/local/bin/node /usr/local/lib/cindy/keyring-check.mjs
   gnome-keyring-daemon --foreground --unlock --components=secrets \
     --control-directory="$XDG_RUNTIME_DIR/keyring" \
     < "$CINDY_POD_KEYRING_PASSWORD_FILE" >/dev/null 2>&1 &

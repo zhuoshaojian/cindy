@@ -13,6 +13,9 @@ Files that `../assemble-runtime.py` installs into the application layer.
   settings and pinned Terminal and Chrome. Each runs once per home (markers in
   `~/.config/cindy-desktop/`) and keeps unrelated settings. `~/.local/share` is not used.
 - `cindy-dock-terminal` starts bash explicitly, because the account has no login shell.
+- `cindy-user-tools.sh`: installed as `/etc/profile.d/cindy-user-tools.sh`. `/etc/profile`
+  resets `PATH` for login shells, which agents use to run commands; this puts the home's
+  `~/.local/bin` and mise's shims first again, as the image's `PATH` does elsewhere.
   `cindy-dock-chrome` uses a personal Chrome profile with its sandbox and the keyring.
 - `helpers.rc`, `cindy-cloud-chrome.helper.desktop`: links opened by Cindy use the same
   Chrome unless the user's own `helpers.rc` says otherwise.

@@ -5,9 +5,9 @@ export XDG_CURRENT_DESKTOP=XFCE XDG_SESSION_DESKTOP=xfce DESKTOP_SESSION=xfce
 # D-Bus starts before Xvfb. GUI-activated services (BAMF) need its final DISPLAY.
 dbus-update-activation-environment DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION
 if [ -n "${XAUTHORITY:-}" ]; then dbus-update-activation-environment XAUTHORITY; fi
-python3 /usr/local/share/cindy/appearance/apply-appearance.py
-python3 /usr/local/share/cindy/appearance/apply-dock.py
-python3 /usr/local/share/cindy/appearance/apply-dock-apps.py
+/usr/bin/python3 /usr/local/share/cindy/appearance/apply-appearance.py
+/usr/bin/python3 /usr/local/share/cindy/appearance/apply-dock.py
+/usr/bin/python3 /usr/local/share/cindy/appearance/apply-dock-apps.py
 critical=()
 dock=''
 cleanup() {

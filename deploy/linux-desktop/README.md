@@ -103,6 +103,12 @@ managed instance: the wrapper unlocks the keyring and starts Cindy with
 - **Stop**: SIGTERM lets Cindy finish its quit chain for up to 45 s while its display,
   session bus and keyring stay alive. The container exits when Cindy or a desktop
   dependency exits.
+- **User tools**: without root, tools go into the home. `PATH` starts with
+  `~/.local/bin` and mise's shims, in login shells too (`/etc/profile` resets `PATH`;
+  `/etc/profile.d/cindy-user-tools.sh` restores them), and `NPM_CONFIG_PREFIX` is `~/.local`, so
+  `npm install -g`, `uv tool install`, `mise use -g` and single binaries persist across
+  upgrades. The wrapper, the desktop session and the health check run the image's own
+  `node` and `python3` by absolute path; versions installed there do not replace them.
 
 ## Local checks
 

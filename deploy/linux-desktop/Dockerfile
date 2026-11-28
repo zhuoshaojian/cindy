@@ -90,6 +90,10 @@ ARG CINDY_RUNTIME_VERSION
 ARG CINDY_CLOUD_REVISION
 COPY --from=build --chown=0:0 /layer/ /
 ENV HOME=/home/cindy DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-cindy
+# Without root, users install tools into the persistent home: programs and
+# `npm install -g` into ~/.local, other runtimes through mise's shims.
+ENV PATH=/home/cindy/.local/bin:/home/cindy/.local/share/mise/shims:${PATH} \
+    NPM_CONFIG_PREFIX=/home/cindy/.local
 LABEL io.cindy.source-commit=${CINDY_SOURCE_COMMIT} \
       io.cindy.entrypoint-sha256=${CINDY_ENTRYPOINT_SHA256} \
       io.cindy.runtime-version=${CINDY_RUNTIME_VERSION} \

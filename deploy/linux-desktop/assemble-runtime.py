@@ -35,6 +35,7 @@ for name in ['com.cindy.cloud-terminal.desktop', 'com.cindy.cloud-chrome.desktop
     install(desktop / name, 'usr/share/applications/' + name)
 install(desktop / 'cindy-cloud-chrome.helper.desktop', 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop')
 install(desktop / 'helpers.rc', 'etc/xdg/xfce4/helpers.rc')
+install(desktop / 'cindy-user-tools.sh', 'etc/profile.d/cindy-user-tools.sh')
 install(recipe / 'runtime-support/chromium-compat', 'usr/bin/chromium', 0o755)
 for name, target in {'claude': '/opt/cindy/resources/cloud-runtimes/claude/claude',
                      'codex': '/opt/cindy/resources/cloud-runtimes/codex/bin/codex'}.items():

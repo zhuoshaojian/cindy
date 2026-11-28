@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/local/bin/node
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
