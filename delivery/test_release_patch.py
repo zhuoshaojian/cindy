@@ -93,9 +93,26 @@ class ReleasePatchTest(unittest.TestCase):
             # Paths outside the recipe, the client included, are refused before anything is applied.
             for patches in [[(RECIPE_EDIT, ['../x'], 1)], [(RECIPE_EDIT, [RECIPE], '1')], [(CLIENT_EDIT, [CLIENT], 1)],
                             [(RECIPE_EDIT, ['deploy/linux-desktop/../../x'], 1)],
-                            [(RECIPE_EDIT, [RECIPE], 1), (RECIPE_EDIT, [RECIPE], 2)]]:
+                            [(RECIPE_EDIT, [RECIPE], 1), (RECIPE_EDIT, [RECIPE], 2)],
+                            [(RECIPE_EDIT, [RECIPE], 0)], [(RECIPE_EDIT, [RECIPE], True)]]:
                 with self.subTest(patches=[p[1:] for p in patches]), self.assertRaisesRegex(ValueError, 'INVALID_RELEASE_PATCH'):
                     release_patch.load(committed(temporary, tagged, patches))
+
+    def test_a_change_verified_before_its_pull_request_is_recorded_as_not_yet_proposed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            origin, tagged, value = self.release(temporary)
+            loaded = release_patch.load(committed(temporary, tagged, [(RECIPE_EDIT, [RECIPE], 13422), (CREATE, [NEW], None)]))
+            directory = Path(temporary) / 'build'
+            upstream.fetch(directory, value, url=origin.as_uri(), history=True)
+            commit, paths = release_patch.apply(directory, loaded, tagged)
+            self.assertEqual(paths, sorted([NEW, RECIPE]))
+            message = upstream_fixture.git(directory, 'log', '-1', '--format=%B', commit)
+            self.assertIn('upstream pull request #13422', message)
+            self.assertIn('upstream pull request not yet proposed', message)
+            with patch('plan.load', return_value=value), patch('release_patch.load', return_value=loaded):
+                planned = plan(directory)
+            self.assertEqual(planned['sourceCommit'], commit)
+            self.assertEqual([p['upstreamPullRequest'] for p in planned['releasePatch']['patches']], [13422, None])
 
     def test_the_plan_names_the_patched_commit_and_records_every_patch(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -17,6 +17,8 @@ from versioning import validate
 HERE = Path(__file__).resolve().parent
 # The recipe's mirrorable downloads (deploy/linux-desktop/build-image.py SOURCE_ARGS).
 SOURCE_NAMES = {'DEBIAN_SNAPSHOT_URL', 'DEBIAN_BUILD_MIRROR', 'CHROME_DEB_URL', 'GH_TARBALL_URL',
+                'DOCKER_TARBALL_URL', 'COMPOSE_BINARY_URL', 'BUILDX_BINARY_URL', 'UV_TARBALL_URL',
+                'JQ_BINARY_URL', 'RIPGREP_TARBALL_URL', 'MISE_BINARY_URL',
                 'PLANK_SOURCE_URL', 'PLANK_DEBIAN_SOURCE_URL'}
 URL = re.compile(r'https://[^\s,]+')
 

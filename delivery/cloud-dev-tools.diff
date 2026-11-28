@@ -1,0 +1,630 @@
+diff --git a/deploy/linux-desktop/Dockerfile b/deploy/linux-desktop/Dockerfile
+index 3d396de2fa..d91e5f2bd3 100644
+--- a/deploy/linux-desktop/Dockerfile
++++ b/deploy/linux-desktop/Dockerfile
+@@ -90,6 +90,10 @@ ARG CINDY_RUNTIME_VERSION
+ ARG CINDY_CLOUD_REVISION
+ COPY --from=build --chown=0:0 /layer/ /
+ ENV HOME=/home/cindy DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/runtime-cindy
++# Without root, users install tools into the persistent home: programs and
++# `npm install -g` into ~/.local, other runtimes through mise's shims.
++ENV PATH=/home/cindy/.local/bin:/home/cindy/.local/share/mise/shims:${PATH} \
++    NPM_CONFIG_PREFIX=/home/cindy/.local
+ LABEL io.cindy.source-commit=${CINDY_SOURCE_COMMIT} \
+       io.cindy.entrypoint-sha256=${CINDY_ENTRYPOINT_SHA256} \
+       io.cindy.runtime-version=${CINDY_RUNTIME_VERSION} \
+diff --git a/deploy/linux-desktop/assemble-runtime.py b/deploy/linux-desktop/assemble-runtime.py
+index a23c43685a..e754445bd4 100644
+--- a/deploy/linux-desktop/assemble-runtime.py
++++ b/deploy/linux-desktop/assemble-runtime.py
+@@ -31,6 +31,13 @@ install(desktop / 'xfce-session', 'usr/local/lib/cindy/xfce-session', 0o755)
+ install(desktop / 'seccomp.json', 'usr/local/lib/cindy/seccomp.json')
+ for name in ['apply-appearance.py', 'apply-dock.py', 'apply-dock-apps.py']:
+     install(desktop / name, 'usr/local/share/cindy/appearance/' + name)
++skills = recipe / 'runtime-skills'
++install(skills / 'apply-agent-skills.py', 'usr/local/share/cindy/agent-skills/apply-agent-skills.py')
++agent_skills = sorted(skills.glob('*/SKILL.md'))
++# The session tolerates a failing Skill step, so a lost Skill must fail here.
++if not agent_skills: raise RuntimeError('MISSING_AGENT_SKILLS')
++for skill in agent_skills:
++    install(skill, 'usr/local/share/cindy/agent-skills/' + skill.parent.name + '/SKILL.md')
+ for name in ['com.cindy.cloud-terminal.desktop', 'com.cindy.cloud-chrome.desktop']:
+     install(desktop / name, 'usr/share/applications/' + name)
+ install(desktop / 'cindy-cloud-chrome.helper.desktop', 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop')
+diff --git a/deploy/linux-desktop/build-image.py b/deploy/linux-desktop/build-image.py
+index 1ddcca3ee3..64f8770eb9 100644
+--- a/deploy/linux-desktop/build-image.py
++++ b/deploy/linux-desktop/build-image.py
+@@ -23,6 +23,8 @@ SOURCE_DATE_EPOCH = '1789344000'
+ VERSION = r'(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}'
+ # Download locations that may point at a mirror of the same artifacts.
+ SOURCE_ARGS = ('DEBIAN_SNAPSHOT_URL', 'DEBIAN_BUILD_MIRROR', 'CHROME_DEB_URL', 'GH_TARBALL_URL',
++               'DOCKER_TARBALL_URL', 'COMPOSE_BINARY_URL', 'BUILDX_BINARY_URL', 'UV_TARBALL_URL',
++               'JQ_BINARY_URL', 'RIPGREP_TARBALL_URL', 'MISE_BINARY_URL',
+                'PLANK_SOURCE_URL', 'PLANK_DEBIAN_SOURCE_URL')
+ 
+ def stage_recipe_contexts(context):
+diff --git a/deploy/linux-desktop/runtime-base/Dockerfile b/deploy/linux-desktop/runtime-base/Dockerfile
+index e89d5c6397..3e694b4751 100644
+--- a/deploy/linux-desktop/runtime-base/Dockerfile
++++ b/deploy/linux-desktop/runtime-base/Dockerfile
+@@ -44,10 +44,32 @@ FROM snapshot AS fetch
+ # override the URL when upstream stops serving it; the checksum stays pinned.
+ ARG CHROME_DEB_URL=https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_155.0.8059.84-1_amd64.deb
+ ARG GH_TARBALL_URL=https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_amd64.tar.gz
++# Developer tools for a home without root: static release binaries only.
++ARG DOCKER_TARBALL_URL=https://download.docker.com/linux/static/stable/x86_64/docker-29.7.2.tgz
++ARG COMPOSE_BINARY_URL=https://github.com/docker/compose/releases/download/v5.8.0/docker-compose-linux-x86_64
++ARG BUILDX_BINARY_URL=https://github.com/docker/buildx/releases/download/v0.39.1/buildx-v0.39.1.linux-amd64
++ARG UV_TARBALL_URL=https://github.com/astral-sh/uv/releases/download/0.13.10/uv-x86_64-unknown-linux-musl.tar.gz
++ARG JQ_BINARY_URL=https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
++ARG RIPGREP_TARBALL_URL=https://github.com/BurntSushi/ripgrep/releases/download/16.0.0/ripgrep-16.0.0-x86_64-unknown-linux-musl.tar.gz
++ARG MISE_BINARY_URL=https://github.com/jdx/mise/releases/download/v2026.11.14/mise-v2026.11.14-linux-x64-musl
+ ADD --checksum=sha256:8fbd2ae69cdf7ee98b7513c3396a7b5e06f974f8625fdd590df3091dd0c3e9de \
+     ${CHROME_DEB_URL} /downloads/google-chrome-stable_155.0.8059.84-1_amd64.deb
+ ADD --checksum=sha256:e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be \
+     ${GH_TARBALL_URL} /downloads/gh_2.100.0_linux_amd64.tar.gz
++ADD --checksum=sha256:803d433f226db4776e1768fd319fc6c6e4935a456acf84fcc0080818b854bc8f \
++    ${DOCKER_TARBALL_URL} /downloads/docker-29.7.2.tgz
++ADD --checksum=sha256:b8840f5008c447f41fce0a57ae3adeab42c89b1eb6e6012524bcabbfb4ffbaf6 \
++    ${COMPOSE_BINARY_URL} /downloads/docker-compose-v5.8.0-linux-x86_64
++ADD --checksum=sha256:903090816da68f8bc1a2ff5346dd163a5adacfce4548d003c75df42cd47a9bf4 \
++    ${BUILDX_BINARY_URL} /downloads/buildx-v0.39.1.linux-amd64
++ADD --checksum=sha256:5597970380083a340b7983af05a84824b4db1c62b7059c796935b7fd6dc95fd2 \
++    ${UV_TARBALL_URL} /downloads/uv-0.13.10-x86_64-unknown-linux-musl.tar.gz
++ADD --checksum=sha256:b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f \
++    ${JQ_BINARY_URL} /downloads/jq-1.8.2-linux-amd64
++ADD --checksum=sha256:54268ab4643c00a290a29b0086066d64b3f56236dd805ec64629a86f9bd29fd0 \
++    ${RIPGREP_TARBALL_URL} /downloads/ripgrep-16.0.0-x86_64-unknown-linux-musl.tar.gz
++ADD --checksum=sha256:3b2dbc7011bfd96c4b1160db2bca9f0937f226cc61ae5beddfd1fec536e81b2a \
++    ${MISE_BINARY_URL} /downloads/mise-v2026.11.14-linux-x64-musl
+ RUN --mount=type=bind,source=.,target=/recipe <<'EOF'
+ umask 022
+ install -d -o _apt /debs
+@@ -95,6 +117,23 @@ install -D -m 0644 /x/locale /out/etc/default/locale
+ tar --extract --gzip --file /downloads/gh_2.100.0_linux_amd64.tar.gz --directory /x \
+   gh_2.100.0_linux_amd64/bin/gh
+ install -D -m 0755 /x/gh_2.100.0_linux_amd64/bin/gh /out/usr/local/bin/gh
++# Developer tools: the Docker CLI with its Compose and Buildx plugins (no
++# daemon), uv and uvx, jq, ripgrep and mise. Their data lives under HOME.
++tar --extract --gzip --file /downloads/docker-29.7.2.tgz --directory /x docker/docker
++install -D -m 0755 /x/docker/docker /out/usr/local/bin/docker
++install -D -m 0755 /downloads/docker-compose-v5.8.0-linux-x86_64 \
++  /out/usr/local/lib/docker/cli-plugins/docker-compose
++install -D -m 0755 /downloads/buildx-v0.39.1.linux-amd64 \
++  /out/usr/local/lib/docker/cli-plugins/docker-buildx
++tar --extract --gzip --file /downloads/uv-0.13.10-x86_64-unknown-linux-musl.tar.gz --directory /x \
++  uv-x86_64-unknown-linux-musl/uv uv-x86_64-unknown-linux-musl/uvx
++install -m 0755 /x/uv-x86_64-unknown-linux-musl/uv /x/uv-x86_64-unknown-linux-musl/uvx \
++  /out/usr/local/bin/
++install -m 0755 /downloads/jq-1.8.2-linux-amd64 /out/usr/local/bin/jq
++tar --extract --gzip --file /downloads/ripgrep-16.0.0-x86_64-unknown-linux-musl.tar.gz --directory /x \
++  ripgrep-16.0.0-x86_64-unknown-linux-musl/rg
++install -m 0755 /x/ripgrep-16.0.0-x86_64-unknown-linux-musl/rg /out/usr/local/bin/rg
++install -m 0755 /downloads/mise-v2026.11.14-linux-x64-musl /out/usr/local/bin/mise
+ EOF
+ 
+ FROM snapshot AS assembled
+diff --git a/deploy/linux-desktop/runtime-base/README.md b/deploy/linux-desktop/runtime-base/README.md
+index aad0216437..3d9384aed9 100644
+--- a/deploy/linux-desktop/runtime-base/README.md
++++ b/deploy/linux-desktop/runtime-base/README.md
+@@ -16,14 +16,17 @@ no `/opt/cindy`, no Cindy-owned programs.
+ | Debian packages | `packages.lock`: every package with version, architecture and manual mark, from two dated snapshot.debian.org archives, verified with the Debian keyring |
+ | Themes, emoji font, `libturbojpeg0`, `libjson-c5`, locales | Version and SHA-256; only the needed files are copied, the packages are not installed. The remote-desktop native module loads the two libraries |
+ | Google Chrome, GitHub CLI | Version and SHA-256 |
++| Docker CLI with the Compose and Buildx plugins, uv, jq, ripgrep, mise | Version and SHA-256 of the static release builds; only the programs are copied, to `/usr/local/bin` and `/usr/local/lib/docker/cli-plugins`. No Docker daemon |
+ 
+ The `cindy` account (UID/GID 10001, no login shell), the D-Bus machine ID and all
+ timestamps are fixed, so the layer depends only on these inputs. `zh_CN.UTF-8` is the
+ default locale.
+ 
+-`NODE_IMAGE`, `DEBIAN_SNAPSHOT_URL`, `CHROME_DEB_URL` and `GH_TARBALL_URL` may name a
+-mirror of the same artifacts. Google serves only recent Chrome builds, so keep a copy of
+-the pinned `.deb`.
++`NODE_IMAGE`, `DEBIAN_SNAPSHOT_URL`, `CHROME_DEB_URL`, `GH_TARBALL_URL`,
++`DOCKER_TARBALL_URL`, `COMPOSE_BINARY_URL`, `BUILDX_BINARY_URL`, `UV_TARBALL_URL`,
++`JQ_BINARY_URL`, `RIPGREP_TARBALL_URL` and `MISE_BINARY_URL` may name a mirror of the
++same artifacts. Google serves only recent Chrome builds, so keep a copy of the pinned
++`.deb`.
+ 
+ ## Changing packages
+ 
+diff --git a/deploy/linux-desktop/runtime-desktop-xfce/README.md b/deploy/linux-desktop/runtime-desktop-xfce/README.md
+index f8cfce346b..0ab572bf5f 100644
+--- a/deploy/linux-desktop/runtime-desktop-xfce/README.md
++++ b/deploy/linux-desktop/runtime-desktop-xfce/README.md
+@@ -12,6 +12,8 @@ Files that `../assemble-runtime.py` installs into the application layer.
+ - `apply-appearance.py`, `apply-dock.py`, `apply-dock-apps.py`: theme, wallpaper, Dock
+   settings and pinned Terminal and Chrome. Each runs once per home (markers in
+   `~/.config/cindy-desktop/`) and keeps unrelated settings. `~/.local/share` is not used.
++  After them the session writes the [agent Skills](../runtime-skills/README.md); a
++  failure of that step does not stop the session.
+ - `cindy-dock-terminal` starts bash explicitly, because the account has no login shell.
+   `cindy-dock-chrome` uses a personal Chrome profile with its sandbox and the keyring.
+ - `helpers.rc`, `cindy-cloud-chrome.helper.desktop`: links opened by Cindy use the same
+diff --git a/deploy/linux-desktop/runtime-desktop-xfce/cindy-linux-desktop b/deploy/linux-desktop/runtime-desktop-xfce/cindy-linux-desktop
+index b8546290c0..c6bfc1af84 100644
+--- a/deploy/linux-desktop/runtime-desktop-xfce/cindy-linux-desktop
++++ b/deploy/linux-desktop/runtime-desktop-xfce/cindy-linux-desktop
+@@ -48,7 +48,7 @@ test -S "$XDG_RUNTIME_DIR/bus"
+ managed=0
+ if [ -n "${CINDY_POD_DEVICE_ID:-}${CINDY_POD_MEMBERSHIP_ID:-}${CINDY_POD_KEYRING_PASSWORD_FILE:-}" ]; then
+   managed=1
+-  node /usr/local/lib/cindy/keyring-check.mjs
++  /usr/local/bin/node /usr/local/lib/cindy/keyring-check.mjs
+   gnome-keyring-daemon --foreground --unlock --components=secrets \
+     --control-directory="$XDG_RUNTIME_DIR/keyring" \
+     < "$CINDY_POD_KEYRING_PASSWORD_FILE" >/dev/null 2>&1 &
+diff --git a/deploy/linux-desktop/runtime-desktop-xfce/xfce-session b/deploy/linux-desktop/runtime-desktop-xfce/xfce-session
+index 0da55f3b60..b4b32c81fc 100644
+--- a/deploy/linux-desktop/runtime-desktop-xfce/xfce-session
++++ b/deploy/linux-desktop/runtime-desktop-xfce/xfce-session
+@@ -5,9 +5,11 @@ export XDG_CURRENT_DESKTOP=XFCE XDG_SESSION_DESKTOP=xfce DESKTOP_SESSION=xfce
+ # D-Bus starts before Xvfb. GUI-activated services (BAMF) need its final DISPLAY.
+ dbus-update-activation-environment DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION
+ if [ -n "${XAUTHORITY:-}" ]; then dbus-update-activation-environment XAUTHORITY; fi
+-python3 /usr/local/share/cindy/appearance/apply-appearance.py
+-python3 /usr/local/share/cindy/appearance/apply-dock.py
+-python3 /usr/local/share/cindy/appearance/apply-dock-apps.py
++/usr/bin/python3 /usr/local/share/cindy/appearance/apply-appearance.py
++/usr/bin/python3 /usr/local/share/cindy/appearance/apply-dock.py
++/usr/bin/python3 /usr/local/share/cindy/appearance/apply-dock-apps.py
++# Agent Skills for this instance (runtime-skills); a failure must not stop the desktop.
++/usr/bin/python3 /usr/local/share/cindy/agent-skills/apply-agent-skills.py || true
+ critical=()
+ dock=''
+ cleanup() {
+diff --git a/deploy/linux-desktop/runtime-skills/README.md b/deploy/linux-desktop/runtime-skills/README.md
+new file mode 100644
+index 0000000000..0fca922aee
+--- /dev/null
++++ b/deploy/linux-desktop/runtime-skills/README.md
+@@ -0,0 +1,27 @@
++# Agent Skills
++
++Skills that only cloud instances get. `../assemble-runtime.py` installs this directory
++to `/usr/local/share/cindy/agent-skills/`, and `xfce-session` runs
++`apply-agent-skills.py` before Cindy starts; a failure there does not stop the desktop.
++The system prompt is not changed.
++
++- `cloud-instance-dev/SKILL.md`: installing tools without root, and using Docker when the
++  platform provides it (`DOCKER_HOST` set).
++
++Each Skill is one `SKILL.md`, copied to `~/.agents/skills/<name>/`. Codex and Pi read that
++folder; Cindy links its entries into `~/.claude/skills/` when its Claude projection rules
++allow. The copy holds `.cindy-cloud-skill.json` with the SHA-256 of what was written, and
++`~/.config/cindy-desktop/agent-skills.json` lists the Skills written to this home. On
++every start, a Skill that is
++
++- missing and was never written here is written;
++- an unchanged copy of another version is replaced by this image's version;
++- an edited copy, or a same-name folder, link or file without the marker, is left alone;
++- deleted after it was written is not written again. Remove its name from the list to
++  get it back.
++
++Removing or renaming a Skill here leaves existing copies in place.
++
++```sh
++python3 -m unittest discover -s deploy/linux-desktop/runtime-skills -p 'test_*.py'
++```
+diff --git a/deploy/linux-desktop/runtime-skills/apply-agent-skills.py b/deploy/linux-desktop/runtime-skills/apply-agent-skills.py
+new file mode 100644
+index 0000000000..5097f610da
+--- /dev/null
++++ b/deploy/linux-desktop/runtime-skills/apply-agent-skills.py
+@@ -0,0 +1,125 @@
++"""Write this image's agent Skills into ~/.agents/skills before Cindy starts.
++
++Each folder next to this file holds one SKILL.md. Its copy in the home is written when it
++is missing and was never written there, and refreshed while it still holds a version this
++image wrote. A same-name Skill of the user's, an edited copy and a deleted copy are left
++as they are. See README.md.
++"""
++import hashlib
++import json
++import os
++import shutil
++import stat
++import sys
++import tempfile
++from pathlib import Path
++
++SOURCE = Path(__file__).resolve().parent
++MARKER = '.cindy-cloud-skill.json'
++ORIGIN = 'cindy-cloud-image'
++
++
++def digest(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def read_regular(path):
++    """Contents of a regular file that is not a link; None for anything else."""
++    try:
++        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++    except OSError:
++        return None
++    with os.fdopen(fd, 'rb') as stream:
++        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
++            return None
++        return stream.read()
++
++
++def read_json(path):
++    data = read_regular(path)
++    try:
++        return None if data is None else json.loads(data)
++    except ValueError:
++        return None
++
++
++def write_file(path, data):
++    """Replace path atomically with a file only its owner can read."""
++    fd, temp = tempfile.mkstemp(prefix='.' + path.name + '.', suffix='.tmp', dir=path.parent)
++    try:
++        with os.fdopen(fd, 'wb') as stream:
++            stream.write(data)
++        os.replace(temp, path)
++    except BaseException:
++        Path(temp).unlink(missing_ok=True)
++        raise
++
++
++def marker(content):
++    return (json.dumps({'origin': ORIGIN, 'sha256': digest(content)}) + '\n').encode()
++
++
++def written_digest(folder):
++    """SHA-256 recorded when this image wrote the folder, or None."""
++    record = read_json(folder / MARKER)
++    if isinstance(record, dict) and record.get('origin') == ORIGIN and isinstance(record.get('sha256'), str):
++        return record['sha256']
++    return None
++
++
++def apply(name, content, root, history):
++    """Bring one Skill up to date. True when the home holds this image's copy."""
++    target = root / name
++    if not os.path.lexists(target):
++        # Deleted after it was written, or the history is unreadable: keep it absent.
++        if history is None or name in history:
++            return False
++        # Assemble beside the scanned folder so that no partial Skill is ever listed.
++        temp = Path(tempfile.mkdtemp(prefix='.cindy-skill-', dir=root.parent))
++        try:
++            write_file(temp / 'SKILL.md', content)
++            write_file(temp / MARKER, marker(content))
++            os.rename(temp, target)
++        except BaseException:
++            shutil.rmtree(temp, ignore_errors=True)
++            raise
++        return True
++    if target.is_symlink() or not target.is_dir():
++        return False
++    recorded = written_digest(target)
++    current = read_regular(target / 'SKILL.md')
++    # An interrupted refresh leaves this image's content with the previous digest.
++    if recorded is None or current is None or digest(current) not in (recorded, digest(content)):
++        return False
++    if current != content:
++        write_file(target / 'SKILL.md', content)
++    if recorded != digest(content):
++        write_file(target / MARKER, marker(content))
++    return True
++
++
++def main():
++    home = Path.home()
++    root = home / '.agents' / 'skills'
++    state = home / '.config' / 'cindy-desktop' / 'agent-skills.json'
++    record = {'version': 1, 'written': []} if not os.path.lexists(state) else read_json(state)
++    names = record.get('written') if isinstance(record, dict) else None
++    history = set(names) if isinstance(names, list) and all(isinstance(n, str) for n in names) else None
++    if history is None:
++        print('AGENT_SKILLS_STATE_UNREADABLE', file=sys.stderr)
++    root.mkdir(parents=True, exist_ok=True)
++    present = set()
++    for source in sorted(SOURCE.glob('*/SKILL.md')):
++        name = source.parent.name
++        try:
++            if apply(name, source.read_bytes(), root, history):
++                present.add(name)
++        except OSError as error:
++            print(f'AGENT_SKILL_SKIPPED:{name}:{type(error).__name__}', file=sys.stderr)
++    if history is not None and not present <= history:
++        state.parent.mkdir(parents=True, exist_ok=True)
++        write_file(state, (json.dumps({'version': 1, 'written': sorted(history | present)}) + '\n').encode())
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/deploy/linux-desktop/runtime-skills/cloud-instance-dev/SKILL.md b/deploy/linux-desktop/runtime-skills/cloud-instance-dev/SKILL.md
+new file mode 100644
+index 0000000000..f5fd2a27f3
+--- /dev/null
++++ b/deploy/linux-desktop/runtime-skills/cloud-instance-dev/SKILL.md
+@@ -0,0 +1,61 @@
++---
++name: cloud-instance-dev
++description: How to install software and use Docker on this Cindy cloud instance, which has no root access, no sudo, apt-get or pip, and system directories that cannot be written. Use it before installing any package, command-line tool, language runtime or runtime version, when sudo, apt-get, pip or a write under /usr fails, and before running docker, docker compose or docker build.
++---
++
++# Installing tools and using Docker on this cloud instance
++
++There is no root access: `sudo`, `apt-get install` and writes under `/usr` fail, and `pip`
++is not installed. Install into the home directory instead. It persists across restarts
++and upgrades, and `~/.local/bin` and mise's shims come first on `PATH`.
++
++## Installing tools
++
++Check with `command -v` first. `git`, `curl`, `wget`, `gcc`, `g++`, `make`, `python3`,
++`node`, `npm`, `gh`, `uv`, `uvx`, `mise`, `jq`, `rg` and the `docker` CLI are present.
++
++- Python: use `uv`. `uv venv` and `uv pip install` for a project, `uv tool install <name>`
++  or `uvx <name>` for command-line tools, `uv python install <version>` for another
++  Python. `python3 -m venv` does not work here.
++- Node.js: `npm install -g <package>` installs into `~/.local`; `npx <package>` runs one
++  once. Use npm rather than pnpm for global installs.
++- Other runtimes or versions (Go, Java, Rust, another Node or Python):
++  `mise use -g <tool>@<version>`. Its shims are on `PATH`.
++- Single programs: put them in `~/.local/bin` and `chmod +x` them. Downloads from GitHub
++  releases can be very slow from this network; prefer PyPI, npm or mise when they offer
++  the tool.
++- Packages that exist only for apt: when Docker is available, run them in a Debian or
++  Ubuntu container, where `apt-get install` works as root. Otherwise tell the user that
++  the package cannot be installed on this instance; do not try `sudo` or edit system
++  files.
++- The home disk is limited. Check it with `df -h ~` and free space with `uv cache prune`,
++  `npm cache clean --force` or `mise prune`.
++
++## Docker
++
++Check `DOCKER_HOST` first. When it is unset, this instance has no Docker: tell the user,
++and do not try to install or start a Docker daemon. When it is set, the `docker` CLI
++(with `docker compose` and `docker buildx`) uses the Docker service that the platform
++runs for this instance.
++
++- Mounts: bind mounts (`-v`, Compose `volumes:`) of paths under `/home/cindy`,
++  `/var/lib/cindy` (including the task's working directory) and `/tmp` show the same
++  files as the shell. Use `ls -A` before concluding that a mounted directory is empty;
++  the home often holds only hidden entries.
++- Ownership: containers run as root by default, so files they write into a mounted
++  directory belong to root. Run tools that write into the project as the shell's user
++  with `--user "$(id -u):$(id -g)"` (Compose: `user: "10001:10001"`). Remove root-owned
++  leftovers through a container.
++- Images: pulls from Docker Hub can be slow or fail from this network. Retry once. If it
++  still fails, tell the user and ask which registry or mirror they trust, for example
++  their organization's own; do not choose a third-party mirror yourself. After pulling
++  from another registry, `docker tag` the image to the name that a Dockerfile or Compose
++  file expects.
++- DNS: containers on the default bridge network cannot resolve host names. Use a Compose
++  project, a network from `docker network create`, or `--network host`. Ports published
++  with `-p` are reachable on `localhost`.
++- Data: images, containers, named volumes and build cache live on the instance's
++  temporary disk, which `/tmp` shares, and are lost when the instance restarts or is
++  upgraded. Keep what must survive, such as database files and build outputs, in bind
++  mounts under `/home/cindy` or the task directory, not in named volumes. Check free
++  space with `df -h /tmp` and remove unused images with `docker image prune`.
+diff --git a/deploy/linux-desktop/runtime-skills/test_apply_agent_skills.py b/deploy/linux-desktop/runtime-skills/test_apply_agent_skills.py
+new file mode 100644
+index 0000000000..21699af72b
+--- /dev/null
++++ b/deploy/linux-desktop/runtime-skills/test_apply_agent_skills.py
+@@ -0,0 +1,131 @@
++"""The session runs apply-agent-skills.py from the image on every start, against the
++persistent home. These tests run the same file from a temporary image folder."""
++import hashlib
++import json
++import os
++import re
++import shutil
++import subprocess
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++HERE = Path(__file__).resolve().parent
++WRITER = HERE / 'apply-agent-skills.py'
++V1 = b'---\nname: demo\ndescription: First version.\n---\nBody one.\n'
++V2 = b'---\nname: demo\ndescription: Second version.\n---\nBody two.\n'
++
++
++class ApplyAgentSkillsTest(unittest.TestCase):
++    def setUp(self):
++        self.root = Path(tempfile.mkdtemp())
++        self.addCleanup(shutil.rmtree, self.root)
++        self.image = self.root / 'image'
++        (self.image / 'demo').mkdir(parents=True)
++        shutil.copyfile(WRITER, self.image / WRITER.name)
++        self.home = self.root / 'home'
++        self.home.mkdir()
++        self.skill = self.home / '.agents/skills/demo'
++        self.ship(V1)
++
++    def ship(self, content):
++        (self.image / 'demo/SKILL.md').write_bytes(content)
++
++    def start(self):
++        subprocess.run([sys.executable, '-I', str(self.image / WRITER.name)], check=True,
++                       capture_output=True, env={'HOME': str(self.home), 'PATH': os.environ.get('PATH', '')})
++
++    def history(self):
++        state = self.home / '.config/cindy-desktop/agent-skills.json'
++        return json.loads(state.read_text())['written'] if state.exists() else None
++
++    def recorded(self):
++        return json.loads((self.skill / '.cindy-cloud-skill.json').read_text())['sha256']
++
++    def agents_folder(self):
++        agents = self.home / '.agents'
++        return {p.relative_to(agents): str(p.readlink()) if p.is_symlink() else
++                p.read_bytes() if p.is_file() else None for p in agents.rglob('*')}
++
++    def test_first_start_writes_the_skill_and_remembers_it(self):
++        self.start()
++        self.assertEqual((self.skill / 'SKILL.md').read_bytes(), V1)
++        self.assertEqual(self.recorded(), hashlib.sha256(V1).hexdigest())
++        self.assertEqual([p.name for p in self.skill.parent.iterdir()], ['demo'])
++        self.assertEqual(self.history(), ['demo'])
++
++    def test_unchanged_copy_follows_the_image_version(self):
++        self.start()
++        self.ship(V2)
++        self.start()
++        self.assertEqual((self.skill / 'SKILL.md').read_bytes(), V2)
++        self.assertEqual(self.recorded(), hashlib.sha256(V2).hexdigest())
++        # The marker in the folder still identifies the copy when the home's list is lost.
++        shutil.rmtree(self.home / '.config')
++        self.ship(V1)
++        self.start()
++        self.assertEqual((self.skill / 'SKILL.md').read_bytes(), V1)
++        self.assertEqual(self.history(), ['demo'])
++        # A refresh interrupted after SKILL.md, before the marker, is finished next start.
++        (self.skill / 'SKILL.md').write_bytes(V2)
++        self.ship(V2)
++        self.start()
++        self.assertEqual(self.recorded(), hashlib.sha256(V2).hexdigest())
++
++    def test_same_name_skill_that_is_not_ours_is_never_touched(self):
++        elsewhere = self.root / 'elsewhere'
++        elsewhere.mkdir()
++        (elsewhere / 'SKILL.md').write_bytes(b'theirs\n')
++        for kind in ['folder', 'link', 'file', 'edited copy']:
++            with self.subTest(kind=kind):
++                shutil.rmtree(self.home)
++                self.skill.parent.mkdir(parents=True)
++                self.ship(V1)
++                if kind == 'folder':
++                    self.skill.mkdir()
++                    (self.skill / 'SKILL.md').write_bytes(b'theirs\n')
++                elif kind == 'link':
++                    self.skill.symlink_to(elsewhere)
++                elif kind == 'file':
++                    self.skill.write_bytes(b'theirs\n')
++                else:
++                    self.start()
++                    (self.skill / 'SKILL.md').write_bytes(b'edited by the user\n')
++                    self.ship(V2)
++                before = self.agents_folder()
++                self.start()
++                self.assertEqual(self.agents_folder(), before)
++                self.assertEqual((elsewhere / 'SKILL.md').read_bytes(), b'theirs\n')
++                self.assertEqual(self.history(), ['demo'] if kind == 'edited copy' else None)
++
++    def test_skill_the_user_deleted_is_not_written_again(self):
++        self.start()
++        shutil.rmtree(self.skill)
++        self.ship(V2)
++        self.start()
++        self.assertFalse(os.path.lexists(self.skill))
++        self.assertEqual(self.history(), ['demo'])
++
++
++class ShippedSkillsTest(unittest.TestCase):
++    def test_frontmatter_is_valid_for_every_engine(self):
++        # Codex, Claude and Pi skip a Skill whose name does not match its folder or whose
++        # frontmatter does not parse; an unquoted ': ' or ' #' breaks the YAML value.
++        skills = sorted(HERE.glob('*/SKILL.md'))
++        self.assertTrue(skills)
++        for path in skills:
++            with self.subTest(skill=path.parent.name):
++                head = re.fullmatch(r'---\n(.*?)\n---\n.+', path.read_text(), re.S)
++                self.assertIsNotNone(head)
++                fields = dict(line.split(': ', 1) for line in head.group(1).splitlines())
++                self.assertEqual(set(fields), {'name', 'description'})
++                self.assertEqual(fields['name'], path.parent.name)
++                self.assertRegex(fields['name'], r'^[a-z0-9]+(-[a-z0-9]+)*$')
++                self.assertLessEqual(len(fields['name']), 64)
++                self.assertTrue(0 < len(fields['description']) <= 1024)
++                self.assertNotRegex(fields['description'], r': | #|^[\[\]{}>|*&!%@`\'"]')
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/deploy/linux-desktop/runtime-support/healthcheck.mjs b/deploy/linux-desktop/runtime-support/healthcheck.mjs
+index 51f0de3278..9916df203e 100644
+--- a/deploy/linux-desktop/runtime-support/healthcheck.mjs
++++ b/deploy/linux-desktop/runtime-support/healthcheck.mjs
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env node
++#!/usr/local/bin/node
+ import fs from "node:fs";
+ import net from "node:net";
+ import path from "node:path";
+diff --git a/deploy/linux-desktop/test_source_build.py b/deploy/linux-desktop/test_source_build.py
+index c45cf6fade..7f39452e54 100644
+--- a/deploy/linux-desktop/test_source_build.py
++++ b/deploy/linux-desktop/test_source_build.py
+@@ -400,9 +400,19 @@ class BuildGraphTest(unittest.TestCase):
+     def test_only_https_mirrors_of_known_downloads_can_be_overridden(self):
+         self.assertEqual(build.source_args(['DEBIAN_SNAPSHOT_URL=https://mirror.example.com/a?b=c']),
+                          {'DEBIAN_SNAPSHOT_URL': 'https://mirror.example.com/a?b=c'})
+-        declared = {line.split()[1].split('=')[0] for name in ('Dockerfile', 'runtime-base/Dockerfile')
+-                    for line in (HERE / name).read_text().splitlines() if line.startswith('ARG ')}
++        recipes = [(HERE / name).read_text() for name in ('Dockerfile', 'runtime-base/Dockerfile')]
++        declared = {line.split()[1].split('=')[0] for text in recipes
++                    for line in text.splitlines() if line.startswith('ARG ')}
+         self.assertLessEqual(set(build.SOURCE_ARGS), declared)
++        # Conversely, every download is checksum-pinned and its URL can name a mirror.
++        downloads = [line for text in recipes for line in text.replace('\\\n', ' ').splitlines()
++                     if line.startswith('ADD ')]
++        self.assertGreaterEqual(len(downloads), 11)
++        for line in downloads:
++            with self.subTest(download=line):
++                match = re.fullmatch(r'ADD --checksum=sha256:[0-9a-f]{64} +\$\{([A-Z_]+)\} \S+', line)
++                self.assertIsNotNone(match)
++                self.assertIn(match.group(1), build.SOURCE_ARGS)
+         for bad in ['DEBIAN_SNAPSHOT_URL', 'DEBIAN_SNAPSHOT_URL=http://mirror.example.com',
+                     'NODE_IMAGE=https://mirror.example.com', 'CHROME_DEB_URL=https://a b']:
+             with self.subTest(value=bad), self.assertRaisesRegex(ValueError, 'INVALID_SOURCE_ARG'):
+@@ -459,6 +469,16 @@ class RuntimeLayerTest(unittest.TestCase):
+                       (self.layer / 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop').read_bytes())
+         self.assertEqual((self.layer / 'usr/local/bin/codex').readlink(),
+                          Path('/opt/cindy/resources/cloud-runtimes/codex/bin/codex'))
++        # The installed Skill writer finds the Skills installed beside it.
++        home = self.root / 'home'
++        home.mkdir()
++        subprocess.run([sys.executable, '-I', str(self.layer / 'usr/local/share/cindy/agent-skills/apply-agent-skills.py')],
++                       check=True, env={'HOME': str(home)})
++        skills = sorted((HERE / 'runtime-skills').glob('*/SKILL.md'))
++        self.assertTrue(skills)
++        for skill in skills:
++            copy = home / '.agents/skills' / skill.parent.name / 'SKILL.md'
++            self.assertEqual(copy.read_bytes(), skill.read_bytes())
+ 
+     def test_installed_programs(self):
+         installed = {p.relative_to(self.layer / 'usr/local').as_posix()
+@@ -468,10 +488,29 @@ class RuntimeLayerTest(unittest.TestCase):
+             'bin/cindy-dock-terminal', 'bin/cindy-dock-chrome', 'bin/claude', 'bin/codex',
+             'lib/cindy/xfce-session', 'lib/cindy/keyring-check.mjs', 'lib/cindy/seccomp.json',
+             'lib/cindy/github-device-login.py'})
+-        # Everything the wrapper starts from this layer is installed.
++        # Everything the wrapper starts from this layer is installed; node is the base's.
+         wrapper = (self.layer / 'usr/local/bin/cindy-linux-desktop').read_text()
+-        for name in re.findall(r'/usr/local/(lib/cindy/[a-z.-]+|bin/[a-z.-]+)', wrapper):
++        for name in set(re.findall(r'/usr/local/(lib/cindy/[a-z.-]+|bin/[a-z.-]+)', wrapper)) - {'bin/node'}:
+             self.assertIn(name, installed)
++        # So is every helper the session runs. Its Skill step may fail without stopping
++        # the desktop, which would hide a wrong path.
++        session = (self.layer / 'usr/local/lib/cindy/xfce-session').read_text()
++        helpers = re.findall(r'/usr/local/share/cindy/[\w./-]+', session)
++        self.assertIn('/usr/local/share/cindy/agent-skills/apply-agent-skills.py', helpers)
++        for helper in helpers:
++            self.assertTrue((self.layer / helper.lstrip('/')).is_file(), helper)
++
++    def test_startup_ignores_interpreters_installed_by_the_user(self):
++        # PATH starts with directories in the home. A node or python3 that a user or a
++        # tool manager puts there must not run the PID 1 wrapper, the desktop session or
++        # the health probe; a broken one would otherwise stop the instance from starting.
++        for name in ['usr/local/bin/cindy-linux-desktop', 'usr/local/lib/cindy/xfce-session']:
++            with self.subTest(script=name):
++                script = (self.layer / name).read_text()
++                self.assertNotRegex(script, r'(?m)(^|[\s;&|(])(node|python3?)\s')
++                self.assertRegex(script, r'(/usr/local/bin/node|/usr/bin/python3) ')
++        probe = (self.layer / 'usr/local/bin/cindy-cloud-healthcheck.mjs').read_text()
++        self.assertEqual(probe.splitlines()[0], '#!/usr/local/bin/node')
+ 
+     def test_shell_scripts_parse(self):
+         desktop = HERE / 'runtime-desktop-xfce'

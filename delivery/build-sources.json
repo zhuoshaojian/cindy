@@ -1,5 +1,6 @@
 {
   "DEBIAN_BUILD_MIRROR": "https://mirrors.aliyun.com",
+  "DOCKER_TARBALL_URL": "https://mirrors.aliyun.com/docker-ce/linux/static/stable/x86_64/docker-29.7.2.tgz",
   "PLANK_SOURCE_URL": "https://mirrors.aliyun.com/debian/pool/main/p/plank/plank_0.11.89.orig.tar.xz",
   "PLANK_DEBIAN_SOURCE_URL": "https://mirrors.aliyun.com/debian/pool/main/p/plank/plank_0.11.89-4.debian.tar.xz"
 }

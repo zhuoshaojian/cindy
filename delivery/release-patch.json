@@ -19,6 +19,28 @@
         "deploy/linux-desktop/runtime-window-controls/overlay.test.mjs",
         "deploy/linux-desktop/stage-cloud-overlays.mjs"
       ]
+    },
+    {
+      "file": "cloud-dev-tools.diff",
+      "sha256": "591fc867d7bcd611321bd85eed43ebf64641c29722ec6bc1507f7791848d3c90",
+      "upstreamPullRequest": null,
+      "reason": "the cloud image preinstalls developer tools and writes a cloud-only agent Skill on how to install tools and use Docker; verified in a candidate before the upstream pull request (fork branch feat/cloud-dev-tools, without its README.md edit, which #13422 also patches)",
+      "paths": [
+        "deploy/linux-desktop/Dockerfile",
+        "deploy/linux-desktop/assemble-runtime.py",
+        "deploy/linux-desktop/build-image.py",
+        "deploy/linux-desktop/runtime-base/Dockerfile",
+        "deploy/linux-desktop/runtime-base/README.md",
+        "deploy/linux-desktop/runtime-desktop-xfce/README.md",
+        "deploy/linux-desktop/runtime-desktop-xfce/cindy-linux-desktop",
+        "deploy/linux-desktop/runtime-desktop-xfce/xfce-session",
+        "deploy/linux-desktop/runtime-skills/README.md",
+        "deploy/linux-desktop/runtime-skills/apply-agent-skills.py",
+        "deploy/linux-desktop/runtime-skills/cloud-instance-dev/SKILL.md",
+        "deploy/linux-desktop/runtime-skills/test_apply_agent_skills.py",
+        "deploy/linux-desktop/runtime-support/healthcheck.mjs",
+        "deploy/linux-desktop/test_source_build.py"
+      ]
     }
   ]
 }

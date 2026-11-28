@@ -1,13 +1,15 @@
 """Reviewed patches to one upstream release's cloud image recipe, each pending upstream.
 
-An exception to building upstream as-is: used only when a release cannot build or start
-in the cloud and the fixes are pending upstream. The cloud image adapts to the release, so
-patches change the recipe (`deploy/linux-desktop/`) only, never the client. `release-patch.json`
-names the release commit and, per patch, its diff, SHA-256, upstream pull request, reason
-and the exact files it edits or adds. All patches go into one commit on the release with a
-fixed identity, so the checks and build jobs compute the same commit; the plan and the
-candidate records name it. A patch file for another release fails the plan: remove the
-files when delivering a release that contains the fixes.
+An exception to building upstream as-is: used when a release cannot build or start in the
+cloud, or the cloud image needs a recipe change, and the change is pending upstream. The
+cloud image adapts to the release, so patches change the recipe (`deploy/linux-desktop/`)
+only, never the client. `release-patch.json` names the release commit and, per patch, its
+diff, SHA-256, upstream pull request, reason and the exact files it edits or adds. The pull
+request is null only while a candidate verifies the change before it is proposed upstream.
+All patches go into one commit on the release with a fixed identity, so the checks and
+build jobs compute the same commit; the plan and the candidate records name it. A patch
+file for another release fails the plan: remove the files when delivering a release that
+contains the changes.
 """
 import hashlib
 import json
@@ -46,7 +48,8 @@ def load(path=CONFIG):
         if (not isinstance(patch, dict) or set(patch) != PATCH_KEYS
                 or not isinstance(patch['file'], str) or not re.fullmatch(r'[a-z0-9][a-z0-9.-]*\.diff', patch['file'])
                 or not isinstance(patch['sha256'], str) or not re.fullmatch(r'[a-f0-9]{64}', patch['sha256'])
-                or type(patch['upstreamPullRequest']) is not int or patch['upstreamPullRequest'] < 1
+                or (patch['upstreamPullRequest'] is not None
+                    and (type(patch['upstreamPullRequest']) is not int or patch['upstreamPullRequest'] < 1))
                 or not isinstance(patch['reason'], str) or not patch['reason'].strip()
                 or not isinstance(patch['paths'], list) or not patch['paths'] or not all(map(_path_ok, patch['paths']))
                 or patch['paths'] != sorted(set(patch['paths'])) or seen & set(patch['paths'])):
@@ -87,7 +90,8 @@ def apply(repo, release, upstream_commit):
                 raise ValueError('RELEASE_PATCH_UNDECLARED_PATH')
             _git(repo, 'apply', '--cached', str(diff), env=index)
         tree = _git(repo, 'write-tree', env=index)
-    lines = [f"- upstream pull request #{p['upstreamPullRequest']}, sha256 {p['sha256']}" for p in release['patches']]
+    pr = lambda p: f"#{p['upstreamPullRequest']}" if p['upstreamPullRequest'] is not None else 'not yet proposed'
+    lines = [f"- upstream pull request {pr(p)}, sha256 {p['sha256']}" for p in release['patches']]
     message = 'Cloud delivery patches for this release\n\n' + '\n'.join(lines) + '\n'
     commit = _git(repo, 'commit-tree', tree, '-p', upstream_commit, env=IDENTITY, data=message.encode())
     return commit, sorted(p for patch in release['patches'] for p in patch['paths'])
