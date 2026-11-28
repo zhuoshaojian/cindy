@@ -8,6 +8,8 @@ if [ -n "${XAUTHORITY:-}" ]; then dbus-update-activation-environment XAUTHORITY;
 /usr/bin/python3 /usr/local/share/cindy/appearance/apply-appearance.py
 /usr/bin/python3 /usr/local/share/cindy/appearance/apply-dock.py
 /usr/bin/python3 /usr/local/share/cindy/appearance/apply-dock-apps.py
+# Agent Skills for this instance (runtime-skills); a failure must not stop the desktop.
+/usr/bin/python3 /usr/local/share/cindy/agent-skills/apply-agent-skills.py || true
 critical=()
 dock=''
 cleanup() {

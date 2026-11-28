@@ -471,6 +471,16 @@ class RuntimeLayerTest(unittest.TestCase):
                       (self.layer / 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop').read_bytes())
         self.assertEqual((self.layer / 'usr/local/bin/codex').readlink(),
                          Path('/opt/cindy/resources/cloud-runtimes/codex/bin/codex'))
+        # The installed Skill writer finds the Skills installed beside it.
+        home = self.root / 'home'
+        home.mkdir()
+        subprocess.run([sys.executable, '-I', str(self.layer / 'usr/local/share/cindy/agent-skills/apply-agent-skills.py')],
+                       check=True, env={'HOME': str(home)})
+        skills = sorted((HERE / 'runtime-skills').glob('*/SKILL.md'))
+        self.assertTrue(skills)
+        for skill in skills:
+            copy = home / '.agents/skills' / skill.parent.name / 'SKILL.md'
+            self.assertEqual(copy.read_bytes(), skill.read_bytes())
 
     def test_installed_programs(self):
         installed = {p.relative_to(self.layer / 'usr/local').as_posix()
@@ -484,6 +494,13 @@ class RuntimeLayerTest(unittest.TestCase):
         wrapper = (self.layer / 'usr/local/bin/cindy-linux-desktop').read_text()
         for name in set(re.findall(r'/usr/local/(lib/cindy/[a-z.-]+|bin/[a-z.-]+)', wrapper)) - {'bin/node'}:
             self.assertIn(name, installed)
+        # So is every helper the session runs. Its Skill step may fail without stopping
+        # the desktop, which would hide a wrong path.
+        session = (self.layer / 'usr/local/lib/cindy/xfce-session').read_text()
+        helpers = re.findall(r'/usr/local/share/cindy/[\w./-]+', session)
+        self.assertIn('/usr/local/share/cindy/agent-skills/apply-agent-skills.py', helpers)
+        for helper in helpers:
+            self.assertTrue((self.layer / helper.lstrip('/')).is_file(), helper)
 
     def test_startup_ignores_interpreters_installed_by_the_user(self):
         # PATH starts with directories in the home. A node or python3 that a user or a

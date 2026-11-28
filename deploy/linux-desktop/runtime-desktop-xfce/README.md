@@ -12,6 +12,8 @@ Files that `../assemble-runtime.py` installs into the application layer.
 - `apply-appearance.py`, `apply-dock.py`, `apply-dock-apps.py`: theme, wallpaper, Dock
   settings and pinned Terminal and Chrome. Each runs once per home (markers in
   `~/.config/cindy-desktop/`) and keeps unrelated settings. `~/.local/share` is not used.
+  After them the session writes the [agent Skills](../runtime-skills/README.md); a
+  failure of that step does not stop the session.
 - `cindy-dock-terminal` starts bash explicitly, because the account has no login shell.
 - `cindy-user-tools.sh`: installed as `/etc/profile.d/cindy-user-tools.sh`. `/etc/profile`
   resets `PATH` for login shells, which agents use to run commands; this puts the home's

@@ -66,6 +66,7 @@ would still occupy its layers. `io.cindy.*` labels record commit, versions and r
 | [`runtime-updates/`](runtime-updates/README.md), [`runtime-window-controls/`](runtime-window-controls/README.md), [`runtime-identity/`](runtime-identity/README.md) | Overlays: no desktop updater; main window stays open; no sign-out |
 | [`runtime-support/`](runtime-support/README.md) | Seccomp launcher, health check, keyring check |
 | [`runtime-desktop-xfce/`](runtime-desktop-xfce/README.md) | PID 1 wrapper, Xfce/Plank desktop, seccomp profile |
+| [`runtime-skills/`](runtime-skills/README.md) | Cloud-only agent Skills, written into the home at session start |
 
 Overlays match exact source anchors and fail the build when the source changes. They add
 imports after a module's own imports ([`overlay-imports.mjs`](overlay-imports.mjs)), so
@@ -109,6 +110,10 @@ managed instance: the wrapper unlocks the keyring and starts Cindy with
   `npm install -g`, `uv tool install`, `mise use -g` and single binaries persist across
   upgrades. The wrapper, the desktop session and the health check run the image's own
   `node` and `python3` by absolute path; versions installed there do not replace them.
+- **Docker** (optional): the image has the Docker CLI but no daemon. `DOCKER_HOST` names
+  a Docker service for the instance that sees `/home/cindy`, `/var/lib/cindy` and `/tmp`
+  at the same paths. The [agent Skill](runtime-skills/README.md) tells agents that
+  without `DOCKER_HOST` there is no Docker.
 
 ## Local checks
 
@@ -121,6 +126,7 @@ CINDY_TEST_CLIENT_SOURCE="$PWD" CINDY_ACTIVITY_TEST_SOURCE="$PWD" \
 export PYTHONDONTWRITEBYTECODE=1
 python3 -m unittest discover -s deploy/linux-desktop -p 'test_*.py'
 python3 -m unittest discover -s deploy/linux-desktop/runtime-base -p 'test_*.py'
+python3 -m unittest discover -s deploy/linux-desktop/runtime-skills -p 'test_*.py'
 python3 deploy/linux-desktop/runtime-fonts/test_stage_emoji_font.py
 ```
 

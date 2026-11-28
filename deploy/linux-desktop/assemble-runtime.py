@@ -31,6 +31,13 @@ install(desktop / 'xfce-session', 'usr/local/lib/cindy/xfce-session', 0o755)
 install(desktop / 'seccomp.json', 'usr/local/lib/cindy/seccomp.json')
 for name in ['apply-appearance.py', 'apply-dock.py', 'apply-dock-apps.py']:
     install(desktop / name, 'usr/local/share/cindy/appearance/' + name)
+skills = recipe / 'runtime-skills'
+install(skills / 'apply-agent-skills.py', 'usr/local/share/cindy/agent-skills/apply-agent-skills.py')
+agent_skills = sorted(skills.glob('*/SKILL.md'))
+# The session tolerates a failing Skill step, so a lost Skill must fail here.
+if not agent_skills: raise RuntimeError('MISSING_AGENT_SKILLS')
+for skill in agent_skills:
+    install(skill, 'usr/local/share/cindy/agent-skills/' + skill.parent.name + '/SKILL.md')
 for name in ['com.cindy.cloud-terminal.desktop', 'com.cindy.cloud-chrome.desktop']:
     install(desktop / name, 'usr/share/applications/' + name)
 install(desktop / 'cindy-cloud-chrome.helper.desktop', 'usr/share/xfce4/helpers/cindy-cloud-chrome.desktop')
